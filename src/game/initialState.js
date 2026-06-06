@@ -1,0 +1,40 @@
+// Initial game state — mirrors the GameState sketch in docs/BRIEF.md.
+// This is the single source of truth the simulation mutates each tick.
+
+export function createInitialState() {
+  return {
+    week: 1,
+    cash: 250_000,
+    playerBase: 10_000,
+
+    // Player segments react differently to the same decision.
+    segments: {
+      competitive: 3_500, // care about diversity & solve level
+      casual: 4_500, // "new toys" crowd — fresh mechanics & power
+      collectors: 2_000, // chase value, art, scarcity
+    },
+
+    // Metagame health — four interacting dials (0–100).
+    // solveLevel is the core-loop engine: resets low on release, decays up weekly.
+    metagame: {
+      diversity: 70,
+      powerLevel: 40,
+      archetypeBalance: 60,
+      solveLevel: 30,
+    },
+
+    sets: [],
+    cards: [],
+    artists: [], // seeded by content module (~30+ named artists)
+    personas: [], // seeded by content module (~15–20 named voices)
+
+    feedbackFeed: [], // qualitative chatter — sometimes lies
+    eventsFeed: [], // news/curveballs
+
+    clock: {
+      speed: 1, // weeks advanced per tick when playing
+      paused: true,
+      pauseReason: 'New game — design your first set.',
+    },
+  }
+}

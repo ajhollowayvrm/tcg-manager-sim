@@ -9,9 +9,37 @@ Think *Game Dev Tycoon*, but you're The Pokémon Company and the product is card
 
 ## Status
 
-Pre-build. The full v1 specification and v2 roadmap live in [`docs/BRIEF.md`](docs/BRIEF.md).
+Scaffolded. Vite + React app boots into a dashboard shell with a working
+play/pause/fast-forward clock and the four metagame dials. The simulation
+currently only decays the format each week — the market, personas, events,
+and set-creation systems are stubbed and wired to their panels.
+
+The full v1 specification and v2 roadmap live in [`docs/BRIEF.md`](docs/BRIEF.md).
 
 ## Tech
 
-- Single-file browser app (React preferred), no backend — all state in memory.
+- Single-page browser app (Vite + React), no backend — all state in memory.
 - Turn-based simulation on a variable-speed weekly clock.
+
+## Develop
+
+```bash
+npm install
+npm run dev      # start the dev server
+npm run build    # production build
+npm run preview  # preview the build
+```
+
+## Structure
+
+```
+src/
+  main.jsx              # entry
+  App.jsx               # dashboard layout
+  game/
+    initialState.js     # GameState shape (see BRIEF.md)
+    simulation.js       # advanceWeek() — the one tick entry point
+    useGame.js          # reducer + clock hook
+  components/           # TopBar, MetagamePanel, MarketTicker, feeds
+  styles/index.css      # vivid dashboard skin
+```
