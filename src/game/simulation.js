@@ -9,6 +9,7 @@ import { resolveMarket } from './market.js'
 import { reactPersonas, applyPersonaEffects } from './personas.js'
 import { resolveRevenue } from './revenue.js'
 import { rollEvent, applyEventEffects } from './events.js'
+import { applySegmentDrift } from './segments.js'
 
 const SOLVE_DECAY_PER_WEEK = 4 // tune so a format stays fresh for a few months
 
@@ -51,7 +52,12 @@ export function advanceWeek(state) {
     next.eventsFeed = [event.entry, ...next.eventsFeed].slice(0, 60)
   }
 
-  // TODO: segment drift driven by metagame dials
+  // Segment drift: the four metagame dials exert a slow weekly pull on the
+  // player segments — a healthy meta grows the base, a rotting one bleeds it,
+  // each segment reacting to the dials it cares about. Runs after personas/events
+  // have settled this week's dials, so it reads their final values.
+  applySegmentDrift(next)
+
   // TODO: auto-slow/pause the clock on interesting moments
 
   // Loss conditions (twin death spirals): cash or active player base hits zero.
