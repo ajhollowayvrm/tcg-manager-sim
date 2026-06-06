@@ -2,6 +2,7 @@
 // This is the single source of truth the simulation mutates each tick.
 
 import { PERSONAS } from './content/personas.js'
+import { seedArtists } from './artists.js'
 
 export function createInitialState() {
   return {
@@ -33,7 +34,9 @@ export function createInitialState() {
 
     sets: [],
     cards: [],
-    artists: [], // seeded by content module (~30+ named artists)
+    // Per-artist career state (cost/reach/trajectory) that drifts each week —
+    // see artists.js. Identity (name/specialty) stays in the static roster.
+    artists: seedArtists(),
     // Personas carry a mutable `sentiment` (mood toward the game) on top of
     // their static reach/credibility/taste from the content roster.
     personas: PERSONAS.map((p) => ({ ...p, sentiment: 10 })),

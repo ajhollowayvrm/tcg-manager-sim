@@ -11,6 +11,7 @@
 import { makeRng, hashSeed, range } from './rng.js'
 import { getArtist } from './content/artists.js'
 import { clamp } from './simulation.js'
+import { blowUpArtist, breakoutCandidate } from './artists.js'
 
 // Roughly how often something happens. ~0.28/week ≈ an event every 3–4 weeks,
 // so quiet stretches still exist (the clock can fast-forward through them).
@@ -109,6 +110,22 @@ export const EVENTS = [
           cards: bumpCard(s.cards, card.id, { priceMul: range(rng, 1.3, 1.8), hype: 0.4 }),
           collectorsDelta: Math.round(s.segments.collectors * range(rng, 0.01, 0.03)),
         },
+      }
+    },
+  },
+  {
+    id: 'artist_breakout',
+    kind: 'artist',
+    tone: 'neutral',
+    weight: 1,
+    // Only fires when there's a rising/steady up-and-comer to break out.
+    condition: (s) => breakoutCandidate(s, makeRng(hashSeed('bocond' + s.week))) != null,
+    resolve: (s, rng) => {
+      const live = breakoutCandidate(s, rng)
+      const artist = getArtist(live.id)
+      return {
+        text: `${artist.name} just broke out — a gallery show and a viral cover have collectors clamoring. Their commission rate jumps.`,
+        effects: { artistBreakoutId: live.id },
       }
     },
   },
@@ -269,5 +286,11 @@ export function applyEventEffects(next, effects) {
     for (const [k, d] of Object.entries(effects.metagame)) {
       next.metagame[k] = clamp(next.metagame[k] + d, 0, 100)
     }
+  }
+
+  // An artist breaking out: spike their commission cost/reach and graduate them.
+  if (effects.artistBreakoutId && next.artists) {
+    const rng = makeRng(hashSeed(`breakout:${effects.artistBreakoutId}:${next.week}`))
+    next.artists = blowUpArtist(next.artists, effects.artistBreakoutId, rng)
   }
 }

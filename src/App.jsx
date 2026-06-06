@@ -83,6 +83,7 @@ export default function App() {
         <SetBuilder
           setNumber={game.state.sets.length + 1}
           cash={game.state.cash}
+          artists={game.state.artists}
           onRelease={game.release}
           onClose={() => setBuilding(false)}
         />

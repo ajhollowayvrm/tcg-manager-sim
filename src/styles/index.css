@@ -167,6 +167,13 @@ body {
 .field__note { font-size: 0.72rem; color: var(--text-dim); margin-top: 2px; }
 .field__note strong { color: var(--accent-2); text-transform: capitalize; }
 
+/* Artist trajectory trend cue */
+.trend { font-size: 0.72rem; font-weight: 700; }
+.trend--up { color: var(--good); }
+.trend--down { color: var(--bad); }
+.trend--est { color: var(--pop); }
+.trend--flat { color: var(--text-dim); }
+
 /* Sliders */
 .slider { display: flex; flex-direction: column; gap: 6px; }
 .slider__head { display: flex; justify-content: space-between; font-size: 0.85rem; }

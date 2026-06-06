@@ -7,6 +7,7 @@ import { getTheme } from './content/themes.js'
 import { clamp } from './simulation.js'
 import { printRunUnits } from './revenue.js'
 import { shiftToward, balanceScore } from './archetypes.js'
+import { currentArtist } from './artists.js'
 
 export const RARITIES = ['common', 'uncommon', 'rare', 'mythic']
 
@@ -48,11 +49,15 @@ const BASE_DEV_COST = 40_000
 
 // Print cost scales with the run size; bigger runs cost more up front but
 // unlock more sealed sales. Artist commissions are summed on top.
-export function setCost(draft) {
+//
+// `artistOf` resolves an artist id to its CURRENT (possibly drifted) record;
+// defaults to the static roster so old call sites / tests still work. The live
+// game passes a state-aware resolver so a risen star costs what they cost now.
+export function setCost(draft, artistOf = getArtist) {
   const printCost = Math.round(20_000 + (draft.printRun / 100) * 180_000)
   const dev = BASE_DEV_COST
   const art = draft.signatureCards.reduce((sum, c) => {
-    const artist = c.artistId ? getArtist(c.artistId) : null
+    const artist = c.artistId ? artistOf(c.artistId) : null
     return sum + (artist ? artist.cost : 0)
   }, 0)
   const prerelease = draft.prerelease.enabled ? 15_000 : 0
@@ -76,9 +81,9 @@ export function validateDraft(draft) {
 
 // A signature card's hidden "pop factors" blend playability, rarity, art appeal
 // (artist-driven), and theme/hype. The market later resolves price from these.
-function popFactors(card, draft, theme, rng) {
+function popFactors(card, draft, theme, rng, artistOf = getArtist) {
   const power = card.mode === 'flavor' ? card.power : estimatePowerFromRules(card.rulesText)
-  const artist = card.artistId ? getArtist(card.artistId) : null
+  const artist = card.artistId ? artistOf(card.artistId) : null
   const rarityWeight = { common: 10, uncommon: 30, rare: 65, mythic: 95 }[card.rarity]
   const artAppeal = artist ? artist.reach : 25
   // Theme tags matching the artist's specialty elevate the card.
@@ -105,12 +110,12 @@ function estimatePowerFromRules(text) {
 // Generate the signature cards as real card records for the market. The ~150
 // commons/uncommons are summarized on the set rather than spawned individually
 // (they don't carry singles value worth tracking) — kept as a count for now.
-export function generateCards(draft, setId, week) {
+export function generateCards(draft, setId, week, artistOf = getArtist) {
   const theme = getTheme(draft.themeId)
   const rng = makeRng(hashSeed(`${draft.name}:${setId}:${week}`))
 
   return draft.signatureCards.map((card) => {
-    const factors = popFactors(card, draft, theme, rng)
+    const factors = popFactors(card, draft, theme, rng, artistOf)
     // Initial single price seeds off rarity + art + hype; the market moves it later.
     const seed = factors.rarity * 0.25 + factors.artAppeal * 0.4 + factors.hype * 0.35
     const scarcity = 1 + (1 - draft.printRun / 100) * 1.5 // under-print → higher prices
@@ -141,9 +146,12 @@ export function generateCards(draft, setId, week) {
 // Returns { sets, cards, cash, metagame, set } patches for the reducer.
 export function releaseSet(state, draft) {
   const setId = `set_${state.sets.length + 1}`
-  const cost = setCost(draft)
+  // Resolve artists to their CURRENT drifted cost/reach so a risen star costs
+  // (and elevates a card) what they're worth now, not their seed value.
+  const artistOf = (id) => currentArtist(state, id)
+  const cost = setCost(draft, artistOf)
   const theme = getTheme(draft.themeId)
-  const cards = generateCards(draft, setId, state.week)
+  const cards = generateCards(draft, setId, state.week, artistOf)
 
   const set = {
     id: setId,

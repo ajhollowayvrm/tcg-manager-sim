@@ -73,13 +73,16 @@ Hand-designed by the player, with a **per-card granularity toggle**:
 
 The player can mix freely — make one card "the most broken thing ever printed" with full mechanical control, and another pure flavor. Signature cards are what the secondary market and personas react to most strongly.
 
-### Artist commissioning ⏳
+### Artist commissioning ✅
 A roster of **~30+ named artists**, each with:
 
-> **Status:** 32-artist roster, commission picker in the card editor, cost +
+> **Status:** 44-artist roster, commission picker in the card editor, cost +
 > reach feed a card's art-appeal pop factor and the "beloved artist" event ✅.
-> **Gap:** `trajectory` (rising-star vs. established price movement over time) is
-> a static field — artists don't yet rise/blow up dynamically ⬜.
+> **Trajectory is now live** (`artists.js`): each artist's cost/reach drift weekly
+> by trajectory — rising stars climb (and can graduate or *break out* in an
+> event), fading names decline — over a long run, not every week. The set-builder
+> dropdown shows a trend cue (↑ rising / ◆ established / ↓ fading) so a cheap
+> rising star is spottable before it blows up ✅.
 - **Style specialty** (affects which themes/cards they elevate).
 - **Cost** (commission fee).
 - **Reputation / reach** (popular artists boost a card's collectibility ceiling and market appeal).

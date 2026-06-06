@@ -12,6 +12,7 @@ import { rollEvent, applyEventEffects } from './events.js'
 import { applySegmentDrift } from './segments.js'
 import { clockDirective } from './clock.js'
 import { concentrate, balanceScore } from './archetypes.js'
+import { driftArtists } from './artists.js'
 
 const SOLVE_DECAY_PER_WEEK = 4 // tune so a format stays fresh for a few months
 // Diversity erosion: above this solve level the field starts collapsing to a few
@@ -43,6 +44,11 @@ export function advanceWeek(state) {
     // deck, so the field tilts toward its already-dominant archetype as it solves.
     next.metagame.archetypes = concentrate(next.metagame.archetypes, pressure * 0.5)
   }
+
+  // Artist careers drift: rising stars get pricier/more famous (and can
+  // graduate or blow up), fading names decline. Commissioning a cheap rising
+  // star before they pop is a real budget bet.
+  driftArtists(next)
 
   // Sealed-product revenue: every live set sells packs (capped by its print
   // run). This is the income that funds the next set — or doesn't.

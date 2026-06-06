@@ -16,7 +16,7 @@ function formatCash(n) {
   return '$' + n.toLocaleString('en-US')
 }
 
-export default function SetBuilder({ setNumber, cash, onRelease, onClose }) {
+export default function SetBuilder({ setNumber, cash, artists, onRelease, onClose }) {
   const [draft, setDraft] = useState(() => {
     const d = createDraft(setNumber)
     // Start with the minimum viable count so the player can release fast.
@@ -26,7 +26,10 @@ export default function SetBuilder({ setNumber, cash, onRelease, onClose }) {
 
   const patch = (p) => setDraft((d) => ({ ...d, ...p }))
   const theme = getTheme(draft.themeId)
-  const cost = setCost(draft)
+  // Resolve artists to their live drifted record so the cost summary and editor
+  // reflect current prices, not the static seed.
+  const artistOf = (id) => artists?.find((a) => a.id === id) ?? null
+  const cost = setCost(draft, (id) => artistOf(id) ?? undefined)
   const errors = validateDraft(draft)
   const affordable = cost.total <= cash
   const canRelease = errors.length === 0 && affordable
@@ -159,6 +162,7 @@ export default function SetBuilder({ setNumber, cash, onRelease, onClose }) {
                   key={card.id}
                   card={card}
                   theme={theme}
+                  artists={artists}
                   onChange={(next) => setCard(i, next)}
                   onRemove={() => removeCard(i)}
                 />
