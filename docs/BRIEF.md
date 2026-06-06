@@ -111,6 +111,15 @@ The reward system. The fun is **watching cards pop or flop**, with enough varian
 
 ## Metagame health (four interacting dials) ✅
 
+> **Archetype Balance update:** this dial is now backed by a real **distribution**
+> over the four play styles (`archetypes.js`), not a lone scalar. Releases tilt
+> the field toward the set's theme lean (scaled by power budget), solving
+> concentrates it toward the dominant deck, and bans/rotations flatten it. The
+> 0–100 "balance" is derived from how even the split is, and player segments now
+> react to the *shape* — a one-style format drives out the squeezed-out players
+> (verified: a mono-aggro field collapses the competitive segment). Shown as a
+> four-way split bar in the Metagame panel; the set builder shows each theme's lean.
+
 Not a single bar. Four dials that interact and pull on different player segments:
 
 1. **Diversity** — how many archetypes are viable, and how evenly. One deck at 60% of the field = an oppressive/solved format even if only mildly too strong.

@@ -6,6 +6,7 @@ import { getArtist } from './content/artists.js'
 import { getTheme } from './content/themes.js'
 import { clamp } from './simulation.js'
 import { printRunUnits } from './revenue.js'
+import { shiftToward, balanceScore } from './archetypes.js'
 
 export const RARITIES = ['common', 'uncommon', 'rare', 'mythic']
 
@@ -168,13 +169,21 @@ export function releaseSet(state, draft) {
   // Prerelease with chase pullable lets the community start solving early.
   const solveReset = draft.prerelease.chasePullable ? 20 : 8
 
+  // The set pushes the field toward its theme's archetype lean, scaled by power
+  // budget: a stronger set in an archetype warps the meta toward it harder. This
+  // is what lets "spam high-power aggro sets" actually create an aggro-dominated
+  // format — and lets a player release a counter-archetype set to correct a tilt.
+  const shiftPoints = 8 + Math.max(0, creep) * 1.2 // ~8 at budget 50, ~20 at 100
+  const archetypes = shiftToward(state.metagame.archetypes, theme.archetypes, shiftPoints)
+
   const metagame = {
     // A fresh set reopens the field a little (+3), but a high-power-budget set
     // also crowds out weaker archetypes (the creep term claws some back). Modest
     // so it doesn't ratchet diversity to 100 against the weekly erosion.
     diversity: clamp(state.metagame.diversity - Math.max(0, creep) * 0.6 + 3, 0, 100),
     powerLevel: clamp(state.metagame.powerLevel + Math.max(0, creep), 0, 100),
-    archetypeBalance: state.metagame.archetypeBalance, // theme nudges this later
+    archetypes,
+    archetypeBalance: balanceScore(archetypes), // derived from the new split
     solveLevel: solveReset,
   }
 

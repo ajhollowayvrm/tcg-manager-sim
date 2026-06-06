@@ -164,6 +164,8 @@ body {
   font: inherit; font-size: 0.9rem;
 }
 .field textarea { resize: vertical; }
+.field__note { font-size: 0.72rem; color: var(--text-dim); margin-top: 2px; }
+.field__note strong { color: var(--accent-2); text-transform: capitalize; }
 
 /* Sliders */
 .slider { display: flex; flex-direction: column; gap: 6px; }
@@ -310,6 +312,22 @@ body {
   border-radius: 99px;
   transition: width 0.3s ease;
 }
+
+/* ---- Archetype metashare split bar ---- */
+.metashare { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.metashare__head { display: flex; justify-content: space-between; margin-bottom: 6px; }
+.metashare__bar {
+  display: flex; height: 12px; border-radius: 99px; overflow: hidden;
+  background: var(--surface-2);
+}
+.metashare__seg { transition: width 0.4s ease; min-width: 0; }
+.metashare__seg:not(:last-child) { border-right: 1px solid var(--bg); }
+.metashare__legend {
+  display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px;
+  font-size: 0.72rem; color: var(--text-dim); font-variant-numeric: tabular-nums;
+}
+.metashare__key { display: inline-flex; align-items: center; gap: 5px; }
+.metashare__dot { width: 8px; height: 8px; border-radius: 2px; }
 
 /* ---- Ticker & feeds ---- */
 .ticker, .feed { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }

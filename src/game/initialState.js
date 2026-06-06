@@ -18,11 +18,17 @@ export function createInitialState() {
 
     // Metagame health — four interacting dials (0–100).
     // solveLevel is the core-loop engine: resets low on release, decays up weekly.
+    // archetypeBalance is DERIVED from `archetypes` each tick (see simulation.js)
+    // — it's how even the metashare is. The distribution below is the real state;
+    // releases tilt it, solving concentrates it, bans/rotations flatten it.
     metagame: {
       diversity: 70,
       powerLevel: 40,
-      archetypeBalance: 60,
+      archetypeBalance: 60, // derived; seeded to match the starting distribution
       solveLevel: 30,
+      // The field's split across the four play styles (sums to ~100). Starts a
+      // touch aggro/midrange-leaning so balance reads ~60, not a flat 100.
+      archetypes: { aggro: 30, control: 20, combo: 20, midrange: 30 },
     },
 
     sets: [],

@@ -74,6 +74,12 @@ export default function SetBuilder({ setNumber, cash, onRelease, onClose }) {
                   </option>
                 ))}
               </select>
+              {theme && (
+                <span className="field__note">
+                  Pushes the metagame toward{' '}
+                  <strong>{theme.archetypes.join(' / ')}</strong> — harder at higher power.
+                </span>
+              )}
             </label>
 
             <Slider

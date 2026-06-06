@@ -124,6 +124,12 @@ const STRATEGIES = [
   // cash — should bankrupt itself. Confirms the loss condition is reachable.
   makeStrategy({ name: 'Reckless spender', cadence: 4, banAt: null, rotateEvery: null, ignoreCash: true,
     knobs: { powerBudget: 75, printRun: 80, pricePoint: 9.0, chasePower: 82, namePool: NAME_POOL, themes: THEMES } }),
+  // Mono-aggro: only releases aggro-leading themes at high power and never bans
+  // or rotates to flatten the field. Should drive aggro to dominate the metashare
+  // and bleed the segments that dislike a one-style format (competitive especially).
+  makeStrategy({ name: 'Mono-aggro spam', cadence: 10, banAt: null, rotateEvery: null,
+    knobs: { powerBudget: 75, printRun: 50, pricePoint: 4.5, chasePower: 75,
+      namePool: NAME_POOL, themes: ['cute', 'racing', 'pirates', 'kaiju'] } }),
 ]
 
 // ---- Run a single game ----------------------------------------------------
@@ -175,6 +181,8 @@ function playOne(strategy, salt, trace = false) {
     bigMoves,
     minCash,
     minPlayers,
+    balance: state.metagame.archetypeBalance,
+    topShare: topArchetypeShare(state.metagame.archetypes),
     samples,
   }
 }
@@ -186,13 +194,19 @@ function fmt(n) {
   return Math.abs(r) >= 1000 ? (r / 1000).toFixed(0) + 'k' : String(r)
 }
 
+// Largest archetype's share of the field (0–100) — how dominated the meta is.
+function topArchetypeShare(archetypes) {
+  if (!archetypes) return 0
+  return Math.max(...Object.values(archetypes))
+}
+
 function summarize() {
   console.log(`Headless playtest — horizon ${HORIZON} weeks (~${(HORIZON / 52).toFixed(0)}y), 3 set-name salts each\n`)
   console.log(
     'strategy'.padEnd(22) + 'survive'.padEnd(9) + 'endWk'.padEnd(7) +
     'cash'.padEnd(8) + 'minCash'.padEnd(9) + 'players'.padEnd(9) + 'minPpl'.padEnd(8) +
-    'pow'.padEnd(5) + 'div'.padEnd(5) +
-    'rel'.padEnd(5) + 'ban'.padEnd(5) + 'rot'.padEnd(5) + 'movers/wk'.padEnd(11) + 'reason',
+    'pow'.padEnd(5) + 'div'.padEnd(5) + 'bal'.padEnd(5) + 'top%'.padEnd(6) +
+    'rel'.padEnd(5) + 'ban'.padEnd(5) + 'rot'.padEnd(5) + 'reason',
   )
   console.log('-'.repeat(120))
 
@@ -213,10 +227,11 @@ function summarize() {
       fmt(avg((r) => r.minPlayers)).padEnd(8) +
       avg((r) => r.power).toFixed(0).padEnd(5) +
       avg((r) => r.diversity).toFixed(0).padEnd(5) +
+      avg((r) => r.balance).toFixed(0).padEnd(5) +
+      (avg((r) => r.topShare).toFixed(0) + '%').padEnd(6) +
       avg((r) => r.releases).toFixed(0).padEnd(5) +
       avg((r) => r.bans).toFixed(0).padEnd(5) +
       avg((r) => r.rotations).toFixed(0).padEnd(5) +
-      avg((r) => r.moverRate).toFixed(2).padEnd(11) +
       reasons,
     )
   }

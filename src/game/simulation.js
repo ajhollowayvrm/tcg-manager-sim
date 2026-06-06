@@ -11,6 +11,7 @@ import { resolveRevenue } from './revenue.js'
 import { rollEvent, applyEventEffects } from './events.js'
 import { applySegmentDrift } from './segments.js'
 import { clockDirective } from './clock.js'
+import { concentrate, balanceScore } from './archetypes.js'
 
 const SOLVE_DECAY_PER_WEEK = 4 // tune so a format stays fresh for a few months
 // Diversity erosion: above this solve level the field starts collapsing to a few
@@ -38,6 +39,9 @@ export function advanceWeek(state) {
   if (next.metagame.solveLevel > DIVERSITY_EROSION_SOLVE_FLOOR) {
     const pressure = (next.metagame.solveLevel - DIVERSITY_EROSION_SOLVE_FLOOR) / 100
     next.metagame.diversity = clamp(next.metagame.diversity - pressure * DIVERSITY_EROSION_RATE, 0, 100)
+    // Same pressure concentrates the metashare: the community piles into the best
+    // deck, so the field tilts toward its already-dominant archetype as it solves.
+    next.metagame.archetypes = concentrate(next.metagame.archetypes, pressure * 0.5)
   }
 
   // Sealed-product revenue: every live set sells packs (capped by its print
@@ -66,10 +70,16 @@ export function advanceWeek(state) {
     next.eventsFeed = [event.entry, ...next.eventsFeed].slice(0, 60)
   }
 
+  // Re-derive the Archetype Balance dial from the (now settled) distribution, so
+  // the scalar the UI/clock/events read always reflects the real metashare after
+  // this week's release/solve/ban effects. The distribution is the source of
+  // truth; the scalar is a view of how even it is.
+  next.metagame.archetypeBalance = balanceScore(next.metagame.archetypes)
+
   // Segment drift: the four metagame dials exert a slow weekly pull on the
   // player segments — a healthy meta grows the base, a rotting one bleeds it,
-  // each segment reacting to the dials it cares about. Runs after personas/events
-  // have settled this week's dials, so it reads their final values.
+  // each segment reacting to the dials it cares about (now including how the
+  // metashare is split). Runs after personas/events have settled the dials.
   applySegmentDrift(next)
 
   // Clock attention: classify the week just resolved so the clock can auto-slow
