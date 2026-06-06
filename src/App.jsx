@@ -5,6 +5,7 @@ import MetagamePanel from './components/MetagamePanel.jsx'
 import MarketTicker from './components/MarketTicker.jsx'
 import FeedbackFeed from './components/FeedbackFeed.jsx'
 import EventsFeed from './components/EventsFeed.jsx'
+import PersonasPanel from './components/PersonasPanel.jsx'
 import SetBuilder from './components/setbuilder/SetBuilder.jsx'
 
 export default function App() {
@@ -21,6 +22,7 @@ export default function App() {
         </section>
         <aside className="col col--side">
           <FeedbackFeed state={game.state} />
+          <PersonasPanel state={game.state} />
           <EventsFeed state={game.state} />
         </aside>
       </main>

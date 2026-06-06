@@ -271,3 +271,44 @@ body {
 }
 
 .feed__item { padding: 8px 10px; background: var(--surface-2); border-radius: 6px; font-size: 0.88rem; line-height: 1.35; }
+
+/* ---- Community chatter items ---- */
+.feed__item { border-left: 3px solid transparent; display: flex; flex-direction: column; gap: 4px; }
+.chatter__head { display: flex; align-items: center; gap: 7px; font-size: 0.72rem; }
+.chatter__name { font-weight: 700; }
+.chatter__reach { color: var(--text-dim); letter-spacing: 1px; font-size: 0.6rem; }
+.chatter__week { margin-left: auto; color: var(--text-dim); }
+.chatter__text { font-size: 0.85rem; line-height: 1.35; }
+
+/* Stance accents */
+.item--ban { border-left-color: var(--bad); }
+.item--warn { border-left-color: var(--warn); }
+.item--pan { border-left-color: #8a8fb0; }
+.item--hype { border-left-color: var(--accent-2); }
+.item--love { border-left-color: var(--good); }
+.item--neutral { border-left-color: var(--border); }
+
+/* Type badges */
+.badge {
+  font-size: 0.58rem; font-weight: 800; letter-spacing: 0.5px;
+  padding: 2px 5px; border-radius: 4px; color: #0b0c1a;
+}
+.badge--streamer { background: #ff7eb6; }
+.badge--competitor { background: #6c5ce7; color: #fff; }
+.badge--collector { background: var(--pop); }
+.badge--reviewer { background: var(--accent-2); }
+.badge--theory { background: #79e36b; }
+
+/* ---- Personas roster ---- */
+.roster { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; }
+.roster__row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 8px; background: var(--surface-2); border-radius: 6px; }
+.roster__main { display: flex; flex-direction: column; min-width: 0; }
+.roster__name { font-weight: 600; font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.roster__type { font-size: 0.68rem; color: var(--text-dim); }
+.roster__meta { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.bar { display: inline-block; width: 54px; height: 6px; background: var(--surface); border-radius: 99px; overflow: hidden; }
+.bar__fill { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+.roster__mood { font-size: 0.7rem; font-weight: 700; min-width: 56px; text-align: right; }
+.mood--good { color: var(--good); }
+.mood--bad { color: var(--bad); }
+.mood--neutral { color: var(--text-dim); }

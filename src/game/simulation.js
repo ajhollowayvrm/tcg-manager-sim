@@ -6,6 +6,7 @@
 // is live below.
 
 import { resolveMarket } from './market.js'
+import { reactPersonas, applyPersonaEffects } from './personas.js'
 
 const SOLVE_DECAY_PER_WEEK = 4 // tune so a format stays fresh for a few months
 
@@ -28,7 +29,11 @@ export function advanceWeek(state) {
   next.cards = cards
   next.movers = movers
 
-  // TODO: persona reactions feeding feedbackFeed (signal vs noise)
+  // Community personas react to the resolved week: they post to the feedback
+  // feed (signal vs noise) and their reactions feed back as hype/ban-pressure
+  // on cards, extra solve pressure, and player-base sway for next week.
+  applyPersonaEffects(next, reactPersonas(next))
+
   // TODO: events feed firing curveballs
   // TODO: segment drift driven by metagame dials
   // TODO: auto-slow/pause the clock on interesting moments

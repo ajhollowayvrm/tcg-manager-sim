@@ -1,6 +1,8 @@
 // Initial game state — mirrors the GameState sketch in docs/BRIEF.md.
 // This is the single source of truth the simulation mutates each tick.
 
+import { PERSONAS } from './content/personas.js'
+
 export function createInitialState() {
   return {
     week: 1,
@@ -26,7 +28,9 @@ export function createInitialState() {
     sets: [],
     cards: [],
     artists: [], // seeded by content module (~30+ named artists)
-    personas: [], // seeded by content module (~15–20 named voices)
+    // Personas carry a mutable `sentiment` (mood toward the game) on top of
+    // their static reach/credibility/taste from the content roster.
+    personas: PERSONAS.map((p) => ({ ...p, sentiment: 10 })),
 
     feedbackFeed: [], // qualitative chatter — sometimes lies
     eventsFeed: [], // news/curveballs
