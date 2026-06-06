@@ -10,6 +10,8 @@ import { shiftToward, balanceScore } from './archetypes.js'
 import { currentArtist } from './artists.js'
 
 export const RARITIES = ['common', 'uncommon', 'rare', 'mythic']
+export const MIN_SIGNATURE_CARDS = 5
+export const MAX_SIGNATURE_CARDS = 15
 
 // A fresh draft the player edits in the set-creation panel.
 export function createDraft(setNumber) {
@@ -23,7 +25,7 @@ export function createDraft(setNumber) {
     printRun: 50, // 0–100: under-print ↔ over-print
     pricePoint: 4.5, // MSRP of a sealed pack, dollars
 
-    // 5–10 hand-designed signature cards.
+    // 5–15 signature cards — hand-designed and/or auto-generated (see fillRandomCards).
     signatureCards: [], // { id, name, rarity, artistId, mode, power, rulesText }
 
     // Prerelease: the one real sub-decision.
@@ -41,6 +43,60 @@ export function createSignatureCard(n) {
     power: 50, // flavor-mode overall power rating (0–100)
     rulesText: '', // mechanical-mode rules the sim parses (lightly, for now)
   }
+}
+
+// ---- Auto-generated signature cards --------------------------------------
+// The player doesn't have to hand-design every signature card — they can fill
+// the rest with themed-random cards and tweak any of them afterward.
+
+// Title fragments for procedural card names, blended with the theme's own
+// mechanics so a Dragons set yields "Scorch Warden", a Cyber set "Uplink Spec".
+const NAME_PREFIX = ['Elder', 'Grand', 'Feral', 'Hollow', 'Radiant', 'Dread', 'Iron', 'Wild', 'Lost', 'First', 'Crimson', 'Gilded']
+const NAME_NOUN = ['Warden', 'Herald', 'Sovereign', 'Specter', 'Champion', 'Oracle', 'Reaver', 'Sentinel', 'Avatar', 'Colossus', 'Vanguard', 'Harbinger']
+
+function randomCardName(theme, rng) {
+  // Sometimes lead with one of the theme's mechanics for flavor cohesion.
+  const lead = theme && rng() < 0.5 ? pickFrom(theme.mechanics, rng) : pickFrom(NAME_PREFIX, rng)
+  return `${lead} ${pickFrom(NAME_NOUN, rng)}`
+}
+
+function pickFrom(pool, rng) {
+  return pool[Math.floor(rng() * pool.length) % pool.length]
+}
+
+// A themed-random signature card: flavor mode, rarity mix weighted toward rare
+// with the occasional mythic chase, power scattered around the set's budget.
+export function makeRandomCard(n, theme, powerBudget, rng) {
+  const card = createSignatureCard(n)
+  card.name = randomCardName(theme, rng)
+  // Rarity mix: ~55% rare, ~20% mythic, ~20% uncommon, ~5% common.
+  const r = rng()
+  card.rarity = r < 0.05 ? 'common' : r < 0.25 ? 'uncommon' : r < 0.8 ? 'rare' : 'mythic'
+  // Power scattered around the budget, clamped to a sane band.
+  card.power = clamp(Math.round(powerBudget + range(rng, -18, 18)), 5, 100)
+  return card
+}
+
+// Append randomly-generated cards to an existing list up to `target` count,
+// keeping the player's hand-made cards. Returns a new array. Used by the
+// "Fill to 5" and "Add random card" controls. Caps at MAX_SIGNATURE_CARDS.
+export function fillRandomCards(existing, target, theme, powerBudget, seedKey) {
+  const rng = makeRng(hashSeed(`fill:${seedKey}:${existing.length}:${target}`))
+  const out = [...existing]
+  const cap = Math.min(target, MAX_SIGNATURE_CARDS)
+  let n = nextCardIndex(out)
+  while (out.length < cap) out.push(makeRandomCard(n++, theme, powerBudget, rng))
+  return out
+}
+
+// Find a fresh card-index that won't collide with existing ids (sig_N).
+function nextCardIndex(cards) {
+  let max = 0
+  for (const c of cards) {
+    const m = /sig_(\d+)/.exec(c.id)
+    if (m) max = Math.max(max, Number(m[1]))
+  }
+  return max + 1
 }
 
 // ---- Cost ----------------------------------------------------------------
@@ -70,7 +126,7 @@ export function validateDraft(draft) {
   const errors = []
   if (!draft.name.trim()) errors.push('Set needs a name.')
   if (draft.signatureCards.length < 5) errors.push('Design at least 5 signature cards.')
-  if (draft.signatureCards.length > 10) errors.push('No more than 10 signature cards.')
+  if (draft.signatureCards.length > 15) errors.push('No more than 15 signature cards.')
   if (draft.prerelease.chasePullable && !draft.prerelease.enabled) {
     errors.push('Chase-pullable requires prerelease enabled.')
   }

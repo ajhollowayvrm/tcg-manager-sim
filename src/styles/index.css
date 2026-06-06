@@ -153,7 +153,8 @@ body {
 
 .builder__section { display: flex; flex-direction: column; gap: 14px; }
 .builder__h3 { margin: 0; font-size: 0.95rem; color: var(--accent-2); }
-.builder__sectionhead { display: flex; align-items: center; justify-content: space-between; }
+.builder__sectionhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.builder__cardbtns { display: flex; gap: 6px; flex-wrap: wrap; }
 
 /* Fields */
 .field { display: flex; flex-direction: column; gap: 4px; font-size: 0.8rem; color: var(--text-dim); }

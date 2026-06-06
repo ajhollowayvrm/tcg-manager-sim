@@ -7,8 +7,11 @@ import SignatureCardEditor from './SignatureCardEditor.jsx'
 import {
   createDraft,
   createSignatureCard,
+  fillRandomCards,
   setCost,
   validateDraft,
+  MIN_SIGNATURE_CARDS,
+  MAX_SIGNATURE_CARDS,
 } from '../../game/sets.js'
 import { THEMES, getTheme } from '../../game/content/themes.js'
 
@@ -16,11 +19,22 @@ function formatCash(n) {
   return '$' + n.toLocaleString('en-US')
 }
 
+// A fresh sig_N id that won't collide with existing cards.
+function nextId(cards) {
+  let max = 0
+  for (const c of cards) {
+    const m = /sig_(\d+)/.exec(c.id)
+    if (m) max = Math.max(max, Number(m[1]))
+  }
+  return max + 1
+}
+
 export default function SetBuilder({ setNumber, cash, artists, onRelease, onClose }) {
   const [draft, setDraft] = useState(() => {
     const d = createDraft(setNumber)
-    // Start with the minimum viable count so the player can release fast.
-    d.signatureCards = Array.from({ length: 5 }, (_, i) => createSignatureCard(i + 1))
+    // Start with the minimum viable count, auto-generated and themed, so the
+    // player can release immediately or hand-tweak any of them.
+    d.signatureCards = fillRandomCards([], MIN_SIGNATURE_CARDS, getTheme(d.themeId), d.powerBudget, `init:${setNumber}`)
     return d
   })
 
@@ -40,10 +54,25 @@ export default function SetBuilder({ setNumber, cash, artists, onRelease, onClos
       signatureCards: d.signatureCards.map((c, i) => (i === idx ? next : c)),
     }))
 
+  // Add one blank hand-design card (capped at the max).
   const addCard = () =>
+    setDraft((d) => {
+      if (d.signatureCards.length >= MAX_SIGNATURE_CARDS) return d
+      return { ...d, signatureCards: [...d.signatureCards, createSignatureCard(nextId(d.signatureCards))] }
+    })
+
+  // Auto-fill themed-random cards up to the 5-card minimum, keeping hand-made ones.
+  const fillToMin = () =>
     setDraft((d) => ({
       ...d,
-      signatureCards: [...d.signatureCards, createSignatureCard(d.signatureCards.length + 1)],
+      signatureCards: fillRandomCards(d.signatureCards, MIN_SIGNATURE_CARDS, getTheme(d.themeId), d.powerBudget, `${d.name}:min`),
+    }))
+
+  // Add one themed-random card (capped at the max).
+  const addRandom = () =>
+    setDraft((d) => ({
+      ...d,
+      signatureCards: fillRandomCards(d.signatureCards, d.signatureCards.length + 1, getTheme(d.themeId), d.powerBudget, `${d.name}:add`),
     }))
 
   const removeCard = (idx) =>
@@ -147,14 +176,29 @@ export default function SetBuilder({ setNumber, cash, artists, onRelease, onClos
           {/* Signature cards */}
           <section className="builder__section">
             <div className="builder__sectionhead">
-              <h3 className="builder__h3">Signature cards ({draft.signatureCards.length}/10)</h3>
-              <button
-                className="btn"
-                onClick={addCard}
-                disabled={draft.signatureCards.length >= 10}
-              >
-                + Add card
-              </button>
+              <h3 className="builder__h3">
+                Signature cards ({draft.signatureCards.length}/{MAX_SIGNATURE_CARDS})
+                <span className="muted"> · {MIN_SIGNATURE_CARDS} min</span>
+              </h3>
+              <div className="builder__cardbtns">
+                {draft.signatureCards.length < MIN_SIGNATURE_CARDS && (
+                  <button className="btn" onClick={fillToMin}>✨ Fill to {MIN_SIGNATURE_CARDS}</button>
+                )}
+                <button
+                  className="btn"
+                  onClick={addRandom}
+                  disabled={draft.signatureCards.length >= MAX_SIGNATURE_CARDS}
+                >
+                  ✨ Add random
+                </button>
+                <button
+                  className="btn"
+                  onClick={addCard}
+                  disabled={draft.signatureCards.length >= MAX_SIGNATURE_CARDS}
+                >
+                  + Add card
+                </button>
+              </div>
             </div>
             <div className="sigcards">
               {draft.signatureCards.map((card, i) => (
