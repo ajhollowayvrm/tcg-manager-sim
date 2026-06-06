@@ -9,19 +9,23 @@ import { banCard, rotateFormat } from './bans.js'
 
 function reducer(state, action) {
   switch (action.type) {
-    case 'TICK':
+    case 'TICK': {
       if (state.gameOver) return state
-      return advanceWeek(state)
+      const next = advanceWeek(state)
+      return applyClockDirective(next)
+    }
     case 'PLAY':
       if (state.gameOver) return state // can't un-pause a finished run
-      return { ...state, clock: { ...state.clock, paused: false, pauseReason: null } }
+      return { ...state, clock: { ...state.clock, paused: false, pauseReason: null, autoEvent: null } }
     case 'PAUSE':
       return {
         ...state,
         clock: { ...state.clock, paused: true, pauseReason: action.reason ?? state.clock.pauseReason },
       }
     case 'SET_SPEED':
-      return { ...state, clock: { ...state.clock, speed: action.speed } }
+      // A manual speed choice hands clock control back to the player: stop
+      // auto-fast-forwarding quiet weeks until the next attention moment.
+      return { ...state, clock: { ...state.clock, speed: action.speed, baseSpeed: action.speed, autoSpeed: false } }
     case 'RELEASE_SET': {
       const { set, cards, cashDelta, metagame } = releaseSet(state, action.draft)
       return {
@@ -71,6 +75,35 @@ function reducer(state, action) {
     default:
       return state
   }
+}
+
+// Apply the clock-attention directive advanceWeek attached to the resolved week.
+// Quiet weeks fast-forward (auto-speed, remembering the player's base speed);
+// interesting moments slow back to base speed; hard stops pause outright.
+function applyClockDirective(next) {
+  const d = next.clock.autoEvent
+  const clock = { ...next.clock, autoEvent: null }
+  // Remember the player's chosen speed so auto-fast-forward is reversible.
+  const baseSpeed = clock.baseSpeed ?? clock.speed
+
+  if (!d) return { ...next, clock: { ...clock, baseSpeed } }
+
+  if (d.pause) {
+    return { ...next, clock: { ...clock, baseSpeed, paused: true, pauseReason: d.reason } }
+  }
+  if (d.slow) {
+    // Snap out of any auto fast-forward and surface what to watch — but keep
+    // playing (the player asked to run; this just decelerates and informs).
+    return { ...next, clock: { ...clock, baseSpeed, speed: baseSpeed, autoSpeed: false, pauseReason: d.reason } }
+  }
+  if (d.quietSpeed) {
+    // Nothing notable — compress the week. Only speed up, never below base.
+    return {
+      ...next,
+      clock: { ...clock, baseSpeed, speed: Math.max(baseSpeed, d.quietSpeed), autoSpeed: true, pauseReason: null },
+    }
+  }
+  return { ...next, clock: { ...clock, baseSpeed } }
 }
 
 const TICK_MS = 800 // wall-clock ms per simulated week at speed 1

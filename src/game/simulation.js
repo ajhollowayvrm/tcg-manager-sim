@@ -10,6 +10,7 @@ import { reactPersonas, applyPersonaEffects } from './personas.js'
 import { resolveRevenue } from './revenue.js'
 import { rollEvent, applyEventEffects } from './events.js'
 import { applySegmentDrift } from './segments.js'
+import { clockDirective } from './clock.js'
 
 const SOLVE_DECAY_PER_WEEK = 4 // tune so a format stays fresh for a few months
 
@@ -58,7 +59,10 @@ export function advanceWeek(state) {
   // have settled this week's dials, so it reads their final values.
   applySegmentDrift(next)
 
-  // TODO: auto-slow/pause the clock on interesting moments
+  // Clock attention: classify the week just resolved so the clock can auto-slow
+  // or pause on interesting moments and fast-forward through quiet ones. The
+  // directive is read by the reducer in useGame; game-over below overrides it.
+  next.clock = { ...next.clock, autoEvent: clockDirective(state, next, event) }
 
   // Loss conditions (twin death spirals): cash or active player base hits zero.
   if (!next.gameOver) {
@@ -69,7 +73,7 @@ export function advanceWeek(state) {
     }
     if (next.gameOver) {
       next.eventsFeed = [{ week: next.week, text: `GAME OVER: ${next.gameOver.reason}` }, ...next.eventsFeed]
-      next.clock = { ...next.clock, paused: true, pauseReason: next.gameOver.reason }
+      next.clock = { ...next.clock, paused: true, pauseReason: next.gameOver.reason, autoEvent: null }
     }
   }
 

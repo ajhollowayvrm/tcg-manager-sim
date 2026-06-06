@@ -20,17 +20,15 @@ per-section build status (✅ done / ⏳ remaining) and the v2 roadmap.
 
 ### Known v1 gaps (remaining work)
 
-- **Segment drift from the metagame dials** — the four dials don't yet passively
-  push player segments week-to-week; segments only move via events, bans, and
-  persona sway. (`// TODO` in `simulation.js`.)
-- **Clock auto-slow on interesting moments** — the clock auto-*pauses* on
-  release/ban/rotate/game-over, but doesn't auto-*slow* on spikes, crashes, or
-  ban-pressure thresholds. (`// TODO` in `simulation.js`.)
-- **Quiet-week fast-forward** — quiet weeks don't yet compress automatically.
 - **Save/load string** — the brief's optional copy/paste save is not implemented.
+- **Artist trajectory** — artists have a `trajectory` field but don't yet rise or
+  blow up dynamically over a run; commissioning is otherwise complete.
 
 After those, the brief calls for a frontend-polish pass and the open tuning
 notes (decay rate, market variance, feedback-noise ratio).
+
+_Recently completed: segment drift from the metagame dials (`segments.js`) and
+clock auto-slow / auto-pause / quiet-week fast-forward (`clock.js`)._
 
 ## Tech
 

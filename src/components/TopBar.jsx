@@ -38,13 +38,18 @@ export default function TopBar({ game, onDesignSet }) {
           {SPEEDS.map((s) => (
             <button
               key={s}
-              className={'btn btn--speed' + (clock.speed === s ? ' is-active' : '')}
+              className={'btn btn--speed' + ((clock.baseSpeed ?? clock.speed) === s ? ' is-active' : '')}
               onClick={() => setSpeed(s)}
               disabled={!!gameOver}
             >
               {s}×
             </button>
           ))}
+          {clock.autoSpeed && !clock.paused && (
+            <span className="speeds__ff" title={`Quiet stretch — fast-forwarding at ${clock.speed}×`}>
+              ⏩ {clock.speed}×
+            </span>
+          )}
         </div>
       </div>
 
@@ -54,7 +59,7 @@ export default function TopBar({ game, onDesignSet }) {
           <button className="btn btn--newgame" onClick={reset}>New Game</button>
         </div>
       ) : (
-        clock.pauseReason && clock.paused && <div className="topbar__reason">{clock.pauseReason}</div>
+        clock.pauseReason && <div className={'topbar__reason' + (clock.paused ? '' : ' topbar__reason--live')}>{clock.pauseReason}</div>
       )}
     </header>
   )

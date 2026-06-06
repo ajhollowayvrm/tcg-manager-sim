@@ -39,7 +39,10 @@ export function createInitialState() {
     gameOver: null, // { reason } once cash or player base hits zero
 
     clock: {
-      speed: 1, // weeks advanced per tick when playing
+      speed: 1, // weeks advanced per tick when playing (may be auto-raised on quiet weeks)
+      baseSpeed: 1, // the player's chosen speed; auto-fast-forward never goes below it
+      autoSpeed: false, // true while the clock is auto-compressing quiet weeks
+      autoEvent: null, // transient per-tick directive from clock.js (pause/slow/quiet)
       paused: true,
       pauseReason: 'New game — design your first set.',
     },

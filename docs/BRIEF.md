@@ -36,14 +36,16 @@ You survive as long as you balance fresh-product pressure against power-creep, o
 
 ---
 
-## Time system ⏳
+## Time system ✅
 
 A **play / pause / fast-forward** clock running in weeks.
 
 > **Status:** play / pause / fast-forward (variable speed) ✅. Auto-**pause** on
-> set release, ban, rotate, and game-over ✅. **Gaps:** quiet-week auto-fast-forward
-> ⬜ and auto-**slow** on spikes/crashes/embargo-lift/ban-pressure thresholds ⬜
-> (`// TODO` in `simulation.js`).
+> set release, ban, rotate, game-over, and hard crises (a card crossing a
+> ban-pressure threshold, cash dipping into the danger zone) ✅. Auto-**slow** to
+> the player's base speed on interesting moments — sharp market movers, dramatic
+> events, notable player-base swings ✅. Quiet weeks **auto-fast-forward** and
+> snap back when something happens ✅ (`clock.js`, applied in `useGame.js`).
 
 - Quiet weeks fast-forward automatically (or blur by) so there's no "spam next through nothing."
 - The clock **auto-slows or pauses** when something needs the player: a set releases, a review embargo lifts, a card unexpectedly spikes or crashes, a tournament concludes, a major event fires, a ban-pressure threshold is crossed.
@@ -120,15 +122,16 @@ These should be partly obscured by feedback noise (see below) — the player inf
 
 ---
 
-## Player segments ⏳
+## Player segments ✅
 
 The market and metagame are populated by segments that react differently to the same decision:
 
-> **Status:** the three segments exist and are moved by events, bans, rotations,
-> and reviewer/streamer sway ✅. **Gap:** segments don't yet *passively drift*
-> from the four metagame dials week-to-week (e.g. low diversity bleeding
-> competitive players) — `// TODO: segment drift driven by metagame dials` in
-> `simulation.js` ⬜.
+> **Status:** the three segments exist, are moved by events, bans, rotations, and
+> reviewer/streamer sway, and now *passively drift* from the four metagame dials
+> each week — competitive bleed on a solved/oppressive format, casual churn out
+> of a stale one, collectors bleed as power level creeps (`segments.js`). So a
+> rotting meta thins the base on its own, giving the player-base death spiral its
+> slow on-ramp ✅.
 - **Competitive players** — care about diversity & solve level.
 - **Casual / combo players** ("new toys" crowd) — want fresh mechanics & power.
 - **Collectors / investors** — track chase value, art, and scarcity.

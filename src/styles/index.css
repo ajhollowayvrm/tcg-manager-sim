@@ -78,6 +78,8 @@ body {
   font-size: 0.85rem;
   color: var(--warn);
 }
+/* A "watch this" note while the clock keeps running (auto-slow moment). */
+.topbar__reason--live { color: var(--text-dim); }
 .topbar__reason--over {
   color: var(--bad);
   font-weight: 700;
@@ -85,6 +87,13 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+/* Auto fast-forward indicator next to the speed buttons. */
+.speeds__ff {
+  font-size: 0.75rem;
+  color: var(--accent-2);
+  align-self: center;
+  white-space: nowrap;
 }
 .btn--newgame { background: var(--good); border-color: var(--good); color: #042a16; }
 .btn--newgame:hover { background: #3ad872; }
