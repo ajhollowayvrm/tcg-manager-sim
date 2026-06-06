@@ -12,7 +12,9 @@ export default function MarketTicker({ state }) {
           {state.cards.map((card) => (
             <li key={card.id} className="ticker__row">
               <span className="ticker__name">{card.name}</span>
-              <span className="ticker__price">${card.singlePrice ?? '—'}</span>
+              <span className="ticker__price">
+                {card.singlePrice != null ? `$${card.singlePrice.toFixed(2)}` : '—'}
+              </span>
             </li>
           ))}
         </ul>

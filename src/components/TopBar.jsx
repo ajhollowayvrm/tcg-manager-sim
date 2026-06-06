@@ -6,7 +6,7 @@ function formatCash(n) {
   return '$' + n.toLocaleString('en-US')
 }
 
-export default function TopBar({ game }) {
+export default function TopBar({ game, onDesignSet }) {
   const { state, play, pause, setSpeed } = game
   const { week, cash, playerBase, clock } = state
 
@@ -19,6 +19,8 @@ export default function TopBar({ game }) {
         <Stat label="Cash" value={formatCash(cash)} />
         <Stat label="Players" value={playerBase.toLocaleString('en-US')} />
       </div>
+
+      <button className="btn btn--design" onClick={onDesignSet}>+ Design a Set</button>
 
       <div className="topbar__clock">
         {clock.paused ? (

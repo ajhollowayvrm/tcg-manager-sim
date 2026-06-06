@@ -2,10 +2,10 @@
 // later they should be partly obscured by feedback noise (see BRIEF.md).
 
 const DIALS = [
-  { key: 'diversity', label: 'Diversity', hint: 'How many archetypes are viable' },
-  { key: 'powerLevel', label: 'Power Level', hint: 'The format ceiling — creeps up' },
-  { key: 'archetypeBalance', label: 'Archetype Balance', hint: 'Aggro / control / combo / midrange' },
-  { key: 'solveLevel', label: 'Solve Level', hint: 'How figured-out the format is' },
+  { id: 'diversity', label: 'Diversity', hint: 'How many archetypes are viable' },
+  { id: 'powerLevel', label: 'Power Level', hint: 'The format ceiling — creeps up' },
+  { id: 'archetypeBalance', label: 'Archetype Balance', hint: 'Aggro / control / combo / midrange' },
+  { id: 'solveLevel', label: 'Solve Level', hint: 'How figured-out the format is' },
 ]
 
 export default function MetagamePanel({ state }) {
@@ -14,7 +14,7 @@ export default function MetagamePanel({ state }) {
       <h2 className="panel__title">Metagame Health</h2>
       <div className="dials">
         {DIALS.map((dial) => (
-          <Dial key={dial.key} {...dial} value={state.metagame[dial.key]} />
+          <Dial key={dial.id} label={dial.label} hint={dial.hint} value={state.metagame[dial.id]} />
         ))}
       </div>
     </div>

@@ -1,16 +1,19 @@
+import { useState } from 'react'
 import { useGame } from './game/useGame.js'
 import TopBar from './components/TopBar.jsx'
 import MetagamePanel from './components/MetagamePanel.jsx'
 import MarketTicker from './components/MarketTicker.jsx'
 import FeedbackFeed from './components/FeedbackFeed.jsx'
 import EventsFeed from './components/EventsFeed.jsx'
+import SetBuilder from './components/setbuilder/SetBuilder.jsx'
 
 export default function App() {
   const game = useGame()
+  const [building, setBuilding] = useState(false)
 
   return (
     <div className="app">
-      <TopBar game={game} />
+      <TopBar game={game} onDesignSet={() => setBuilding(true)} />
       <main className="dashboard">
         <section className="col col--main">
           <MetagamePanel state={game.state} />
@@ -21,6 +24,15 @@ export default function App() {
           <EventsFeed state={game.state} />
         </aside>
       </main>
+
+      {building && (
+        <SetBuilder
+          setNumber={game.state.sets.length + 1}
+          cash={game.state.cash}
+          onRelease={game.release}
+          onClose={() => setBuilding(false)}
+        />
+      )}
     </div>
   )
 }
