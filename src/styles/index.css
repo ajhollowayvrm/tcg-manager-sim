@@ -99,9 +99,10 @@ body {
   background: linear-gradient(90deg, var(--good), var(--accent-2));
   border: none; color: #042a16; font-size: 1rem; padding: 10px 18px;
 }
-.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; filter: grayscale(0.7); }
 .btn:disabled:hover { background: var(--surface-2); }
-.btn--release:disabled:hover { background: linear-gradient(90deg, var(--good), var(--accent-2)); }
+.btn--release:disabled { background: var(--surface-2); color: var(--text-dim); }
+.btn--release:disabled:hover { background: var(--surface-2); }
 
 /* ---- Modal / set builder ---- */
 .modal {
@@ -219,6 +220,54 @@ body {
 
 /* ---- Ticker & feeds ---- */
 .ticker, .feed { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.ticker__row { display: flex; justify-content: space-between; padding: 6px 8px; background: var(--surface-2); border-radius: 6px; }
-.ticker__price { font-variant-numeric: tabular-nums; font-weight: 700; }
+.ticker__row {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  background: var(--surface-2);
+  border-radius: 6px;
+  border-left: 3px solid transparent;
+}
+.ticker__row.is-up { border-left-color: var(--good); animation: popUp 0.6s ease; }
+.ticker__row.is-down { border-left-color: var(--bad); animation: popDown 0.6s ease; }
+.ticker__name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ticker__sealed { font-size: 0.75rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.ticker__price { font-variant-numeric: tabular-nums; font-weight: 700; text-align: right; }
+.ticker__pct { font-size: 0.72rem; margin-left: 6px; font-weight: 600; opacity: 0.85; }
+.is-up .ticker__pct { color: var(--good); }
+.is-down .ticker__pct { color: var(--bad); }
+
+.spark { display: block; }
+.spark--flat { width: 60px; height: 18px; }
+
+/* Rarity tints for card names */
+.rarity--common { color: var(--text); }
+.rarity--uncommon { color: #b8c0d8; }
+.rarity--rare { color: var(--accent-2); }
+.rarity--mythic { color: var(--pop); }
+
+/* Movers chips */
+.movers { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.chip {
+  font-size: 0.72rem; font-weight: 700; padding: 3px 8px; border-radius: 99px;
+  font-variant-numeric: tabular-nums; animation: popIn 0.4s ease;
+}
+.chip--up { background: rgba(46, 204, 113, 0.16); color: var(--good); }
+.chip--down { background: rgba(255, 107, 107, 0.16); color: var(--bad); }
+
+@keyframes popUp {
+  0% { background: rgba(46, 204, 113, 0.28); }
+  100% { background: var(--surface-2); }
+}
+@keyframes popDown {
+  0% { background: rgba(255, 107, 107, 0.28); }
+  100% { background: var(--surface-2); }
+}
+@keyframes popIn {
+  0% { transform: scale(0.8); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
 .feed__item { padding: 8px 10px; background: var(--surface-2); border-radius: 6px; font-size: 0.88rem; line-height: 1.35; }

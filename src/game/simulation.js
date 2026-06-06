@@ -1,9 +1,11 @@
 // The simulation step. Advances the world by one week and returns the next state.
 // Pure-ish: takes a state, returns a new state. Keeps React rendering predictable.
 //
-// v1 stub: this currently only advances the clock and decays the format.
-// The real systems (market resolution, persona reactions, events, segment
-// drift) hang off this single entry point — see docs/BRIEF.md "Core loop".
+// The real systems (persona reactions, events, segment drift) still hang off
+// this single entry point — see docs/BRIEF.md "Core loop". Market resolution
+// is live below.
+
+import { resolveMarket } from './market.js'
 
 const SOLVE_DECAY_PER_WEEK = 4 // tune so a format stays fresh for a few months
 
@@ -20,7 +22,12 @@ export function advanceWeek(state) {
     100,
   )
 
-  // TODO: market resolution (sealed vs singles, variance + momentum)
+  // Secondary market: resolve every card's singles & sealed price for the week.
+  // resolveMarket reads next.week/metagame (already advanced) and the cards.
+  const { cards, movers } = resolveMarket(next)
+  next.cards = cards
+  next.movers = movers
+
   // TODO: persona reactions feeding feedbackFeed (signal vs noise)
   // TODO: events feed firing curveballs
   // TODO: segment drift driven by metagame dials

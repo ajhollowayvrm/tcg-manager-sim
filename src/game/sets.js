@@ -121,9 +121,13 @@ export function generateCards(draft, setId, week) {
       rarity: card.rarity,
       artistId: card.artistId,
       popFactors: factors,
-      sealedPrice: draft.pricePoint,
+      sealedPrice: draft.pricePoint, // launch = MSRP; appreciates via sealedPrice()
       singlePrice,
       priceHistory: [singlePrice],
+      // Market state. Launch hype carries the card's hype factor; prerelease
+      // with pullable chase front-loads (and later deflates) that buzz.
+      hype: (factors.hype / 100) * (draft.prerelease.chasePullable ? 1.3 : 1),
+      momentum: 0,
     }
   })
 }

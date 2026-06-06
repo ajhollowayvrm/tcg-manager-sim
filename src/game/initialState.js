@@ -30,6 +30,7 @@ export function createInitialState() {
 
     feedbackFeed: [], // qualitative chatter — sometimes lies
     eventsFeed: [], // news/curveballs
+    movers: [], // notable market movers from the latest week (for the ticker)
 
     clock: {
       speed: 1, // weeks advanced per tick when playing
