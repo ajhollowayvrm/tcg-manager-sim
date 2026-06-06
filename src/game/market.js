@@ -10,20 +10,31 @@ const PRICE_HISTORY_LEN = 26 // ~half a year of weekly points kept per card
 
 // ---- Fair value ----------------------------------------------------------
 
-// A card's fair value blends its hidden pop factors, but playability is
-// modulated by the live metagame: a strong card matters most while the format
-// is fresh and unsolved, and loses relevance as the meta gets figured out and
-// as power level creeps past it. Rarity and art appeal are demand-stable.
+// A card's fair value. This is a PLAYED game (not a pure collectible), so a
+// card's competitive relevance — its playability, modulated by the live meta —
+// is the PRIMARY price driver: the staples of the best deck are what cost money,
+// and a card the format has passed by drifts toward bulk no matter how it looks.
+//
+// But rarity and art still carry real collectible value (the "Pokémon" pull): a
+// gorgeous chase mythic holds a respectable premium even if it's not a 4-of, it
+// just won't out-price the meta staples. So rarity/art form a collectible BASE
+// that meta-relevance is layered on top of.
 export function fairValue(card, set, metagame) {
   const f = card.popFactors
-  // Meta relevance multiplier, 0.4–1.3. High solve & high power erode it.
+  // Meta relevance multiplier, 0.35–1.4. High solve & high power erode it; a
+  // fresh format where the card is on-curve maxes it.
   const freshness = 1 - metagame.solveLevel / 140 // fresher meta → higher
   const obsolescence = 1 - Math.max(0, metagame.powerLevel - f.playability) / 200
-  const relevance = clamp(freshness * obsolescence + 0.4, 0.4, 1.3)
+  const relevance = clamp(freshness * obsolescence + 0.4, 0.35, 1.4)
 
-  const playabilityVal = f.playability * relevance * 0.45
-  const rarityVal = f.rarity * 0.18
-  const artVal = f.artAppeal * 0.3
+  // Playability is the dominant term (~60% of a typical card's value), and it's
+  // the only one scaled by meta-relevance — so the meta genuinely moves prices.
+  const playabilityVal = f.playability * relevance * 0.7
+
+  // Collectible base: rarity + art give a price even to unplayed cards, but it's
+  // a secondary floor/premium, not enough to crown a pretty-but-useless card.
+  const rarityVal = f.rarity * 0.12
+  const artVal = f.artAppeal * 0.16
 
   // Under-printed sets keep singles scarce and pricey; over-print drags them.
   const scarcity = 1 + (1 - set.printRun / 100) * 1.4
