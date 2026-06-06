@@ -4,6 +4,10 @@ A browser-based management sim where you run a trading card game company. You do
 
 This brief specifies a complete, buildable **v1**, plus a **v2 roadmap** of parked features.
 
+> **Build status legend** (added as a living checklist; the spec text below is unchanged):
+> ✅ built & wired · ⏳ partially built — gap noted · ⬜ not started.
+> As of the latest commit, the **v1 core loop is built and playable**; remaining gaps are marked ⏳/⬜ inline.
+
 ---
 
 ## Platform & tech constraints
@@ -15,7 +19,7 @@ This brief specifies a complete, buildable **v1**, plus a **v2 roadmap** of park
 
 ---
 
-## Core loop
+## Core loop ✅
 
 The engine of the whole game is **format decay**:
 
@@ -26,15 +30,20 @@ The engine of the whole game is **format decay**:
 
 You survive as long as you balance fresh-product pressure against power-creep, over-printing, and community goodwill. There is **no win condition** — it's an open-ended run you play until you're bored or you lose.
 
-### Loss conditions (twin death spirals)
+### Loss conditions (twin death spirals) ✅
 - **Cash hits zero** — you over-printed, sales cratered, you can't fund the next set.
 - **Active player base hits zero** — the meta rotted, goodwill collapsed, the community left.
 
 ---
 
-## Time system
+## Time system ⏳
 
 A **play / pause / fast-forward** clock running in weeks.
+
+> **Status:** play / pause / fast-forward (variable speed) ✅. Auto-**pause** on
+> set release, ban, rotate, and game-over ✅. **Gaps:** quiet-week auto-fast-forward
+> ⬜ and auto-**slow** on spikes/crashes/embargo-lift/ban-pressure thresholds ⬜
+> (`// TODO` in `simulation.js`).
 
 - Quiet weeks fast-forward automatically (or blur by) so there's no "spam next through nothing."
 - The clock **auto-slows or pauses** when something needs the player: a set releases, a review embargo lifts, a card unexpectedly spikes or crashes, a tournament concludes, a major event fires, a ban-pressure threshold is crossed.
@@ -43,7 +52,7 @@ This keeps an endless sim from feeling like a chore — quiet stretches compress
 
 ---
 
-## Set creation flow
+## Set creation flow ✅
 
 A set is created in two layers:
 
@@ -62,8 +71,13 @@ Hand-designed by the player, with a **per-card granularity toggle**:
 
 The player can mix freely — make one card "the most broken thing ever printed" with full mechanical control, and another pure flavor. Signature cards are what the secondary market and personas react to most strongly.
 
-### Artist commissioning
+### Artist commissioning ⏳
 A roster of **~30+ named artists**, each with:
+
+> **Status:** 32-artist roster, commission picker in the card editor, cost +
+> reach feed a card's art-appeal pop factor and the "beloved artist" event ✅.
+> **Gap:** `trajectory` (rising-star vs. established price movement over time) is
+> a static field — artists don't yet rise/blow up dynamically ⬜.
 - **Style specialty** (affects which themes/cards they elevate).
 - **Cost** (commission fee).
 - **Reputation / reach** (popular artists boost a card's collectibility ceiling and market appeal).
@@ -71,7 +85,7 @@ A roster of **~30+ named artists**, each with:
 
 Commissioning a hot artist for a chase card is a real budget decision that feeds the market's "art appeal" pop factor. Make artists specific and quirky, not interchangeable.
 
-### Prerelease events (Build & Battle style)
+### Prerelease events (Build & Battle style) ✅
 A simple pre-launch toggle — **no locations to pick**. One real sub-decision:
 - **Are chase cards pullable from prerelease product?**
   - Yes → more hype + early revenue, but the meta gets solved sooner and launch-day chase scarcity deflates.
@@ -79,7 +93,7 @@ A simple pre-launch toggle — **no locations to pick**. One real sub-decision:
 
 ---
 
-## The secondary market
+## The secondary market ✅
 
 The reward system. The fun is **watching cards pop or flop**, with enough variance that outcomes aren't fully predictable from your inputs.
 
@@ -93,7 +107,7 @@ The reward system. The fun is **watching cards pop or flop**, with enough varian
 
 ---
 
-## Metagame health (four interacting dials)
+## Metagame health (four interacting dials) ✅
 
 Not a single bar. Four dials that interact and pull on different player segments:
 
@@ -106,9 +120,15 @@ These should be partly obscured by feedback noise (see below) — the player inf
 
 ---
 
-## Player segments
+## Player segments ⏳
 
 The market and metagame are populated by segments that react differently to the same decision:
+
+> **Status:** the three segments exist and are moved by events, bans, rotations,
+> and reviewer/streamer sway ✅. **Gap:** segments don't yet *passively drift*
+> from the four metagame dials week-to-week (e.g. low diversity bleeding
+> competitive players) — `// TODO: segment drift driven by metagame dials` in
+> `simulation.js` ⬜.
 - **Competitive players** — care about diversity & solve level.
 - **Casual / combo players** ("new toys" crowd) — want fresh mechanics & power.
 - **Collectors / investors** — track chase value, art, and scarcity.
@@ -117,7 +137,7 @@ Almost no decision pleases all three. That tension is the game.
 
 ---
 
-## Community personas (lean v1)
+## Community personas (lean v1) ✅
 
 A roster of **~15–20 named, specific, quirky personalities** who put faces on the community and make every other system talk to each other. Each has:
 - **Reach** — how many players they move.
@@ -137,7 +157,7 @@ This is where **signal vs. noise** gets teeth: a high-reach, low-credibility rag
 
 ---
 
-## Feedback system
+## Feedback system ✅
 
 Two channels, deliberately not always in agreement:
 
@@ -148,14 +168,14 @@ The skill the game tests is **telling signal from noise** — judgment, not numb
 
 ---
 
-## Events feed
+## Events feed ✅
 
 A news/events stream that gives an endless run texture and keeps year 6 different from year 2:
 - Counterfeiting scandals, tournament-cheating stories, a beloved artist whose cards suddenly spike, print-run / supply-chain issues, a card so dominant the community demands a ban, viral moments, etc.
 
 ---
 
-## Bans & rotations
+## Bans & rotations ✅
 
 Tools the **player** wields, with **unpredictable community blowback**:
 - Banning a hated, oppressive card can be celebrated *or* backfire, depending on hidden community sentiment.
@@ -163,7 +183,7 @@ Tools the **player** wields, with **unpredictable community blowback**:
 
 ---
 
-## Economy & loss conditions (summary)
+## Economy & loss conditions (summary) ✅
 
 - **Revenue:** sealed product sales (driven by hype, reviews, prerelease, print run, price point), secondary-market activity feeding back into engagement.
 - **Costs:** set development, print runs, artist commissions, prerelease events, (later: sponsorships).
@@ -171,16 +191,24 @@ Tools the **player** wields, with **unpredictable community blowback**:
 
 ---
 
-## Visual direction
+## Visual direction ⏳
 
 Pragmatic and colorful:
+
+> **Status:** clean dashboard skeleton with the vivid crimson/noir skin and an
+> animated market ticker ✅. The brief's end-of-v1 **frontend-polish pass** (full
+> card-frame styling/art in the editor, set symbols) is still pending ⬜.
 - **Clean dashboard skeleton** for the data-heavy parts (easiest to build, correct for a sim).
 - **Color budget spent where it's cheap and high-impact:** vivid palette, real card-frame styling and art in the card editor, set symbols, and animated market-ticker reactions when a card pops.
 - Colorful skin over a clean structure. A frontend-design polish pass at the end.
 
 ---
 
-## Suggested state shape (lightweight sketch for Claude Code)
+## Suggested state shape (lightweight sketch for Claude Code) ✅
+
+> **Status:** implemented in `src/game/initialState.js`, closely matching this
+> sketch. Save/load serialization (the brief's optional copy/paste save string)
+> is not implemented ⬜.
 
 ```
 GameState {
@@ -199,7 +227,7 @@ GameState {
 
 ---
 
-## v2 roadmap (parked features)
+## v2 roadmap (parked features) ⬜
 
 Grouped into three layers. Each assumes the v1 core loop is solid first.
 

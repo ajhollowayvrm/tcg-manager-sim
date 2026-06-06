@@ -9,12 +9,28 @@ Think *Game Dev Tycoon*, but you're The Pokémon Company and the product is card
 
 ## Status
 
-Scaffolded. Vite + React app boots into a dashboard shell with a working
-play/pause/fast-forward clock and the four metagame dials. The simulation
-currently only decays the format each week — the market, personas, events,
-and set-creation systems are stubbed and wired to their panels.
+**v1 core loop is built and playable.** Design a set, release it, and the world
+reacts week by week: the secondary market resolves singles & sealed prices with
+momentum and burstable hype bubbles, 18 named community personas chatter through
+a signal-vs-noise feedback feed, an events feed throws curveballs, and you wield
+bans & rotations against the metagame — all funded by a sealed-product economy
+with the twin cash / player-base death spirals. Format decay drives the whole
+thing. See [`docs/BRIEF.md`](docs/BRIEF.md) for the spec, now annotated with
+per-section build status (✅ done / ⏳ remaining) and the v2 roadmap.
 
-The full v1 specification and v2 roadmap live in [`docs/BRIEF.md`](docs/BRIEF.md).
+### Known v1 gaps (remaining work)
+
+- **Segment drift from the metagame dials** — the four dials don't yet passively
+  push player segments week-to-week; segments only move via events, bans, and
+  persona sway. (`// TODO` in `simulation.js`.)
+- **Clock auto-slow on interesting moments** — the clock auto-*pauses* on
+  release/ban/rotate/game-over, but doesn't auto-*slow* on spikes, crashes, or
+  ban-pressure thresholds. (`// TODO` in `simulation.js`.)
+- **Quiet-week fast-forward** — quiet weeks don't yet compress automatically.
+- **Save/load string** — the brief's optional copy/paste save is not implemented.
+
+After those, the brief calls for a frontend-polish pass and the open tuning
+notes (decay rate, market variance, feedback-noise ratio).
 
 ## Tech
 
@@ -40,6 +56,15 @@ src/
     initialState.js     # GameState shape (see BRIEF.md)
     simulation.js       # advanceWeek() — the one tick entry point
     useGame.js          # reducer + clock hook
-  components/           # TopBar, MetagamePanel, MarketTicker, feeds
-  styles/index.css      # vivid dashboard skin
+    rng.js              # seeded RNG (deterministic weekly resolution)
+    sets.js             # set draft, cost, card generation, release effects
+    market.js           # secondary market: singles & sealed price resolution
+    revenue.js          # weekly sealed-product sales + supply cap
+    personas.js         # persona reaction engine (signal vs noise)
+    events.js           # events catalogue + weekly roll
+    bans.js             # ban / rotate logic + community blowback
+    content/            # static rosters: artists (32), personas (18), themes (10)
+  components/           # TopBar, MetagamePanel, MarketTicker, feeds, panels
+    setbuilder/         # SetBuilder, SignatureCardEditor, Slider
+  styles/index.css      # vivid crimson / noir dashboard skin
 ```
