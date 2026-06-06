@@ -106,7 +106,8 @@ function applyClockDirective(next) {
   return { ...next, clock: { ...clock, baseSpeed } }
 }
 
-const TICK_MS = 800 // wall-clock ms per simulated week at speed 1
+const TICK_MS = 2000 // wall-clock ms per simulated week at speed 1 (1× = a calm
+// ~2s/week; 2× ~1s, 4× ~0.5s; quiet weeks auto-compress via QUIET_SPEED in clock.js)
 
 export function useGame() {
   const [state, dispatch] = useReducer(reducer, undefined, createInitialState)
