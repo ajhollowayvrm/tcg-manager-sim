@@ -67,6 +67,8 @@ body {
 .stat { display: flex; flex-direction: column; line-height: 1.2; }
 .stat__label { font-size: 0.7rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
 .stat__value { font-weight: 700; font-variant-numeric: tabular-nums; }
+.stat--rev .stat__value { color: var(--good); }
+.stat--low .stat__value { color: var(--bad); }
 
 .topbar__clock { display: flex; gap: 8px; align-items: center; }
 .speeds { display: flex; gap: 4px; }
@@ -76,6 +78,16 @@ body {
   font-size: 0.85rem;
   color: var(--warn);
 }
+.topbar__reason--over {
+  color: var(--bad);
+  font-weight: 700;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.btn--newgame { background: var(--good); border-color: var(--good); color: #042a16; }
+.btn--newgame:hover { background: #3ad872; }
 
 /* ---- Buttons ---- */
 .btn {
@@ -349,4 +361,17 @@ body {
   padding: 1px 5px; border-radius: 4px; margin-left: 6px; vertical-align: middle; }
 .tag--banned { background: var(--bad); color: #2b0606; }
 .tag--rotated { background: var(--silver); color: #0b0c1a; }
+.tag--soldout { background: var(--good); color: #042a16; }
 .ticker__row--banned, .ticker__row--rotated { opacity: 0.55; }
+
+/* ---- Sets in print ---- */
+.sets { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.sets__row { display: flex; flex-direction: column; gap: 5px; padding: 8px 10px; background: var(--surface-2); border-radius: 6px; }
+.sets__row--rotated { opacity: 0.6; }
+.sets__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sets__name { font-weight: 600; font-size: 0.9rem; }
+.sets__wk { font-size: 0.78rem; font-weight: 700; color: var(--good); font-variant-numeric: tabular-nums; }
+.sets__row--rotated .sets__wk { color: var(--text-dim); }
+.sets__track { height: 8px; background: var(--bg); border-radius: 99px; overflow: hidden; }
+.sets__fill { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width 0.3s ease; }
+.sets__meta { font-size: 0.72rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }

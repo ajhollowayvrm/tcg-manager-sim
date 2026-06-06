@@ -7,6 +7,7 @@ import FeedbackFeed from './components/FeedbackFeed.jsx'
 import EventsFeed from './components/EventsFeed.jsx'
 import PersonasPanel from './components/PersonasPanel.jsx'
 import BansPanel from './components/BansPanel.jsx'
+import SetsPanel from './components/SetsPanel.jsx'
 import SetBuilder from './components/setbuilder/SetBuilder.jsx'
 
 export default function App() {
@@ -19,6 +20,7 @@ export default function App() {
       <main className="dashboard">
         <section className="col col--main">
           <MetagamePanel state={game.state} />
+          <SetsPanel state={game.state} />
           <MarketTicker state={game.state} />
           <BansPanel state={game.state} onBan={game.ban} onRotate={game.rotate} />
         </section>

@@ -7,6 +7,7 @@
 
 import { resolveMarket } from './market.js'
 import { reactPersonas, applyPersonaEffects } from './personas.js'
+import { resolveRevenue } from './revenue.js'
 
 const SOLVE_DECAY_PER_WEEK = 4 // tune so a format stays fresh for a few months
 
@@ -23,6 +24,13 @@ export function advanceWeek(state) {
     100,
   )
 
+  // Sealed-product revenue: every live set sells packs (capped by its print
+  // run). This is the income that funds the next set — or doesn't.
+  const rev = resolveRevenue(next)
+  next.sets = rev.sets
+  next.cash += rev.cashDelta
+  next.lastRevenue = { week: next.week, total: rev.cashDelta, units: rev.unitsSold, perSet: rev.perSet }
+
   // Secondary market: resolve every card's singles & sealed price for the week.
   // resolveMarket reads next.week/metagame (already advanced) and the cards.
   const { cards, movers } = resolveMarket(next)
@@ -37,6 +45,19 @@ export function advanceWeek(state) {
   // TODO: events feed firing curveballs
   // TODO: segment drift driven by metagame dials
   // TODO: auto-slow/pause the clock on interesting moments
+
+  // Loss conditions (twin death spirals): cash or active player base hits zero.
+  if (!next.gameOver) {
+    if (next.cash <= 0) {
+      next.gameOver = { reason: 'Bankrupt — you ran out of cash to fund the next set.' }
+    } else if (next.playerBase <= 0) {
+      next.gameOver = { reason: 'The community is gone — your active player base hit zero.' }
+    }
+    if (next.gameOver) {
+      next.eventsFeed = [{ week: next.week, text: `GAME OVER: ${next.gameOver.reason}` }, ...next.eventsFeed]
+      next.clock = { ...next.clock, paused: true, pauseReason: next.gameOver.reason }
+    }
+  }
 
   return next
 }

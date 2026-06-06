@@ -35,6 +35,8 @@ export function createInitialState() {
     feedbackFeed: [], // qualitative chatter — sometimes lies
     eventsFeed: [], // news/curveballs
     movers: [], // notable market movers from the latest week (for the ticker)
+    lastRevenue: null, // { week, total, units, perSet } from the latest week
+    gameOver: null, // { reason } once cash or player base hits zero
 
     clock: {
       speed: 1, // weeks advanced per tick when playing

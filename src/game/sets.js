@@ -5,6 +5,7 @@ import { makeRng, hashSeed, range } from './rng.js'
 import { getArtist } from './content/artists.js'
 import { getTheme } from './content/themes.js'
 import { clamp } from './simulation.js'
+import { printRunUnits } from './revenue.js'
 
 export const RARITIES = ['common', 'uncommon', 'rare', 'mythic']
 
@@ -156,6 +157,9 @@ export function releaseSet(state, draft) {
     prerelease: draft.prerelease,
     releasedWeek: state.week,
     commonsCount: 150,
+    // Sealed economy: units printed (hard sales ceiling) and units sold to date.
+    supply: printRunUnits(draft.printRun),
+    sold: 0,
   }
 
   // Metagame shift. Releasing refreshes the format (solve resets toward fresh);

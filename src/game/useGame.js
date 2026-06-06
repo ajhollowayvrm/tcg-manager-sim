@@ -10,8 +10,10 @@ import { banCard, rotateFormat } from './bans.js'
 function reducer(state, action) {
   switch (action.type) {
     case 'TICK':
+      if (state.gameOver) return state
       return advanceWeek(state)
     case 'PLAY':
+      if (state.gameOver) return state // can't un-pause a finished run
       return { ...state, clock: { ...state.clock, paused: false, pauseReason: null } }
     case 'PAUSE':
       return {
