@@ -13,6 +13,10 @@ import { applySegmentDrift } from './segments.js'
 import { clockDirective } from './clock.js'
 
 const SOLVE_DECAY_PER_WEEK = 4 // tune so a format stays fresh for a few months
+// Diversity erosion: above this solve level the field starts collapsing to a few
+// decks; rate is the max weekly diversity loss at fully-solved (solve=100).
+const DIVERSITY_EROSION_SOLVE_FLOOR = 40
+const DIVERSITY_EROSION_RATE = 5
 
 export function advanceWeek(state) {
   const next = structuredClone(state)
@@ -26,6 +30,15 @@ export function advanceWeek(state) {
     0,
     100,
   )
+
+  // As the format gets solved, the field collapses toward a few dominant decks —
+  // diversity erodes. Without this, diversity only ever ratchets UP on release
+  // and pegs at 100; this is the downward pressure that makes it a live dial and
+  // gives releasing a real diversity-restoring purpose.
+  if (next.metagame.solveLevel > DIVERSITY_EROSION_SOLVE_FLOOR) {
+    const pressure = (next.metagame.solveLevel - DIVERSITY_EROSION_SOLVE_FLOOR) / 100
+    next.metagame.diversity = clamp(next.metagame.diversity - pressure * DIVERSITY_EROSION_RATE, 0, 100)
+  }
 
   // Sealed-product revenue: every live set sells packs (capped by its print
   // run). This is the income that funds the next set — or doesn't.

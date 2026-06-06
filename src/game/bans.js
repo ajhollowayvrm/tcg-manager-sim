@@ -56,7 +56,10 @@ export function banCard(state, cardId) {
   const heal = justified ? 1 : -1
   const metagame = {
     diversity: clamp(state.metagame.diversity + heal * range(rng, 6, 14), 0, 100),
-    powerLevel: clamp(state.metagame.powerLevel - (justified ? range(rng, 3, 8) : 0), 0, 100),
+    // Banning one card trims power only slightly — it doesn't undo a set's worth
+    // of creep, so power still trends up under steady releasing (the core
+    // long-term pressure). Tuned via tools/playtest.mjs.
+    powerLevel: clamp(state.metagame.powerLevel - (justified ? range(rng, 1, 3) : 0), 0, 100),
     archetypeBalance: clamp(state.metagame.archetypeBalance + heal * range(rng, 3, 9), 0, 100),
     solveLevel: clamp(state.metagame.solveLevel - range(rng, 8, 16), 0, 100), // format reopens
   }
@@ -118,10 +121,12 @@ export function rotateFormat(state, count = 1) {
       : c,
   )
 
-  // Big positive on format health: diversity restored, power creep reset, fresh.
+  // Big positive on format health: diversity restored, power creep relieved,
+  // fresh. Rotation is the strongest creep-relief lever, but it's relief, not a
+  // reset to zero — power still ratchets up over a long run of releases.
   const metagame = {
     diversity: clamp(state.metagame.diversity + range(rng, 12, 22), 0, 100),
-    powerLevel: clamp(state.metagame.powerLevel - range(rng, 12, 22), 0, 100),
+    powerLevel: clamp(state.metagame.powerLevel - range(rng, 6, 12), 0, 100),
     archetypeBalance: clamp(state.metagame.archetypeBalance + range(rng, 8, 16), 0, 100),
     solveLevel: clamp(state.metagame.solveLevel - range(rng, 18, 30), 0, 100),
   }

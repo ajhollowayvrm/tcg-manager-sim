@@ -169,7 +169,10 @@ export function releaseSet(state, draft) {
   const solveReset = draft.prerelease.chasePullable ? 20 : 8
 
   const metagame = {
-    diversity: clamp(state.metagame.diversity - Math.max(0, creep) * 0.6 + 6, 0, 100),
+    // A fresh set reopens the field a little (+3), but a high-power-budget set
+    // also crowds out weaker archetypes (the creep term claws some back). Modest
+    // so it doesn't ratchet diversity to 100 against the weekly erosion.
+    diversity: clamp(state.metagame.diversity - Math.max(0, creep) * 0.6 + 3, 0, 100),
     powerLevel: clamp(state.metagame.powerLevel + Math.max(0, creep), 0, 100),
     archetypeBalance: state.metagame.archetypeBalance, // theme nudges this later
     solveLevel: solveReset,

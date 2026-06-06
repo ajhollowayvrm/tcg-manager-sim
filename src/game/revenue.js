@@ -13,10 +13,13 @@
 import { makeRng, hashSeed, range } from './rng.js'
 import { clamp } from './simulation.js'
 
-// Map the 0–100 print-run slider to actual units printed. Under-print ~120k,
-// over-print ~900k. This is the hard ceiling on lifetime sealed sales.
+// Map the 0–100 print-run slider to actual units printed. A LOW print run must
+// mean genuinely few units (real lost sales — the brief's cost of scarcity), so
+// the curve starts near zero and ramps up, rather than sitting on a high floor
+// that let under-printing keep all its volume AND charge a scarcity premium.
+// Under-print ~30k, mid ~450k, over-print ~900k.
 export function printRunUnits(printRun) {
-  return Math.round(120_000 + (printRun / 100) * 780_000)
+  return Math.round(20_000 + (printRun / 100) * 880_000)
 }
 
 // Price elasticity: demand multiplier as a function of MSRP. ~$4.50 is the
@@ -53,10 +56,12 @@ function weeklyDemand(set, state, rng) {
   const elasticity = priceElasticity(set.price)
 
   // Buyer pool: each tracked player stands in for a slice of the wider sealed
-  // market, so per-capita pack rates are high. Casual players buy the most
-  // sealed, competitive some, collectors chase sealed for value.
+  // market. Casual players buy the most sealed, competitive some, collectors
+  // chase sealed for value. Tuned (see tools/playtest.mjs) so a set's lifetime
+  // profit is a modest multiple of its ~$160k cost — not the 50× it was — which
+  // keeps cash a real constraint and bankruptcy reachable.
   const seg = state.segments
-  const buyerPool = seg.casual * 1.1 + seg.competitive * 0.45 + seg.collectors * 0.7
+  const buyerPool = seg.casual * 0.26 + seg.competitive * 0.1 + seg.collectors * 0.16
 
   const noise = range(rng, 0.85, 1.15)
 

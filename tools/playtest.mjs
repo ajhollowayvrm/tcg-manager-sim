@@ -70,7 +70,7 @@ function buildDraft(setNumber, knobs, nameSalt) {
 const NAME_POOL = ['Ember', 'Frost', 'Tempest', 'Verdant', 'Obsidian', 'Radiant', 'Abyssal', 'Gilded']
 const THEMES = ['dragons', 'undead', 'cyber', 'nature', 'arcane'] // real theme ids from content/themes.js
 
-function makeStrategy({ name, cadence, knobs, banAt, rotateEvery }) {
+function makeStrategy({ name, cadence, knobs, banAt, rotateEvery, ignoreCash = false }) {
   return {
     name,
     // Called each week BEFORE advanceWeek. Returns the (possibly) acted-on state.
@@ -82,7 +82,7 @@ function makeStrategy({ name, cadence, knobs, banAt, rotateEvery }) {
       const weeksSince = lastSet ? s.week - lastSet.releasedWeek : Infinity
       if (s.sets.length === 0 || weeksSince >= cadence) {
         const draft = buildDraft(s.sets.length + 1, knobs, ctx.salt)
-        if (s.cash > setCost(draft).total * 1.15) {
+        if (ignoreCash || s.cash > setCost(draft).total * 1.15) {
           s = applyRelease(s, draft)
           ctx.releases++
         }
@@ -114,12 +114,16 @@ const STRATEGIES = [
     knobs: { powerBudget: 55, printRun: 55, pricePoint: 4.5, chasePower: 70, namePool: NAME_POOL, themes: THEMES } }),
   makeStrategy({ name: 'Aggressive creep', cadence: 8, banAt: 75, rotateEvery: 60,
     knobs: { powerBudget: 80, printRun: 65, pricePoint: 5.0, chasePower: 88, namePool: NAME_POOL, themes: THEMES } }),
-  makeStrategy({ name: 'Overprint greed', cadence: 6, banAt: null, rotateEvery: null,
-    knobs: { powerBudget: 60, printRun: 88, pricePoint: 7.0, chasePower: 75, namePool: NAME_POOL, themes: THEMES } }),
+  makeStrategy({ name: 'Overprint greed', cadence: 5, banAt: null, rotateEvery: null,
+    knobs: { powerBudget: 70, printRun: 78, pricePoint: 8.0, chasePower: 80, namePool: NAME_POOL, themes: THEMES } }),
   makeStrategy({ name: 'Underprint scarcity', cadence: 14, banAt: 60, rotateEvery: 104,
     knobs: { powerBudget: 50, printRun: 12, pricePoint: 5.5, chasePower: 72, namePool: NAME_POOL, themes: THEMES } }),
   makeStrategy({ name: 'Idle (never release)', cadence: Infinity, banAt: null, rotateEvery: null,
     knobs: { powerBudget: 50, printRun: 50, pricePoint: 4.5, chasePower: 60, namePool: NAME_POOL, themes: THEMES } }),
+  // Reckless: release as fast as possible at a punishing price regardless of
+  // cash — should bankrupt itself. Confirms the loss condition is reachable.
+  makeStrategy({ name: 'Reckless spender', cadence: 4, banAt: null, rotateEvery: null, ignoreCash: true,
+    knobs: { powerBudget: 75, printRun: 80, pricePoint: 9.0, chasePower: 82, namePool: NAME_POOL, themes: THEMES } }),
 ]
 
 // ---- Run a single game ----------------------------------------------------
