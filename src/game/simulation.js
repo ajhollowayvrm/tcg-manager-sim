@@ -8,6 +8,7 @@
 import { resolveMarket } from './market.js'
 import { reactPersonas, applyPersonaEffects } from './personas.js'
 import { resolveRevenue } from './revenue.js'
+import { rollEvent, applyEventEffects } from './events.js'
 
 const SOLVE_DECAY_PER_WEEK = 4 // tune so a format stays fresh for a few months
 
@@ -42,7 +43,14 @@ export function advanceWeek(state) {
   // on cards, extra solve pressure, and player-base sway for next week.
   applyPersonaEffects(next, reactPersonas(next))
 
-  // TODO: events feed firing curveballs
+  // Events: a curveball may fire this week (counterfeits, viral moments, supply
+  // snags, ban demands…). Effects land on the world; the entry hits the feed.
+  const event = rollEvent(next)
+  if (event) {
+    applyEventEffects(next, event.effects)
+    next.eventsFeed = [event.entry, ...next.eventsFeed].slice(0, 60)
+  }
+
   // TODO: segment drift driven by metagame dials
   // TODO: auto-slow/pause the clock on interesting moments
 
