@@ -214,9 +214,40 @@ body {
 }
 .col { display: flex; flex-direction: column; gap: var(--gap); }
 
-/* Tablet & below: collapse the two-column dashboard to a single stack. */
+/* The mobile tabbed view and the bottom tab bar are desktop-hidden by default;
+   the breakpoint below swaps which layout is shown. */
+.dashboard--mobile { display: none; }
+.tabbar { display: none; }
+
+/* Tablet & below: hide the desktop dashboard and show the tabbed mobile view
+   with a floating bottom tab bar. */
 @media (max-width: 800px) {
-  .dashboard { grid-template-columns: 1fr; }
+  .dashboard--desktop { display: none; }
+  .dashboard--mobile { display: block; margin-top: var(--gap); }
+
+  /* Leave room so the fixed tab bar never covers the last panel. */
+  .app { padding-bottom: 76px; }
+
+  .tabbar {
+    display: flex;
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    z-index: 40;
+    background: rgba(21, 21, 31, 0.92);
+    backdrop-filter: blur(8px);
+    border-top: 1px solid var(--border);
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+  }
+  .tabbar__btn {
+    flex: 1;
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    background: none; border: none; cursor: pointer;
+    color: var(--text-dim); font: inherit; font-size: 0.7rem; font-weight: 600;
+    padding: 6px 4px; border-radius: 8px;
+  }
+  .tabbar__btn.is-active { color: var(--text); background: var(--surface-2); }
+  .tabbar__btn.is-active .tabbar__icon { transform: translateY(-1px); }
+  .tabbar__icon { font-size: 1.2rem; line-height: 1; }
 }
 
 /* Phone: the desktop-first layout works down to here, but a few dense spots

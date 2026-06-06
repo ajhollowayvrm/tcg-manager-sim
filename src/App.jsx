@@ -10,26 +10,74 @@ import BansPanel from './components/BansPanel.jsx'
 import SetsPanel from './components/SetsPanel.jsx'
 import SetBuilder from './components/setbuilder/SetBuilder.jsx'
 
+// Mobile tabs group the seven panels into four sections. Desktop ignores this
+// and shows the full two-column dashboard; the tab bar only appears on mobile.
+const TABS = [
+  { id: 'meta', label: 'Meta', icon: '📊' },
+  { id: 'market', label: 'Market', icon: '📈' },
+  { id: 'community', label: 'Community', icon: '💬' },
+  { id: 'events', label: 'News', icon: '📰' },
+]
+
 export default function App() {
   const game = useGame()
   const [building, setBuilding] = useState(false)
+  const [tab, setTab] = useState('meta')
+
+  // The panels, declared once and reused by both layouts so there's a single
+  // source of truth for props.
+  const panels = {
+    metagame: <MetagamePanel state={game.state} />,
+    sets: <SetsPanel state={game.state} />,
+    market: <MarketTicker state={game.state} />,
+    bans: <BansPanel state={game.state} onBan={game.ban} onRotate={game.rotate} />,
+    feedback: <FeedbackFeed state={game.state} />,
+    personas: <PersonasPanel state={game.state} />,
+    events: <EventsFeed state={game.state} />,
+  }
 
   return (
     <div className="app">
       <TopBar game={game} onDesignSet={() => setBuilding(true)} />
-      <main className="dashboard">
+
+      {/* Desktop: the rich two-column dashboard. Hidden on mobile via CSS. */}
+      <main className="dashboard dashboard--desktop">
         <section className="col col--main">
-          <MetagamePanel state={game.state} />
-          <SetsPanel state={game.state} />
-          <MarketTicker state={game.state} />
-          <BansPanel state={game.state} onBan={game.ban} onRotate={game.rotate} />
+          {panels.metagame}
+          {panels.sets}
+          {panels.market}
+          {panels.bans}
         </section>
         <aside className="col col--side">
-          <FeedbackFeed state={game.state} />
-          <PersonasPanel state={game.state} />
-          <EventsFeed state={game.state} />
+          {panels.feedback}
+          {panels.personas}
+          {panels.events}
         </aside>
       </main>
+
+      {/* Mobile: one tab's panels at a time, with a bottom tab bar. Hidden on
+          desktop via CSS. */}
+      <main className="dashboard--mobile">
+        {tab === 'meta' && <div className="col">{panels.metagame}{panels.sets}</div>}
+        {tab === 'market' && <div className="col">{panels.market}{panels.bans}</div>}
+        {tab === 'community' && <div className="col">{panels.feedback}{panels.personas}</div>}
+        {tab === 'events' && <div className="col">{panels.events}</div>}
+      </main>
+
+      <nav className="tabbar" role="tablist" aria-label="Sections">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            role="tab"
+            aria-selected={tab === t.id}
+            className={'tabbar__btn' + (tab === t.id ? ' is-active' : '')}
+            onClick={() => setTab(t.id)}
+          >
+            <span className="tabbar__icon" aria-hidden="true">{t.icon}</span>
+            <span className="tabbar__label">{t.label}</span>
+          </button>
+        ))}
+      </nav>
 
       {building && (
         <SetBuilder
