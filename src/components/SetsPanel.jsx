@@ -2,6 +2,8 @@
 // legible: a set selling near 100% sold out (under-printed → lost sales), one
 // stuck low has unsold stock (over-printed → bargain bins).
 
+import SetSymbol from './SetSymbol.jsx'
+
 function compact(n) {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(2) + 'M'
   if (n >= 1_000) return Math.round(n / 1_000) + 'k'
@@ -29,6 +31,7 @@ export default function SetsPanel({ state }) {
               <li key={set.id} className={'sets__row' + (set.rotated ? ' sets__row--rotated' : '')}>
                 <div className="sets__head">
                   <span className="sets__name">
+                    <SetSymbol themeId={set.themeId} rarity="rare" size={15} />
                     {set.name}
                     {set.rotated && <span className="tag tag--rotated">rotated</span>}
                     {soldOut && !set.rotated && <span className="tag tag--soldout">sold out</span>}

@@ -3,9 +3,53 @@
 
 import { RARITIES } from '../../game/sets.js'
 import { ARTISTS, getArtist } from '../../game/content/artists.js'
+import SetSymbol from '../SetSymbol.jsx'
 
 function formatCash(n) {
   return '$' + n.toLocaleString('en-US')
+}
+
+// A deterministic two-tone art gradient per theme, so the preview's "art box"
+// reads as themed placeholder art rather than a flat panel. Hue derived from the
+// theme id so each theme has a consistent look.
+function artGradient(themeId) {
+  let h = 0
+  for (let i = 0; i < (themeId?.length ?? 0); i++) h = (h * 31 + themeId.charCodeAt(i)) % 360
+  return `linear-gradient(135deg, hsl(${h} 45% 28%), hsl(${(h + 40) % 360} 55% 16%))`
+}
+
+// A live trading-card preview of the card being designed: rarity-foiled frame,
+// themed art placeholder with the set symbol, name plate, type/power line, rules
+// box, and an artist/set-symbol footer. This is the brief's "real card-frame
+// styling in the card editor".
+function CardFramePreview({ card, theme, artist }) {
+  const power = card.mode === 'flavor' ? card.power : null
+  return (
+    <div className={`cardframe cardframe--${card.rarity}`} aria-hidden="true">
+      <div className="cardframe__titlebar">
+        <span className="cardframe__name">{card.name || 'Unnamed Card'}</span>
+        <span className={`cardframe__gem gem--${card.rarity}`} title={card.rarity} />
+      </div>
+      <div className="cardframe__art" style={{ background: artGradient(theme?.id) }}>
+        {theme && <SetSymbol themeId={theme.id} rarity={card.rarity} size={48} />}
+      </div>
+      <div className="cardframe__typeline">
+        <span>{theme ? theme.name : 'Set'} · {card.rarity}</span>
+        {power != null && <span className="cardframe__power">PWR {power}</span>}
+      </div>
+      <div className="cardframe__text">
+        {card.mode === 'mechanical'
+          ? (card.rulesText || 'Rules text…')
+          : 'A signature card of the set.'}
+      </div>
+      <div className="cardframe__footer">
+        <span className="cardframe__artist">
+          {artist ? `🖌 ${artist.name}` : 'Uncommissioned art'}
+        </span>
+        {theme && <SetSymbol themeId={theme.id} rarity={card.rarity} size={14} />}
+      </div>
+    </div>
+  )
 }
 
 // A short trend cue for an artist's current trajectory, so the player can spot a
@@ -40,6 +84,10 @@ export default function SignatureCardEditor({ card, theme, artists, onChange, on
         />
         <button className="btn btn--ghost sigcard__remove" onClick={onRemove} title="Remove card">✕</button>
       </div>
+
+      <div className="sigcard__layout">
+        <CardFramePreview card={card} theme={theme} artist={artist} />
+        <div className="sigcard__form">
 
       <div className="sigcard__row sigcard__controls">
         <label className="field">
@@ -121,6 +169,8 @@ export default function SignatureCardEditor({ card, theme, artists, onChange, on
           })}
         </select>
       </label>
+        </div>
+      </div>
     </div>
   )
 }

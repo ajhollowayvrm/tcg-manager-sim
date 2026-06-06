@@ -206,13 +206,17 @@ Tools the **player** wields, with **unpredictable community blowback**:
 
 ---
 
-## Visual direction ⏳
+## Visual direction ✅
 
 Pragmatic and colorful:
 
-> **Status:** clean dashboard skeleton with the vivid crimson/noir skin and an
-> animated market ticker ✅. The brief's end-of-v1 **frontend-polish pass** (full
-> card-frame styling/art in the editor, set symbols) is still pending ⬜.
+> **Status:** clean dashboard skeleton with the vivid crimson/noir skin ✅. The
+> frontend-polish pass is done: a **live card-frame preview** in the set editor
+> (rarity-foiled frame, themed art placeholder, rarity gem, artist credit),
+> **per-theme/rarity set symbols** (`SetSymbol.jsx`) on cards, the ticker and
+> Sets in Print, **punched-up ticker reactions** (big-mover glow/scale, sparklines),
+> and a dashboard shine pass (per-dial colours, the archetype split bar, panel
+> depth/hover) ✅.
 - **Clean dashboard skeleton** for the data-heavy parts (easiest to build, correct for a sim).
 - **Color budget spent where it's cheap and high-impact:** vivid palette, real card-frame styling and art in the card editor, set symbols, and animated market-ticker reactions when a card pops.
 - Colorful skin over a clean structure. A frontend-design polish pass at the end.

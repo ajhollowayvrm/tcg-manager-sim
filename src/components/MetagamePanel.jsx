@@ -23,7 +23,7 @@ export default function MetagamePanel({ state }) {
       <h2 className="panel__title">Metagame Health</h2>
       <div className="dials">
         {DIALS.map((dial) => (
-          <Dial key={dial.id} label={dial.label} hint={dial.hint} value={state.metagame[dial.id]} />
+          <Dial key={dial.id} id={dial.id} label={dial.label} hint={dial.hint} value={state.metagame[dial.id]} />
         ))}
       </div>
       {dist && <MetashareBar dist={dist} />}
@@ -61,7 +61,7 @@ function MetashareBar({ dist }) {
   )
 }
 
-function Dial({ label, hint, value }) {
+function Dial({ id, label, hint, value }) {
   return (
     <div className="dial" title={hint}>
       <div className="dial__head">
@@ -69,7 +69,7 @@ function Dial({ label, hint, value }) {
         <span className="dial__value">{Math.round(value)}</span>
       </div>
       <div className="dial__track">
-        <div className="dial__fill" style={{ width: `${value}%` }} />
+        <div className={`dial__fill dial__fill--${id}`} style={{ width: `${value}%` }} />
       </div>
     </div>
   )

@@ -2,6 +2,8 @@
 // pop/flop pulse, and lists every tracked single with a sparkline plus its
 // sealed price. This is where the color budget pays off (see BRIEF.md).
 
+import SetSymbol from './SetSymbol.jsx'
+
 function fmt(n) {
   return n != null ? `$${n.toFixed(2)}` : '—'
 }
@@ -30,6 +32,9 @@ export default function MarketTicker({ state }) {
   const moverPct = new Map((state.movers ?? []).map((m) => [m.id, m.pct]))
   const week = state.week
 
+  // Look up each card's set theme for the row's set symbol.
+  const themeBySet = new Map(state.sets.map((s) => [s.id, s.themeId]))
+
   // Sort by price desc so the chase cards sit on top.
   const cards = [...state.cards].sort((a, b) => b.singlePrice - a.singlePrice)
 
@@ -56,13 +61,16 @@ export default function MarketTicker({ state }) {
             {cards.map((card) => {
               const pct = moverPct.get(card.id)
               const dir = pct == null ? '' : pct >= 0 ? ' is-up' : ' is-down'
+              // A big move gets extra visual punch (stronger flash + glow).
+              const big = pct != null && Math.abs(pct) >= 0.2 ? ' is-big' : ''
               // Movers get a week-stamped key so the flash animation re-fires
               // every week the card moves (React remounts only the ≤8 movers).
               const key = pct == null ? card.id : `${card.id}-${week}`
               const status = card.banned ? 'banned' : card.rotated ? 'rotated' : null
               return (
-                <li key={key} className={`ticker__row${dir}${status ? ' ticker__row--' + status : ''}`}>
+                <li key={key} className={`ticker__row${dir}${big}${status ? ' ticker__row--' + status : ''}`}>
                   <span className={`ticker__name rarity--${card.rarity}`}>
+                    <SetSymbol themeId={themeBySet.get(card.setId)} rarity={card.rarity} size={14} />
                     {card.name}
                     {status && <span className={`tag tag--${status}`}>{status}</span>}
                   </span>

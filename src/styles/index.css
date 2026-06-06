@@ -195,6 +195,62 @@ body {
   border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 10px;
 }
 .sigcard__row { display: flex; gap: 10px; align-items: center; }
+
+/* Form + live card preview side by side (stacks on mobile). */
+.sigcard__layout { display: grid; grid-template-columns: 200px 1fr; gap: 16px; align-items: start; }
+.sigcard__form { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+
+/* ---- Live card-frame preview ---- */
+.cardframe {
+  width: 200px; border-radius: 12px; padding: 8px;
+  display: flex; flex-direction: column; gap: 6px;
+  background: linear-gradient(160deg, #20202e, #14141c);
+  border: 2px solid var(--silver);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45), inset 0 0 0 1px rgba(255,255,255,0.04);
+  font-size: 0.8rem;
+}
+/* Rarity foils the frame edge. */
+.cardframe--common { border-color: #6b7280; }
+.cardframe--uncommon { border-color: var(--silver); }
+.cardframe--rare { border-color: var(--accent-2); box-shadow: 0 6px 18px rgba(59,130,246,0.25), inset 0 0 0 1px rgba(59,130,246,0.2); }
+.cardframe--mythic {
+  border-color: var(--pop);
+  box-shadow: 0 6px 20px rgba(234,179,8,0.3), inset 0 0 0 1px rgba(234,179,8,0.25);
+}
+.cardframe__titlebar {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  background: rgba(0,0,0,0.3); border-radius: 6px; padding: 4px 7px;
+}
+.cardframe__name { font-weight: 700; font-size: 0.82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cardframe__gem { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; box-shadow: inset 0 0 2px rgba(0,0,0,0.6); }
+.gem--common { background: #6b7280; }
+.gem--uncommon { background: var(--silver); }
+.gem--rare { background: var(--accent-2); }
+.gem--mythic { background: radial-gradient(circle at 30% 30%, #fde68a, var(--pop)); }
+.cardframe__art {
+  height: 96px; border-radius: 6px; display: flex; align-items: center; justify-content: center;
+  border: 1px solid rgba(0,0,0,0.4);
+}
+.cardframe__art .setsymbol { opacity: 0.55; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.5)); }
+.cardframe__typeline {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 0.68rem; color: var(--text-dim); text-transform: capitalize;
+}
+.cardframe__power { color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
+.cardframe__text {
+  background: rgba(0,0,0,0.25); border-radius: 6px; padding: 6px 7px;
+  font-size: 0.72rem; color: var(--text); min-height: 34px; line-height: 1.35;
+}
+.cardframe__footer {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  font-size: 0.65rem; color: var(--text-dim);
+}
+.cardframe__artist { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (max-width: 560px) {
+  .sigcard__layout { grid-template-columns: 1fr; }
+  .cardframe { width: 100%; max-width: 240px; margin: 0 auto; }
+}
 .sigcard__name { flex: 1; background: var(--surface); color: var(--text);
   border: 1px solid var(--border); border-radius: 6px; padding: 7px 9px; font: inherit; font-weight: 600; }
 .sigcard__controls { flex-wrap: wrap; }
@@ -299,12 +355,18 @@ body {
 
 /* ---- Panels ---- */
 .panel {
-  background: var(--surface);
+  background: linear-gradient(180deg, var(--surface), #12121b);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 16px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
-.panel__title { margin: 0 0 12px; font-size: 0.95rem; letter-spacing: 0.3px; }
+.panel:hover { border-color: #3a3a4f; box-shadow: 0 4px 16px rgba(0,0,0,0.35); }
+.panel__title {
+  margin: 0 0 12px; font-size: 0.95rem; letter-spacing: 0.3px;
+  padding-bottom: 8px; border-bottom: 1px solid var(--border);
+}
 .panel__empty { color: var(--text-dim); font-size: 0.9rem; margin: 0; }
 
 /* ---- Metagame dials ---- */
@@ -319,6 +381,12 @@ body {
   border-radius: 99px;
   transition: width 0.3s ease;
 }
+/* Each dial reads its own colour so the dashboard is glanceable: a healthy
+   format is green/blue, a creeping/solving one warms toward amber/crimson. */
+.dial__fill--diversity { background: linear-gradient(90deg, #16a34a, var(--good)); }
+.dial__fill--archetypeBalance { background: linear-gradient(90deg, #2563eb, var(--accent-2)); }
+.dial__fill--powerLevel { background: linear-gradient(90deg, var(--warn), #f97316); }
+.dial__fill--solveLevel { background: linear-gradient(90deg, #f97316, var(--accent)); }
 
 /* ---- Archetype metashare split bar ---- */
 .metashare { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
@@ -353,7 +421,14 @@ body {
 }
 .ticker__row.is-up { border-left-color: var(--good); animation: popUp 0.6s ease; }
 .ticker__row.is-down { border-left-color: var(--bad); animation: popDown 0.6s ease; }
-.ticker__name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* A big move (>=20%) gets a stronger, glowing flash and a brief scale pop. */
+.ticker__row.is-big.is-up { animation: bigUp 0.9s cubic-bezier(.2,.8,.2,1); }
+.ticker__row.is-big.is-down { animation: bigDown 0.9s cubic-bezier(.2,.8,.2,1); }
+.ticker__name {
+  font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  display: flex; align-items: center; gap: 6px;
+}
+.ticker__name .setsymbol { flex-shrink: 0; opacity: 0.85; }
 .ticker__sealed { font-size: 0.75rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }
 .ticker__price { font-variant-numeric: tabular-nums; font-weight: 700; text-align: right; }
 .ticker__pct { font-size: 0.72rem; margin-left: 6px; font-weight: 600; opacity: 0.85; }
@@ -389,6 +464,18 @@ body {
 @keyframes popIn {
   0% { transform: scale(0.8); opacity: 0; }
   100% { transform: scale(1); opacity: 1; }
+}
+@keyframes bigUp {
+  0% { background: rgba(46, 204, 113, 0.5); box-shadow: 0 0 18px rgba(46,204,113,0.6); transform: scale(1.03); }
+  100% { background: var(--surface-2); box-shadow: none; transform: scale(1); }
+}
+@keyframes bigDown {
+  0% { background: rgba(255, 107, 107, 0.5); box-shadow: 0 0 18px rgba(255,107,107,0.6); transform: scale(1.03); }
+  100% { background: var(--surface-2); box-shadow: none; transform: scale(1); }
+}
+/* Respect reduced-motion: keep the colour cue, drop the movement. */
+@media (prefers-reduced-motion: reduce) {
+  .ticker__row, .chip { animation: none !important; }
 }
 
 .feed__item { padding: 8px 10px; background: var(--surface-2); border-radius: 6px; font-size: 0.88rem; line-height: 1.35; }
@@ -476,7 +563,7 @@ body {
 .sets__row { display: flex; flex-direction: column; gap: 5px; padding: 8px 10px; background: var(--surface-2); border-radius: 6px; }
 .sets__row--rotated { opacity: 0.6; }
 .sets__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.sets__name { font-weight: 600; font-size: 0.9rem; }
+.sets__name { font-weight: 600; font-size: 0.9rem; display: inline-flex; align-items: center; gap: 6px; }
 .sets__wk { font-size: 0.78rem; font-weight: 700; color: var(--good); font-variant-numeric: tabular-nums; }
 .sets__row--rotated .sets__wk { color: var(--text-dim); }
 .sets__track { height: 8px; background: var(--bg); border-radius: 99px; overflow: hidden; }
