@@ -193,10 +193,11 @@ export function reactPersonas(state) {
     cardEffects.set(id, e)
   }
 
-  // The "field": average playability across all tracked cards. A card's threat
-  // is measured against this, so an outlier reads as busted even in a strong set.
-  const fieldAvg = state.cards.length
-    ? state.cards.reduce((s, c) => s + c.popFactors.playability, 0) / state.cards.length
+  // Only live cards are part of the format — banned/rotated cards are out of the
+  // conversation. The "field" average and persona focus both work off live cards.
+  const liveCards = state.cards.filter((c) => !c.banned && !c.rotated)
+  const fieldAvg = liveCards.length
+    ? liveCards.reduce((s, c) => s + c.popFactors.playability, 0) / liveCards.length
     : 50
 
   for (const persona of state.personas) {
@@ -205,7 +206,7 @@ export function reactPersonas(state) {
     const chattiness = persona.reach / 200 + (setFresh ? 0.35 : 0)
     if (rng() > chattiness) continue
 
-    const card = focusCard(state.cards, persona, rng)
+    const card = focusCard(liveCards, persona, rng)
     if (!card && !(persona.type === 'reviewer' && latestSet)) continue
 
     const truth = card ? cardThreat(card, fieldAvg) : 0

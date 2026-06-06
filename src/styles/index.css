@@ -312,3 +312,39 @@ body {
 .mood--good { color: var(--good); }
 .mood--bad { color: var(--bad); }
 .mood--neutral { color: var(--text-dim); }
+
+/* ---- Bans & rotation ---- */
+.bans { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.bans__row {
+  display: grid; grid-template-columns: 1.4fr 1.2fr auto; align-items: center; gap: 12px;
+  padding: 6px 8px; background: var(--surface-2); border-radius: 6px;
+}
+.bans__info { display: flex; flex-direction: column; min-width: 0; }
+.bans__name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bans__price { font-size: 0.72rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.bans__pressure { display: flex; align-items: center; gap: 8px; }
+.bans__track { flex: 1; height: 7px; background: var(--surface); border-radius: 99px; overflow: hidden; }
+.bans__fill { display: block; height: 100%; border-radius: 99px; transition: width 0.3s ease; }
+.pressure--cool { background: #5a6080; }
+.pressure--warm { background: var(--warn); }
+.pressure--hot { background: var(--bad); }
+.bans__pval { font-size: 0.72rem; font-variant-numeric: tabular-nums; color: var(--text-dim); min-width: 22px; text-align: right; }
+
+.btn--ban { background: var(--bad); border-color: var(--bad); color: #2b0606; padding: 5px 12px; }
+.btn--ban:hover { background: #ff8585; }
+.btn--rotate { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn--rotate:hover { background: #8472f0; }
+
+.bans__rotate {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding-top: 12px; border-top: 1px solid var(--border);
+}
+.bans__rotateinfo { font-size: 0.8rem; color: var(--text-dim); }
+.bans__rotateinfo strong { color: var(--text); }
+
+/* Status tags on market rows */
+.tag { font-size: 0.55rem; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase;
+  padding: 1px 5px; border-radius: 4px; margin-left: 6px; vertical-align: middle; }
+.tag--banned { background: var(--bad); color: #2b0606; }
+.tag--rotated { background: #5a6080; color: #0b0c1a; }
+.ticker__row--banned, .ticker__row--rotated { opacity: 0.55; }

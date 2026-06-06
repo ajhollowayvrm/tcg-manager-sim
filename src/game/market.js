@@ -102,6 +102,16 @@ export function resolveMarket(state) {
     const set = setById.get(card.setId)
     if (!set) return card
 
+    // Banned/rotated cards leave the competitive market — they drift gently on a
+    // collector floor rather than trading on playability, and never appear as
+    // movers. Sealed for a rotated set still ages as a collectible.
+    if (card.banned || card.rotated) {
+      card.singlePrice = Math.round(card.singlePrice * (1 + range(rng, -0.01, 0.015)) * 100) / 100
+      card.priceHistory = [...card.priceHistory, card.singlePrice].slice(-26)
+      card.sealedPrice = sealedPrice(set, state.week - set.releasedWeek)
+      return card
+    }
+
     const mover = stepCard(card, set, state.metagame, rng)
     card.sealedPrice = sealedPrice(set, state.week - set.releasedWeek)
 

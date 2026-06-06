@@ -59,9 +59,13 @@ export default function MarketTicker({ state }) {
               // Movers get a week-stamped key so the flash animation re-fires
               // every week the card moves (React remounts only the ≤8 movers).
               const key = pct == null ? card.id : `${card.id}-${week}`
+              const status = card.banned ? 'banned' : card.rotated ? 'rotated' : null
               return (
-                <li key={key} className={`ticker__row${dir}`}>
-                  <span className={`ticker__name rarity--${card.rarity}`}>{card.name}</span>
+                <li key={key} className={`ticker__row${dir}${status ? ' ticker__row--' + status : ''}`}>
+                  <span className={`ticker__name rarity--${card.rarity}`}>
+                    {card.name}
+                    {status && <span className={`tag tag--${status}`}>{status}</span>}
+                  </span>
                   <Sparkline history={card.priceHistory} />
                   <span className="ticker__sealed" title="Sealed price">📦 {fmt(card.sealedPrice)}</span>
                   <span className="ticker__price">

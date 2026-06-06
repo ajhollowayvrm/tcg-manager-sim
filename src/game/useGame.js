@@ -2,6 +2,7 @@ import { useCallback, useEffect, useReducer, useRef } from 'react'
 import { createInitialState } from './initialState.js'
 import { advanceWeek } from './simulation.js'
 import { releaseSet } from './sets.js'
+import { banCard, rotateFormat } from './bans.js'
 
 // Reducer-driven game state. The clock ticks via setInterval while playing;
 // each tick dispatches a 'TICK' that runs one simulation week.
@@ -34,6 +35,35 @@ function reducer(state, action) {
         clock: { ...state.clock, paused: true, pauseReason: `${set.name} released! Watch the market react.` },
       }
     }
+    case 'BAN_CARD': {
+      const result = banCard(state, action.cardId)
+      if (!result) return state
+      return {
+        ...state,
+        cards: result.cards,
+        metagame: result.metagame,
+        segments: result.segments,
+        playerBase: result.playerBase,
+        personas: result.personas,
+        eventsFeed: [{ week: state.week, text: result.feed }, ...state.eventsFeed],
+        clock: { ...state.clock, paused: true, pauseReason: result.banReason },
+      }
+    }
+    case 'ROTATE_FORMAT': {
+      const result = rotateFormat(state, action.count ?? 1)
+      if (!result) return state
+      return {
+        ...state,
+        sets: result.sets,
+        cards: result.cards,
+        metagame: result.metagame,
+        segments: result.segments,
+        playerBase: result.playerBase,
+        personas: result.personas,
+        eventsFeed: [{ week: state.week, text: result.feed }, ...state.eventsFeed],
+        clock: { ...state.clock, paused: true, pauseReason: `Rotated: ${result.rotatedNames}` },
+      }
+    }
     case 'RESET':
       return createInitialState()
     default:
@@ -58,7 +88,9 @@ export function useGame() {
   const pause = useCallback((reason) => dispatch({ type: 'PAUSE', reason }), [])
   const setSpeed = useCallback((speed) => dispatch({ type: 'SET_SPEED', speed }), [])
   const release = useCallback((draft) => dispatch({ type: 'RELEASE_SET', draft }), [])
+  const banCardAction = useCallback((cardId) => dispatch({ type: 'BAN_CARD', cardId }), [])
+  const rotate = useCallback((count) => dispatch({ type: 'ROTATE_FORMAT', count }), [])
   const reset = useCallback(() => dispatch({ type: 'RESET' }), [])
 
-  return { state, play, pause, setSpeed, release, reset }
+  return { state, play, pause, setSpeed, release, ban: banCardAction, rotate, reset }
 }
