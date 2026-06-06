@@ -214,8 +214,47 @@ body {
 }
 .col { display: flex; flex-direction: column; gap: var(--gap); }
 
+/* Tablet & below: collapse the two-column dashboard to a single stack. */
 @media (max-width: 800px) {
   .dashboard { grid-template-columns: 1fr; }
+}
+
+/* Phone: the desktop-first layout works down to here, but a few dense spots
+   need a stacked treatment so nothing crams or overlaps. (Audited live at
+   375px — the set-builder footer was the main offender.) */
+@media (max-width: 480px) {
+  :root { --gap: 12px; }
+  .app { padding: 12px; }
+
+  /* Topbar already wraps; give the clock its own full-width row so the speed
+     buttons aren't squeezed against the play button. */
+  .topbar { gap: 10px; }
+  .topbar__clock { flex-basis: 100%; flex-wrap: wrap; }
+  .btn--design { flex-basis: 100%; text-align: center; }
+
+  /* Set-builder footer: stack the cost summary above a full-width Release
+     button instead of cramming them into one row (which squeezed the button
+     into the corner and collided with the body above). */
+  .modal__foot { flex-direction: column; align-items: stretch; gap: 12px; }
+  .costs { min-width: 0; }
+  .btn--release { width: 100%; text-align: center; }
+
+  /* Tighten the modal chrome on small screens. */
+  .modal { padding: 8px; }
+  .modal__sheet { max-height: 94vh; }
+  .modal__body { padding: 14px; gap: 18px; }
+}
+
+/* Touch devices (regardless of width): bump interactive targets toward the
+   ~44px tap-target guideline. Scoped to coarse pointers so mouse users keep
+   the tighter desktop sizing. */
+@media (pointer: coarse) {
+  .btn { padding: 10px 14px; }
+  .btn--speed { padding: 10px 14px; }
+  .toggle__opt { padding: 10px 16px; }
+  .field input, .field select, .field textarea, .sigcard__name { padding: 10px; }
+  .check input { width: 20px; height: 20px; }
+  input[type='range'] { height: 28px; } /* taller hit area for the thumb */
 }
 
 /* ---- Panels ---- */

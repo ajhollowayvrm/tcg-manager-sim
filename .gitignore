@@ -14,6 +14,9 @@ npm-debug.log*
 .vscode/
 .idea/
 
+# Playwright MCP scratch screenshots
+.playwright-mcp/
+
 # Env
 .env
 .env.local
