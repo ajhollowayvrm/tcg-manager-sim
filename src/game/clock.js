@@ -1,15 +1,14 @@
 // Clock attention — decides, after a week resolves, whether the moment deserves
-// the player's attention (auto-slow or auto-pause) or is quiet enough to blur
-// past (auto-fast-forward). See docs/BRIEF.md "Time system".
+// the player's attention (auto-slow or auto-pause). See docs/BRIEF.md "Time system".
 //
-// The brief's pitch for an endless sim is "quiet stretches compress, interesting
-// moments demand attention." We read the just-resolved week against the prior
-// state and classify it:
+// We read the just-resolved week against the prior state and classify it:
 //   pause — a hard stop the player must acknowledge (a card crosses a ban
 //           threshold, a real cash/player crisis). Handled like a manual pause.
 //   slow  — something worth watching but not stopping for (a sharp market
-//           mover, a major event, a notable player swing): drop to 1×.
-//   quiet — nothing happened: let the clock run at the fast end.
+//           mover, a major event, a notable player swing): drop to base speed.
+//   (none) — an uneventful week: the clock keeps running unchanged. We do NOT
+//           fast-forward "quiet" weeks, because every week still advances the
+//           meta (solve climbs, prices move) — compressing them skips progression.
 //
 // advanceWeek attaches the directive as next.clock.autoEvent; the reducer in
 // useGame applies it (and clears the previous one each tick so it doesn't stick).
@@ -19,7 +18,6 @@ const BIG_MOVER_PCT = 0.25 // a single jumping/crashing ≥25% in a week
 const BAN_PRESSURE_PAUSE = 70 // a card crossing this ban-pressure is a decision point
 const PLAYER_SWING_PCT = 0.04 // ±4% of the base in one week is notable
 const CASH_CRISIS = 40_000 // dipping under this (from above) is a hard stop
-const QUIET_SPEED = 4 // fast-forward speed for nothing-happening weeks
 
 // Event tones that are dramatic enough to slow down for (skip pure-neutral chatter).
 const NOTABLE_TONES = new Set(['bad', 'good'])
@@ -71,8 +69,11 @@ export function clockDirective(prev, next, event) {
     }
   }
 
-  // ---- Quiet week: compress it -----------------------------------------
-  return { quietSpeed: QUIET_SPEED }
+  // ---- Uneventful week: no clock change ---------------------------------
+  // Every week still advances the meta (solve climbs, prices move, segments
+  // drift), so we DON'T fast-forward "quiet" weeks — that would skip real
+  // progression. The clock just keeps running at the player's chosen speed.
+  return null
 }
 
 function prevPressure(prev, cardId) {

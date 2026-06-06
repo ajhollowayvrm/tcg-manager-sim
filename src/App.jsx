@@ -8,6 +8,7 @@ import EventsFeed from './components/EventsFeed.jsx'
 import PersonasPanel from './components/PersonasPanel.jsx'
 import BansPanel from './components/BansPanel.jsx'
 import SetsPanel from './components/SetsPanel.jsx'
+import MetaReport from './components/MetaReport.jsx'
 import SetBuilder from './components/setbuilder/SetBuilder.jsx'
 
 // Mobile tabs group the seven panels into four sections. Desktop ignores this
@@ -30,6 +31,7 @@ export default function App() {
     metagame: <MetagamePanel state={game.state} />,
     sets: <SetsPanel state={game.state} />,
     market: <MarketTicker state={game.state} />,
+    metaReport: <MetaReport state={game.state} />,
     bans: <BansPanel state={game.state} onBan={game.ban} onRotate={game.rotate} />,
     feedback: <FeedbackFeed state={game.state} />,
     personas: <PersonasPanel state={game.state} />,
@@ -46,6 +48,7 @@ export default function App() {
           {panels.metagame}
           {panels.sets}
           {panels.market}
+          {panels.metaReport}
           {panels.bans}
         </section>
         <aside className="col col--side">
@@ -59,7 +62,7 @@ export default function App() {
           desktop via CSS. */}
       <main className="dashboard--mobile">
         {tab === 'meta' && <div className="col">{panels.metagame}{panels.sets}</div>}
-        {tab === 'market' && <div className="col">{panels.market}{panels.bans}</div>}
+        {tab === 'market' && <div className="col">{panels.market}{panels.metaReport}{panels.bans}</div>}
         {tab === 'community' && <div className="col">{panels.feedback}{panels.personas}</div>}
         {tab === 'events' && <div className="col">{panels.events}</div>}
       </main>

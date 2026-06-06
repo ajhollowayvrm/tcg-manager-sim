@@ -88,13 +88,6 @@ body {
   align-items: center;
   gap: 12px;
 }
-/* Auto fast-forward indicator next to the speed buttons. */
-.speeds__ff {
-  font-size: 0.75rem;
-  color: var(--accent-2);
-  align-self: center;
-  white-space: nowrap;
-}
 .btn--newgame { background: var(--good); border-color: var(--good); color: #042a16; }
 .btn--newgame:hover { background: #3ad872; }
 
@@ -438,6 +431,24 @@ body {
 
 .spark { display: block; }
 .spark--flat { width: 60px; height: 18px; }
+
+/* ---- Meta report ---- */
+.meta { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.meta__row {
+  display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center;
+  padding: 6px 8px; background: var(--surface-2); border-radius: 6px;
+}
+.meta__name { font-weight: 600; display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.meta__name > .rarity--common, .meta__name > [class^='rarity'] { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta__tier { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; }
+.meta__tier--defining { color: var(--accent); }
+.meta__tier--strong { color: var(--accent-2); }
+.meta__tier--fringe { color: var(--text-dim); }
+.meta__bar { grid-column: 1 / -1; height: 5px; background: var(--bg); border-radius: 99px; overflow: hidden; }
+.meta__fill { display: block; height: 100%; border-radius: 99px; transition: width 0.4s ease; }
+.meta__fill--defining { background: linear-gradient(90deg, var(--accent), var(--pop)); }
+.meta__fill--strong { background: var(--accent-2); }
+.meta__fill--fringe { background: var(--text-dim); }
 
 /* Rarity tints for card names */
 .rarity--common { color: var(--text); }

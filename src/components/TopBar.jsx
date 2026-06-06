@@ -38,18 +38,13 @@ export default function TopBar({ game, onDesignSet }) {
           {SPEEDS.map((s) => (
             <button
               key={s}
-              className={'btn btn--speed' + ((clock.baseSpeed ?? clock.speed) === s ? ' is-active' : '')}
+              className={'btn btn--speed' + (clock.speed === s ? ' is-active' : '')}
               onClick={() => setSpeed(s)}
               disabled={!!gameOver}
             >
               {s}×
             </button>
           ))}
-          {clock.autoSpeed && !clock.paused && (
-            <span className="speeds__ff" title={`Quiet stretch — fast-forwarding at ${clock.speed}×`}>
-              ⏩ {clock.speed}×
-            </span>
-          )}
         </div>
       </div>
 
