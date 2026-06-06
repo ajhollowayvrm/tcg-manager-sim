@@ -1,16 +1,18 @@
 :root {
-  --bg: #0f1020;
-  --surface: #1a1c33;
-  --surface-2: #24264a;
-  --border: #33365e;
-  --text: #e8e9f5;
-  --text-dim: #9598c0;
-  --accent: #6c5ce7;
-  --accent-2: #00d2d3;
-  --good: #2ecc71;
-  --warn: #f9ca24;
-  --bad: #ff6b6b;
-  --pop: #feca57;
+  /* Crimson / noir — near-black base, crimson + electric-blue accents, silver/gold metal */
+  --bg: #0a0a0f;
+  --surface: #15151f;
+  --surface-2: #1f1f2c;
+  --border: #2d2d3d;
+  --text: #ececf1;
+  --text-dim: #9a9aae;
+  --accent: #ff3355; /* crimson */
+  --accent-2: #3b82f6; /* electric blue */
+  --good: #22c55e;
+  --warn: #eab308;
+  --bad: #ff3355;
+  --pop: #eab308; /* gold */
+  --silver: #c7ccd9;
 
   --radius: 10px;
   --gap: 16px;
@@ -23,7 +25,7 @@
 
 body {
   margin: 0;
-  background: radial-gradient(circle at 20% 0%, #1b1d3a, var(--bg) 60%);
+  background: radial-gradient(circle at 20% 0%, #1c1014, var(--bg) 60%);
   color: var(--text);
   min-height: 100vh;
 }
@@ -107,7 +109,7 @@ body {
 /* ---- Modal / set builder ---- */
 .modal {
   position: fixed; inset: 0; z-index: 50;
-  background: rgba(6, 7, 20, 0.7);
+  background: rgba(4, 4, 8, 0.78);
   display: flex; align-items: center; justify-content: center;
   padding: var(--gap);
 }
@@ -244,7 +246,7 @@ body {
 
 /* Rarity tints for card names */
 .rarity--common { color: var(--text); }
-.rarity--uncommon { color: #b8c0d8; }
+.rarity--uncommon { color: var(--silver); }
 .rarity--rare { color: var(--accent-2); }
 .rarity--mythic { color: var(--pop); }
 
@@ -283,7 +285,7 @@ body {
 /* Stance accents */
 .item--ban { border-left-color: var(--bad); }
 .item--warn { border-left-color: var(--warn); }
-.item--pan { border-left-color: #8a8fb0; }
+.item--pan { border-left-color: var(--text-dim); }
 .item--hype { border-left-color: var(--accent-2); }
 .item--love { border-left-color: var(--good); }
 .item--neutral { border-left-color: var(--border); }
@@ -294,7 +296,7 @@ body {
   padding: 2px 5px; border-radius: 4px; color: #0b0c1a;
 }
 .badge--streamer { background: #ff7eb6; }
-.badge--competitor { background: #6c5ce7; color: #fff; }
+.badge--competitor { background: var(--silver); color: #0b0c1a; }
 .badge--collector { background: var(--pop); }
 .badge--reviewer { background: var(--accent-2); }
 .badge--theory { background: #79e36b; }
@@ -325,15 +327,15 @@ body {
 .bans__pressure { display: flex; align-items: center; gap: 8px; }
 .bans__track { flex: 1; height: 7px; background: var(--surface); border-radius: 99px; overflow: hidden; }
 .bans__fill { display: block; height: 100%; border-radius: 99px; transition: width 0.3s ease; }
-.pressure--cool { background: #5a6080; }
+.pressure--cool { background: #3a3a4a; }
 .pressure--warm { background: var(--warn); }
 .pressure--hot { background: var(--bad); }
 .bans__pval { font-size: 0.72rem; font-variant-numeric: tabular-nums; color: var(--text-dim); min-width: 22px; text-align: right; }
 
 .btn--ban { background: var(--bad); border-color: var(--bad); color: #2b0606; padding: 5px 12px; }
-.btn--ban:hover { background: #ff8585; }
-.btn--rotate { background: var(--accent); border-color: var(--accent); color: #fff; }
-.btn--rotate:hover { background: #8472f0; }
+.btn--ban:hover { background: #ff6b85; }
+.btn--rotate { background: var(--accent-2); border-color: var(--accent-2); color: #061122; }
+.btn--rotate:hover { background: #5b9bf8; }
 
 .bans__rotate {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -346,5 +348,5 @@ body {
 .tag { font-size: 0.55rem; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase;
   padding: 1px 5px; border-radius: 4px; margin-left: 6px; vertical-align: middle; }
 .tag--banned { background: var(--bad); color: #2b0606; }
-.tag--rotated { background: #5a6080; color: #0b0c1a; }
+.tag--rotated { background: var(--silver); color: #0b0c1a; }
 .ticker__row--banned, .ticker__row--rotated { opacity: 0.55; }
