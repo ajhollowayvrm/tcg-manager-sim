@@ -42,6 +42,22 @@ export const ARTISTS = [
   { id: 'a30', name: 'Pixel Goblin', specialty: ['cyber', 'cute'], cost: 2_400, reach: 34, trajectory: 'rising' },
   { id: 'a31', name: 'Dame Octavia Frost', specialty: ['frost', 'kingdoms'], cost: 17_500, reach: 90, trajectory: 'fading' },
   { id: 'a32', name: 'Juno Castellano', specialty: ['dragons', 'cosmic'], cost: 10_000, reach: 78, trajectory: 'rising' },
+
+  // Artists for the grounded / non-fantasy themes, so those genres earn the
+  // art-appeal match bonus too. Each covers a new genre tag paired with a
+  // related one; cost/reach/trajectory spread to match the roster's variety.
+  { id: 'a33', name: 'Dashiell Kerr', specialty: ['noir', 'heist'], cost: 7_300, reach: 64, trajectory: 'steady' },
+  { id: 'a34', name: 'Birdie "Getaway" Salas', specialty: ['heist', 'racing'], cost: 3_600, reach: 43, trajectory: 'rising' },
+  { id: 'a35', name: 'Rev Tanaka', specialty: ['racing', 'cyber'], cost: 8_700, reach: 72, trajectory: 'rising' },
+  { id: 'a36', name: 'Coach Delgado', specialty: ['sports', 'beasts'], cost: 4_100, reach: 47, trajectory: 'steady' },
+  { id: 'a37', name: 'Marisol "Halftime" Vega', specialty: ['sports', 'cute'], cost: 9_200, reach: 76, trajectory: 'established' },
+  { id: 'a38', name: 'Captain Brine', specialty: ['pirates', 'beasts'], cost: 11_500, reach: 81, trajectory: 'fading' },
+  { id: 'a39', name: 'Saltwater Sage', specialty: ['pirates', 'horror'], cost: 5_400, reach: 53, trajectory: 'rising' },
+  { id: 'a40', name: 'Detective Imani Cole', specialty: ['noir', 'undead'], cost: 12_200, reach: 79, trajectory: 'steady' },
+  { id: 'a41', name: 'Cosmonaut Petrov', specialty: ['colony', 'mecha'], cost: 6_800, reach: 59, trajectory: 'steady' },
+  { id: 'a42', name: 'Dr. Aria Voss', specialty: ['colony', 'cosmic'], cost: 15_500, reach: 89, trajectory: 'established' },
+  { id: 'a43', name: 'Gojira Goto', specialty: ['kaiju', 'mecha'], cost: 13_800, reach: 85, trajectory: 'rising' },
+  { id: 'a44', name: 'Tiny "Stomp" Okafor', specialty: ['kaiju', 'beasts'], cost: 2_900, reach: 39, trajectory: 'rising' },
 ]
 
 export function getArtist(id) {
