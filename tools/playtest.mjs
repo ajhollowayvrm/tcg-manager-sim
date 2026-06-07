@@ -14,7 +14,7 @@
 import { createInitialState } from '../src/game/initialState.js'
 import { advanceWeek } from '../src/game/simulation.js'
 import { createDraft, createSignatureCard, releaseSet, setCost } from '../src/game/sets.js'
-import { banCard, rotateFormat } from '../src/game/bans.js'
+import { banCard, pullFromPrint } from '../src/game/bans.js'
 import { resetCadence } from '../src/game/cadence.js'
 
 const HORIZON = 312 // ~6 years of weeks — a long run, per the brief's "year 6"
@@ -40,8 +40,8 @@ function applyBan(state, cardId) {
   if (!r) return state
   return { ...state, cards: r.cards, metagame: r.metagame, segments: r.segments, playerBase: r.playerBase, personas: r.personas }
 }
-function applyRotate(state, count) {
-  const r = rotateFormat(state, count)
+function applyPull(state, setId) {
+  const r = pullFromPrint(state, setId)
   if (!r) return state
   return { ...state, sets: r.sets, cards: r.cards, metagame: r.metagame, segments: r.segments, playerBase: r.playerBase, personas: r.personas }
 }
@@ -100,11 +100,16 @@ function makeStrategy({ name, cadence, knobs, banAt, rotateEvery, ignoreCash = f
           ctx.bans++
         }
       }
-      // Rotate periodically to reset creep.
+      // Periodically pull the oldest in-print set to reset creep (the new lever
+      // that replaced rotation — picks any set; here we pick the oldest).
       if (rotateEvery && s.week > 0 && s.week % rotateEvery === 0) {
-        const before = s.sets.filter((x) => x.rotated).length
-        s = applyRotate(s, 1)
-        if (s.sets.filter((x) => x.rotated).length > before) ctx.rotations++
+        const inPrint = s.sets.filter((x) => !x.rotated && !x.outOfPrint)
+          .sort((a, b) => a.releasedWeek - b.releasedWeek)
+        if (inPrint.length >= 2) {
+          const before = s.sets.filter((x) => x.outOfPrint).length
+          s = applyPull(s, inPrint[0].id)
+          if (s.sets.filter((x) => x.outOfPrint).length > before) ctx.rotations++
+        }
       }
       return s
     },

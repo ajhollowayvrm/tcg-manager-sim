@@ -13,13 +13,17 @@ function pressureClass(p) {
   return 'pressure--cool'
 }
 
-export default function BansPanel({ state, onBan, onRotate }) {
+import { useState } from 'react'
+
+export default function BansPanel({ state, onBan, onPull }) {
   const live = state.cards.filter((c) => !c.banned && !c.rotated)
-  const liveSets = state.sets.filter((s) => !s.rotated)
-  const oldest = liveSets.length
-    ? [...liveSets].sort((a, b) => a.releasedWeek - b.releasedWeek)[0]
-    : null
-  const canRotate = liveSets.length >= 2 // keep at least one set in the format
+  // Sets still in print & in the format are the ones you can pull.
+  const inPrintSets = state.sets.filter((s) => !s.rotated && !s.outOfPrint)
+  const [pickedPull, setPickedPull] = useState(null)
+  const pullSetId = pickedPull && inPrintSets.some((s) => s.id === pickedPull)
+    ? pickedPull
+    : inPrintSets[0]?.id
+  const canPull = inPrintSets.length >= 2 // keep at least one set in print
 
   // Sets can be hundreds of cards — only surface ban CANDIDATES: anything drawing
   // real ban pressure, else the strongest cards (what you'd consider banning).
@@ -65,22 +69,30 @@ export default function BansPanel({ state, onBan, onRotate }) {
         </ul>
       )}
 
-      <div className="bans__rotate">
-        <div className="bans__rotateinfo">
-          {oldest ? (
-            <>Oldest live set: <strong>{oldest.name}</strong> (wk {oldest.releasedWeek})</>
-          ) : (
-            'No sets to rotate.'
-          )}
+      <div className="bans__pull">
+        <div className="bans__pulllabel">
+          Pull a set from publication
+          <span className="muted"> — stops printing it; its singles spike on scarcity, collectors cheer, and the format refreshes. A prime reprint candidate later.</span>
         </div>
-        <button
-          className="btn btn--rotate"
-          disabled={!canRotate}
-          onClick={() => onRotate(1)}
-          title={canRotate ? 'Rotate out the oldest set — restores diversity, resets power creep, angers collectors' : 'Need at least two sets in the format to rotate'}
-        >
-          Rotate Format
-        </button>
+        <div className="bans__pullrow">
+          {inPrintSets.length > 0 ? (
+            <select value={pullSetId} onChange={(e) => setPickedPull(e.target.value)}>
+              {inPrintSets.map((s) => (
+                <option key={s.id} value={s.id}>{s.name} (wk {s.releasedWeek})</option>
+              ))}
+            </select>
+          ) : (
+            <span className="bans__pullnone">No sets in print.</span>
+          )}
+          <button
+            className="btn btn--rotate"
+            disabled={!canPull}
+            onClick={() => onPull(pullSetId)}
+            title={canPull ? 'Pull this set from publication — scarcity pop + collector goodwill + format refresh; you forfeit its future pack sales' : 'Need at least two sets in print to pull one'}
+          >
+            Pull from print
+          </button>
+        </div>
       </div>
     </div>
   )

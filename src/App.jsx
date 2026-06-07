@@ -41,7 +41,7 @@ export default function App() {
     market: <MarketTicker state={game.state} />,
     metaReport: <MetaReport state={game.state} />,
     packs: <PackRipper state={game.state} onRip={game.rip} />,
-    bans: <BansPanel state={game.state} onBan={game.ban} onRotate={game.rotate} />,
+    bans: <BansPanel state={game.state} onBan={game.ban} onPull={game.pull} />,
     feedback: <FeedbackFeed state={game.state} />,
     personas: <PersonasPanel state={game.state} onComp={game.comp} onSponsor={game.sponsor} onDropSponsor={game.unsponsor} />,
     distributors: <DistributorsPanel state={game.state} onSign={game.signDist} onCultivate={game.cultivateDist} onDrop={game.dropDist} />,

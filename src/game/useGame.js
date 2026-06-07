@@ -2,7 +2,7 @@ import { useCallback, useEffect, useReducer, useRef } from 'react'
 import { createInitialState } from './initialState.js'
 import { advanceWeek } from './simulation.js'
 import { releaseSet } from './sets.js'
-import { banCard, rotateFormat } from './bans.js'
+import { banCard, pullFromPrint } from './bans.js'
 import { ripPack } from './packs.js'
 import { resetCadence } from './cadence.js'
 import { compProduct, sponsorCreator, dropSponsor } from './relationships.js'
@@ -64,8 +64,8 @@ function reducer(state, action) {
         clock: { ...state.clock, paused: true, pauseReason: result.banReason },
       }
     }
-    case 'ROTATE_FORMAT': {
-      const result = rotateFormat(state, action.count ?? 1)
+    case 'PULL_FROM_PRINT': {
+      const result = pullFromPrint(state, action.setId)
       if (!result) return state
       return {
         ...state,
@@ -76,7 +76,7 @@ function reducer(state, action) {
         playerBase: result.playerBase,
         personas: result.personas,
         eventsFeed: [{ week: state.week, text: result.feed }, ...state.eventsFeed],
-        clock: { ...state.clock, paused: true, pauseReason: `Rotated: ${result.rotatedNames}` },
+        clock: { ...state.clock, paused: true, pauseReason: `Pulled ${result.pulledName} from print` },
       }
     }
     case 'RIP_PACK': {
@@ -213,7 +213,7 @@ export function useGame() {
   const setSpeed = useCallback((speed) => dispatch({ type: 'SET_SPEED', speed }), [])
   const release = useCallback((draft) => dispatch({ type: 'RELEASE_SET', draft }), [])
   const banCardAction = useCallback((cardId) => dispatch({ type: 'BAN_CARD', cardId }), [])
-  const rotate = useCallback((count) => dispatch({ type: 'ROTATE_FORMAT', count }), [])
+  const pull = useCallback((setId) => dispatch({ type: 'PULL_FROM_PRINT', setId }), [])
   const reset = useCallback(() => dispatch({ type: 'RESET' }), [])
   // A nonce so consecutive rips of the same set in the same week differ.
   const ripNonce = useRef(0)
@@ -226,5 +226,5 @@ export function useGame() {
   const dropDist = useCallback((distId) => dispatch({ type: 'DROP_DISTRIBUTOR', distId }), [])
   const cultivateDist = useCallback((distId) => dispatch({ type: 'CULTIVATE_DISTRIBUTOR', distId }), [])
 
-  return { state, play, pause, setSpeed, release, ban: banCardAction, rotate, reset, rip, startGame, comp, sponsor, unsponsor, signDist, dropDist, cultivateDist }
+  return { state, play, pause, setSpeed, release, ban: banCardAction, pull, reset, rip, startGame, comp, sponsor, unsponsor, signDist, dropDist, cultivateDist }
 }

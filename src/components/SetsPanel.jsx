@@ -33,7 +33,10 @@ export default function SetsPanel({ state }) {
                   <span className="sets__name">
                     <SetSymbol themeId={set.themeId} rarity="rare" size={15} />
                     {set.name}
-                    {set.rotated && <span className="tag tag--rotated">rotated</span>}
+                    {set.firstEdition && <span className="tag tag--outofprint" title="Original printing — a permanent premium tier">1st ed</span>}
+                    {set.outOfPrint
+                      ? <span className="tag tag--outofprint">out of print</span>
+                      : set.rotated && <span className="tag tag--rotated">rotated</span>}
                     {soldOut && !set.rotated && <span className="tag tag--soldout">sold out</span>}
                   </span>
                   <span className="sets__wk">

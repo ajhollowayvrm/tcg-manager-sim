@@ -93,7 +93,10 @@ function stepCard(card, set, metagame, rng) {
 // The curve is continuous from week 0 (weeksSince=0 → MSRP), so there's no
 // cliff on the first tick. Set-level (every pack of a set is the same product).
 export function sealedPrice(set, weeksSince) {
-  const scarcity = 1 + (1 - set.printRun / 100) * 2.2 // 1.0 (over) .. ~3.2 (under)
+  // An out-of-print (pulled) set is no longer being made — treat it as maximally
+  // scarce so its sealed asymptotes to a higher ceiling (the out-of-print bump).
+  const printScarcity = 1 + (1 - set.printRun / 100) * 2.2 // 1.0 (over) .. ~3.2 (under)
+  const scarcity = set.outOfPrint ? Math.max(printScarcity, 3.0) * 1.25 : printScarcity
   const ceiling = set.price * scarcity // where sealed asymptotes as it dries up
   // Exponential approach to the ceiling: 0 weeks → MSRP, → ceiling over time.
   // Scarcer sets dry up faster (steeper rate).
@@ -117,11 +120,16 @@ export function resolveMarket(state) {
     const set = setById.get(card.setId)
     if (!set) return card
 
-    // Banned/rotated cards leave the competitive market — they drift gently on a
+    // Banned/rotated cards leave the competitive market — they drift on a
     // collector floor rather than trading on playability, and never appear as
-    // movers. Sealed for a rotated set still ages as a collectible.
+    // movers. An OUT-OF-PRINT (pulled) set is different from a banned/legacy-
+    // rotated one: its supply is fixed and shrinking, so it drifts gently UPWARD
+    // (scarcity appreciation) instead of flat, and its sealed is priced as a
+    // permanently out-of-print collectible.
     if (card.banned || card.rotated) {
-      card.singlePrice = Math.round(card.singlePrice * (1 + range(rng, -0.01, 0.015)) * 100) / 100
+      const outOfPrint = card.outOfPrint || set.outOfPrint
+      const drift = outOfPrint ? range(rng, 0.0, 0.025) : range(rng, -0.01, 0.015)
+      card.singlePrice = Math.round(card.singlePrice * (1 + drift) * 100) / 100
       card.priceHistory = [...card.priceHistory, card.singlePrice].slice(-26)
       card.sealedPrice = sealedPrice(set, state.week - set.releasedWeek)
       return card

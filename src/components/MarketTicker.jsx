@@ -71,15 +71,21 @@ export default function MarketTicker({ state }) {
               // Movers get a week-stamped key so the flash animation re-fires
               // every week the card moves (React remounts only the ≤8 movers).
               const key = pct == null ? card.id : `${card.id}-${week}`
-              const status = card.banned ? 'banned' : card.rotated ? 'rotated' : null
               const set = setById.get(card.setId)
+              // Out-of-print (pulled) cards read as "out of print" even though
+              // they carry the rotated flag internally; banned and legacy-rotated
+              // keep their own labels.
+              const status = card.banned ? 'banned'
+                : (card.outOfPrint || set?.outOfPrint) ? 'outofprint'
+                : card.rotated ? 'rotated' : null
+              const statusLabel = status === 'outofprint' ? 'out of print' : status
               const tier = visualTier(set?.rarities, card.rarity)
               return (
                 <li key={key} className={`ticker__row${dir}${big}${status ? ' ticker__row--' + status : ''}`}>
                   <span className={`ticker__name rarity--${tier}`}>
                     <SetSymbol themeId={set?.themeId} tier={tier} size={14} />
                     {card.name}
-                    {status && <span className={`tag tag--${status}`}>{status}</span>}
+                    {status && <span className={`tag tag--${status}`}>{statusLabel}</span>}
                   </span>
                   <Sparkline history={card.priceHistory} />
                   <span className="ticker__sealed" title="Sealed price">📦 {fmt(card.sealedPrice)}</span>

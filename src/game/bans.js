@@ -102,11 +102,96 @@ export function banCard(state, cardId) {
   return { cards, metagame, segments, playerBase, personas, feed, justified, banReason: `Banned ${card.name}` }
 }
 
-// ---- Rotate the format ----------------------------------------------------
+// ---- Pull a set from publication ------------------------------------------
+
+// The player stops printing a chosen set and takes it out of the competitive
+// format. This REPLACES the old "rotate the oldest set" lever and inverts its
+// collector economics:
+//
+//   • Stops print — the set earns no more sealed revenue (the real cost: you're
+//     leaving money on the table). Marked set.outOfPrint.
+//   • Scarcity pop — its existing singles JUMP (supply is now fixed and shrinking
+//     in the wild) and its sealed appreciates faster. Collectors of it are
+//     delighted: their cardboard just got rarer and pricier.
+//   • Leaves the meta — its cards exit the competitive format (marked rotated, so
+//     every existing format filter keeps treating them as out-of-format), which
+//     gives the same power-creep / diversity relief rotation did. But they keep
+//     trading as collectibles at the new, elevated price — they don't crater.
+//
+// The player picks ANY set (not just the oldest). At least one set must remain
+// in print so the format isn't emptied. Returns reducer patches.
+export function pullFromPrint(state, setId) {
+  const target = state.sets.find((s) => s.id === setId)
+  if (!target || target.rotated || target.outOfPrint) return null
+  // Keep at least one set in print/format.
+  const stillInPrint = state.sets.filter((s) => !s.rotated && !s.outOfPrint)
+  if (stillInPrint.length < 2) return null
+
+  const rng = makeRng(hashSeed(`pull:${setId}:${state.week}`))
+
+  const sets = state.sets.map((s) =>
+    s.id === setId ? { ...s, outOfPrint: true, rotated: true, pulledWeek: state.week } : s,
+  )
+
+  // The set's cards leave the format (rotated) but APPRECIATE on scarcity — a
+  // one-time pop, the opposite of a ban/old-rotate crater. The pop is bigger for
+  // a beloved/valuable card (collector hype carries it).
+  const cards = state.cards.map((c) => {
+    if (c.setId !== setId || c.rotated) return c
+    const collectorLove = 1 + (c.popFactors?.hype ?? 30) / 100 * 0.5 // 1.0–1.5
+    const pop = clamp(1.25 * collectorLove, 1.1, 1.9)
+    const next = Math.round(c.singlePrice * pop * 100) / 100
+    return {
+      ...c,
+      rotated: true, // out of the competitive format (existing filters honor this)
+      outOfPrint: true,
+      hype: clamp((c.hype ?? 0) + 0.2, 0, 3), // scarcity buzz
+      momentum: Math.max(0, c.momentum ?? 0),
+      singlePrice: next,
+      priceHistory: [...c.priceHistory, next].slice(-26),
+    }
+  })
+
+  // Format health: same relief rotation gave — the pulled set's decks leave, the
+  // field reopens, power creep eases.
+  const archetypes = flatten(state.metagame.archetypes, range(rng, 0.35, 0.55))
+  const metagame = {
+    diversity: clamp(state.metagame.diversity + range(rng, 10, 20), 0, 100),
+    powerLevel: clamp(state.metagame.powerLevel - range(rng, 5, 11), 0, 100),
+    archetypes,
+    archetypeBalance: balanceScore(archetypes),
+    solveLevel: clamp(state.metagame.solveLevel - range(rng, 16, 28), 0, 100),
+  }
+
+  // Goodwill: collectors are HAPPY (scarcity boosts their holdings), competitive
+  // players like the fresh format; only the loss of an in-print set is neutral.
+  const collectorDelta = Math.round(state.segments.collectors * range(rng, 0.03, 0.07))
+  const compDelta = Math.round(state.segments.competitive * range(rng, 0.0, 0.03))
+  const segments = {
+    competitive: Math.max(0, state.segments.competitive + compDelta),
+    casual: state.segments.casual,
+    collectors: Math.max(0, state.segments.collectors + collectorDelta),
+  }
+  const playerBase = Math.max(0, segments.competitive + segments.casual + segments.collectors)
+
+  const personas = state.personas.map((p) => {
+    // Collectors cheer the scarcity; fairness/fun lovers like the fresh format.
+    const d = p.type === 'collector' ? range(rng, 6, 12) : (p.taste.fairness + p.taste.fun) * 3
+    return { ...p, sentiment: clamp(p.sentiment + d, -100, 100) }
+  })
+
+  const feed = `${target.name} is pulled from publication. Out of print and out of the format — its singles spike on scarcity and collectors are thrilled. (A prime candidate to reprint later.)`
+
+  return { sets, cards, metagame, segments, playerBase, personas, feed, pulledName: target.name }
+}
+
+// ---- Rotate the format (legacy) -------------------------------------------
 
 // Rotating retires the oldest live set(s). Restores diversity & resets power
 // creep, but costs goodwill — collectors holding rotated cards get hit hardest.
 // `count` = how many of the oldest sets to rotate out (default 1).
+// Superseded by pullFromPrint (the player-friendlier, pick-any-set lever); kept
+// for the headless harness and any old call sites.
 export function rotateFormat(state, count = 1) {
   const liveSets = state.sets
     .filter((s) => !s.rotated)

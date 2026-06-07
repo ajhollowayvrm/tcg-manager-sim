@@ -807,18 +807,24 @@ body {
 .btn--rotate { background: var(--accent-2); border-color: var(--accent-2); color: #061122; }
 .btn--rotate:hover { background: #5b9bf8; }
 
-.bans__rotate {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding-top: 12px; border-top: 1px solid var(--border);
+.bans__pull {
+  padding-top: 12px; margin-top: 4px; border-top: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 8px;
 }
-.bans__rotateinfo { font-size: 0.8rem; color: var(--text-dim); }
-.bans__rotateinfo strong { color: var(--text); }
+.bans__pulllabel { font-size: 0.82rem; color: var(--text); }
+.bans__pullrow { display: flex; align-items: center; gap: 8px; }
+.bans__pullrow select {
+  flex: 1; min-width: 0; background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px; padding: 7px 9px; font: inherit;
+}
+.bans__pullnone { flex: 1; font-size: 0.8rem; color: var(--text-dim); }
 
 /* Status tags on market rows */
 .tag { font-size: 0.55rem; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase;
   padding: 1px 5px; border-radius: 4px; margin-left: 6px; vertical-align: middle; }
 .tag--banned { background: var(--bad); color: #2b0606; }
 .tag--rotated { background: var(--silver); color: #0b0c1a; }
+.tag--outofprint { background: var(--pop); color: #2b2406; }
 .tag--soldout { background: var(--good); color: #042a16; }
 .ticker__row--banned, .ticker__row--rotated { opacity: 0.55; }
 
