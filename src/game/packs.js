@@ -11,12 +11,17 @@
 import { makeRng, hashSeed } from './rng.js'
 import { getRarity } from './rarities.js'
 
-const PACK_SIZE = 6 // cards per pack
+const LEGACY_PACK_SIZE = 6 // cards per pack for sets saved before authored formats
 
 // Draw one pack from a released set. Returns { pulls, bestPull } where pulls is
 // an array of the live card records pulled (with a per-pull seededness so the
 // same week/pack is reproducible). Does NOT mutate state — the reducer applies
 // supply changes. `nonce` varies the draw so repeated rips differ.
+//
+// The set's authored pack FORMAT (slot list) drives the draw: each slot pulls
+// `count` cards from its allowed rarities, escalate slots biasing toward the
+// rarer end. Sets released before booster formats existed (no packFormat) fall
+// back to the old fixed-6 / single-hit-slot behavior so old saves still rip.
 export function ripPack(state, setId, nonce = 0) {
   const set = state.sets.find((s) => s.id === setId)
   if (!set || set.rotated) return null
@@ -33,16 +38,17 @@ export function ripPack(state, setId, nonce = 0) {
     byRarity.get(c.rarity).push(c)
   }
 
-  // Per-slot rarity odds. Most slots are "base" (commons/uncommons); the last
-  // slot is the "hit" slot, pulling from the rarer end by pull weight, including
-  // secrets at their (tiny) rate.
+  const slots = resolveSlots(set, sheet)
+
   const pulls = []
-  for (let i = 0; i < PACK_SIZE; i++) {
-    const hitSlot = i === PACK_SIZE - 1
-    const rarityId = drawRarity(sheet, byRarity, rng, hitSlot)
-    const pool = byRarity.get(rarityId)
-    if (!pool || !pool.length) continue
-    pulls.push(pool[Math.floor(rng() * pool.length) % pool.length])
+  for (const slot of slots) {
+    const count = Math.max(0, Math.round(slot.count || 0))
+    for (let i = 0; i < count; i++) {
+      const rarityId = drawSlotRarity(slot, sheet, byRarity, rng)
+      const pool = byRarity.get(rarityId)
+      if (!pool || !pool.length) continue
+      pulls.push(pool[Math.floor(rng() * pool.length) % pool.length])
+    }
   }
 
   // The "best" pull = highest current single price (what you'd brag about).
@@ -50,21 +56,41 @@ export function ripPack(state, setId, nonce = 0) {
   return { pulls, bestPull }
 }
 
-// Draw a rarity id for one slot. Base slots bias hard toward the commonest
-// rarities; the hit slot weights by pullWeight across all non-secret rarities and
-// gives secrets their long-shot chance.
-function drawRarity(sheet, byRarity, rng, hitSlot) {
-  const present = sheet.filter((r) => byRarity.has(r.id))
-  if (!present.length) return [...byRarity.keys()][0]
+// The slot list to draw from: the set's authored format, or a legacy fallback
+// (N base slots + one hit slot) synthesized from the sheet for old sets.
+function resolveSlots(set, sheet) {
+  if (set.packFormat?.slots?.length) return set.packFormat.slots
+  // Legacy: rebuild the old behavior — (size-1) base slots over non-secrets, plus
+  // one hit slot over the whole sheet.
+  const baseIds = sheet.filter((r) => !r.secret).map((r) => r.id)
+  const allIds = sheet.map((r) => r.id)
+  return [
+    { count: LEGACY_PACK_SIZE - 1, rarityIds: baseIds, escalate: false },
+    { count: 1, rarityIds: allIds.length ? allIds : baseIds, escalate: true },
+  ]
+}
 
-  if (!hitSlot) {
-    // Base slot: weight = pullWeight, but exclude secrets and damp the rarest.
-    const pool = present.filter((r) => !r.secret)
-    return weightedPick(pool.length ? pool : present, (r) => Math.max(0, r.pullWeight), rng)
+// Draw a rarity id for one authored slot. The slot's `rarityIds` restrict the
+// pool; only rarities actually present in the set's cards are eligible. Weight is
+// pullWeight; an `escalate` slot squares the rarity bias so it leans to the top
+// of its list (the chase-slot feel). Falls back to the commonest present rarity.
+function drawSlotRarity(slot, sheet, byRarity, rng) {
+  const ids = new Set(slot.rarityIds ?? [])
+  let pool = sheet.filter((r) => ids.has(r.id) && byRarity.has(r.id))
+  // If nothing in the slot's list is present, fall back to any present rarity so
+  // a renamed/removed rarity never yields an empty pull.
+  if (!pool.length) pool = sheet.filter((r) => byRarity.has(r.id))
+  if (!pool.length) return [...byRarity.keys()][0]
+
+  if (slot.escalate) {
+    // Escalate: bias toward the rarer end WITHOUT inverting the order. We compress
+    // pullWeight toward equal (sqrt), which flattens the steep common→secret
+    // falloff so the rare end shows up far more than in a flat draw — but the
+    // natural ordering holds (a holo still beats an ultra beats a secret). The
+    // result is a chase slot that mostly lands holo/ultra with a secret thrill.
+    return weightedPick(pool, (r) => Math.max(0.0001, r.pullWeight) ** 0.5, rng)
   }
-  // Hit slot: full sheet incl. secrets, weighted by pullWeight (so a secret is a
-  // rare thrill, a holo/ultra common-ish, etc.).
-  return weightedPick(present, (r) => Math.max(0.0001, r.pullWeight) * (r.secret ? 1 : 1), rng)
+  return weightedPick(pool, (r) => Math.max(0, r.pullWeight), rng)
 }
 
 function weightedPick(items, weightOf, rng) {

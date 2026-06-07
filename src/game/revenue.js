@@ -12,6 +12,7 @@
 
 import { makeRng, hashSeed, range } from './rng.js'
 import { clamp } from './simulation.js'
+import { packRichnessDelta } from './rarities.js'
 
 // Map the 0–100 print-run slider to actual units printed. A LOW print run must
 // mean genuinely few units (real lost sales — the brief's cost of scarcity), so
@@ -35,7 +36,11 @@ function setBuzz(set, cards) {
   const own = cards.filter((c) => c.setId === set.id)
   if (own.length === 0) return 0.5
   const avgHype = own.reduce((s, c) => s + (c.popFactors?.hype ?? 50), 0) / own.length
-  return clamp(avgHype / 100, 0.1, 1.2)
+  // A booster richer than Classic makes cracking packs feel better — a modest
+  // demand lift, paid for by the higher print cost; a leaner pack buzzes a touch
+  // less. Relative to Classic, so the default pack is demand-neutral.
+  const richness = packRichnessDelta(set.packFormat)
+  return clamp((avgHype / 100) * (1 + richness * 0.12), 0.1, 1.3)
 }
 
 // Weekly pack demand for one set, before the supply cap. Returns a unit count.

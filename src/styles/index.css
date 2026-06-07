@@ -46,6 +46,11 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 12px 16px;
+  /* Pin the header so it stays put while a tab's panels scroll — it shouldn't
+     eat the scroll budget of every section. */
+  position: sticky;
+  top: var(--gap);
+  z-index: 30;
 }
 
 .topbar__brand {
@@ -353,11 +358,21 @@ body {
   :root { --gap: 12px; }
   .app { padding: 12px; }
 
-  /* Topbar already wraps; give the clock its own full-width row so the speed
-     buttons aren't squeezed against the play button. */
-  .topbar { gap: 10px; }
-  .topbar__clock { flex-basis: 100%; flex-wrap: wrap; }
-  .btn--design { flex-basis: 100%; text-align: center; }
+  /* The header is the single biggest fixed cost on a phone (every tab pays it),
+     so keep it compact: tighter padding/gaps, and the Design button shares a row
+     with the clock controls instead of each taking a full-width row of its own.
+     top is re-pinned to the smaller --gap here. */
+  .topbar { gap: 8px 10px; padding: 10px 12px; top: 12px; }
+  .btn--design { flex: 1 1 auto; text-align: center; }
+  .topbar__clock { flex: 0 0 auto; flex-wrap: wrap; }
+
+  /* Cap the status/game-over line so a long message (e.g. a wrapped loss
+     reason) can't balloon the header off the top of the content. */
+  .topbar__reason {
+    max-height: 2.6em;
+    overflow-y: auto;
+    font-size: 0.8rem;
+  }
 
   /* Set-builder footer: stack the cost summary above a full-width Release
      button instead of cramming them into one row (which squeezed the button
@@ -509,6 +524,44 @@ body {
 }
 .rared__remove { color: var(--bad); padding: 4px 6px; }
 .rared__add { align-self: flex-start; margin-top: 2px; }
+
+/* ---- Booster format editor ---- */
+.packfmt { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
+.packfmt__presets { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.packfmt__presetlabel { font-size: 0.78rem; color: var(--text-dim); }
+.btn--chip { padding: 5px 12px; font-size: 0.82rem; border-radius: 99px; }
+.btn--chip.is-active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.packfmt__size {
+  margin-left: auto; font-size: 0.78rem; color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.packfmt__slots { display: flex; flex-direction: column; gap: 8px; }
+.packfmt__slot {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px;
+}
+.packfmt__count {
+  width: 52px; background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px;
+  font: inherit; font-size: 0.85rem; text-align: center;
+}
+.packfmt__times { color: var(--text-dim); }
+.packfmt__rarities { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; }
+.packfmt__rar {
+  background: var(--surface); color: var(--text-dim); border: 1px solid var(--border);
+  border-radius: 6px; padding: 4px 9px; font: inherit; font-size: 0.76rem; cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.packfmt__rar:hover { border-color: #3a3a4f; }
+.packfmt__rar.is-on { background: var(--accent-2); border-color: var(--accent-2); color: #fff; }
+.packfmt__esc {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 0.74rem; color: var(--text-dim); cursor: pointer; white-space: nowrap;
+}
+.packfmt__esc input { accent-color: var(--accent); width: 16px; height: 16px; }
+.packfmt__remove { color: var(--bad); padding: 4px 6px; }
+.packfmt__add { align-self: flex-start; margin-top: 2px; }
 
 /* ---- Pack ripper ---- */
 .rip__controls { display: flex; gap: 8px; margin-bottom: 12px; }

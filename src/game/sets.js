@@ -8,7 +8,7 @@ import { clamp } from './simulation.js'
 import { printRunUnits } from './revenue.js'
 import { shiftToward, balanceScore } from './archetypes.js'
 import { currentArtist } from './artists.js'
-import { defaultRaritySheet, getRarity, pickRarity, validateRaritySheet } from './rarities.js'
+import { defaultRaritySheet, getRarity, pickRarity, validateRaritySheet, defaultPackFormat, validatePackFormat, packRichnessDelta } from './rarities.js'
 
 export const MIN_SIGNATURE_CARDS = 0 // signature highlights are optional now
 export const MAX_SIGNATURE_CARDS = 15
@@ -34,6 +34,9 @@ export function createDraft(setNumber) {
     secretCount: 2,
     // Editable per-set rarity sheet (add/remove/rename; pick which a set has).
     rarities: defaultRaritySheet(),
+    // Booster structure: how a pack is built from the sheet (slot counts + which
+    // rarities each slot pulls). Starts from the Classic preset; editable.
+    packFormat: defaultPackFormat(),
 
     // 0–15 signature cards — designated highlights, hand-designed and/or auto.
     signatureCards: [], // { id, name, rarity, artistId, mode, power, rulesText }
@@ -119,7 +122,11 @@ const BASE_DEV_COST = 40_000
 // defaults to the static roster so old call sites / tests still work. The live
 // game passes a state-aware resolver so a risen star costs what they cost now.
 export function setCost(draft, artistOf = getArtist) {
-  const printCost = Math.round(20_000 + (draft.printRun / 100) * 180_000)
+  // A booster richer than the Classic baseline costs more to manufacture; a
+  // leaner one costs a touch less. Measured relative to Classic so the default
+  // pack is cost-neutral. Light: a hit-heavy pack runs ~+15-20% on the print line.
+  const richness = packRichnessDelta(draft.packFormat)
+  const printCost = Math.round((20_000 + (draft.printRun / 100) * 180_000) * (1 + richness * 0.25))
   const dev = BASE_DEV_COST
   const art = draft.signatureCards.reduce((sum, c) => {
     const artist = c.artistId ? artistOf(c.artistId) : null
@@ -141,6 +148,7 @@ export function validateDraft(draft) {
     errors.push(`No more than ${MAX_SIGNATURE_CARDS} signature highlights.`)
   }
   errors.push(...validateRaritySheet(draft.rarities))
+  errors.push(...validatePackFormat(draft.packFormat))
   if (draft.prerelease.chasePullable && !draft.prerelease.enabled) {
     errors.push('Chase-pullable requires prerelease enabled.')
   }
@@ -287,6 +295,7 @@ export function releaseSet(state, draft) {
     price: draft.pricePoint,
     signatureCards: draft.signatureCards,
     rarities: draft.rarities, // the set's rarity sheet (for pricing/packs/display)
+    packFormat: draft.packFormat, // booster structure (slots) for ripping/display
     setLength: draft.setLength,
     secretCount: draft.secretCount,
     prerelease: draft.prerelease,

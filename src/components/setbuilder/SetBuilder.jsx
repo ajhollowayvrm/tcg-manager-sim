@@ -5,6 +5,7 @@ import { useState } from 'react'
 import Slider from './Slider.jsx'
 import SignatureCardEditor from './SignatureCardEditor.jsx'
 import RarityEditor from './RarityEditor.jsx'
+import PackFormatEditor from './PackFormatEditor.jsx'
 import {
   createDraft,
   createSignatureCard,
@@ -156,6 +157,21 @@ export default function SetBuilder({ setNumber, cash, artists, onRelease, onClos
               Any card — even a humble common — can become a market darling.
             </span>
             <RarityEditor sheet={draft.rarities} onChange={(rarities) => patch({ rarities })} />
+          </section>
+
+          {/* Booster format — how a pack is built from the rarity sheet */}
+          <section className="builder__section">
+            <h3 className="builder__h3">Booster format</h3>
+            <span className="field__note">
+              How a pack is built from your rarities — slot counts and which
+              rarities each slot pulls. Hit-heavy boosters cost a little more to
+              print and generate a little more buzz.
+            </span>
+            <PackFormatEditor
+              format={draft.packFormat}
+              sheet={draft.rarities}
+              onChange={(packFormat) => patch({ packFormat })}
+            />
           </section>
 
           {/* Prerelease */}
