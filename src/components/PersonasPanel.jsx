@@ -60,7 +60,6 @@ export default function PersonasPanel({ state, onComp, onSponsor, onDropSponsor 
   const [sort, setSort] = useState('reach')
   const [query, setQuery] = useState('')
   const [openId, setOpenId] = useState(null) // expanded persona for relationship actions
-  const cash = state.cash
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -134,13 +133,14 @@ export default function PersonasPanel({ state, onComp, onSponsor, onDropSponsor 
                       <span className="bar bar--rel"><span className="bar__fill" style={{ width: `${p.relationship ?? 0}%` }} /></span>
                     </div>
                     <div className="roster__actions">
-                      <button className="btn" disabled={cash < comp} onClick={() => onComp(p.id)}>
+                      {/* Spending can go negative (a loan) — no affordability block. */}
+                      <button className="btn" onClick={() => onComp(p.id)}>
                         Comp product · {money(comp)}
                       </button>
                       {p.sponsored ? (
                         <button className="btn btn--ghost" onClick={() => onDropSponsor(p.id)}>End sponsorship</button>
                       ) : (
-                        <button className="btn" disabled={cash < sponsor * 0.5} onClick={() => onSponsor(p.id)}>
+                        <button className="btn" onClick={() => onSponsor(p.id)}>
                           Sponsor · {money(sponsor * 0.5)} + upkeep
                         </button>
                       )}

@@ -67,15 +67,12 @@ export default function SetsPanel({ state, onReprint }) {
                       reprint itself. */}
                   {onReprint && !set.reprintOf && !set.reprinted && (set.outOfPrint || soldOut) && (() => {
                     const cost = reprintCost(REPRINT_RUN)
-                    const affordable = (state.cash ?? 0) >= cost
+                    const onCredit = (state.cash ?? 0) < cost
                     return (
                       <button
                         className={'btn btn--ghost sets__reprint' + (set.outOfPrint ? ' sets__reprint--hot' : '')}
                         onClick={() => onReprint(set.id)}
-                        disabled={!affordable}
-                        title={affordable
-                          ? `Reprint as an Unlimited run (~$${cost.toLocaleString('en-US')}) — fresh supply to sell; the original becomes a first-edition premium`
-                          : `Not enough cash to reprint (~$${cost.toLocaleString('en-US')})`}
+                        title={`Reprint as an Unlimited run (~$${cost.toLocaleString('en-US')})${onCredit ? ' — on credit (into debt)' : ''} — fresh supply to sell; the original becomes a first-edition premium`}
                       >
                         ⟳ Reprint
                       </button>

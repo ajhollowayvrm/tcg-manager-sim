@@ -111,8 +111,8 @@ export function cultivateDistributor(state, distId) {
   const dist = getDistributor(distId)
   const deal = (state.distributors ?? []).find((d) => d.id === distId && d.active)
   if (!dist || !deal) return null
+  // Cash can go negative (a loan) — cultivating is fundable on credit.
   const cost = Math.round(4_000 + dist.reach * 120)
-  if (state.cash < cost) return null
 
   const distributors = state.distributors.map((d) =>
     d.id === distId ? { ...d, relationship: clamp((d.relationship ?? 0) + 18, 0, 100) } : d,

@@ -93,7 +93,7 @@ export function makePromoCard(state, { label, prestige, themeId, nonce }) {
 export function runOrganizedPlay(state, kind, nonce = 0) {
   const prog = OP_PROGRAMS[kind]
   if (!prog) return null
-  if (state.cash < prog.cost) return null
+  // Cash can go negative (a loan) — fundable even on credit.
 
   // Flavor the promo with the most recent live set's theme (or a default).
   const liveSet = [...state.sets].reverse().find((s) => !s.rotated) ?? state.sets[state.sets.length - 1]

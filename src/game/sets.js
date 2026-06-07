@@ -515,10 +515,9 @@ export function reprintSet(state, originalSetId, printRun = 55) {
   const soldOut = (original.supply ?? 0) > 0 && (original.sold ?? 0) >= (original.supply ?? 0)
   if (!original.outOfPrint && !soldOut) return null
 
+  // A reprint is a real manufacturing spend — but cash can go negative (a loan),
+  // so it's allowed even on credit; the debt-interest + ruin floor are the limits.
   const cost = reprintCost(printRun)
-  // A reprint is a real manufacturing spend — can't reprint what you can't afford
-  // (no separate confirm step; it's a one-click action).
-  if (state.cash < cost) return null
   const newSetId = `set_${state.sets.length + 1}`
 
   // Build the reprint's cards from the original's design (same names/rarities/

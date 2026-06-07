@@ -56,8 +56,10 @@ export default function SetBuilder({ setNumber, cash, artists, liveCards = [], s
   const artistOf = (id) => artists?.find((a) => a.id === id) ?? null
   const cost = setCost(draft, (id) => artistOf(id) ?? undefined)
   const errors = validateDraft(draft)
-  const affordable = cost.total <= cash
-  const canRelease = errors.length === 0 && affordable
+  // Cash can go negative (a loan), so affordability NO LONGER blocks release —
+  // it only flags that you'll dip into debt. The only release gate is validity.
+  const goesIntoDebt = cash - cost.total < 0
+  const canRelease = errors.length === 0
 
   const setCard = (idx, next) =>
     setDraft((d) => ({
@@ -310,8 +312,9 @@ export default function SetBuilder({ setNumber, cash, artists, liveCards = [], s
             <CostLine label="Art commissions" value={cost.art} />
             {cost.prerelease > 0 && <CostLine label="Prerelease" value={cost.prerelease} />}
             <CostLine label="Total" value={cost.total} total />
-            <div className={'costs__cash' + (affordable ? '' : ' is-bad')}>
+            <div className={'costs__cash' + (goesIntoDebt ? ' is-bad' : '')}>
               On hand: {formatCash(cash)}
+              {goesIntoDebt && <span className="costs__after"> → {formatCash(cash - cost.total)} after</span>}
             </div>
           </div>
 
@@ -321,8 +324,8 @@ export default function SetBuilder({ setNumber, cash, artists, liveCards = [], s
                 {errors.map((e, i) => <li key={i}>{e}</li>)}
               </ul>
             )}
-            {!affordable && errors.length === 0 && (
-              <p className="builder__errors">Not enough cash for this set.</p>
+            {goesIntoDebt && errors.length === 0 && (
+              <p className="builder__debt">This set puts you {formatCash(cost.total - cash)} into debt — a loan (interest accrues weekly).</p>
             )}
             <button
               className="btn btn--release"

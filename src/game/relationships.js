@@ -35,7 +35,7 @@ export function compProduct(state, personaId) {
   const persona = state.personas.find((p) => p.id === personaId)
   if (!persona) return null
   const cost = compCost(persona)
-  if (state.cash < cost) return null
+  // Cash can go negative (a loan) — comping is fundable on credit.
 
   const rng = makeRng(hashSeed(`comp:${personaId}:${state.week}`))
   // Backfire chance is higher for low-credibility / already-hostile voices.
@@ -67,8 +67,8 @@ export function sponsorCreator(state, personaId) {
   const persona = state.personas.find((p) => p.id === personaId)
   if (!persona || persona.sponsored) return null
   // Sponsoring pays an upfront signing on top of weekly upkeep (charged in sim).
+  // Cash can go negative (a loan) — fundable on credit.
   const signing = Math.round(sponsorCost(persona) * 0.5)
-  if (state.cash < signing) return null
 
   const personas = state.personas.map((p) =>
     p.id === personaId

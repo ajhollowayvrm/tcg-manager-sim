@@ -22,7 +22,7 @@ export default function OrganizedPlayPanel({ state, onRun }) {
 
       <ul className="op__list">
         {Object.values(OP_PROGRAMS).map((prog) => {
-          const affordable = cash >= prog.cost
+          const onCredit = cash < prog.cost
           return (
             <li key={prog.kind} className="op">
               <div className="op__head">
@@ -32,11 +32,10 @@ export default function OrganizedPlayPanel({ state, onRun }) {
               <p className="op__blurb">{prog.blurb}</p>
               <button
                 className="btn btn--design op__run"
-                disabled={!affordable}
                 onClick={() => onRun(prog.kind)}
-                title={affordable ? 'Run this program — mints a promo + boosts the scene' : 'Not enough cash'}
+                title={onCredit ? 'Run this program on credit (into debt) — mints a promo + boosts the scene' : 'Run this program — mints a promo + boosts the scene'}
               >
-                Run {prog.name}
+                Run {prog.name}{onCredit ? ' (on credit)' : ''}
               </button>
             </li>
           )

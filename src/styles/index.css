@@ -376,6 +376,9 @@ body {
 
 .builder__actions { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
 .builder__errors { margin: 0; padding: 0; list-style: none; color: var(--bad); font-size: 0.8rem; text-align: right; }
+.costs__after { color: var(--warn); font-weight: 700; }
+/* Going into debt is allowed (a loan) — warn, don't block. */
+.builder__debt { margin: 0; color: var(--warn); font-size: 0.78rem; text-align: right; line-height: 1.35; }
 
 /* ---- Dashboard layout ---- */
 .dashboard {
