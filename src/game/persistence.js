@@ -21,7 +21,9 @@ const KEY = 'tcg-manager-sim/save'
 // v5: product SKUs — a set carries a `products` lineup (booster + optional
 // bundle/spc/tin, each with its own supply/sold). A v4 set lacks it (revenue has
 // a legacy fallback, but invalidating keeps the per-SKU UI consistent).
-const VERSION = 5
+// v6: promo cards (card.promo, unpullable) + organized play. New card flag;
+// invalidate so the promo/pull filters and OP panel start consistent.
+const VERSION = 6
 
 // True only where a real localStorage exists. Guards SSR / the headless
 // playtest harness (tools/playtest.mjs runs the sim in plain Node), and the

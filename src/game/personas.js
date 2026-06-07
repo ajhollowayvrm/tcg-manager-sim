@@ -196,7 +196,7 @@ export function reactPersonas(state) {
 
   // Only live cards are part of the format — banned/rotated cards are out of the
   // conversation. The "field" average and persona focus both work off live cards.
-  const liveCards = state.cards.filter((c) => !c.banned && !c.rotated)
+  const liveCards = state.cards.filter((c) => !c.banned && !c.rotated && !c.promo)
   const fieldAvg = liveCards.length
     ? liveCards.reduce((s, c) => s + c.popFactors.playability, 0) / liveCards.length
     : 50

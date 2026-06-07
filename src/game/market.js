@@ -117,6 +117,22 @@ export function resolveMarket(state) {
   const movers = []
   const cards = state.cards.map((orig) => {
     const card = { ...orig, priceHistory: [...orig.priceHistory] }
+
+    // Promo cards belong to no set (they're never pulled). They trade purely as
+    // scarce collectibles — a gentle upward drift (supply is tiny and fixed),
+    // with occasional speculative pops. They CAN surface as movers.
+    if (card.promo) {
+      const prev = card.singlePrice
+      const spike = rng() < 0.05 ? range(rng, 0.08, 0.3) : 0
+      const drift = range(rng, -0.01, 0.03) + spike
+      const next = Math.round(Math.max(1, prev * (1 + drift)) * 100) / 100
+      card.singlePrice = next
+      card.priceHistory = [...card.priceHistory, next].slice(-PRICE_HISTORY_LEN)
+      const pct = prev > 0 ? (next - prev) / prev : 0
+      if (Math.abs(pct) >= 0.06) movers.push({ id: card.id, name: card.name, price: next, prevPrice: prev, pct })
+      return card
+    }
+
     const set = setById.get(card.setId)
     if (!set) return card
 

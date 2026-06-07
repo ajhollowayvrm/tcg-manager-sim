@@ -20,7 +20,7 @@ const EVENT_CHANCE = 0.28
 // ---- Helpers for picking targets from live state ----
 
 function liveCards(state) {
-  return state.cards.filter((c) => !c.banned && !c.rotated)
+  return state.cards.filter((c) => !c.banned && !c.rotated && !c.promo)
 }
 
 function pickCard(cards, rng) {

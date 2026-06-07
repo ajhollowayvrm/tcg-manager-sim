@@ -869,6 +869,25 @@ body {
 .distrib__signed { font-size: 0.76rem; color: var(--accent-2); font-weight: 600; margin-right: auto; }
 .distrib__drop { color: var(--bad); }
 
+/* ---- Organized play ---- */
+.op__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.op {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px;
+}
+.op__head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.op__name { font-weight: 700; font-size: 0.9rem; }
+.op__cost { font-size: 0.78rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.op__blurb { margin: 0; font-size: 0.76rem; color: var(--text-dim); line-height: 1.4; }
+.op__run { width: 100%; text-align: center; font-size: 0.82rem; }
+.op__promos { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+.op__promostitle { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-dim); margin-bottom: 6px; }
+.op__promolist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.op__promo { display: flex; justify-content: space-between; gap: 8px; font-size: 0.8rem; }
+.op__promoname { color: var(--pop); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.op__promoprice { color: var(--good); font-weight: 700; font-variant-numeric: tabular-nums; }
+.sku__promo { font-size: 0.78rem; margin-top: 2px; }
+
 /* ---- Bans & rotation ---- */
 .bans { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .bans__row {

@@ -22,9 +22,13 @@ that can tip the game into a price-spiking scalper market, **pull a set from
 publication** (stop printing it → its singles spike on scarcity, collectors
 cheer, the format refreshes), and **reprint** — re-issue a whole set as an
 Unlimited run (the original becomes a 1st-edition premium) or reprint a beloved
-card into a new set as a fan-service draw. See [`docs/BRIEF.md`](docs/BRIEF.md)
-for the spec, annotated with per-section build status (✅ done / ⏳ remaining)
-and the v2 roadmap.
+card into a new set as a fan-service draw. Each set ships a **product lineup**
+you choose — boosters plus optional bundles, a collector box (SPC), and tins,
+each its own price/margin/audience — and you fund **organized play**
+(tournaments, leagues, prereleases) to grow the competitive scene and mint
+**unpullable promo cards** that become scarce grails. See
+[`docs/BRIEF.md`](docs/BRIEF.md) for the spec, annotated with per-section build
+status (✅ done / ⏳ remaining) and the v2 roadmap.
 
 ### Known v1 gaps (remaining work)
 
@@ -34,9 +38,12 @@ and the v2 roadmap.
 After that, the brief calls for a frontend-polish pass and the open tuning
 notes (decay rate, market variance, feedback-noise ratio).
 
-_Recently completed: pull-from-publication (replaced rotate — `bans.js`
-`pullFromPrint`) and reprints — set-level Unlimited re-issues + first-edition
-premiums and card-level fan-service reprints (`sets.js` `reprintSet` /
+_Recently completed: product SKUs — per-set booster/bundle/SPC/tin lineup
+(`products.js`); promo cards + organized play — unpullable prize cards via
+tournaments/leagues/prereleases and an SPC exclusive promo (`organizedplay.js`);
+pull-from-publication (replaced rotate — `bans.js` `pullFromPrint`) and reprints
+— set-level Unlimited re-issues + first-edition premiums and card-level
+fan-service reprints (`sets.js` `reprintSet` /
 `applyCardReprints`); booster formats (authored pack slots — `rarities.js` /
 `packs.js`), counter cards (`sets.js` `applyCounters`), and distributors +
 scalper culture (`distributors.js`); a manual click-to-advance clock with the
@@ -74,17 +81,19 @@ src/
     rng.js              # seeded RNG (deterministic weekly resolution)
     sets.js             # set draft, cost, card generation, release + counters
     rarities.js         # rarity sheet + booster pack formats (slots/presets)
-    packs.js            # pack ripping from the authored booster format
-    market.js           # secondary market: singles & sealed price resolution
-    revenue.js          # weekly sealed-product sales + supply cap
+    packs.js            # pack ripping from the authored booster format (promos excluded)
+    products.js         # product SKUs — booster/bundle/SPC/tin per-set lineup
+    organizedplay.js    # tournaments/leagues + unpullable promo cards
+    market.js           # secondary market: singles & sealed (+ promo) price resolution
+    revenue.js          # weekly per-SKU sealed sales + supply caps
     personas.js         # persona reaction engine (signal vs noise)
     relationships.js    # persona comp/sponsor management layer
     distributors.js     # bulk-buyer deals + scalper-culture heat
     events.js           # events catalogue + weekly roll
-    bans.js             # ban / rotate logic + community blowback
+    bans.js             # ban + pull-from-print logic + community blowback
     archetypes.js       # metashare distribution math (shift/flatten/counter)
     content/            # static rosters: artists, personas (50+), themes, distributors
-  components/           # TopBar, MetagamePanel, MarketTicker, DistributorsPanel, feeds
-    setbuilder/         # SetBuilder, SignatureCardEditor, RarityEditor, PackFormatEditor
+  components/           # TopBar (health meters), DistributorsPanel, OrganizedPlayPanel, feeds
+    setbuilder/         # SetBuilder (accordion), RarityEditor, PackFormatEditor, ProductLineupEditor
   styles/index.css      # vivid crimson / noir dashboard skin
 ```

@@ -7,6 +7,7 @@ import { ripPack } from './packs.js'
 import { resetCadence } from './cadence.js'
 import { compProduct, sponsorCreator, dropSponsor } from './relationships.js'
 import { signDistributor, dropDistributor, cultivateDistributor } from './distributors.js'
+import { runOrganizedPlay } from './organizedplay.js'
 import { loadState, saveState, clearSave } from './persistence.js'
 
 // Reducer-driven game state. Time is MANUAL: the player clicks "Advance Week",
@@ -145,6 +146,19 @@ function reducer(state, action) {
         eventsFeed: [{ week: state.week, text: r.feed, kind: 'market' }, ...state.eventsFeed].slice(0, 60),
       }
     }
+    case 'RUN_ORGANIZED_PLAY': {
+      const r = runOrganizedPlay(state, action.kind, action.nonce ?? 0)
+      if (!r) return state
+      return {
+        ...state,
+        cards: r.cards,
+        segments: r.segments,
+        playerBase: r.playerBase,
+        personas: r.personas,
+        cash: state.cash + r.cashDelta,
+        eventsFeed: [{ week: state.week, text: r.feed, kind: 'community' }, ...state.eventsFeed].slice(0, 60),
+      }
+    }
     case 'START_GAME':
       // Begin a run from the onboarding config (name/archetype/cadence applied).
       return createInitialState({ ...action.config, started: true })
@@ -212,6 +226,8 @@ export function useGame() {
   const signDist = useCallback((distId, setId) => dispatch({ type: 'SIGN_DISTRIBUTOR', distId, setId }), [])
   const dropDist = useCallback((distId) => dispatch({ type: 'DROP_DISTRIBUTOR', distId }), [])
   const cultivateDist = useCallback((distId) => dispatch({ type: 'CULTIVATE_DISTRIBUTOR', distId }), [])
+  const opNonce = useRef(0)
+  const runOP = useCallback((kind) => dispatch({ type: 'RUN_ORGANIZED_PLAY', kind, nonce: opNonce.current++ }), [])
 
-  return { state, advanceWeek: advanceWeekAction, release, ban: banCardAction, pull, reprint, reset, rip, startGame, comp, sponsor, unsponsor, signDist, dropDist, cultivateDist }
+  return { state, advanceWeek: advanceWeekAction, release, ban: banCardAction, pull, reprint, reset, rip, startGame, comp, sponsor, unsponsor, signDist, dropDist, cultivateDist, runOP }
 }

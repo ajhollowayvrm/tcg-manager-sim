@@ -45,7 +45,7 @@ function metaScore(card, fieldAvg, solveLevel) {
 // each tagged with its tier and set name. Returns [{ id, name, rarity, setName,
 // score, tier, playability }], highest first.
 export function metaReport(state) {
-  const live = state.cards.filter((c) => !c.banned && !c.rotated)
+  const live = state.cards.filter((c) => !c.banned && !c.rotated && !c.promo)
   if (!live.length) return []
 
   const fieldAvg = live.reduce((s, c) => s + c.popFactors.playability, 0) / live.length

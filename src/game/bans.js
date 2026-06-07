@@ -17,7 +17,7 @@ import { getTheme } from './content/themes.js'
 // directly — they infer it from (noisy) ban pressure and chatter. This is what
 // determines whether a ban was justified.
 function trueThreat(card, cards) {
-  const live = cards.filter((c) => !c.banned && !c.rotated)
+  const live = cards.filter((c) => !c.banned && !c.rotated && !c.promo)
   const fieldAvg = live.length
     ? live.reduce((s, c) => s + c.popFactors.playability, 0) / live.length
     : 50

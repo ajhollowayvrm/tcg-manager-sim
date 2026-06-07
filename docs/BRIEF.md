@@ -290,6 +290,19 @@ Grouped into three layers. Each assumes the v1 core loop is solid first.
 >   fan-service draw that lifts the new set's hype while softening the original.
 >   Realizes the "1st-Edition vs Unlimited" and "reprints as a market-management
 >   tool" items parked below. (`sets.js` `reprintSet` / `applyCardReprints`.)
+> - **Product SKUs** — a set ships a player-chosen product lineup beyond boosters:
+>   bundles (casual value), a collector box / SPC (low-volume, high-margin,
+>   collector-leaning, can carry an exclusive promo), and tins (impulse). Each SKU
+>   has its own price, print run, supply cap, and segment appeal, and sells on its
+>   own weekly demand curve — more channels mean more revenue but a bigger up-front
+>   print bet. Boosters remain the base product, economically unchanged.
+>   (`products.js`, `ProductLineupEditor`; per-SKU resolution in `revenue.js`.)
+> - **Promo cards & organized play** — cards you can NEVER pull from a booster,
+>   awarded instead through funded programs (championship circuits, league
+>   seasons, prerelease events). Each program costs cash, grows the competitive
+>   segment, warms sentiment, and mints a scarce, unpullable promo that trades as
+>   a prestige grail (a collector-box SKU can also carry an exclusive promo).
+>   (`organizedplay.js`, `OrganizedPlayPanel`; `packs.js` excludes promos.)
 
 ### A. Product & market depth
 

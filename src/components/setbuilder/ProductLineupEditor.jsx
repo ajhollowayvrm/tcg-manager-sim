@@ -63,6 +63,18 @@ export default function ProductLineupEditor({ products, onChange }) {
                   onChange={(v) => update(kind, { printRun: v })}
                   left="Under" right="Over"
                 />
+                {/* Collector boxes can carry an exclusive, unpullable promo. */}
+                {kind === 'spc' && (
+                  <label className="check sku__promo">
+                    <input
+                      type="checkbox"
+                      checked={!!p.exclusivePromo}
+                      onChange={(e) => update(kind, { exclusivePromo: e.target.checked })}
+                    />
+                    Include an exclusive promo card
+                    <span className="muted"> (unpullable, scarce — a collector grail)</span>
+                  </label>
+                )}
               </div>
             )}
           </div>

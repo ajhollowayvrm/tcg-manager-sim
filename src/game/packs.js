@@ -25,7 +25,8 @@ const LEGACY_PACK_SIZE = 6 // cards per pack for sets saved before authored form
 export function ripPack(state, setId, nonce = 0) {
   const set = state.sets.find((s) => s.id === setId)
   if (!set || set.rotated) return null
-  const setCards = state.cards.filter((c) => c.setId === setId && !c.banned && !c.rotated)
+  // Promos never appear in a booster — that's what makes them promos.
+  const setCards = state.cards.filter((c) => c.setId === setId && !c.banned && !c.rotated && !c.promo)
   if (!setCards.length) return null
 
   const sheet = set.rarities ?? []

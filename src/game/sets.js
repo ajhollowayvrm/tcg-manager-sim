@@ -10,6 +10,7 @@ import { shiftToward, shiftAway, balanceScore } from './archetypes.js'
 import { currentArtist } from './artists.js'
 import { defaultRaritySheet, getRarity, pickRarity, validateRaritySheet, defaultPackFormat, validatePackFormat, packRichnessDelta } from './rarities.js'
 import { defaultProducts, finalizeProducts, productPrintCost, validateProducts } from './products.js'
+import { makePromoCard } from './organizedplay.js'
 
 export const MIN_SIGNATURE_CARDS = 0 // signature highlights are optional now
 export const MAX_SIGNATURE_CARDS = 15
@@ -375,12 +376,23 @@ export function releaseSet(state, draft) {
   // so revenue/market can read it).
   set.reprintBuzz = reprintResult.buzzLift
 
-  const feedParts = [counterResult.feed, reprintResult.feed].filter(Boolean)
+  // SPC exclusive promo: if the collector-box SKU carries an exclusive promo,
+  // mint an SPC-only promo card (unpullable, scarce) that ships with that box.
+  const spc = (draft.products ?? []).find((p) => p.kind === 'spc' && p.exclusivePromo)
+  const promoCards = spc
+    ? [makePromoCard(state, { label: 'SPC Exclusive', prestige: 0.7, themeId: draft.themeId, nonce: `${setId}_spc` })]
+    : []
+
+  const feedParts = [
+    counterResult.feed,
+    reprintResult.feed,
+    promoCards.length ? `Collector box includes an exclusive promo.` : null,
+  ].filter(Boolean)
 
   return {
     set,
-    // The new set's generated cards PLUS any reprint instances.
-    cards: [...cards, ...reprintResult.reprintCards],
+    // The new set's generated cards PLUS any reprint instances and SPC promo.
+    cards: [...cards, ...reprintResult.reprintCards, ...promoCards],
     cashDelta: -cost.total,
     metagame,
     // Existing cards mutated by silver-bullet counters AND/OR card-reprint
