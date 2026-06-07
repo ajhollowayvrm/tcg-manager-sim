@@ -16,6 +16,23 @@ import { driftArtists } from './artists.js'
 import { applyCadencePressure } from './cadence.js'
 
 const SOLVE_DECAY_PER_WEEK = 4 // tune so a format stays fresh for a few months
+// Community sentiment loss: if the reach-weighted mood turns deeply hostile, the
+// community revolts and the run ends — a third death spiral beyond cash/players.
+const SENTIMENT_COLLAPSE = -60
+
+// Reach-weighted average persona sentiment (-100..100). Loud voices count more,
+// matching how the rest of the sim weights reach. Null if there are no personas.
+export function communitySentiment(personas) {
+  if (!personas || !personas.length) return null
+  let wSum = 0
+  let total = 0
+  for (const p of personas) {
+    const w = Math.max(1, p.reach) // never zero-weight a voice
+    wSum += p.sentiment * w
+    total += w
+  }
+  return total ? wSum / total : null
+}
 // Diversity erosion: above this solve level the field starts collapsing to a few
 // decks; rate is the max weekly diversity loss at fully-solved (solve=100).
 const DIVERSITY_EROSION_SOLVE_FLOOR = 40
@@ -98,12 +115,16 @@ export function advanceWeek(state) {
   // directive is read by the reducer in useGame; game-over below overrides it.
   next.clock = { ...next.clock, autoEvent: clockDirective(state, next, event) }
 
-  // Loss conditions (twin death spirals): cash or active player base hits zero.
+  // Loss conditions (the death spirals): cash, active player base, or community
+  // sentiment collapses. Any one ends the run.
   if (!next.gameOver) {
+    const sentiment = communitySentiment(next.personas)
     if (next.cash <= 0) {
       next.gameOver = { reason: 'Bankrupt — you ran out of cash to fund the next set.' }
     } else if (next.playerBase <= 0) {
       next.gameOver = { reason: 'The community is gone — your active player base hit zero.' }
+    } else if (sentiment != null && sentiment <= SENTIMENT_COLLAPSE) {
+      next.gameOver = { reason: 'The community revolted — sentiment toward your game collapsed.' }
     }
     if (next.gameOver) {
       next.eventsFeed = [{ week: next.week, text: `GAME OVER: ${next.gameOver.reason}` }, ...next.eventsFeed]

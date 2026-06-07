@@ -30,9 +30,11 @@ The engine of the whole game is **format decay**:
 
 You survive as long as you balance fresh-product pressure against power-creep, over-printing, and community goodwill. There is **no win condition** — it's an open-ended run you play until you're bored or you lose.
 
-### Loss conditions (twin death spirals) ✅
+### Loss conditions (death spirals) ✅
 - **Cash hits zero** — you over-printed, sales cratered, you can't fund the next set.
 - **Active player base hits zero** — the meta rotted, goodwill collapsed, the community left.
+- **Community sentiment collapses** — the reach-weighted community mood turns deeply
+  hostile (≤ −60); the community revolts even if cash/players linger. (Added post-v1.)
 
 ---
 
