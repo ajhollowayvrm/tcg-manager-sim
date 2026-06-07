@@ -632,6 +632,34 @@ body {
 .packfmt__remove { color: var(--bad); padding: 4px 6px; }
 .packfmt__add { align-self: flex-start; margin-top: 2px; }
 
+/* ---- Product lineup (SKUs) editor ---- */
+.skus { display: flex; flex-direction: column; gap: 8px; }
+.skus__base {
+  display: flex; flex-direction: column; gap: 2px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 12px;
+}
+.skus__basename { font-weight: 700; font-size: 0.88rem; }
+.sku {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 12px; display: flex; flex-direction: column; gap: 6px;
+}
+.sku--on { border-color: var(--accent-2); }
+.sku__toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.sku__toggle input { accent-color: var(--accent); width: 18px; height: 18px; }
+.sku__name { font-weight: 700; font-size: 0.88rem; }
+.sku__cost { margin-left: auto; font-size: 0.74rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.sku__blurb { margin: 0; font-size: 0.76rem; color: var(--text-dim); line-height: 1.4; }
+.sku__knobs { display: flex; flex-direction: column; gap: 10px; padding-top: 4px; }
+
+/* Per-SKU sell-through chips on a set row (SetsPanel) */
+.sets__skus { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
+.sets__sku {
+  font-size: 0.64rem; font-weight: 700; color: var(--text-dim);
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 99px; padding: 1px 7px; font-variant-numeric: tabular-nums;
+}
+
 /* ---- Pack ripper ---- */
 .rip__controls { display: flex; gap: 8px; margin-bottom: 12px; }
 .rip__controls select {

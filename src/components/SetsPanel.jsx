@@ -7,6 +7,14 @@ import { reprintCost } from '../game/sets.js'
 
 const REPRINT_RUN = 55 // matches the reducer's default reprint print run
 
+// Short labels for the per-SKU sell-through chips.
+const SKU_LABEL = { booster: '📦', bundle: 'Bundle', spc: 'SPC', tin: 'Tin' }
+
+function pctStr(sold, supply) {
+  if (!supply) return '0%'
+  return Math.round(Math.min(100, (sold / supply) * 100)) + '%'
+}
+
 function compact(n) {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(2) + 'M'
   if (n >= 1_000) return Math.round(n / 1_000) + 'k'
@@ -74,6 +82,16 @@ export default function SetsPanel({ state, onReprint }) {
                     )
                   })()}
                 </div>
+                {/* Per-SKU sell-through for multi-product sets (beyond boosters). */}
+                {(set.products?.length ?? 0) > 1 && (
+                  <div className="sets__skus">
+                    {set.products.map((p) => (
+                      <span key={p.kind} className="sets__sku" title={`${(p.sold ?? 0).toLocaleString()} / ${(p.supply ?? 0).toLocaleString()} sold`}>
+                        {SKU_LABEL[p.kind] ?? p.kind} {pctStr(p.sold, p.supply)}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </li>
             )
           })}

@@ -9,6 +9,7 @@ import { printRunUnits } from './revenue.js'
 import { shiftToward, shiftAway, balanceScore } from './archetypes.js'
 import { currentArtist } from './artists.js'
 import { defaultRaritySheet, getRarity, pickRarity, validateRaritySheet, defaultPackFormat, validatePackFormat, packRichnessDelta } from './rarities.js'
+import { defaultProducts, finalizeProducts, productPrintCost, validateProducts } from './products.js'
 
 export const MIN_SIGNATURE_CARDS = 0 // signature highlights are optional now
 export const MAX_SIGNATURE_CARDS = 15
@@ -37,6 +38,11 @@ export function createDraft(setNumber) {
     // Booster structure: how a pack is built from the sheet (slot counts + which
     // rarities each slot pulls). Starts from the Classic preset; editable.
     packFormat: defaultPackFormat(),
+
+    // Product lineup — the SKUs this set ships in. Starts as boosters only
+    // (matching the historical single-product economy); the player can add
+    // bundles, a collector box (SPC), and tins, each its own price/print run.
+    products: defaultProducts(),
 
     // 0–15 signature cards — designated highlights, hand-designed and/or auto.
     signatureCards: [], // { id, name, rarity, artistId, mode, power, rulesText }
@@ -143,7 +149,10 @@ export function setCost(draft, artistOf = getArtist) {
     return sum + (artist ? artist.cost : 0)
   }, 0)
   const prerelease = draft.prerelease.enabled ? 15_000 : 0
-  return { dev, printCost, art, prerelease, total: dev + printCost + art + prerelease }
+  // Each EXTRA SKU (bundle/spc/tin) costs its own print run. Boosters are already
+  // covered by printCost above, so a boosters-only set's total is unchanged.
+  const skus = (draft.products ?? []).reduce((sum, p) => sum + productPrintCost(p), 0)
+  return { dev, printCost, art, prerelease, skus, total: dev + printCost + art + prerelease + skus }
 }
 
 // ---- Validation ----------------------------------------------------------
@@ -159,6 +168,7 @@ export function validateDraft(draft) {
   }
   errors.push(...validateRaritySheet(draft.rarities))
   errors.push(...validatePackFormat(draft.packFormat))
+  errors.push(...validateProducts(draft.products))
   if (draft.prerelease.chasePullable && !draft.prerelease.enabled) {
     errors.push('Chase-pullable requires prerelease enabled.')
   }
@@ -310,7 +320,11 @@ export function releaseSet(state, draft) {
     secretCount: draft.secretCount,
     prerelease: draft.prerelease,
     releasedWeek: state.week,
-    // Sealed economy: units printed (hard sales ceiling) and units sold to date.
+    // Sealed economy. `products` is the full SKU lineup (booster line first, then
+    // any extras), each with its own supply/sold. The top-level supply/sold/price
+    // mirror the BOOSTER line so existing reads (market scarcity, distributors,
+    // events, the sets panel) keep working unchanged.
+    products: finalizeProducts(draft),
     supply: printRunUnits(draft.printRun),
     sold: 0,
   }

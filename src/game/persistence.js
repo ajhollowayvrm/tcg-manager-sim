@@ -18,7 +18,10 @@ const KEY = 'tcg-manager-sim/save'
 // reprintOfCardId, draft.reprintedCards).
 // v4: the clock went MANUAL — its shape changed (paused/speed/pauseReason →
 // reason). A v3 save's clock is stale; invalidating avoids a half-migrated run.
-const VERSION = 4
+// v5: product SKUs — a set carries a `products` lineup (booster + optional
+// bundle/spc/tin, each with its own supply/sold). A v4 set lacks it (revenue has
+// a legacy fallback, but invalidating keeps the per-SKU UI consistent).
+const VERSION = 5
 
 // True only where a real localStorage exists. Guards SSR / the headless
 // playtest harness (tools/playtest.mjs runs the sim in plain Node), and the

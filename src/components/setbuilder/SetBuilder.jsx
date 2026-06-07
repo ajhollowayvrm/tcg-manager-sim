@@ -7,7 +7,9 @@ import SignatureCardEditor from './SignatureCardEditor.jsx'
 import RarityEditor from './RarityEditor.jsx'
 import PackFormatEditor from './PackFormatEditor.jsx'
 import AccordionSection from './AccordionSection.jsx'
+import ProductLineupEditor from './ProductLineupEditor.jsx'
 import { packSize, PACK_PRESETS } from '../../game/rarities.js'
+import { SKU_TYPES } from '../../game/products.js'
 import {
   createDraft,
   createSignatureCard,
@@ -89,6 +91,9 @@ export default function SetBuilder({ setNumber, cash, artists, liveCards = [], s
   const summaries = {
     composition: `${draft.setLength} cards, ${draft.rarities.length} rarities${draft.secretCount ? `, ${draft.secretCount} secret` : ''}`,
     booster: `${packSize(draft.packFormat)}-card ${presetName}`,
+    products: (draft.products?.length ?? 0)
+      ? ['Boosters', ...draft.products.map((p) => SKU_TYPES[p.kind]?.name.split(' ')[0] ?? p.kind)].join(' + ')
+      : 'Boosters only',
     prerelease: draft.prerelease.enabled ? (draft.prerelease.chasePullable ? 'on, chase-pullable' : 'on') : 'off',
     signatures: draft.signatureCards.length ? `${draft.signatureCards.length} card${draft.signatureCards.length > 1 ? 's' : ''}` : 'none',
     reprints: (draft.reprintedCards?.length ?? 0) ? `${draft.reprintedCards.length} reprinted` : 'none',
@@ -192,6 +197,20 @@ export default function SetBuilder({ setNumber, cash, artists, liveCards = [], s
             />
           </AccordionSection>
 
+          {/* Product lineup — which SKUs the set ships in beyond boosters */}
+          <AccordionSection title="Product lineup" summary={summaries.products} open={open.products} onToggle={() => toggle('products')}>
+            <span className="field__note">
+              Beyond boosters, ship the set as bundles, a collector box, or tins —
+              each a separate product with its own price, print run, and buyer
+              appeal. More channels mean more revenue, but each costs its own
+              print run up front.
+            </span>
+            <ProductLineupEditor
+              products={draft.products ?? []}
+              onChange={(products) => patch({ products })}
+            />
+          </AccordionSection>
+
           {/* Prerelease */}
           <AccordionSection title="Prerelease" summary={summaries.prerelease} open={open.prerelease} onToggle={() => toggle('prerelease')}>
             <label className="check">
@@ -286,7 +305,8 @@ export default function SetBuilder({ setNumber, cash, artists, liveCards = [], s
         <footer className="modal__foot">
           <div className="costs">
             <CostLine label="Development" value={cost.dev} />
-            <CostLine label="Print run" value={cost.printCost} />
+            <CostLine label={(draft.products?.length ?? 0) ? 'Booster print' : 'Print run'} value={cost.printCost} />
+            {cost.skus > 0 && <CostLine label="Other SKUs print" value={cost.skus} />}
             <CostLine label="Art commissions" value={cost.art} />
             {cost.prerelease > 0 && <CostLine label="Prerelease" value={cost.prerelease} />}
             <CostLine label="Total" value={cost.total} total />

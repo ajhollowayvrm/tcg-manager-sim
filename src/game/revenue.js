@@ -23,11 +23,14 @@ export function printRunUnits(printRun) {
   return Math.round(20_000 + (printRun / 100) * 880_000)
 }
 
-// Price elasticity: demand multiplier as a function of MSRP. ~$4.50 is the
-// reference sweet spot (×1). Cheap packs move more units; an over-priced pack
-// collapses demand hard (a $12 pack sells a small fraction of a $4.50 one).
-function priceElasticity(price) {
-  return clamp(1.7 - price / 5.5, 0.06, 1.5)
+// Price elasticity: demand multiplier as a function of MSRP, relative to a
+// product's reference sweet spot (~$4.50 for boosters). Cheaper-than-reference
+// moves more units; over-priced collapses demand hard. `ref` lets each SKU have
+// its own sweet spot (a $90 collector box isn't judged against $4.50). With
+// ref=4.5 this reproduces the original booster curve exactly.
+function priceElasticity(price, ref = 4.5) {
+  const scale = ref / 4.5 // stretch the curve to the SKU's price band
+  return clamp(1.7 - price / (5.5 * scale), 0.06, 1.5)
 }
 
 // A set's average signature-card hype, as a buzz signal for how much people
@@ -45,8 +48,12 @@ function setBuzz(set, cards) {
   return clamp((avgHype / 100) * (1 + richness * 0.12 + reprintBuzz), 0.1, 1.4)
 }
 
-// Weekly pack demand for one set, before the supply cap. Returns a unit count.
-function weeklyDemand(set, state, rng) {
+// Weekly demand for ONE product SKU of a set, before its supply cap. Returns a
+// unit count. The set-wide drivers (launch curve, freshness, age, buzz, glut)
+// are shared; the per-SKU drivers are its segment APPEAL (who buys it), its
+// volume multiplier, and its own price elasticity. The booster SKU's appeal/mul
+// reproduce the original single-product formula exactly.
+function weeklyDemand(set, product, state, rng) {
   const age = state.week - set.releasedWeek
 
   // Launch curve: a big spike in the first weeks that decays. Prerelease and
@@ -60,15 +67,14 @@ function weeklyDemand(set, state, rng) {
   const ageDecay = clamp(Math.exp(-age / 30), 0.12, 1) // gentle, long-lived tail
 
   const buzz = 0.3 + setBuzz(set, state.cards) * 1.1 // 0.41 (dead) .. 1.62 (hot)
-  const elasticity = priceElasticity(set.price)
+  const elasticity = priceElasticity(product.price, product.elasticityRef ?? 4.5)
 
-  // Buyer pool: each tracked player stands in for a slice of the wider sealed
-  // market. Casual players buy the most sealed, competitive some, collectors
-  // chase sealed for value. Tuned (see tools/playtest.mjs) so a set's lifetime
-  // profit is a modest multiple of its ~$160k cost — not the 50× it was — which
-  // keeps cash a real constraint and bankruptcy reachable.
+  // Buyer pool, weighted by THIS SKU's appeal to each segment. Boosters use the
+  // original weights (0.26/0.1/0.16) so they're unchanged; a collector box leans
+  // hard on collectors, a bundle on casuals, etc.
   const seg = state.segments
-  const buyerPool = seg.casual * 0.26 + seg.competitive * 0.1 + seg.collectors * 0.16
+  const a = product.appeal ?? { casual: 0.26, competitive: 0.1, collectors: 0.16 }
+  const buyerPool = seg.casual * a.casual + seg.competitive * a.competitive + seg.collectors * a.collectors
 
   const noise = range(rng, 0.85, 1.15)
 
@@ -77,12 +83,30 @@ function weeklyDemand(set, state, rng) {
   // clears.
   const glut = set.glutUntil && state.week < set.glutUntil ? 0.5 : 1
 
-  const units = buyerPool * launch * freshness * ageDecay * buzz * elasticity * noise * glut
+  // demandMul scales volume for the SKU's form factor (a $90 box moves far fewer
+  // units than a pack). 1 for boosters → identical to the old formula.
+  const mul = product.demandMul ?? 1
+
+  const units = buyerPool * launch * freshness * ageDecay * buzz * elasticity * noise * glut * mul
   return Math.max(0, Math.round(units))
 }
 
-// Resolve sealed sales for every live set this week. Mutates set.sold and
-// returns { cashDelta, unitsSold, perSet:[{id,name,units,revenue}] }.
+// The product lineup to sell for a set: its authored `products`, or — for sets
+// saved before SKUs existed — a synthetic single booster line built from the
+// legacy supply/price/sold fields, so old saves keep selling exactly as before.
+function setProducts(set) {
+  if (set.products?.length) return set.products
+  return [{
+    kind: 'booster', name: 'Booster packs', price: set.price,
+    appeal: { casual: 0.26, competitive: 0.1, collectors: 0.16 }, demandMul: 1, elasticityRef: 4.5,
+    supply: set.supply ?? printRunUnits(set.printRun), sold: set.sold ?? 0,
+  }]
+}
+
+// Resolve sealed sales for every live set this week, across all of each set's
+// product SKUs. Mutates each product's sold (and keeps the legacy set.sold synced
+// to the booster line). Returns { cashDelta, unitsSold, perSet:[{id,name,units,
+// revenue,perProduct}] }.
 export function resolveRevenue(state) {
   const rng = makeRng(hashSeed(`revenue:${state.week}`))
   let cashDelta = 0
@@ -92,20 +116,36 @@ export function resolveRevenue(state) {
   const sets = state.sets.map((set) => {
     if (set.rotated) return set // out of print / out of the channel
 
-    const supply = set.supply ?? printRunUnits(set.printRun)
-    const sold = set.sold ?? 0
-    const remaining = supply - sold
-    if (remaining <= 0) return { ...set, supply, sold }
+    const products = setProducts(set)
+    let setUnits = 0
+    let setRevenue = 0
+    const perProduct = []
 
-    const demand = weeklyDemand(set, state, rng)
-    const units = Math.min(demand, remaining)
-    const revenue = Math.round(units * set.price)
+    const nextProducts = products.map((p) => {
+      const supply = p.supply ?? 0
+      const sold = p.sold ?? 0
+      const remaining = supply - sold
+      if (remaining <= 0) return { ...p, supply, sold }
 
-    cashDelta += revenue
-    unitsSold += units
-    if (units > 0) perSet.push({ id: set.id, name: set.name, units, revenue })
+      const demand = weeklyDemand(set, p, state, rng)
+      const units = Math.min(demand, remaining)
+      const revenue = Math.round(units * p.price)
 
-    return { ...set, supply, sold: sold + units }
+      cashDelta += revenue
+      unitsSold += units
+      setUnits += units
+      setRevenue += revenue
+      if (units > 0) perProduct.push({ kind: p.kind, name: p.name, units, revenue })
+
+      return { ...p, supply, sold: sold + units }
+    })
+
+    if (setUnits > 0) perSet.push({ id: set.id, name: set.name, units: setUnits, revenue: setRevenue, perProduct })
+
+    // Keep the legacy booster-line fields (supply/sold) in sync with products[0]
+    // so market scarcity, distributors, events, and the sets panel are unchanged.
+    const booster = nextProducts[0]
+    return { ...set, products: nextProducts, supply: booster.supply, sold: booster.sold }
   })
 
   return { sets, cashDelta, unitsSold, perSet }
