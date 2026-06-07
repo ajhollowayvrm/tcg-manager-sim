@@ -93,10 +93,16 @@ actually drifts and feuds fire over a run (B), and that sponsorship is a real
 risk/reward lever — seeding can backfire, sponsored sours hurt more (C). Plus a
 browser pass on the Community panel for each UI addition.
 
-## Open questions for AJ
+## Decisions (locked with AJ)
 
-- **Scope to start:** just A (more personas) now, or commit to the A→B→C arc?
-- **Sponsorship economy:** should comping/sponsoring cost cash (a real budget
-  line vs. set development), or goodwill/relationship only?
-- **Roster size:** how many personas feels right — 30, 40, more? (More = richer
-  feed but a longer Community list to scan.)
+- **Scope: full A→B→C arc.** Build all three phases over successive passes —
+  more personas, then evolving personas, then the relationship/sponsorship
+  minigame.
+- **Sponsorship economy: cash + relationship.** Comping/seeding/sponsoring spends
+  real money (a budget line competing with set dev & print runs) AND builds/risks
+  relationship capital. Highest-stakes; ties into the loss conditions.
+- **Roster size: 50+.** A sprawling scene for maximum variety and emergent story.
+  → **Consequence:** the Community panel MUST get filtering/grouping (by type,
+  sentiment, reach, or relationship state) as part of phase A/D — a flat 50+ list
+  isn't scannable. Treat the panel's filter/group UI as a required deliverable,
+  not optional polish.
