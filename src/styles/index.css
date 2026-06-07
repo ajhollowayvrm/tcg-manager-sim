@@ -462,6 +462,13 @@ body {
 .ticker__name .setsymbol { flex-shrink: 0; opacity: 0.85; }
 .ticker__sealed { font-size: 0.75rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }
 .ticker__price { font-variant-numeric: tabular-nums; font-weight: 700; text-align: right; }
+
+/* Narrow phones: the ticker row gets cramped (name clips). Drop the secondary
+   sparkline + sealed price so the card NAME and singles price stay readable. */
+@media (max-width: 440px) {
+  .ticker__row { grid-template-columns: 1fr auto; gap: 8px; }
+  .ticker__row .spark, .ticker__sealed { display: none; }
+}
 .ticker__pct { font-size: 0.72rem; margin-left: 6px; font-weight: 600; opacity: 0.85; }
 .is-up .ticker__pct { color: var(--good); }
 .is-down .ticker__pct { color: var(--bad); }
