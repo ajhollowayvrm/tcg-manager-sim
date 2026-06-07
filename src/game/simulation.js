@@ -14,6 +14,7 @@ import { clockDirective } from './clock.js'
 import { concentrate, balanceScore } from './archetypes.js'
 import { driftArtists } from './artists.js'
 import { applyCadencePressure } from './cadence.js'
+import { applyRelationships } from './relationships.js'
 
 const SOLVE_DECAY_PER_WEEK = 4 // tune so a format stays fresh for a few months
 // Community sentiment loss: if the reach-weighted mood turns deeply hostile, the
@@ -109,6 +110,10 @@ export function advanceWeek(state) {
   // Cadence pledge: if the player is overdue on their promised release rhythm,
   // unrest escalates (sentiment sours, base bleeds). Layers on top of drift.
   applyCadencePressure(next)
+
+  // Relationships: cultivated bonds decay if untended; sponsored creators draw
+  // weekly upkeep and amplify, but a soured sponsored name drags the base.
+  applyRelationships(next)
 
   // Clock attention: classify the week just resolved so the clock can auto-slow
   // or pause on interesting moments and fast-forward through quiet ones. The

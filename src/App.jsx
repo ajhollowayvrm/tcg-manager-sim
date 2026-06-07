@@ -42,7 +42,7 @@ export default function App() {
     packs: <PackRipper state={game.state} onRip={game.rip} />,
     bans: <BansPanel state={game.state} onBan={game.ban} onRotate={game.rotate} />,
     feedback: <FeedbackFeed state={game.state} />,
-    personas: <PersonasPanel state={game.state} />,
+    personas: <PersonasPanel state={game.state} onComp={game.comp} onSponsor={game.sponsor} onDropSponsor={game.unsponsor} />,
     events: <EventsFeed state={game.state} />,
   }
 

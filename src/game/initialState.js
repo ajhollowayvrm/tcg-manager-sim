@@ -48,9 +48,10 @@ export function createInitialState(config) {
     // Per-artist career state (cost/reach/trajectory) that drifts each week —
     // see artists.js. Identity (name/specialty) stays in the static roster.
     artists: seedArtists(),
-    // Personas carry a mutable `sentiment` (mood toward the game) on top of
-    // their static reach/credibility/taste from the content roster.
-    personas: PERSONAS.map((p) => ({ ...p, sentiment: 10 })),
+    // Personas carry mutable run state on top of their static identity:
+    // sentiment (mood), relationship (how cultivated — decays if neglected),
+    // and a sponsored flag (an ongoing creator deal).
+    personas: PERSONAS.map((p) => ({ ...p, sentiment: 10, relationship: 10, sponsored: false })),
 
     feedbackFeed: [], // qualitative chatter — sometimes lies
     eventsFeed: [], // news/curveballs

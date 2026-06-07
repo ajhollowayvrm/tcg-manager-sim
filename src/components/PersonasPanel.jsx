@@ -3,6 +3,9 @@
 // box. Credibility stays hidden — the player learns who to trust by watching.
 
 import { useMemo, useState } from 'react'
+import { compCost, sponsorCost } from '../game/relationships.js'
+
+function money(n) { return '$' + Math.round(n).toLocaleString('en-US') }
 
 const TYPE_LABEL = {
   streamer: 'Streamer',
@@ -52,10 +55,12 @@ function reachTrend(p) {
   return null
 }
 
-export default function PersonasPanel({ state }) {
+export default function PersonasPanel({ state, onComp, onSponsor, onDropSponsor }) {
   const [type, setType] = useState('all')
   const [sort, setSort] = useState('reach')
   const [query, setQuery] = useState('')
+  const [openId, setOpenId] = useState(null) // expanded persona for relationship actions
+  const cash = state.cash
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -100,21 +105,51 @@ export default function PersonasPanel({ state }) {
         <p className="panel__empty">No voices match.</p>
       ) : (
         <ul className="roster">
-          {shown.map((p) => (
-            <li key={p.id} className="roster__row" title={p.blurb}>
-              <div className="roster__main">
-                <span className="roster__name">{p.name}</span>
-                <span className="roster__type">{TYPE_LABEL[p.type] ?? p.type}</span>
-              </div>
-              <div className="roster__meta">
-                <span className="roster__reach" title={`Reach ${Math.round(p.reach)}`}>
-                  <span className="bar"><span className="bar__fill" style={{ width: `${p.reach}%` }} /></span>
-                  {reachTrend(p)}
-                </span>
-                <span className={`roster__mood ${sentimentClass(p.sentiment)}`}>{sentimentLabel(p.sentiment)}</span>
-              </div>
-            </li>
-          ))}
+          {shown.map((p) => {
+            const open = openId === p.id
+            const comp = compCost(p)
+            const sponsor = sponsorCost(p)
+            return (
+              <li key={p.id} className={'roster__row' + (open ? ' is-open' : '')}>
+                <button className="roster__head" onClick={() => setOpenId(open ? null : p.id)} title={p.blurb}>
+                  <div className="roster__main">
+                    <span className="roster__name">
+                      {p.sponsored && <span className="roster__spon" title="Sponsored creator">★</span>}
+                      {p.name}
+                    </span>
+                    <span className="roster__type">{TYPE_LABEL[p.type] ?? p.type}</span>
+                  </div>
+                  <div className="roster__meta">
+                    <span className="roster__reach" title={`Reach ${Math.round(p.reach)}`}>
+                      <span className="bar"><span className="bar__fill" style={{ width: `${p.reach}%` }} /></span>
+                      {reachTrend(p)}
+                    </span>
+                    <span className={`roster__mood ${sentimentClass(p.sentiment)}`}>{sentimentLabel(p.sentiment)}</span>
+                  </div>
+                </button>
+                {open && (
+                  <div className="roster__drawer">
+                    <div className="roster__rel" title="Your relationship with this creator">
+                      Relationship
+                      <span className="bar bar--rel"><span className="bar__fill" style={{ width: `${p.relationship ?? 0}%` }} /></span>
+                    </div>
+                    <div className="roster__actions">
+                      <button className="btn" disabled={cash < comp} onClick={() => onComp(p.id)}>
+                        Comp product · {money(comp)}
+                      </button>
+                      {p.sponsored ? (
+                        <button className="btn btn--ghost" onClick={() => onDropSponsor(p.id)}>End sponsorship</button>
+                      ) : (
+                        <button className="btn" disabled={cash < sponsor * 0.5} onClick={() => onSponsor(p.id)}>
+                          Sponsor · {money(sponsor * 0.5)} + upkeep
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </li>
+            )
+          })}
         </ul>
       )}
     </div>

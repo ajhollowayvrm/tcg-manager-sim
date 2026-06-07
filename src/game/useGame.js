@@ -5,6 +5,7 @@ import { releaseSet } from './sets.js'
 import { banCard, rotateFormat } from './bans.js'
 import { ripPack } from './packs.js'
 import { resetCadence } from './cadence.js'
+import { compProduct, sponsorCreator, dropSponsor } from './relationships.js'
 
 // Reducer-driven game state. The clock ticks via setInterval while playing;
 // each tick dispatches a 'TICK' that runs one simulation week.
@@ -84,6 +85,20 @@ function reducer(state, action) {
         lastRip: { setId: action.setId, week: state.week, pullIds: result.pulls.map((c) => c.id), bestId: result.bestPull?.id ?? null },
       }
     }
+    case 'COMP_PERSONA':
+    case 'SPONSOR_PERSONA':
+    case 'DROP_SPONSOR': {
+      const fn = action.type === 'COMP_PERSONA' ? compProduct
+        : action.type === 'SPONSOR_PERSONA' ? sponsorCreator : dropSponsor
+      const r = fn(state, action.personaId)
+      if (!r) return state
+      return {
+        ...state,
+        personas: r.personas,
+        cash: state.cash + r.cashDelta,
+        eventsFeed: [{ week: state.week, text: r.feed, kind: 'community' }, ...state.eventsFeed].slice(0, 60),
+      }
+    }
     case 'START_GAME':
       // Begin a run from the onboarding config (name/archetype/cadence applied).
       return createInitialState({ ...action.config, started: true })
@@ -138,6 +153,9 @@ export function useGame() {
   const ripNonce = useRef(0)
   const rip = useCallback((setId) => dispatch({ type: 'RIP_PACK', setId, nonce: ripNonce.current++ }), [])
   const startGame = useCallback((config) => dispatch({ type: 'START_GAME', config }), [])
+  const comp = useCallback((personaId) => dispatch({ type: 'COMP_PERSONA', personaId }), [])
+  const sponsor = useCallback((personaId) => dispatch({ type: 'SPONSOR_PERSONA', personaId }), [])
+  const unsponsor = useCallback((personaId) => dispatch({ type: 'DROP_SPONSOR', personaId }), [])
 
-  return { state, play, pause, setSpeed, release, ban: banCardAction, rotate, reset, rip, startGame }
+  return { state, play, pause, setSpeed, release, ban: banCardAction, rotate, reset, rip, startGame, comp, sponsor, unsponsor }
 }
