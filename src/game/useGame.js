@@ -6,6 +6,7 @@ import { banCard, rotateFormat } from './bans.js'
 import { ripPack } from './packs.js'
 import { resetCadence } from './cadence.js'
 import { compProduct, sponsorCreator, dropSponsor } from './relationships.js'
+import { loadState, saveState, clearSave } from './persistence.js'
 
 // Reducer-driven game state. The clock ticks via setInterval while playing;
 // each tick dispatches a 'TICK' that runs one simulation week.
@@ -103,6 +104,7 @@ function reducer(state, action) {
       // Begin a run from the onboarding config (name/archetype/cadence applied).
       return createInitialState({ ...action.config, started: true })
     case 'RESET':
+      clearSave() // don't let the finished run resurrect on the next reload
       return createInitialState()
     default:
       return state
@@ -131,8 +133,15 @@ function applyClockDirective(next) {
 const TICK_MS = 2000 // wall-clock ms per simulated week at speed 1 (1× = a calm
 // ~2s/week; 2× ~1s, 4× ~0.5s). Every week is simulated — no quiet-week skipping.
 
+// Lazy reducer init: resume a saved run if one exists, otherwise a fresh state.
+// loadState() returns null in the harness / first visit / on any corrupt blob,
+// so this is always safe.
+function initState() {
+  return loadState() ?? createInitialState()
+}
+
 export function useGame() {
-  const [state, dispatch] = useReducer(reducer, undefined, createInitialState)
+  const [state, dispatch] = useReducer(reducer, undefined, initState)
   const stateRef = useRef(state)
   stateRef.current = state
 
@@ -141,6 +150,23 @@ export function useGame() {
     const id = setInterval(() => dispatch({ type: 'TICK' }), TICK_MS / state.clock.speed)
     return () => clearInterval(id)
   }, [state.clock.paused, state.clock.speed])
+
+  // Autosave: persist on every state change, debounced so a fast-forwarding
+  // clock (a TICK as often as every 0.5s at 4×) doesn't hammer localStorage.
+  // The trailing write always lands, so the latest state is never lost; on
+  // unmount we flush immediately so a reload right after an action is safe.
+  useEffect(() => {
+    const id = setTimeout(() => saveState(stateRef.current), 400)
+    return () => clearTimeout(id)
+  }, [state])
+
+  useEffect(() => {
+    // Flush the freshest state when the tab is hidden/closed — covers the case
+    // where the user navigates away inside the debounce window.
+    const flush = () => saveState(stateRef.current)
+    window.addEventListener('pagehide', flush)
+    return () => window.removeEventListener('pagehide', flush)
+  }, [])
 
   const play = useCallback(() => dispatch({ type: 'PLAY' }), [])
   const pause = useCallback((reason) => dispatch({ type: 'PAUSE', reason }), [])
