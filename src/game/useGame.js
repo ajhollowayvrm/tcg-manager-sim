@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef } from 'react'
 import { createInitialState } from './initialState.js'
 import { advanceWeek } from './simulation.js'
-import { releaseSet } from './sets.js'
+import { releaseSet, reprintSet } from './sets.js'
 import { banCard, pullFromPrint } from './bans.js'
 import { ripPack } from './packs.js'
 import { resetCadence } from './cadence.js'
@@ -77,6 +77,21 @@ function reducer(state, action) {
         personas: result.personas,
         eventsFeed: [{ week: state.week, text: result.feed }, ...state.eventsFeed],
         clock: { ...state.clock, paused: true, pauseReason: `Pulled ${result.pulledName} from print` },
+      }
+    }
+    case 'REPRINT_SET': {
+      const result = reprintSet(state, action.setId, action.printRun)
+      if (!result) return state
+      // Flag the original set as a first edition (the reprint just created a
+      // permanent premium tier). firstEditionCards already carries the card patch.
+      const sets = state.sets.map((s) => (s.id === action.setId ? { ...s, firstEdition: true } : s))
+      return {
+        ...state,
+        sets: [...sets, result.set],
+        cards: [...result.firstEditionCards, ...result.cards],
+        cash: state.cash + result.cashDelta,
+        eventsFeed: [{ week: state.week, text: result.feed, kind: 'market' }, ...state.eventsFeed].slice(0, 60),
+        clock: { ...state.clock, paused: true, pauseReason: result.feed },
       }
     }
     case 'RIP_PACK': {
@@ -214,6 +229,7 @@ export function useGame() {
   const release = useCallback((draft) => dispatch({ type: 'RELEASE_SET', draft }), [])
   const banCardAction = useCallback((cardId) => dispatch({ type: 'BAN_CARD', cardId }), [])
   const pull = useCallback((setId) => dispatch({ type: 'PULL_FROM_PRINT', setId }), [])
+  const reprint = useCallback((setId, printRun) => dispatch({ type: 'REPRINT_SET', setId, printRun }), [])
   const reset = useCallback(() => dispatch({ type: 'RESET' }), [])
   // A nonce so consecutive rips of the same set in the same week differ.
   const ripNonce = useRef(0)
@@ -226,5 +242,5 @@ export function useGame() {
   const dropDist = useCallback((distId) => dispatch({ type: 'DROP_DISTRIBUTOR', distId }), [])
   const cultivateDist = useCallback((distId) => dispatch({ type: 'CULTIVATE_DISTRIBUTOR', distId }), [])
 
-  return { state, play, pause, setSpeed, release, ban: banCardAction, pull, reset, rip, startGame, comp, sponsor, unsponsor, signDist, dropDist, cultivateDist }
+  return { state, play, pause, setSpeed, release, ban: banCardAction, pull, reprint, reset, rip, startGame, comp, sponsor, unsponsor, signDist, dropDist, cultivateDist }
 }

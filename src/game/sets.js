@@ -352,6 +352,107 @@ export function releaseSet(state, draft) {
   }
 }
 
+// ---- Set-level reprint (Base → Unlimited) ---------------------------------
+
+// What it costs to reprint a set at `printRun`: just the manufacturing (no dev,
+// no art — the cards are already designed and commissioned).
+export function reprintCost(printRun) {
+  return Math.round(20_000 + (printRun / 100) * 180_000)
+}
+
+// Reprint an existing set as a new "Unlimited" printing. The ORIGINAL becomes a
+// permanent first-edition premium; the reprint is a fresh, cheaper printing with
+// its own supply to sell (a real revenue stream — especially lucrative for an
+// out-of-print set whose scarcity you already pumped). Returns reducer patches:
+//   { set, cards, firstEditionCards, cashDelta, feed }
+//   - set: the new reprint set (push onto state.sets)
+//   - cards: the reprint's fresh card instances (cheaper — more supply)
+//   - firstEditionCards: the ORIGINAL set's cards, flagged firstEdition with a
+//     permanent value premium (full replacement for those ids in state.cards)
+// `printRun` 0..100 (defaults to a mid run). The reprint re-enters the format.
+export function reprintSet(state, originalSetId, printRun = 55) {
+  const original = state.sets.find((s) => s.id === originalSetId)
+  if (!original) return null
+  // Can't reprint a set that's already a reprint of something (one level only).
+  if (original.reprintOf) return null
+
+  const cost = reprintCost(printRun)
+  // A reprint is a real manufacturing spend — can't reprint what you can't afford
+  // (no separate confirm step; it's a one-click action).
+  if (state.cash < cost) return null
+  const newSetId = `set_${state.sets.length + 1}`
+
+  // Build the reprint's cards from the original's design (same names/rarities/
+  // art), as fresh instances. We reconstruct a draft-like object from the set.
+  const draft = {
+    name: `${original.name} (Unlimited)`,
+    themeId: original.themeId,
+    powerBudget: original.powerBudget,
+    rarityChase: original.rarityChase,
+    printRun,
+    pricePoint: original.price,
+    setLength: original.setLength,
+    secretCount: original.secretCount,
+    rarities: original.rarities,
+    packFormat: original.packFormat,
+    signatureCards: original.signatureCards ?? [],
+    prerelease: { enabled: false, chasePullable: false },
+  }
+  const artistOf = (id) => currentArtist(state, id)
+  const reprintCards = generateCards(draft, newSetId, state.week, artistOf).map((c) => ({
+    ...c,
+    // Reprints carry more supply → priced below the originals from the start.
+    singlePrice: Math.round(c.singlePrice * 0.6 * 100) / 100,
+    priceHistory: [Math.round(c.singlePrice * 0.6 * 100) / 100],
+    reprint: true,
+  }))
+
+  const reprintSetRecord = {
+    id: newSetId,
+    name: draft.name,
+    themeId: original.themeId,
+    theme: original.theme,
+    powerBudget: original.powerBudget,
+    rarityChase: original.rarityChase,
+    printRun,
+    price: original.price,
+    signatureCards: original.signatureCards,
+    rarities: original.rarities,
+    packFormat: original.packFormat,
+    setLength: original.setLength,
+    secretCount: original.secretCount,
+    prerelease: { enabled: false, chasePullable: false },
+    releasedWeek: state.week,
+    supply: printRunUnits(printRun),
+    sold: 0,
+    reprintOf: originalSetId, // links back to the first edition
+  }
+
+  // The ORIGINAL printing becomes a permanent first-edition premium: flag it and
+  // bump its cards' value (1st-ed Charizard effect). They keep their elevated
+  // status even as the cheaper reprint floods the market.
+  const firstEditionCards = state.cards.map((c) => {
+    if (c.setId !== originalSetId) return c
+    const next = Math.round(c.singlePrice * 1.15 * 100) / 100 // first-ed premium
+    return {
+      ...c,
+      firstEdition: true,
+      singlePrice: next,
+      priceHistory: [...(c.priceHistory ?? []), next].slice(-26),
+    }
+  })
+
+  const feed = `${original.name} reprinted as an Unlimited run (${printRunUnits(printRun).toLocaleString('en-US')} units). Fresh supply to sell — and the original printing is now a first-edition premium.`
+
+  return {
+    set: reprintSetRecord,
+    cards: reprintCards,
+    firstEditionCards,
+    cashDelta: -cost,
+    feed,
+  }
+}
+
 // Resolve the counter directives on a draft's signature cards against the live
 // world. Two kinds:
 //

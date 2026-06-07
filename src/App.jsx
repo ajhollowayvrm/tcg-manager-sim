@@ -37,7 +37,7 @@ export default function App() {
   // source of truth for props.
   const panels = {
     metagame: <MetagamePanel state={game.state} />,
-    sets: <SetsPanel state={game.state} />,
+    sets: <SetsPanel state={game.state} onReprint={game.reprint} />,
     market: <MarketTicker state={game.state} />,
     metaReport: <MetaReport state={game.state} />,
     packs: <PackRipper state={game.state} onRip={game.rip} />,

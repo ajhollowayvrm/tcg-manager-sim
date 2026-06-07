@@ -838,7 +838,13 @@ body {
 .sets__row--rotated .sets__wk { color: var(--text-dim); }
 .sets__track { height: 8px; background: var(--bg); border-radius: 99px; overflow: hidden; }
 .sets__fill { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width 0.3s ease; }
-.sets__meta { font-size: 0.72rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.sets__meta { font-size: 0.72rem; color: var(--text-dim); font-variant-numeric: tabular-nums; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+/* Out-of-print sets are an asset, not dead stock — keep them bright and give the
+   left border a gold accent. */
+.sets__row--oop { border-left: 2px solid var(--pop); }
+.sets__reprint { font-size: 0.7rem; padding: 3px 8px; white-space: nowrap; }
+.sets__reprint--hot { color: var(--pop); }
+.sets__reprint--hot:hover { background: var(--pop); color: #2b2406; }
 
 /* ---- Events feed items ---- */
 .event__tag {
