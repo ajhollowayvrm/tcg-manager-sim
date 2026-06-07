@@ -201,6 +201,11 @@ body {
 .modal__head h2 { margin: 0; font-size: 1.1rem; }
 .modal__foot { border-bottom: none; border-top: 1px solid var(--border); gap: var(--gap); align-items: flex-end; }
 .modal__body { padding: 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+/* Direct children must NOT shrink below their content — in a max-height flex
+   column with overflow, flex items default to shrinking, which made the
+   accordion sections compress and overlap on mobile. Keep them natural-height
+   so the body scrolls instead. */
+.modal__body > * { flex: 0 0 auto; }
 
 .builder__section { display: flex; flex-direction: column; gap: 14px; }
 .builder__inner { display: flex; flex-direction: column; gap: 14px; }
