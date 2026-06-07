@@ -4,7 +4,7 @@
 import { makeRng, hashSeed, range } from './rng.js'
 import { getArtist } from './content/artists.js'
 import { getTheme } from './content/themes.js'
-import { clamp } from './simulation.js'
+import { clamp, communitySentiment } from './simulation.js'
 import { printRunUnits } from './revenue.js'
 import { shiftToward, shiftAway, balanceScore } from './archetypes.js'
 import { currentArtist } from './artists.js'
@@ -389,12 +389,30 @@ export function releaseSet(state, draft) {
     promoCards.length ? `Collector box includes an exclusive promo.` : null,
   ].filter(Boolean)
 
+  // Release spike: a new set draws a WAVE of new players discovering the game,
+  // sized by the set's chase hype (the marquee cards people hear about). This is
+  // the big growth engine on top of the weekly word-of-mouth trickle — and the
+  // launch that takes a brand-new studio from a trickle to a real base.
+  const avgHype = cards.length
+    ? cards.reduce((s, c) => s + (c.popFactors?.hype ?? 40), 0) / cards.length
+    : 40
+  // A launch wave. Early sets (when you have few players) need to be a real
+  // growth engine, so this is sized to take a fledgling studio from a trickle to
+  // a viable base over its first few releases. Scales with chase hype — AND with
+  // how the community already feels: a game people are souring on draws weak
+  // launches (word doesn't spread for a disliked game), so reckless/greedy
+  // strategies that tank sentiment can't keep buying their way to growth.
+  const mood = communitySentiment(state.personas) ?? 0
+  const moodMul = clamp(1 + mood / 35, 0.05, 1.5) // -100 → 0.05×, 0 → 1×, +35 → 1.5×
+  const newPlayers = Math.round((3500 + (avgHype / 100) * 13000) * moodMul)
+
   return {
     set,
     // The new set's generated cards PLUS any reprint instances and SPC promo.
     cards: [...cards, ...reprintResult.reprintCards, ...promoCards],
     cashDelta: -cost.total,
     metagame,
+    newPlayers, // discovery wave to distribute into segments (reducer + harness)
     // Existing cards mutated by silver-bullet counters AND/OR card-reprint
     // softening (null if neither fired). reprintResult chained onto the counter
     // patch, so this is the final existing-cards array.

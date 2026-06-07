@@ -30,11 +30,24 @@ The engine of the whole game is **format decay**:
 
 You survive as long as you balance fresh-product pressure against power-creep, over-printing, and community goodwill. There is **no win condition** — it's an open-ended run you play until you're bored or you lose.
 
-### Loss conditions (death spirals) ✅
-- **Cash hits zero** — you over-printed, sales cratered, you can't fund the next set.
-- **Active player base hits zero** — the meta rotted, goodwill collapsed, the community left.
-- **Community sentiment collapses** — the reach-weighted community mood turns deeply
-  hostile (≤ −60); the community revolts even if cash/players linger. (Added post-v1.)
+### The start & loss conditions ✅
+- **You start from nothing** — 0 players, 0 satisfaction (neutral); nobody knows
+  your game yet. You grow a base by **releasing sets** (each launch is a
+  hype-sized discovery wave) and **word-of-mouth** (an additive weekly trickle
+  scaled by how fresh/diverse/well-liked your game is). A brand-new studio is
+  safe — starting empty is not a loss.
+- Cash, players, and satisfaction are **recoverable pressures**, not instant-death
+  lines — they crater your *sales* when low, but you can dig out:
+  - **Cash can go negative** — a loan, carrying compounding weekly interest. A
+    brief dip is cheap; chronic deep debt snowballs.
+  - **Players / satisfaction can fall and recover** — a thin base or a soured
+    community hurts sales but isn't fatal on its own.
+- Only three genuine ruins end a run:
+  - **Debt spiral** — cash past a catastrophic floor (~−$3M); the interest alone
+    is unpayable.
+  - **Broke and abandoned** — deep debt (< −$100k) AND essentially no players
+    (< 500) at once: no market to recover with.
+  - **Total revolt** — community sentiment hits the −100 floor.
 
 ---
 

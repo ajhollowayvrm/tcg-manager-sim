@@ -5,14 +5,29 @@ import { PERSONAS } from './content/personas.js'
 import { seedArtists } from './artists.js'
 import { defaultConfig, getArchetype } from './config.js'
 
+// Normalize an archetype's seed segment numbers into fractions that sum to 1 —
+// the LEAN that new players distribute into as the base grows from zero.
+function normalizeLean(seg) {
+  const total = (seg.competitive ?? 0) + (seg.casual ?? 0) + (seg.collectors ?? 0)
+  if (total <= 0) return { competitive: 1 / 3, casual: 1 / 3, collectors: 1 / 3 }
+  return {
+    competitive: seg.competitive / total,
+    casual: seg.casual / total,
+    collectors: seg.collectors / total,
+  }
+}
+
 // `config` is the onboarding result (or undefined for a bare new game). The
 // chosen archetype applies a SMALL starting nudge to segments/metashare; indie
 // also starts with less cash. Everything else is identity/flavor.
 export function createInitialState(config) {
   const cfg = { ...defaultConfig(), ...(config ?? {}) }
   const arch = getArchetype(cfg.archetype)
-  const segments = { ...arch.segments }
-  const playerBase = segments.competitive + segments.casual + segments.collectors
+  // You start with NO players — nobody knows your game yet. The archetype's
+  // segment numbers are kept only as the LEAN (the ratio new players discover
+  // into); the base itself grows from zero via word-of-mouth + releases.
+  const segments = { competitive: 0, casual: 0, collectors: 0 }
+  const playerBase = 0
   const cash = cfg.archetype === 'indie' ? 140_000 : 250_000
 
   return {
@@ -25,8 +40,11 @@ export function createInitialState(config) {
     // Cadence pledge tracking: weeks since last release vs the pledged rhythm.
     cadence: { weeks: cfg.cadenceWeeks, lastReleaseWeek: 1, overdueWeeks: 0 },
 
-    // Player segments react differently to the same decision (sized by archetype).
+    // Player segments react differently to the same decision. Start empty; new
+    // players (word-of-mouth + releases) distribute into them by `segmentLean`,
+    // the archetype's preferred mix (normalized from its seed segment numbers).
     segments,
+    segmentLean: normalizeLean(arch.segments),
 
     // Metagame health — four interacting dials (0–100).
     // solveLevel is the core-loop engine: resets low on release, decays up weekly.
@@ -51,7 +69,8 @@ export function createInitialState(config) {
     // Personas carry mutable run state on top of their static identity:
     // sentiment (mood), relationship (how cultivated — decays if neglected),
     // and a sponsored flag (an ongoing creator deal).
-    personas: PERSONAS.map((p) => ({ ...p, sentiment: 10, relationship: 10, sponsored: false })),
+    // Sentiment starts at 0 (neutral) — nobody has an opinion yet; you earn it.
+    personas: PERSONAS.map((p) => ({ ...p, sentiment: 0, relationship: 10, sponsored: false })),
 
     // Bulk-buyer deals (signed distributors) and the scalper-culture heat gauge
     // they drive. See distributors.js — heat over the threshold tips the game

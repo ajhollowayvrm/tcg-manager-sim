@@ -23,7 +23,10 @@ const KEY = 'tcg-manager-sim/save'
 // a legacy fallback, but invalidating keeps the per-SKU UI consistent).
 // v6: promo cards (card.promo, unpullable) + organized play. New card flag;
 // invalidate so the promo/pull filters and OP panel start consistent.
-const VERSION = 6
+// v7: zero-player / zero-satisfaction start + reworked loss model (cash can go
+// negative as a loan with weekly interest; debt-spiral / broke-and-abandoned /
+// -100 revolt are the only ruins). New state.segmentLean; segments start at 0.
+const VERSION = 7
 
 // True only where a real localStorage exists. Guards SSR / the headless
 // playtest harness (tools/playtest.mjs runs the sim in plain Node), and the

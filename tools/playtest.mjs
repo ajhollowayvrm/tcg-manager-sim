@@ -16,6 +16,7 @@ import { advanceWeek } from '../src/game/simulation.js'
 import { createDraft, createSignatureCard, releaseSet, setCost } from '../src/game/sets.js'
 import { banCard, pullFromPrint } from '../src/game/bans.js'
 import { resetCadence } from '../src/game/cadence.js'
+import { distributeNewPlayers } from '../src/game/segments.js'
 
 const HORIZON = 312 // ~6 years of weeks — a long run, per the brief's "year 6"
 
@@ -23,13 +24,18 @@ const HORIZON = 312 // ~6 years of weeks — a long run, per the brief's "year 6
 // Mirrors the transitions in useGame.js so a strategy can act on the state.
 
 function applyRelease(state, draft) {
-  const { set, cards, cashDelta, metagame, counteredCards } = releaseSet(state, draft)
+  const { set, cards, cashDelta, metagame, counteredCards, newPlayers } = releaseSet(state, draft)
+  // Mirror the reducer: a release brings a discovery wave of new players.
+  const segments = { ...state.segments }
+  distributeNewPlayers(segments, state.segmentLean, newPlayers ?? 0)
   return {
     ...state,
     cash: state.cash + cashDelta,
     sets: [...state.sets, set],
     // Silver-bullet counters may have patched existing cards (counteredCards).
     cards: [...(counteredCards ?? state.cards), ...cards],
+    segments,
+    playerBase: segments.competitive + segments.casual + segments.collectors,
     metagame,
     // Mirror the reducer: shipping a set resets the cadence pledge clock.
     cadence: state.cadence ? resetCadence(state.cadence, state.week) : state.cadence,
@@ -250,9 +256,8 @@ function summarize() {
 }
 
 function short(reason) {
-  if (reason.startsWith('Bankrupt')) return 'bankrupt'
+  if (reason.includes('Insolvent') || reason.includes('debt')) return 'debt'
   if (reason.includes('revolted')) return 'sentiment'
-  if (reason.includes('community is gone') || reason.includes('player base')) return 'players→0'
   return 'survived'
 }
 

@@ -13,9 +13,12 @@ Think *Game Dev Tycoon*, but you're The Pokémon Company and the product is card
 reacts week by week: the secondary market resolves singles & sealed prices with
 momentum and burstable hype bubbles, 50+ named community personas chatter through
 a signal-vs-noise feedback feed, an events feed throws curveballs, and you wield
-bans against the metagame — all funded by a sealed-product economy with the
-cash / player-base / sentiment death spirals. Format decay drives the whole
-thing. On top of the core loop you also **author the booster format**
+bans against the metagame — all funded by a sealed-product economy. You **start
+from nothing** (0 players, 0 satisfaction) and grow a base via releases and
+word-of-mouth; cash/players/satisfaction are recoverable pressures (cash can go
+negative as a loan), and only a debt spiral, being broke-and-abandoned, or a
+total −100 revolt ends a run. Format decay drives the whole thing. On top of the
+core loop you also **author the booster format**
 (slot-by-slot pack structure), **design counter cards** to answer a card or a
 runaway archetype instead of banning, **sign distributors** for bulk-buy cash
 that can tip the game into a price-spiking scalper market, **pull a set from
@@ -38,7 +41,11 @@ status (✅ done / ⏳ remaining) and the v2 roadmap.
 After that, the brief calls for a frontend-polish pass and the open tuning
 notes (decay rate, market variance, feedback-noise ratio).
 
-_Recently completed: product SKUs — per-set booster/bundle/SPC/tin lineup
+_Recently completed: a grow-from-nothing start — 0 players / 0 satisfaction,
+additive word-of-mouth + release discovery waves (`segments.js` / `sets.js`), and
+a forgiving recoverable-pressure loss model (negative cash = a loan with weekly
+interest; only a debt spiral / broke-and-abandoned / −100 revolt ends a run —
+`simulation.js`); product SKUs — per-set booster/bundle/SPC/tin lineup
 (`products.js`); promo cards + organized play — unpullable prize cards via
 tournaments/leagues/prereleases and an SPC exclusive promo (`organizedplay.js`);
 pull-from-publication (replaced rotate — `bans.js` `pullFromPrint`) and reprints
@@ -47,7 +54,7 @@ fan-service reprints (`sets.js` `reprintSet` /
 `applyCardReprints`); booster formats (authored pack slots — `rarities.js` /
 `packs.js`), counter cards (`sets.js` `applyCounters`), and distributors +
 scalper culture (`distributors.js`); a manual click-to-advance clock with the
-three death-spiral health meters (cash / players / satisfaction) surfaced in the
+three health meters (cash / players / satisfaction) surfaced in the
 header (`TopBar.jsx`); silent autosave to localStorage (`game/persistence.js`);
 and segment drift (`segments.js`)._
 

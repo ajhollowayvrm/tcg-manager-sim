@@ -18,9 +18,27 @@ import { applyRelationships } from './relationships.js'
 import { applyDistributors } from './distributors.js'
 
 const SOLVE_DECAY_PER_WEEK = 4 // tune so a format stays fresh for a few months
-// Community sentiment loss: if the reach-weighted mood turns deeply hostile, the
-// community revolts and the run ends — a third death spiral beyond cash/players.
-const SENTIMENT_COLLAPSE = -60
+// Community sentiment loss: sentiment runs -100..100. Only a TOTAL revolt (the
+// floor) ends the run — short of that, bad sentiment is a recoverable pressure
+// that craters your sales, not an instant death.
+const SENTIMENT_COLLAPSE = -100
+
+// Bankruptcy ruin thresholds — BOTH must hold (deep debt AND no market). Cash can
+// go negative (a loan you service with future sales); it's only fatal once the
+// debt is unserviceable and the player base that would service it is gone.
+const DEBT_FLOOR = -100_000 // cash below this is a debt you can't dig out of…
+const ABANDONED_PLAYERS = 500 // …AND under this many players, there's no recovery
+// A separate, catastrophic debt floor: debt this deep is unserviceable on its own
+// — weekly interest alone outpaces any plausible recovery, so the studio is
+// insolvent regardless of player count. This is what punishes reckless
+// overspending (a brief loan stays survivable; a runaway debt spiral does not).
+const DEBT_RUIN = -3_000_000
+
+// Weekly interest charged on negative cash (a loan). Compounds, so a short dip is
+// cheap but chronic deep debt snowballs toward the bankruptcy floor. Tuned so a
+// brief loan is survivable but sustained deep debt (a reckless overspender) gets
+// dragged under before sales can dig out.
+const DEBT_INTEREST_PER_WEEK = 0.06 // ~6%/wk: -$2M debt → -$120k/wk and compounding
 
 // Reach-weighted average persona sentiment (-100..100). Loud voices count more,
 // matching how the rest of the sim weights reach. Null if there are no personas.
@@ -77,6 +95,18 @@ export function advanceWeek(state) {
   next.cash += rev.cashDelta
   next.lastRevenue = { week: next.week, total: rev.cashDelta, units: rev.unitsSold, perSet: rev.perSet }
 
+  // Debt interest. Negative cash is a LOAN — survivable, but not free. It accrues
+  // compounding weekly interest, so a brief dip is cheap while chronic deep debt
+  // snowballs and drives you toward the bankruptcy floor. This is what punishes
+  // reckless overspending without removing the "you can run a loan" forgiveness.
+  if (next.cash < 0) {
+    const interest = Math.round(next.cash * DEBT_INTEREST_PER_WEEK) // negative
+    next.cash += interest
+    next.lastDebtInterest = -interest // positive = cost paid this week
+  } else {
+    next.lastDebtInterest = 0
+  }
+
   // Secondary market: resolve every card's singles & sealed price for the week.
   // resolveMarket reads next.week/metagame (already advanced) and the cards.
   const { cards, movers } = resolveMarket(next)
@@ -127,16 +157,23 @@ export function advanceWeek(state) {
   // directive is read by the reducer in useGame; game-over below overrides it.
   next.clock = { ...next.clock, autoEvent: clockDirective(state, next, event) }
 
-  // Loss conditions (the death spirals): cash, active player base, or community
-  // sentiment collapses. Any one ends the run.
+  // Loss conditions. Cash, players, and satisfaction are RECOVERABLE pressures,
+  // not instant-death lines — a real company can carry debt, rebuild from a tiny
+  // base, or win back a soured community. Only two genuinely unrecoverable ruins
+  // end a run:
+  //   • Bankruptcy ruin — a deep, unserviceable debt AND no market to recover it:
+  //     cash below the debt floor AND the player base essentially gone. (Negative
+  //     cash alone is just a loan; zero players alone you can still rebuild.)
+  //   • Brand ruin — the community has totally revolted (sentiment at the -100
+  //     floor). Unrecoverable regardless of cash.
   if (!next.gameOver) {
     const sentiment = communitySentiment(next.personas)
-    if (next.cash <= 0) {
-      next.gameOver = { reason: 'Bankrupt — you ran out of cash to fund the next set.' }
-    } else if (next.playerBase <= 0) {
-      next.gameOver = { reason: 'The community is gone — your active player base hit zero.' }
+    if (next.cash < DEBT_RUIN) {
+      next.gameOver = { reason: 'Insolvent — debt spiralled past saving; the interest alone is unpayable. The studio folds.' }
+    } else if (next.cash < DEBT_FLOOR && next.playerBase < ABANDONED_PLAYERS) {
+      next.gameOver = { reason: 'Insolvent — buried in debt with no players left to sell to. The studio folds.' }
     } else if (sentiment != null && sentiment <= SENTIMENT_COLLAPSE) {
-      next.gameOver = { reason: 'The community revolted — sentiment toward your game collapsed.' }
+      next.gameOver = { reason: 'The community revolted — sentiment toward your game hit rock bottom.' }
     }
     if (next.gameOver) {
       next.eventsFeed = [{ week: next.week, text: `GAME OVER: ${next.gameOver.reason}` }, ...next.eventsFeed]

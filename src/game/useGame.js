@@ -5,6 +5,7 @@ import { releaseSet, reprintSet } from './sets.js'
 import { banCard, pullFromPrint } from './bans.js'
 import { ripPack } from './packs.js'
 import { resetCadence } from './cadence.js'
+import { distributeNewPlayers } from './segments.js'
 import { compProduct, sponsorCreator, dropSponsor } from './relationships.js'
 import { signDistributor, dropDistributor, cultivateDistributor } from './distributors.js'
 import { runOrganizedPlay } from './organizedplay.js'
@@ -22,12 +23,16 @@ function reducer(state, action) {
       return applyClockDirective(next)
     }
     case 'RELEASE_SET': {
-      const { set, cards, cashDelta, metagame, counteredCards, counterFeed } = releaseSet(state, action.draft)
+      const { set, cards, cashDelta, metagame, counteredCards, counterFeed, newPlayers } = releaseSet(state, action.draft)
       // If silver-bullet counters mutated existing cards, build from that patched
       // array; otherwise from the current one. Then append the new set's cards.
       const baseCards = counteredCards ?? state.cards
+      // Release discovery wave: distribute the new players into segments by lean.
+      const segments = { ...state.segments }
+      distributeNewPlayers(segments, state.segmentLean, newPlayers ?? 0)
+      const playerBase = segments.competitive + segments.casual + segments.collectors
       const feed = [
-        { week: state.week, text: `${set.name} (${set.theme}) hits shelves — the metagame refreshes.` },
+        { week: state.week, text: `${set.name} (${set.theme}) hits shelves — the metagame refreshes.${newPlayers ? ` ${newPlayers.toLocaleString()} new players discover the game.` : ''}` },
         ...(counterFeed ? [{ week: state.week, text: `Counter tech: ${counterFeed}` }] : []),
         ...state.eventsFeed,
       ]
@@ -36,6 +41,8 @@ function reducer(state, action) {
         cash: state.cash + cashDelta,
         sets: [...state.sets, set],
         cards: [...baseCards, ...cards],
+        segments,
+        playerBase,
         metagame,
         cadence: resetCadence(state.cadence, state.week), // shipping resets the pledge clock
         eventsFeed: feed,

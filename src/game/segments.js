@@ -27,13 +27,13 @@
 //                 share, soured when grindy control/midrange dominate.
 //   collectors  — style-agnostic (value-driven); the metashape doesn't move them.
 
-import { clamp } from './simulation.js'
+import { clamp, communitySentiment } from './simulation.js'
 import { normalize, balanceScore, EVEN_SHARE } from './archetypes.js'
 
 // Max fraction of a segment that can drift in a single week from dial pressure.
 // Deliberately small so this reads as a current, not a cliff — discrete shocks
 // (events/bans) remain the dramatic movers.
-const MAX_WEEKLY_DRIFT = 0.025
+const MAX_WEEKLY_DRIFT = 0.006
 
 // Map a "health score" in [-1, 1] to a growth rate in [-MAX, +MAX].
 function rate(score) {
@@ -85,12 +85,62 @@ function segmentHealth(metagame) {
   return { competitive, casual, collectors }
 }
 
+// Additive weekly "word of mouth" — new players DISCOVERING the game. Crucially
+// additive (not multiplicative), so a brand-new studio grows from ZERO: a fresh,
+// diverse, well-stocked game with positive buzz attracts a trickle of newcomers
+// every week even before its base exists. A stale, undersupplied, or disliked
+// game attracts few or none. New players distribute into segments by the
+// archetype's lean. Mutates seg in place; returns the total added.
+const WORD_OF_MOUTH_BASE = 310 // newcomers/week a healthy, in-print game can draw
+
+function applyWordOfMouth(next, seg) {
+  const m = next.metagame
+  const liveSets = (next.sets ?? []).filter((s) => !s.rotated).length
+  if (liveSets === 0) return 0 // no product on shelves → nothing to discover yet
+
+  // Health factor 0..~1.4: a fresh (low solve), diverse, balanced field is
+  // discoverable; a solved/oppressive one isn't. Centered so an average game
+  // draws a modest trickle.
+  const freshness = clamp(1 - m.solveLevel / 120, 0, 1)
+  const diversity = clamp(m.diversity / 100, 0, 1)
+  const health = clamp(0.2 + freshness * 0.4 + diversity * 0.7, 0, 1.4)
+
+  // Buzz: positive community sentiment amplifies discovery; hostile buzz suppresses
+  // it. Maps reach-weighted sentiment (-100..100) to ~0.4..1.6.
+  const sentiment = communitySentiment(next.personas) ?? 0
+  const buzz = clamp(1 + sentiment / 60, 0.2, 1.6)
+
+  // More sets in print = more shelf presence (diminishing).
+  const presence = clamp(0.6 + Math.log2(1 + liveSets) * 0.35, 0.6, 1.2)
+
+  const newcomers = Math.round(WORD_OF_MOUTH_BASE * health * buzz * presence)
+  if (newcomers <= 0) return 0
+
+  distributeNewPlayers(seg, next.segmentLean, newcomers)
+  return newcomers
+}
+
+// Distribute `count` new players into the segments by the archetype lean (falls
+// back to an even split if no lean is recorded — e.g. an old save).
+export function distributeNewPlayers(seg, lean, count) {
+  const l = lean ?? { competitive: 1 / 3, casual: 1 / 3, collectors: 1 / 3 }
+  seg.competitive += Math.round(count * l.competitive)
+  seg.casual += Math.round(count * l.casual)
+  seg.collectors += Math.round(count * l.collectors)
+}
+
 // Apply one week of dial-driven drift to the segments in place, then recompute
 // the total player base. Mutates `next` (called from advanceWeek).
 export function applySegmentDrift(next) {
   const health = segmentHealth(next.metagame)
   const seg = next.segments
 
+  // Additive discovery first (grows the base from zero)…
+  const newcomers = applyWordOfMouth(next, seg)
+  next.lastNewPlayers = newcomers
+
+  // …then the multiplicative drift on the (now non-zero) base — a healthy meta
+  // grows it further, a rotting one bleeds it.
   for (const key of ['competitive', 'casual', 'collectors']) {
     const delta = Math.round(seg[key] * rate(health[key]))
     seg[key] = Math.max(0, seg[key] + delta)

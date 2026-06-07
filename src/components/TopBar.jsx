@@ -7,16 +7,20 @@ function formatCash(n) {
   return '$' + n.toLocaleString('en-US')
 }
 
-// Loss thresholds (mirror simulation.js). A run ends when cash or player base
-// hits 0, or community sentiment falls to the collapse line.
-const SENTIMENT_COLLAPSE = -60
-const CASH_WARN = 50_000
-const PLAYERS_WARN = 2_000
+// Loss framing (mirror simulation.js). Cash, players, and satisfaction are
+// RECOVERABLE pressures, not instant-death lines. Cash can go negative (a loan);
+// only a runaway debt spiral (past DEBT_RUIN) or broke-AND-abandoned is fatal.
+// Satisfaction runs -100..100 and only a total revolt at -100 ends a run.
+const SENTIMENT_COLLAPSE = -100
+const DEBT_RUIN = -3_000_000
+const CASH_WARN = 50_000      // cash dipping low (still survivable)
+const PLAYERS_WARN = 2_000    // a thin base (recoverable)
 
 export default function TopBar({ game, onDesignSet }) {
   const { state, advanceWeek, reset } = game
   const { week, cash, playerBase, clock, lastRevenue, gameOver } = state
   const rev = lastRevenue?.total ?? 0
+  const interest = state.lastDebtInterest ?? 0
   const sentiment = communitySentiment(state.personas)
 
   return (
@@ -26,33 +30,39 @@ export default function TopBar({ game, onDesignSet }) {
         <span className="topbar__week">Week {week}</span>
       </div>
 
-      {/* The three ways to lose, always visible. Each meter reddens as it nears
-          its loss threshold so the player can see trouble coming. */}
+      {/* The recoverable pressures, always visible. Each meter reddens as it
+          nears trouble; the actual losses (debt spiral, broke+abandoned, total
+          revolt) live in the game-over logic. */}
       <div className="health" role="group" aria-label="Studio health">
         <Meter
           label="Cash"
           value={formatCash(cash)}
-          // Cash has no fixed ceiling; gauge fills toward a comfortable ~$300k and
-          // empties toward the $0 bankruptcy line.
-          pct={clampPct((cash / 300_000) * 100)}
+          // In the black, fills toward a comfortable ~$300k. In the red, it's a
+          // loan: the gauge DRAINS from ~empty toward 0 as the debt deepens to the
+          // ruin line (just-negative ≈ a sliver, −$3M = empty). No jump at zero.
+          pct={cash >= 0
+            ? clampPct((cash / 300_000) * 100)
+            : clampPct((1 - cash / DEBT_RUIN) * 8)}
           danger={cash < CASH_WARN}
-          loss="$0 = bankrupt"
-          delta={rev > 0 ? `+${formatCash(rev)}/wk` : null}
+          loss={cash < 0 ? 'debt — a loan, not fatal alone' : 'negative = a loan'}
+          // In the black, show weekly revenue; in the red, show the debt interest.
+          delta={cash < 0 && interest > 0 ? `−${formatCash(interest)}/wk interest`
+            : rev > 0 ? `+${formatCash(rev)}/wk` : null}
         />
         <Meter
           label="Players"
           value={playerBase.toLocaleString('en-US')}
           pct={clampPct((playerBase / 15_000) * 100)}
           danger={playerBase < PLAYERS_WARN}
-          loss="0 = community gone"
+          loss="recoverable — grow it back"
         />
         <Meter
           label="Satisfaction"
           value={sentiment == null ? '—' : Math.round(sentiment)}
-          // Sentiment runs -100..100; collapse at -60. Map so the collapse line
-          // sits near empty and a happy community fills the bar.
+          // Sentiment runs -100..100; only the -100 floor ends a run. Map so the
+          // floor sits at empty and a happy community fills the bar.
           pct={sentiment == null ? 50 : clampPct(((sentiment - SENTIMENT_COLLAPSE) / (100 - SENTIMENT_COLLAPSE)) * 100)}
-          danger={sentiment != null && sentiment <= -35}
+          danger={sentiment != null && sentiment <= -70}
           loss={`${SENTIMENT_COLLAPSE} = revolt`}
         />
       </div>
