@@ -140,7 +140,7 @@ export function advanceWeek(state) {
     }
     if (next.gameOver) {
       next.eventsFeed = [{ week: next.week, text: `GAME OVER: ${next.gameOver.reason}` }, ...next.eventsFeed]
-      next.clock = { ...next.clock, paused: true, pauseReason: next.gameOver.reason, autoEvent: null }
+      next.clock = { ...next.clock, reason: next.gameOver.reason, autoEvent: null }
     }
   }
 

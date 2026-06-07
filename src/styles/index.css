@@ -57,42 +57,58 @@ body {
   font-weight: 800;
   font-size: 1.1rem;
   letter-spacing: 0.5px;
+  display: flex; align-items: baseline; gap: 10px;
+}
+.topbar__brand {
   background: linear-gradient(90deg, var(--accent), var(--accent-2));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
-
-.topbar__stats {
-  display: flex;
-  gap: var(--gap);
-  margin-left: auto;
+.topbar__week {
+  font-size: 0.8rem; font-weight: 700; color: var(--text-dim);
+  -webkit-text-fill-color: var(--text-dim); /* opt out of the brand gradient clip */
 }
 
-.stat { display: flex; flex-direction: column; line-height: 1.2; }
-.stat__label { font-size: 0.7rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
-.stat__value { font-weight: 700; font-variant-numeric: tabular-nums; }
-.stat--rev .stat__value { color: var(--good); }
-.stat--low .stat__value { color: var(--bad); }
+/* Studio health — the three death-spiral meters, always visible. */
+.health { display: flex; gap: 10px; margin-left: auto; flex-wrap: wrap; }
+.meter {
+  min-width: 132px; background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 10px; display: flex; flex-direction: column; gap: 4px;
+}
+.meter--danger { border-color: var(--bad); box-shadow: 0 0 0 1px var(--bad) inset; }
+.meter__top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.meter__label { font-size: 0.66rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+.meter__value { font-weight: 700; font-variant-numeric: tabular-nums; font-size: 0.92rem; }
+.meter--danger .meter__value { color: var(--bad); }
+.meter__track { height: 5px; background: var(--bg); border-radius: 99px; overflow: hidden; }
+.meter__fill {
+  height: 100%; border-radius: 99px; transition: width 0.3s ease;
+  background: linear-gradient(90deg, var(--good), var(--accent-2));
+}
+.meter--danger .meter__fill { background: linear-gradient(90deg, var(--bad), var(--warn)); }
+.meter__foot { display: flex; justify-content: space-between; gap: 6px; font-size: 0.6rem; }
+.meter__delta { color: var(--good); font-weight: 700; }
+.meter__loss { color: var(--text-dim); margin-left: auto; }
+.meter--danger .meter__loss { color: var(--bad); }
 
-.topbar__clock { display: flex; gap: 8px; align-items: center; }
-.speeds { display: flex; gap: 4px; }
+/* Time control + design */
+.topbar__time { display: flex; gap: 8px; align-items: center; }
+.btn--advance {
+  background: linear-gradient(90deg, var(--accent-2), var(--good));
+  border: none; color: #03210f; font-weight: 800; padding: 9px 18px;
+}
+.btn--advance:hover { filter: brightness(1.08); background: linear-gradient(90deg, var(--accent-2), var(--good)); }
 
 .topbar__reason {
   flex-basis: 100%;
   font-size: 0.85rem;
   color: var(--warn);
 }
-/* A "watch this" note while the clock keeps running (auto-slow moment). */
-.topbar__reason--live { color: var(--text-dim); }
-.topbar__reason--over {
-  color: var(--bad);
-  font-weight: 700;
-  font-size: 0.95rem;
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.topbar__over {
+  display: flex; align-items: center; gap: 12px; margin-left: auto;
 }
+.topbar__overreason { color: var(--bad); font-weight: 700; font-size: 0.95rem; }
 .btn--newgame { background: var(--good); border-color: var(--good); color: #042a16; }
 .btn--newgame:hover { background: #3ad872; }
 
@@ -388,12 +404,15 @@ body {
   .app { padding: 12px; }
 
   /* The header is the single biggest fixed cost on a phone (every tab pays it),
-     so keep it compact: tighter padding/gaps, and the Design button shares a row
-     with the clock controls instead of each taking a full-width row of its own.
+     so keep it compact: tighter padding/gaps. The three health meters wrap to
+     fill the row; the time controls share a full-width row below them.
      top is re-pinned to the smaller --gap here. */
   .topbar { gap: 8px 10px; padding: 10px 12px; top: 12px; }
-  .btn--design { flex: 1 1 auto; text-align: center; }
-  .topbar__clock { flex: 0 0 auto; flex-wrap: wrap; }
+  .health { width: 100%; margin-left: 0; gap: 6px; }
+  .meter { flex: 1 1 30%; min-width: 96px; }
+  .topbar__time { width: 100%; }
+  .topbar__time .btn--design { flex: 1 1 auto; text-align: center; }
+  .topbar__time .btn--advance { flex: 1 1 auto; text-align: center; }
 
   /* Cap the status/game-over line so a long message (e.g. a wrapped loss
      reason) can't balloon the header off the top of the content. */

@@ -39,15 +39,17 @@ _Recently completed: pull-from-publication (replaced rotate — `bans.js`
 premiums and card-level fan-service reprints (`sets.js` `reprintSet` /
 `applyCardReprints`); booster formats (authored pack slots — `rarities.js` /
 `packs.js`), counter cards (`sets.js` `applyCounters`), and distributors +
-scalper culture (`distributors.js`); silent autosave to localStorage
-(`game/persistence.js`); segment drift (`segments.js`); and clock auto-slow /
-auto-pause / quiet-week fast-forward (`clock.js`)._
+scalper culture (`distributors.js`); a manual click-to-advance clock with the
+three death-spiral health meters (cash / players / satisfaction) surfaced in the
+header (`TopBar.jsx`); silent autosave to localStorage (`game/persistence.js`);
+and segment drift (`segments.js`)._
 
 ## Tech
 
 - Single-page browser app (Vite + React), no backend — state lives in memory and
   autosaves to localStorage, so a run survives a reload.
-- Turn-based simulation on a variable-speed weekly clock.
+- Turn-based simulation on a manual weekly clock — the player clicks "Advance
+  Week" to step the sim one week at a time (no auto-timer).
 
 ## Develop
 

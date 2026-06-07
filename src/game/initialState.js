@@ -66,10 +66,12 @@ export function createInitialState(config) {
     gameOver: null, // { reason } once cash or player base hits zero
 
     clock: {
-      speed: 1, // weeks advanced per tick when playing
-      autoEvent: null, // transient per-tick directive from clock.js (pause/slow)
-      paused: true,
-      pauseReason: 'New game — design your first set.',
+      // Manual time: the player clicks "Advance Week" to step the sim. No timer,
+      // no speed, no pause. `reason` is the attention note for the latest week
+      // (what changed / what to watch); autoEvent is the transient per-tick
+      // directive from clock.js that produces that reason.
+      autoEvent: null,
+      reason: 'New game — design your first set.',
     },
   }
 }

@@ -42,17 +42,23 @@ You survive as long as you balance fresh-product pressure against power-creep, o
 
 A **play / pause / fast-forward** clock running in weeks.
 
-> **Status:** play / pause / fast-forward (variable speed) ✅. Auto-**pause** on
-> set release, ban, rotate, game-over, and hard crises (a card crossing a
-> ban-pressure threshold, cash dipping into the danger zone) ✅. Auto-**slow** to
-> the player's base speed on interesting moments — sharp market movers, dramatic
-> events, notable player-base swings ✅. Quiet weeks **auto-fast-forward** and
-> snap back when something happens ✅ (`clock.js`, applied in `useGame.js`).
+> **Status:** the clock is now **manual** — the player clicks **Advance Week** to
+> step the sim one week at a time (no auto-timer / speed) ✅. The old attention
+> system (`clock.js`) is repurposed: instead of auto-slowing/pausing, it surfaces
+> a one-line **"what changed this week"** note in the header — a card crossing a
+> ban-pressure threshold, a sharp market mover, a notable player swing, a dramatic
+> event, cash dipping into the danger zone (`clock.js`, applied in `useGame.js`).
+> The three loss conditions are surfaced as always-visible **health meters** in
+> the header (cash / players / satisfaction), each reddening near its threshold.
 
-- Quiet weeks fast-forward automatically (or blur by) so there's no "spam next through nothing."
-- The clock **auto-slows or pauses** when something needs the player: a set releases, a review embargo lifts, a card unexpectedly spikes or crashes, a tournament concludes, a major event fires, a ban-pressure threshold is crossed.
-
-This keeps an endless sim from feeling like a chore — quiet stretches compress, interesting moments demand attention.
+- Time is a deliberate step: each week is a click, so the player always advances
+  intentionally rather than racing or pausing a timer.
+- After each week, a short note flags anything worth a look (a card spiking, a
+  ban threshold crossed, a major event, a low-cash warning).
+- The header's three **death-spiral meters** make every way to lose legible:
+  cash → $0 (bankrupt), player base → 0 (community gone), satisfaction → −60
+  (the community revolts). Each meter shows its loss line and turns red as it
+  approaches it.
 
 ---
 

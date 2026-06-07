@@ -15,9 +15,10 @@ const KEY = 'tcg-manager-sim/save'
 // state.scalperHeat).
 // v3: replaced rotate with pull-from-print (set.outOfPrint, card appreciation),
 // and added reprints (set.reprintOf/firstEdition/reprintBuzz, card
-// reprintOfCardId, draft.reprintedCards). A v2 save lacks these; invalidating is
-// cleaner than loading a half-shaped run.
-const VERSION = 3
+// reprintOfCardId, draft.reprintedCards).
+// v4: the clock went MANUAL — its shape changed (paused/speed/pauseReason →
+// reason). A v3 save's clock is stale; invalidating avoids a half-migrated run.
+const VERSION = 4
 
 // True only where a real localStorage exists. Guards SSR / the headless
 // playtest harness (tools/playtest.mjs runs the sim in plain Node), and the

@@ -9,8 +9,9 @@ import { compProduct, sponsorCreator, dropSponsor } from './relationships.js'
 import { signDistributor, dropDistributor, cultivateDistributor } from './distributors.js'
 import { loadState, saveState, clearSave } from './persistence.js'
 
-// Reducer-driven game state. The clock ticks via setInterval while playing;
-// each tick dispatches a 'TICK' that runs one simulation week.
+// Reducer-driven game state. Time is MANUAL: the player clicks "Advance Week",
+// which dispatches a single 'TICK' to run one simulation week. There's no
+// auto-timer — each week is a deliberate step the player takes.
 
 function reducer(state, action) {
   switch (action.type) {
@@ -19,16 +20,6 @@ function reducer(state, action) {
       const next = advanceWeek(state)
       return applyClockDirective(next)
     }
-    case 'PLAY':
-      if (state.gameOver) return state // can't un-pause a finished run
-      return { ...state, clock: { ...state.clock, paused: false, pauseReason: null, autoEvent: null } }
-    case 'PAUSE':
-      return {
-        ...state,
-        clock: { ...state.clock, paused: true, pauseReason: action.reason ?? state.clock.pauseReason },
-      }
-    case 'SET_SPEED':
-      return { ...state, clock: { ...state.clock, speed: action.speed } }
     case 'RELEASE_SET': {
       const { set, cards, cashDelta, metagame, counteredCards, counterFeed } = releaseSet(state, action.draft)
       // If silver-bullet counters mutated existing cards, build from that patched
@@ -47,7 +38,7 @@ function reducer(state, action) {
         metagame,
         cadence: resetCadence(state.cadence, state.week), // shipping resets the pledge clock
         eventsFeed: feed,
-        clock: { ...state.clock, paused: true, pauseReason: `${set.name} released! Watch the market react.` },
+        clock: { ...state.clock, reason: `${set.name} released — advance the week to watch the market react.` },
       }
     }
     case 'BAN_CARD': {
@@ -61,7 +52,7 @@ function reducer(state, action) {
         playerBase: result.playerBase,
         personas: result.personas,
         eventsFeed: [{ week: state.week, text: result.feed }, ...state.eventsFeed],
-        clock: { ...state.clock, paused: true, pauseReason: result.banReason },
+        clock: { ...state.clock, reason: result.banReason },
       }
     }
     case 'PULL_FROM_PRINT': {
@@ -76,7 +67,7 @@ function reducer(state, action) {
         playerBase: result.playerBase,
         personas: result.personas,
         eventsFeed: [{ week: state.week, text: result.feed }, ...state.eventsFeed],
-        clock: { ...state.clock, paused: true, pauseReason: `Pulled ${result.pulledName} from print` },
+        clock: { ...state.clock, reason: `Pulled ${result.pulledName} from print` },
       }
     }
     case 'REPRINT_SET': {
@@ -91,7 +82,7 @@ function reducer(state, action) {
         cards: [...result.firstEditionCards, ...result.cards],
         cash: state.cash + result.cashDelta,
         eventsFeed: [{ week: state.week, text: result.feed, kind: 'market' }, ...state.eventsFeed].slice(0, 60),
-        clock: { ...state.clock, paused: true, pauseReason: result.feed },
+        clock: { ...state.clock, reason: result.feed },
       }
     }
     case 'RIP_PACK': {
@@ -130,8 +121,7 @@ function reducer(state, action) {
         sets: r.sets,
         cash: state.cash + r.cashDelta,
         scalperHeat: r.scalperHeat,
-        // A distributor deal is a client action like comp/sponsor — it posts to
-        // the feed but doesn't hijack the clock/header (only releases pause).
+        // A distributor deal posts to the feed but doesn't set the header note.
         eventsFeed: [{ week: state.week, text: r.feed, kind: 'market' }, ...state.eventsFeed].slice(0, 60),
       }
     }
@@ -166,27 +156,15 @@ function reducer(state, action) {
   }
 }
 
-// Apply the clock-attention directive advanceWeek attached to the resolved week.
-// Interesting moments pause (hard stop) or surface a "watch this" note; an
-// uneventful week leaves the clock running unchanged at the player's speed.
+// Surface the just-resolved week's attention note. With a manual clock there's
+// nothing to pause or slow — but the directive still tells the player what
+// changed this week (a ban threshold crossed, a market spike, a player swing),
+// which we keep as the header's reason line. An uneventful week clears it.
 function applyClockDirective(next) {
   const d = next.clock.autoEvent
-  const clock = { ...next.clock, autoEvent: null }
-
-  if (!d) return { ...next, clock }
-
-  if (d.pause) {
-    return { ...next, clock: { ...clock, paused: true, pauseReason: d.reason } }
-  }
-  if (d.slow) {
-    // Surface what to watch, but keep playing at the player's speed.
-    return { ...next, clock: { ...clock, pauseReason: d.reason } }
-  }
-  return { ...next, clock }
+  const reason = d?.reason ?? null
+  return { ...next, clock: { ...next.clock, autoEvent: null, reason } }
 }
-
-const TICK_MS = 2000 // wall-clock ms per simulated week at speed 1 (1× = a calm
-// ~2s/week; 2× ~1s, 4× ~0.5s). Every week is simulated — no quiet-week skipping.
 
 // Lazy reducer init: resume a saved run if one exists, otherwise a fresh state.
 // loadState() returns null in the harness / first visit / on any corrupt blob,
@@ -200,16 +178,10 @@ export function useGame() {
   const stateRef = useRef(state)
   stateRef.current = state
 
-  useEffect(() => {
-    if (state.clock.paused) return
-    const id = setInterval(() => dispatch({ type: 'TICK' }), TICK_MS / state.clock.speed)
-    return () => clearInterval(id)
-  }, [state.clock.paused, state.clock.speed])
-
-  // Autosave: persist on every state change, debounced so a fast-forwarding
-  // clock (a TICK as often as every 0.5s at 4×) doesn't hammer localStorage.
-  // The trailing write always lands, so the latest state is never lost; on
-  // unmount we flush immediately so a reload right after an action is safe.
+  // Autosave: persist on every state change, debounced so a burst of actions in
+  // one week doesn't hammer localStorage. The trailing write always lands, so the
+  // latest state is never lost; on unmount we flush immediately so a reload right
+  // after an action is safe.
   useEffect(() => {
     const id = setTimeout(() => saveState(stateRef.current), 400)
     return () => clearTimeout(id)
@@ -223,9 +195,8 @@ export function useGame() {
     return () => window.removeEventListener('pagehide', flush)
   }, [])
 
-  const play = useCallback(() => dispatch({ type: 'PLAY' }), [])
-  const pause = useCallback((reason) => dispatch({ type: 'PAUSE', reason }), [])
-  const setSpeed = useCallback((speed) => dispatch({ type: 'SET_SPEED', speed }), [])
+  // Manual time: advance one week per click. No timer, no play/pause/speed.
+  const advanceWeekAction = useCallback(() => dispatch({ type: 'TICK' }), [])
   const release = useCallback((draft) => dispatch({ type: 'RELEASE_SET', draft }), [])
   const banCardAction = useCallback((cardId) => dispatch({ type: 'BAN_CARD', cardId }), [])
   const pull = useCallback((setId) => dispatch({ type: 'PULL_FROM_PRINT', setId }), [])
@@ -242,5 +213,5 @@ export function useGame() {
   const dropDist = useCallback((distId) => dispatch({ type: 'DROP_DISTRIBUTOR', distId }), [])
   const cultivateDist = useCallback((distId) => dispatch({ type: 'CULTIVATE_DISTRIBUTOR', distId }), [])
 
-  return { state, play, pause, setSpeed, release, ban: banCardAction, pull, reprint, reset, rip, startGame, comp, sponsor, unsponsor, signDist, dropDist, cultivateDist }
+  return { state, advanceWeek: advanceWeekAction, release, ban: banCardAction, pull, reprint, reset, rip, startGame, comp, sponsor, unsponsor, signDist, dropDist, cultivateDist }
 }
