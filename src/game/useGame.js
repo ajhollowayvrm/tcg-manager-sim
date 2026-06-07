@@ -82,9 +82,9 @@ function reducer(state, action) {
     case 'REPRINT_SET': {
       const result = reprintSet(state, action.setId, action.printRun)
       if (!result) return state
-      // Flag the original set as a first edition (the reprint just created a
-      // permanent premium tier). firstEditionCards already carries the card patch.
-      const sets = state.sets.map((s) => (s.id === action.setId ? { ...s, firstEdition: true } : s))
+      // Flag the original set as a first edition AND as already reprinted (one
+      // Unlimited run per set). firstEditionCards already carries the card patch.
+      const sets = state.sets.map((s) => (s.id === action.setId ? { ...s, firstEdition: true, reprinted: true } : s))
       return {
         ...state,
         sets: [...sets, result.set],

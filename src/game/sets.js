@@ -41,10 +41,16 @@ export function createDraft(setNumber) {
     // 0–15 signature cards — designated highlights, hand-designed and/or auto.
     signatureCards: [], // { id, name, rarity, artistId, mode, power, rulesText }
 
+    // Cards reprinted from older sets into this one — fan-service / hype draws.
+    // Each: { cardId } referencing a live card; resolved on release.
+    reprintedCards: [],
+
     // Prerelease: the one real sub-decision.
     prerelease: { enabled: false, chasePullable: false },
   }
 }
+
+export const MAX_REPRINTED_CARDS = 5
 
 export function createSignatureCard(n, rarityId = 'rare') {
   return {
@@ -330,6 +336,16 @@ export function releaseSet(state, draft) {
   const counterResult = applyCounters(state, draft, cards, archetypes)
   archetypes = counterResult.archetypes
 
+  // Card reprints: popular cards from older sets re-issued into this one. They're
+  // added as fresh instances in the new set (carrying the original's identity and
+  // appeal — a fan-service draw that lifts the set's hype) and SOFTEN their old
+  // originals (no longer unique to their set). Chains onto the counter patch so a
+  // set can both counter and reprint.
+  const reprintResult = applyCardReprints(
+    state, draft, setId, theme, draft.rarities ?? defaultRaritySheet(),
+    cards, counterResult.counteredCards ?? state.cards, artistOf,
+  )
+
   const metagame = {
     // A fresh set reopens the field a little (+3), but a high-power-budget set
     // also crowds out weaker archetypes (the creep term claws some back). Modest
@@ -341,14 +357,86 @@ export function releaseSet(state, draft) {
     solveLevel: solveReset,
   }
 
+  // Set buzz lift from reprinting fan-favorite cards (carried on the set record
+  // so revenue/market can read it).
+  set.reprintBuzz = reprintResult.buzzLift
+
+  const feedParts = [counterResult.feed, reprintResult.feed].filter(Boolean)
+
   return {
     set,
-    cards,
+    // The new set's generated cards PLUS any reprint instances.
+    cards: [...cards, ...reprintResult.reprintCards],
     cashDelta: -cost.total,
     metagame,
-    // Existing cards mutated by silver-bullet counters (null if none).
-    counteredCards: counterResult.counteredCards,
-    counterFeed: counterResult.feed,
+    // Existing cards mutated by silver-bullet counters AND/OR card-reprint
+    // softening (null if neither fired). reprintResult chained onto the counter
+    // patch, so this is the final existing-cards array.
+    counteredCards: reprintResult.softenedCards ?? counterResult.counteredCards,
+    counterFeed: feedParts.length ? feedParts.join(' ') : null,
+  }
+}
+
+// Resolve card reprints on a draft: re-issue chosen old cards into the new set.
+// Each adds a fresh instance to the new set (carrying the original's name/appeal,
+// at a reprint discount since it's now more available) and softens the old
+// original's price. Reprinting fan-favorites also lifts the new set's buzz.
+//
+// Returns { reprintCards, softenedCards|null, buzzLift, feed|null }.
+//   reprintCards   — new card instances to append to the set's cards
+//   softenedCards  — full replacement for the existing-cards array (originals
+//                    softened), chained onto `baseCards`; null if nothing reprinted
+//   buzzLift       — 0..~0.3 demand/appeal lift for the new set
+function applyCardReprints(state, draft, setId, theme, sheet, newCards, baseCards, artistOf) {
+  const reqs = (draft.reprintedCards ?? []).filter((r) => r && r.cardId)
+  if (!reqs.length) return { reprintCards: [], softenedCards: null, buzzLift: 0, feed: null }
+
+  const byId = new Map(baseCards.map((c) => [c.id, c]))
+  const reprintCards = []
+  let softened = baseCards
+  let didSoften = false
+  let buzzLift = 0
+  const names = []
+
+  reqs.slice(0, MAX_REPRINTED_CARDS).forEach((req, i) => {
+    const orig = byId.get(req.cardId)
+    if (!orig || orig.banned) return
+
+    // The reprint instance: same identity/appeal, fresh in this set, priced at a
+    // discount (it's more available now), carrying the original's collector pull.
+    const f = orig.popFactors ?? {}
+    reprintCards.push({
+      ...orig,
+      id: `${setId}_rp${i + 1}`,
+      setId,
+      number: `RP${i + 1}`,
+      reprintOfCardId: orig.id,
+      banPressure: 0,
+      singlePrice: Math.round((orig.singlePrice ?? 1) * 0.7 * 100) / 100,
+      priceHistory: [Math.round((orig.singlePrice ?? 1) * 0.7 * 100) / 100],
+      hype: clamp((f.hype ?? 30) / 100 + 0.1, 0, 2),
+      momentum: 0,
+    })
+
+    // The new set gains buzz proportional to how beloved the reprinted card is.
+    buzzLift += clamp((f.hype ?? 30) / 100 * 0.12, 0, 0.12)
+
+    // Soften the original (no longer unique to its set).
+    softened = softened.map((c) =>
+      c.id === orig.id
+        ? { ...c, singlePrice: Math.round(c.singlePrice * 0.82 * 100) / 100,
+            priceHistory: [...(c.priceHistory ?? []), Math.round(c.singlePrice * 0.82 * 100) / 100].slice(-26) }
+        : c,
+    )
+    didSoften = true
+    names.push(orig.name)
+  })
+
+  return {
+    reprintCards,
+    softenedCards: didSoften ? softened : null,
+    buzzLift: clamp(buzzLift, 0, 0.3),
+    feed: names.length ? `Reprinted fan favorites: ${names.join(', ')}.` : null,
   }
 }
 
@@ -373,8 +461,15 @@ export function reprintCost(printRun) {
 export function reprintSet(state, originalSetId, printRun = 55) {
   const original = state.sets.find((s) => s.id === originalSetId)
   if (!original) return null
-  // Can't reprint a set that's already a reprint of something (one level only).
-  if (original.reprintOf) return null
+  // Can't reprint a set that's already a reprint of something (one level only),
+  // and can't reprint the same original twice (one Unlimited run per set).
+  if (original.reprintOf || original.reprinted) return null
+  // Reprint only once the FIRST printing has ended — the set is out of print
+  // (pulled) or fully sold out. Reprinting a set that's still actively printing
+  // would mean two simultaneous runs, and the first-edition premium only makes
+  // sense once the original run is done.
+  const soldOut = (original.supply ?? 0) > 0 && (original.sold ?? 0) >= (original.supply ?? 0)
+  if (!original.outOfPrint && !soldOut) return null
 
   const cost = reprintCost(printRun)
   // A reprint is a real manufacturing spend — can't reprint what you can't afford

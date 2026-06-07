@@ -38,9 +38,11 @@ function setBuzz(set, cards) {
   const avgHype = own.reduce((s, c) => s + (c.popFactors?.hype ?? 50), 0) / own.length
   // A booster richer than Classic makes cracking packs feel better — a modest
   // demand lift, paid for by the higher print cost; a leaner pack buzzes a touch
-  // less. Relative to Classic, so the default pack is demand-neutral.
+  // less. Relative to Classic, so the default pack is demand-neutral. Reprinting
+  // fan-favorite cards into the set adds a further fan-service buzz lift.
   const richness = packRichnessDelta(set.packFormat)
-  return clamp((avgHype / 100) * (1 + richness * 0.12), 0.1, 1.3)
+  const reprintBuzz = set.reprintBuzz ?? 0
+  return clamp((avgHype / 100) * (1 + richness * 0.12 + reprintBuzz), 0.1, 1.4)
 }
 
 // Weekly pack demand for one set, before the supply cap. Returns a unit count.

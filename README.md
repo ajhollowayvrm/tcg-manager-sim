@@ -13,14 +13,18 @@ Think *Game Dev Tycoon*, but you're The Pokémon Company and the product is card
 reacts week by week: the secondary market resolves singles & sealed prices with
 momentum and burstable hype bubbles, 50+ named community personas chatter through
 a signal-vs-noise feedback feed, an events feed throws curveballs, and you wield
-bans & rotations against the metagame — all funded by a sealed-product economy
-with the cash / player-base / sentiment death spirals. Format decay drives the
-whole thing. On top of the core loop you also **author the booster format**
+bans against the metagame — all funded by a sealed-product economy with the
+cash / player-base / sentiment death spirals. Format decay drives the whole
+thing. On top of the core loop you also **author the booster format**
 (slot-by-slot pack structure), **design counter cards** to answer a card or a
-runaway archetype instead of banning, and **sign distributors** for bulk-buy
-cash that can tip the game into a price-spiking, community-souring scalper
-market. See [`docs/BRIEF.md`](docs/BRIEF.md) for the spec, annotated with
-per-section build status (✅ done / ⏳ remaining) and the v2 roadmap.
+runaway archetype instead of banning, **sign distributors** for bulk-buy cash
+that can tip the game into a price-spiking scalper market, **pull a set from
+publication** (stop printing it → its singles spike on scarcity, collectors
+cheer, the format refreshes), and **reprint** — re-issue a whole set as an
+Unlimited run (the original becomes a 1st-edition premium) or reprint a beloved
+card into a new set as a fan-service draw. See [`docs/BRIEF.md`](docs/BRIEF.md)
+for the spec, annotated with per-section build status (✅ done / ⏳ remaining)
+and the v2 roadmap.
 
 ### Known v1 gaps (remaining work)
 
@@ -30,10 +34,13 @@ per-section build status (✅ done / ⏳ remaining) and the v2 roadmap.
 After that, the brief calls for a frontend-polish pass and the open tuning
 notes (decay rate, market variance, feedback-noise ratio).
 
-_Recently completed: booster formats (authored pack slots — `rarities.js`/`packs.js`),
-counter cards (`sets.js` `applyCounters`), and distributors + scalper culture
-(`distributors.js`); silent autosave to localStorage (`game/persistence.js`);
-segment drift from the metagame dials (`segments.js`); and clock auto-slow /
+_Recently completed: pull-from-publication (replaced rotate — `bans.js`
+`pullFromPrint`) and reprints — set-level Unlimited re-issues + first-edition
+premiums and card-level fan-service reprints (`sets.js` `reprintSet` /
+`applyCardReprints`); booster formats (authored pack slots — `rarities.js` /
+`packs.js`), counter cards (`sets.js` `applyCounters`), and distributors +
+scalper culture (`distributors.js`); silent autosave to localStorage
+(`game/persistence.js`); segment drift (`segments.js`); and clock auto-slow /
 auto-pause / quiet-week fast-forward (`clock.js`)._
 
 ## Tech

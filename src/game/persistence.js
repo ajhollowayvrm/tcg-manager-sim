@@ -12,9 +12,12 @@ const KEY = 'tcg-manager-sim/save'
 //
 // v2: added booster formats (set.packFormat), counter directives
 // (signatureCard.counter), and distributors + scalper heat (state.distributors,
-// state.scalperHeat). A v1 save lacks these; while most have safe fallbacks,
-// invalidating is cleaner than loading a half-shaped run.
-const VERSION = 2
+// state.scalperHeat).
+// v3: replaced rotate with pull-from-print (set.outOfPrint, card appreciation),
+// and added reprints (set.reprintOf/firstEdition/reprintBuzz, card
+// reprintOfCardId, draft.reprintedCards). A v2 save lacks these; invalidating is
+// cleaner than loading a half-shaped run.
+const VERSION = 3
 
 // True only where a real localStorage exists. Guards SSR / the headless
 // playtest harness (tools/playtest.mjs runs the sim in plain Node), and the

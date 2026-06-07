@@ -16,6 +16,7 @@ import {
   MIN_SET_LENGTH,
   MAX_SET_LENGTH,
   MAX_SECRET_CARDS,
+  MAX_REPRINTED_CARDS,
 } from '../../game/sets.js'
 import { THEMES, getTheme } from '../../game/content/themes.js'
 
@@ -246,6 +247,14 @@ export default function SetBuilder({ setNumber, cash, artists, liveCards = [], s
               ))}
             </div>
           </section>
+
+          {/* Reprint popular cards from older sets — a fan-service / hype draw */}
+          <ReprintPicker
+            reprints={draft.reprintedCards ?? []}
+            liveCards={liveCards}
+            sets={sets}
+            onChange={(reprintedCards) => patch({ reprintedCards })}
+          />
         </div>
 
         {/* Cost summary + release */}
@@ -290,5 +299,78 @@ function CostLine({ label, value, total }) {
       <span>{label}</span>
       <span>{formatCash(value)}</span>
     </div>
+  )
+}
+
+// Pick popular cards from older sets to reprint into this new set. Reprinting a
+// fan favorite lifts the new set's hype (a fan-service draw) but softens the old
+// original's price. Offers the most valuable live cards as candidates.
+function ReprintPicker({ reprints, liveCards, sets, onChange }) {
+  const setNameById = new Map(sets.map((s) => [s.id, s.name]))
+  const picked = new Set(reprints.map((r) => r.cardId))
+  // Candidates: live cards not already reprinted here, richest first (those are
+  // the fan favorites worth re-issuing). Cap the dropdown to keep it scannable.
+  const candidates = [...liveCards]
+    .filter((c) => !picked.has(c.id) && !c.banned)
+    .sort((a, b) => (b.singlePrice ?? 0) - (a.singlePrice ?? 0))
+    .slice(0, 40)
+
+  const add = (cardId) => {
+    if (!cardId || reprints.length >= MAX_REPRINTED_CARDS) return
+    onChange([...reprints, { cardId }])
+  }
+  const remove = (cardId) => onChange(reprints.filter((r) => r.cardId !== cardId))
+
+  const cardById = new Map(liveCards.map((c) => [c.id, c]))
+
+  return (
+    <section className="builder__section">
+      <h3 className="builder__h3">
+        Reprint popular cards ({reprints.length}/{MAX_REPRINTED_CARDS})
+        <span className="muted"> · fan-service draws from older sets</span>
+      </h3>
+      <span className="field__note">
+        Re-issue a beloved card into this set — lifts the set's hype and sales, but
+        softens that card's original (it's no longer unique to its set).
+      </span>
+
+      {liveCards.length === 0 ? (
+        <p className="panel__empty">No older cards to reprint yet — release a set first.</p>
+      ) : (
+        <>
+          {reprints.length > 0 && (
+            <ul className="reprints">
+              {reprints.map((r) => {
+                const c = cardById.get(r.cardId)
+                if (!c) return null
+                return (
+                  <li key={r.cardId} className="reprints__row">
+                    <span className="reprints__name">{c.name}</span>
+                    <span className="reprints__meta">
+                      {setNameById.get(c.setId) ?? 'set'} · ${(c.singlePrice ?? 0).toFixed(2)}
+                    </span>
+                    <button className="btn btn--ghost reprints__remove" onClick={() => remove(r.cardId)}>✕</button>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+          {reprints.length < MAX_REPRINTED_CARDS && (
+            <select
+              className="reprints__add"
+              value=""
+              onChange={(e) => add(e.target.value)}
+            >
+              <option value="">+ Reprint a card…</option>
+              {candidates.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} ({setNameById.get(c.setId) ?? 'set'}) · ${(c.singlePrice ?? 0).toFixed(2)}
+                </option>
+              ))}
+            </select>
+          )}
+        </>
+      )}
+    </section>
   )
 }

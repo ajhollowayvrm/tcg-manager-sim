@@ -54,7 +54,10 @@ export default function SetsPanel({ state, onReprint }) {
                   {/* Reprint: re-issue as an Unlimited run. Available for any
                       original printing (not a reprint itself). Highlighted for
                       out-of-print sets — that's where the demand you built pays off. */}
-                  {onReprint && !set.reprintOf && (() => {
+                  {/* Reprintable only once the first printing has ended (pulled
+                      out of print, or sold out) and not already reprinted / not a
+                      reprint itself. */}
+                  {onReprint && !set.reprintOf && !set.reprinted && (set.outOfPrint || soldOut) && (() => {
                     const cost = reprintCost(REPRINT_RUN)
                     const affordable = (state.cash ?? 0) >= cost
                     return (

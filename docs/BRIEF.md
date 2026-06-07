@@ -271,6 +271,19 @@ Grouped into three layers. Each assumes the v1 core loop is solid first.
 >   bubble can pop (a crater + sealed-sales glut). Hits all three death spirals.
 >   A partial, gameplay-first realization of the market-depth layer below.
 >   (`distributors.js`, `DistributorsPanel`.)
+> - **Pull from publication** (replaced the old "rotate the oldest set" lever) —
+>   stop printing any chosen set: its singles spike on scarcity, its sealed
+>   appreciates out of print, collectors are thrilled, and it leaves the
+>   competitive format (the same power-creep/diversity relief rotation gave). The
+>   real cost is the forfeited future pack sales. (`bans.js` `pullFromPrint`.)
+> - **Reprints** — two kinds. **Set-level:** re-issue a whole set as an Unlimited
+>   run (fresh supply to sell; the original printing becomes a permanent
+>   first-edition premium — the Base/Shadowless effect), especially lucrative on
+>   a set whose scarcity you pumped by pulling it first. **Card-level:** in the
+>   set builder, reprint a beloved card from an old set into the new one — a
+>   fan-service draw that lifts the new set's hype while softening the original.
+>   Realizes the "1st-Edition vs Unlimited" and "reprints as a market-management
+>   tool" items parked below. (`sets.js` `reprintSet` / `applyCardReprints`.)
 
 ### A. Product & market depth
 

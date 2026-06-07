@@ -226,6 +226,22 @@ body {
 
 /* Signature cards */
 .sigcards { display: grid; gap: 12px; }
+
+/* Card-reprint picker (set builder) */
+.reprints { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.reprints__row {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 6px; padding: 6px 10px;
+}
+.reprints__name { font-weight: 600; font-size: 0.85rem; }
+.reprints__meta { font-size: 0.74rem; color: var(--text-dim); margin-left: auto; }
+.reprints__remove { color: var(--bad); padding: 2px 6px; }
+.reprints__add {
+  align-self: flex-start; background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; font: inherit;
+  max-width: 100%;
+}
 .sigcard {
   background: var(--surface-2); border: 1px solid var(--border);
   border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 10px;
