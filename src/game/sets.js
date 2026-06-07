@@ -8,10 +8,13 @@ import { clamp } from './simulation.js'
 import { printRunUnits } from './revenue.js'
 import { shiftToward, balanceScore } from './archetypes.js'
 import { currentArtist } from './artists.js'
+import { defaultRaritySheet, getRarity, pickRarity, validateRaritySheet } from './rarities.js'
 
-export const RARITIES = ['common', 'uncommon', 'rare', 'mythic']
-export const MIN_SIGNATURE_CARDS = 5
+export const MIN_SIGNATURE_CARDS = 0 // signature highlights are optional now
 export const MAX_SIGNATURE_CARDS = 15
+export const MIN_SET_LENGTH = 1
+export const MAX_SET_LENGTH = 250
+export const MAX_SECRET_CARDS = 12
 
 // A fresh draft the player edits in the set-creation panel.
 export function createDraft(setNumber) {
@@ -25,7 +28,14 @@ export function createDraft(setNumber) {
     printRun: 50, // 0–100: under-print ↔ over-print
     pricePoint: 4.5, // MSRP of a sealed pack, dollars
 
-    // 5–15 signature cards — hand-designed and/or auto-generated (see fillRandomCards).
+    // The full set: `setLength` numbered cards generated across the rarity sheet,
+    // plus `secretCount` secret rares numbered ABOVE the count (e.g. 151/150).
+    setLength: 60,
+    secretCount: 2,
+    // Editable per-set rarity sheet (add/remove/rename; pick which a set has).
+    rarities: defaultRaritySheet(),
+
+    // 0–15 signature cards — designated highlights, hand-designed and/or auto.
     signatureCards: [], // { id, name, rarity, artistId, mode, power, rulesText }
 
     // Prerelease: the one real sub-decision.
@@ -33,11 +43,11 @@ export function createDraft(setNumber) {
   }
 }
 
-export function createSignatureCard(n) {
+export function createSignatureCard(n, rarityId = 'rare') {
   return {
     id: `sig_${n}`,
     name: `Signature Card ${n}`,
-    rarity: 'rare',
+    rarity: rarityId,
     artistId: null,
     mode: 'flavor', // 'flavor' | 'mechanical'
     power: 50, // flavor-mode overall power rating (0–100)
@@ -64,28 +74,27 @@ function pickFrom(pool, rng) {
   return pool[Math.floor(rng() * pool.length) % pool.length]
 }
 
-// A themed-random signature card: flavor mode, rarity mix weighted toward rare
-// with the occasional mythic chase, power scattered around the set's budget.
-export function makeRandomCard(n, theme, powerBudget, rng) {
+// A themed-random signature card. Picks a rarity from the upper end of the set's
+// sheet (signatures are the chase highlights), power scattered around the budget.
+export function makeRandomCard(n, theme, powerBudget, rng, sheet = defaultRaritySheet()) {
   const card = createSignatureCard(n)
   card.name = randomCardName(theme, rng)
-  // Rarity mix: ~55% rare, ~20% mythic, ~20% uncommon, ~5% common.
-  const r = rng()
-  card.rarity = r < 0.05 ? 'common' : r < 0.25 ? 'uncommon' : r < 0.8 ? 'rare' : 'mythic'
-  // Power scattered around the budget, clamped to a sane band.
+  // Signatures lean rare: pick from the top half of the sheet by value tier.
+  const ranked = [...sheet].sort((a, b) => b.valueTier - a.valueTier)
+  const top = ranked.slice(0, Math.max(1, Math.ceil(ranked.length / 2)))
+  card.rarity = top[Math.floor(rng() * top.length) % top.length].id
   card.power = clamp(Math.round(powerBudget + range(rng, -18, 18)), 5, 100)
   return card
 }
 
-// Append randomly-generated cards to an existing list up to `target` count,
-// keeping the player's hand-made cards. Returns a new array. Used by the
-// "Fill to 5" and "Add random card" controls. Caps at MAX_SIGNATURE_CARDS.
-export function fillRandomCards(existing, target, theme, powerBudget, seedKey) {
+// Append randomly-generated signature highlights up to `target`, keeping the
+// player's hand-made ones. Caps at MAX_SIGNATURE_CARDS.
+export function fillRandomCards(existing, target, theme, powerBudget, seedKey, sheet = defaultRaritySheet()) {
   const rng = makeRng(hashSeed(`fill:${seedKey}:${existing.length}:${target}`))
   const out = [...existing]
   const cap = Math.min(target, MAX_SIGNATURE_CARDS)
   let n = nextCardIndex(out)
-  while (out.length < cap) out.push(makeRandomCard(n++, theme, powerBudget, rng))
+  while (out.length < cap) out.push(makeRandomCard(n++, theme, powerBudget, rng, sheet))
   return out
 }
 
@@ -125,8 +134,13 @@ export function setCost(draft, artistOf = getArtist) {
 export function validateDraft(draft) {
   const errors = []
   if (!draft.name.trim()) errors.push('Set needs a name.')
-  if (draft.signatureCards.length < 5) errors.push('Design at least 5 signature cards.')
-  if (draft.signatureCards.length > 15) errors.push('No more than 15 signature cards.')
+  const len = draft.setLength ?? 0
+  if (len < MIN_SET_LENGTH) errors.push(`Set needs at least ${MIN_SET_LENGTH} card.`)
+  if (len > MAX_SET_LENGTH) errors.push(`No more than ${MAX_SET_LENGTH} cards in a set.`)
+  if (draft.signatureCards.length > MAX_SIGNATURE_CARDS) {
+    errors.push(`No more than ${MAX_SIGNATURE_CARDS} signature highlights.`)
+  }
+  errors.push(...validateRaritySheet(draft.rarities))
   if (draft.prerelease.chasePullable && !draft.prerelease.enabled) {
     errors.push('Chase-pullable requires prerelease enabled.')
   }
@@ -135,20 +149,23 @@ export function validateDraft(draft) {
 
 // ---- Card generation ------------------------------------------------------
 
-// A signature card's hidden "pop factors" blend playability, rarity, art appeal
-// (artist-driven), and theme/hype. The market later resolves price from these.
-function popFactors(card, draft, theme, rng, artistOf = getArtist) {
+// A card's hidden "pop factors" — the inputs the market prices from. Rarity's
+// collector weight comes from the set's sheet (valueTier). `power` is the card's
+// playability seed (signatures carry an explicit one; bulk cards get a low/random
+// one so the occasional sleeper can still pop).
+function popFactors(card, draft, theme, sheet, rng, artistOf = getArtist) {
   const power = card.mode === 'flavor' ? card.power : estimatePowerFromRules(card.rulesText)
   const artist = card.artistId ? artistOf(card.artistId) : null
-  const rarityWeight = { common: 10, uncommon: 30, rare: 65, mythic: 95 }[card.rarity]
-  const artAppeal = artist ? artist.reach : 25
+  const rarityTier = getRarity(sheet, card.rarity).valueTier
+  const baseArt = artist ? artist.reach : 25
   // Theme tags matching the artist's specialty elevate the card.
   const themeMatch = artist && theme.tags.some((t) => artist.specialty.includes(t)) ? 20 : 0
+  const artAppeal = clamp(baseArt + themeMatch + range(rng, -8, 8), 0, 100)
 
   return {
     playability: clamp(power + range(rng, -10, 10), 0, 100),
-    rarity: rarityWeight,
-    artAppeal: clamp(artAppeal + themeMatch + range(rng, -8, 8), 0, 100),
+    rarity: rarityTier, // 0–100 collector value tier from the set's sheet
+    artAppeal,
     hype: clamp((power + artAppeal) / 2 + range(rng, -12, 12), 0, 100),
   }
 }
@@ -163,36 +180,86 @@ function estimatePowerFromRules(text) {
   return clamp(45 + hits * 9 + Math.min(text.length / 20, 15), 0, 100)
 }
 
-// Generate the signature cards as real card records for the market. The ~150
-// commons/uncommons are summarized on the set rather than spawned individually
-// (they don't carry singles value worth tracking) — kept as a count for now.
+// Build one market-ready card record from a "spec" (id/name/rarity/number + an
+// optional designed signature card behind it).
+function buildCard(spec, draft, theme, sheet, rng, artistOf) {
+  const factors = popFactors(spec, draft, theme, sheet, rng, artistOf)
+  // Initial price seeds off rarity + art + hype; the market moves it from here.
+  const seed = factors.rarity * 0.25 + factors.artAppeal * 0.4 + factors.hype * 0.35
+  const scarcity = 1 + (1 - draft.printRun / 100) * 1.5
+  const singlePrice = Math.max(0.1, Math.round(seed * 0.6 * scarcity * 10) / 10)
+  return {
+    id: `${draft._setId}_${spec.id}`,
+    setId: draft._setId,
+    name: spec.name,
+    rarity: spec.rarity,
+    number: spec.number, // collector number, e.g. "73/60" or secret "61/60"
+    secret: spec.secret ?? false,
+    signature: spec.signature ?? false,
+    artistId: spec.artistId ?? null,
+    popFactors: factors,
+    sealedPrice: draft.pricePoint,
+    singlePrice,
+    priceHistory: [singlePrice],
+    hype: (factors.hype / 100) * (draft.prerelease.chasePullable ? 1.3 : 1),
+    momentum: 0,
+  }
+}
+
+// Generate the WHOLE set: `setLength` numbered cards distributed across the
+// non-secret rarity sheet by pull weight, plus `secretCount` secret rares
+// numbered above the count. Signature highlights are slotted in as the top cards
+// (keeping their designed name/rarity/art/power); the rest are themed-random, so
+// any of them — even a humble common — can later become a market darling.
 export function generateCards(draft, setId, week, artistOf = getArtist) {
   const theme = getTheme(draft.themeId)
+  const sheet = draft.rarities ?? defaultRaritySheet()
   const rng = makeRng(hashSeed(`${draft.name}:${setId}:${week}`))
+  draft = { ...draft, _setId: setId } // buildCard reads _setId
 
-  return draft.signatureCards.map((card) => {
-    const factors = popFactors(card, draft, theme, rng, artistOf)
-    // Initial single price seeds off rarity + art + hype; the market moves it later.
-    const seed = factors.rarity * 0.25 + factors.artAppeal * 0.4 + factors.hype * 0.35
-    const scarcity = 1 + (1 - draft.printRun / 100) * 1.5 // under-print → higher prices
-    const singlePrice = Math.round(seed * 0.6 * scarcity * 10) / 10
+  const length = clamp(Math.round(draft.setLength ?? 60), MIN_SET_LENGTH, MAX_SET_LENGTH)
+  const secretCount = clamp(Math.round(draft.secretCount ?? 0), 0, MAX_SECRET_CARDS)
+  const sigs = draft.signatureCards ?? []
+  const nonSecret = sheet.filter((r) => !r.secret && Math.max(0, r.pullWeight) > 0)
+  const secretRarities = sheet.filter((r) => r.secret)
 
-    return {
-      id: `${setId}_${card.id}`,
-      setId,
-      name: card.name,
-      rarity: card.rarity,
-      artistId: card.artistId,
-      popFactors: factors,
-      sealedPrice: draft.pricePoint, // launch = MSRP; appreciates via sealedPrice()
-      singlePrice,
-      priceHistory: [singlePrice],
-      // Market state. Launch hype carries the card's hype factor; prerelease
-      // with pullable chase front-loads (and later deflates) that buzz.
-      hype: (factors.hype / 100) * (draft.prerelease.chasePullable ? 1.3 : 1),
-      momentum: 0,
-    }
+  const specs = []
+
+  // 1) Signature highlights take the first numbers (they're the marquee cards).
+  sigs.slice(0, length).forEach((sig, i) => {
+    specs.push({
+      id: `c${i + 1}`, name: sig.name, rarity: sig.rarity, number: `${i + 1}/${length}`,
+      artistId: sig.artistId, mode: sig.mode, power: sig.power, rulesText: sig.rulesText,
+      signature: true,
+    })
   })
+
+  // 2) Fill the rest of the numbered set with themed-random cards, rarity by the
+  //    set's pull weights. Bulk cards get a modest random playability so a
+  //    sleeper can still spike, but they're not balanced around the power budget.
+  for (let i = specs.length; i < length; i++) {
+    const rarityId = nonSecret.length ? pickRarity(nonSecret, rng) : (sheet[0]?.id ?? 'common')
+    specs.push({
+      id: `c${i + 1}`, name: randomCardName(theme, rng), rarity: rarityId,
+      number: `${i + 1}/${length}`, mode: 'flavor',
+      power: clamp(Math.round(range(rng, 15, 70)), 0, 100), // bulk: low-to-mid, sleepers possible
+    })
+  }
+
+  // 3) Secret rares: numbered ABOVE the count, scarcest chase.
+  for (let s = 0; s < secretCount; s++) {
+    const rarityId = secretRarities.length
+      ? secretRarities[s % secretRarities.length].id
+      : (nonSecret[nonSecret.length - 1]?.id ?? 'rare')
+    const num = length + s + 1
+    specs.push({
+      id: `s${s + 1}`, name: randomCardName(theme, rng), rarity: rarityId,
+      number: `${num}/${length}`, secret: true, mode: 'flavor',
+      power: clamp(Math.round(range(rng, 20, 80)), 0, 100),
+    })
+  }
+
+  return specs.map((spec) => buildCard(spec, draft, theme, sheet, rng, artistOf))
 }
 
 // ---- Release effects ------------------------------------------------------
@@ -219,9 +286,11 @@ export function releaseSet(state, draft) {
     printRun: draft.printRun,
     price: draft.pricePoint,
     signatureCards: draft.signatureCards,
+    rarities: draft.rarities, // the set's rarity sheet (for pricing/packs/display)
+    setLength: draft.setLength,
+    secretCount: draft.secretCount,
     prerelease: draft.prerelease,
     releasedWeek: state.week,
-    commonsCount: 150,
     // Sealed economy: units printed (hard sales ceiling) and units sold to date.
     supply: printRunUnits(draft.printRun),
     sold: 0,

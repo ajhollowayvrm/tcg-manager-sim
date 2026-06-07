@@ -432,6 +432,48 @@ body {
 .spark { display: block; }
 .spark--flat { width: 60px; height: 18px; }
 
+/* ---- Rarity editor (set builder) ---- */
+.rared { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.rared__head, .rared__row {
+  display: grid; grid-template-columns: 1fr 56px 56px 48px 28px; gap: 8px; align-items: center;
+}
+.rared__head { font-size: 0.65rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.4px; }
+.rared__col { text-align: center; }
+.rared__col--name { text-align: left; }
+.rared__name, .rared__num {
+  background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 6px; padding: 6px 8px; font: inherit; font-size: 0.85rem; width: 100%;
+}
+.rared__num { text-align: center; }
+.rared__secret { justify-self: center; accent-color: var(--accent); width: 18px; height: 18px; }
+.rared__remove { color: var(--bad); padding: 4px 6px; }
+.rared__add { align-self: flex-start; margin-top: 2px; }
+
+/* ---- Pack ripper ---- */
+.rip__controls { display: flex; gap: 8px; margin-bottom: 12px; }
+.rip__controls select {
+  flex: 1; background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 6px; padding: 7px 9px; font: inherit;
+}
+.rip__pulls { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.pull {
+  position: relative; background: linear-gradient(160deg, var(--surface-2), #14141c);
+  border: 2px solid var(--border); border-radius: 8px; padding: 8px 6px;
+  display: flex; flex-direction: column; align-items: center; gap: 3px; text-align: center;
+  animation: popIn 0.35s ease;
+}
+.pull--uncommon { border-color: var(--silver); }
+.pull--rare { border-color: var(--accent-2); }
+.pull--mythic { border-color: var(--pop); box-shadow: 0 0 14px rgba(234,179,8,0.35); }
+.pull--best { box-shadow: 0 0 18px rgba(234,179,8,0.6); transform: scale(1.03); }
+.pull__name { font-size: 0.72rem; font-weight: 600; line-height: 1.15; }
+.pull__rarity { font-size: 0.6rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.3px; }
+.pull__price { font-size: 0.8rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.pull__badge {
+  position: absolute; top: -7px; right: -7px; background: var(--pop); color: #2b2406;
+  font-size: 0.55rem; font-weight: 800; padding: 1px 5px; border-radius: 99px;
+}
+
 /* ---- Meta report ---- */
 .meta { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .meta__row {

@@ -1,8 +1,8 @@
 // Editor for a single signature card. Per-card flavor ↔ full-mechanical toggle,
 // rarity, artist commission, and either a power rating or rules text.
 
-import { RARITIES } from '../../game/sets.js'
 import { ARTISTS, getArtist } from '../../game/content/artists.js'
+import { getRarity, visualTier, defaultRaritySheet } from '../../game/rarities.js'
 import SetSymbol from '../SetSymbol.jsx'
 
 function formatCash(n) {
@@ -22,19 +22,21 @@ function artGradient(themeId) {
 // themed art placeholder with the set symbol, name plate, type/power line, rules
 // box, and an artist/set-symbol footer. This is the brief's "real card-frame
 // styling in the card editor".
-function CardFramePreview({ card, theme, artist }) {
+function CardFramePreview({ card, theme, sheet, artist }) {
   const power = card.mode === 'flavor' ? card.power : null
+  const tier = visualTier(sheet, card.rarity) // common/uncommon/rare/mythic foil
+  const rarityName = getRarity(sheet, card.rarity).name
   return (
-    <div className={`cardframe cardframe--${card.rarity}`} aria-hidden="true">
+    <div className={`cardframe cardframe--${tier}`} aria-hidden="true">
       <div className="cardframe__titlebar">
         <span className="cardframe__name">{card.name || 'Unnamed Card'}</span>
-        <span className={`cardframe__gem gem--${card.rarity}`} title={card.rarity} />
+        <span className={`cardframe__gem gem--${tier}`} title={rarityName} />
       </div>
       <div className="cardframe__art" style={{ background: artGradient(theme?.id) }}>
-        {theme && <SetSymbol themeId={theme.id} rarity={card.rarity} size={48} />}
+        {theme && <SetSymbol themeId={theme.id} tier={tier} size={48} />}
       </div>
       <div className="cardframe__typeline">
-        <span>{theme ? theme.name : 'Set'} · {card.rarity}</span>
+        <span>{theme ? theme.name : 'Set'} · {rarityName}</span>
         {power != null && <span className="cardframe__power">PWR {power}</span>}
       </div>
       <div className="cardframe__text">
@@ -46,7 +48,7 @@ function CardFramePreview({ card, theme, artist }) {
         <span className="cardframe__artist">
           {artist ? `🖌 ${artist.name}` : 'Uncommissioned art'}
         </span>
-        {theme && <SetSymbol themeId={theme.id} rarity={card.rarity} size={14} />}
+        {theme && <SetSymbol themeId={theme.id} tier={tier} size={14} />}
       </div>
     </div>
   )
@@ -61,7 +63,8 @@ const TREND = {
   steady: { icon: '→', cls: 'trend--flat', label: 'steady' },
 }
 
-export default function SignatureCardEditor({ card, theme, artists, onChange, onRemove }) {
+export default function SignatureCardEditor({ card, theme, artists, rarities, onChange, onRemove }) {
+  const sheet = rarities ?? defaultRaritySheet()
   const set = (patch) => onChange({ ...card, ...patch })
   // Merge static identity (name/specialty) with the live drifted career so the
   // displayed cost/reach and trend reflect the current week.
@@ -86,15 +89,15 @@ export default function SignatureCardEditor({ card, theme, artists, onChange, on
       </div>
 
       <div className="sigcard__layout">
-        <CardFramePreview card={card} theme={theme} artist={artist} />
+        <CardFramePreview card={card} theme={theme} sheet={sheet} artist={artist} />
         <div className="sigcard__form">
 
       <div className="sigcard__row sigcard__controls">
         <label className="field">
           <span>Rarity</span>
           <select value={card.rarity} onChange={(e) => set({ rarity: e.target.value })}>
-            {RARITIES.map((r) => (
-              <option key={r} value={r}>{r}</option>
+            {sheet.map((r) => (
+              <option key={r.id} value={r.id}>{r.name}</option>
             ))}
           </select>
         </label>

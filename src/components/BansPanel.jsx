@@ -21,8 +21,14 @@ export default function BansPanel({ state, onBan, onRotate }) {
     : null
   const canRotate = liveSets.length >= 2 // keep at least one set in the format
 
+  // Sets can be hundreds of cards — only surface ban CANDIDATES: anything drawing
+  // real ban pressure, else the strongest cards (what you'd consider banning).
   // Most ban pressure first — that's where the community is pointing.
-  const sorted = [...live].sort((a, b) => (b.banPressure ?? 0) - (a.banPressure ?? 0))
+  const pressured = live.filter((c) => (c.banPressure ?? 0) > 0)
+  const pool = pressured.length
+    ? pressured
+    : [...live].sort((a, b) => b.popFactors.playability - a.popFactors.playability).slice(0, 10)
+  const sorted = [...pool].sort((a, b) => (b.banPressure ?? 0) - (a.banPressure ?? 0)).slice(0, 12)
 
   return (
     <div className="panel">

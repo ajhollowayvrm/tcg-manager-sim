@@ -41,12 +41,15 @@ const RARITY_COLOR = {
 // Snowflake/skull-bones use stroke, not fill — looks right as line art.
 const STROKE_GLYPHS = new Set(['frost', 'pirates'])
 
-export default function SetSymbol({ themeId, rarity = 'rare', size = 16, title }) {
+// `tier` is a visual bucket (common/uncommon/rare/mythic) — preferred. `rarity`
+// is accepted for back-compat and only used when it matches a known bucket.
+export default function SetSymbol({ themeId, tier, rarity, size = 16, title }) {
   const theme = getTheme(themeId)
   const d = (themeId && GLYPHS[themeId]) || FALLBACK
-  const color = RARITY_COLOR[rarity] ?? 'var(--silver)'
+  const key = tier ?? rarity ?? 'rare'
+  const color = RARITY_COLOR[key] ?? 'var(--silver)'
   const stroke = STROKE_GLYPHS.has(themeId)
-  const label = title ?? (theme ? `${theme.name} · ${rarity}` : 'set symbol')
+  const label = title ?? (theme ? `${theme.name} · ${key}` : 'set symbol')
 
   return (
     <svg

@@ -4,14 +4,17 @@
 import { useState } from 'react'
 import Slider from './Slider.jsx'
 import SignatureCardEditor from './SignatureCardEditor.jsx'
+import RarityEditor from './RarityEditor.jsx'
 import {
   createDraft,
   createSignatureCard,
   fillRandomCards,
   setCost,
   validateDraft,
-  MIN_SIGNATURE_CARDS,
   MAX_SIGNATURE_CARDS,
+  MIN_SET_LENGTH,
+  MAX_SET_LENGTH,
+  MAX_SECRET_CARDS,
 } from '../../game/sets.js'
 import { THEMES, getTheme } from '../../game/content/themes.js'
 
@@ -30,13 +33,9 @@ function nextId(cards) {
 }
 
 export default function SetBuilder({ setNumber, cash, artists, onRelease, onClose }) {
-  const [draft, setDraft] = useState(() => {
-    const d = createDraft(setNumber)
-    // Start with the minimum viable count, auto-generated and themed, so the
-    // player can release immediately or hand-tweak any of them.
-    d.signatureCards = fillRandomCards([], MIN_SIGNATURE_CARDS, getTheme(d.themeId), d.powerBudget, `init:${setNumber}`)
-    return d
-  })
+  // The set auto-generates its full card list on release, so signature
+  // highlights are optional — start with none.
+  const [draft, setDraft] = useState(() => createDraft(setNumber))
 
   const patch = (p) => setDraft((d) => ({ ...d, ...p }))
   const theme = getTheme(draft.themeId)
@@ -61,18 +60,11 @@ export default function SetBuilder({ setNumber, cash, artists, onRelease, onClos
       return { ...d, signatureCards: [...d.signatureCards, createSignatureCard(nextId(d.signatureCards))] }
     })
 
-  // Auto-fill themed-random cards up to the 5-card minimum, keeping hand-made ones.
-  const fillToMin = () =>
-    setDraft((d) => ({
-      ...d,
-      signatureCards: fillRandomCards(d.signatureCards, MIN_SIGNATURE_CARDS, getTheme(d.themeId), d.powerBudget, `${d.name}:min`),
-    }))
-
-  // Add one themed-random card (capped at the max).
+  // Add one themed-random highlight (capped at the max), using the set's sheet.
   const addRandom = () =>
     setDraft((d) => ({
       ...d,
-      signatureCards: fillRandomCards(d.signatureCards, d.signatureCards.length + 1, getTheme(d.themeId), d.powerBudget, `${d.name}:add`),
+      signatureCards: fillRandomCards(d.signatureCards, d.signatureCards.length + 1, getTheme(d.themeId), d.powerBudget, `${d.name}:add`, d.rarities),
     }))
 
   const removeCard = (idx) =>
@@ -141,6 +133,31 @@ export default function SetBuilder({ setNumber, cash, artists, onRelease, onClos
             />
           </section>
 
+          {/* Set composition — length, secret rares, and the rarity sheet */}
+          <section className="builder__section">
+            <h3 className="builder__h3">Set composition</h3>
+            <Slider
+              label="Set length (cards)"
+              value={draft.setLength}
+              min={MIN_SET_LENGTH} max={MAX_SET_LENGTH} step={1}
+              onChange={(v) => patch({ setLength: v })}
+              left={`${MIN_SET_LENGTH}`} right={`${MAX_SET_LENGTH}`}
+            />
+            <Slider
+              label="Secret rares (numbered above the count)"
+              value={draft.secretCount}
+              min={0} max={MAX_SECRET_CARDS} step={1}
+              onChange={(v) => patch({ secretCount: v })}
+              left="0" right={`${MAX_SECRET_CARDS}`}
+            />
+            <span className="field__note">
+              The full {draft.setLength}-card set auto-generates across your rarities
+              {draft.secretCount > 0 && <> plus {draft.secretCount} secret rare{draft.secretCount > 1 ? 's' : ''} (e.g. {draft.setLength + 1}/{draft.setLength})</>}.
+              Any card — even a humble common — can become a market darling.
+            </span>
+            <RarityEditor sheet={draft.rarities} onChange={(rarities) => patch({ rarities })} />
+          </section>
+
           {/* Prerelease */}
           <section className="builder__section">
             <h3 className="builder__h3">Prerelease</h3>
@@ -177,13 +194,10 @@ export default function SetBuilder({ setNumber, cash, artists, onRelease, onClos
           <section className="builder__section">
             <div className="builder__sectionhead">
               <h3 className="builder__h3">
-                Signature cards ({draft.signatureCards.length}/{MAX_SIGNATURE_CARDS})
-                <span className="muted"> · {MIN_SIGNATURE_CARDS} min</span>
+                Signature highlights ({draft.signatureCards.length}/{MAX_SIGNATURE_CARDS})
+                <span className="muted"> · optional marquee cards</span>
               </h3>
               <div className="builder__cardbtns">
-                {draft.signatureCards.length < MIN_SIGNATURE_CARDS && (
-                  <button className="btn" onClick={fillToMin}>✨ Fill to {MIN_SIGNATURE_CARDS}</button>
-                )}
                 <button
                   className="btn"
                   onClick={addRandom}
@@ -207,6 +221,7 @@ export default function SetBuilder({ setNumber, cash, artists, onRelease, onClos
                   card={card}
                   theme={theme}
                   artists={artists}
+                  rarities={draft.rarities}
                   onChange={(next) => setCard(i, next)}
                   onRemove={() => removeCard(i)}
                 />

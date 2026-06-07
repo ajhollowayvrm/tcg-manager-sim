@@ -7,6 +7,7 @@
 // logic use, surfaced for the player as a readable tier list.
 
 import { clamp } from './simulation.js'
+import { visualTier } from './rarities.js'
 
 // Tier thresholds on the 0–100 meta score.
 const TIER_DEFINING = 70 // the decks everyone has to beat
@@ -48,18 +49,18 @@ export function metaReport(state) {
   if (!live.length) return []
 
   const fieldAvg = live.reduce((s, c) => s + c.popFactors.playability, 0) / live.length
-  const setName = new Map(state.sets.map((s) => [s.id, { name: s.name, themeId: s.themeId }]))
+  const setById = new Map(state.sets.map((s) => [s.id, s]))
 
   return live
     .map((c) => {
       const score = metaScore(c, fieldAvg, state.metagame.solveLevel)
-      const set = setName.get(c.setId)
+      const set = setById.get(c.setId)
       return {
         id: c.id,
         name: c.name,
-        rarity: c.rarity,
         setName: set?.name ?? '—',
         themeId: set?.themeId ?? null,
+        rarityTier: visualTier(set?.rarities, c.rarity), // common/uncommon/rare/mythic foil
         playability: c.popFactors.playability,
         score: Math.round(score),
         tier: metaTier(score),

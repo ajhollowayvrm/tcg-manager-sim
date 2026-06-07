@@ -10,36 +10,40 @@ const PRICE_HISTORY_LEN = 26 // ~half a year of weekly points kept per card
 
 // ---- Fair value ----------------------------------------------------------
 
-// A card's fair value. This is a PLAYED game (not a pure collectible), so a
-// card's competitive relevance — its playability, modulated by the live meta —
-// is the PRIMARY price driver: the staples of the best deck are what cost money,
-// and a card the format has passed by drifts toward bulk no matter how it looks.
+// A card's fair value is the MAX of two independent economies — a card is worth
+// whatever it's most valuable FOR. This game has a thriving collector base AND a
+// player base, and they can want completely different cards:
 //
-// But rarity and art still carry real collectible value (the "Pokémon" pull): a
-// gorgeous chase mythic holds a respectable premium even if it's not a 4-of, it
-// just won't out-price the meta staples. So rarity/art form a collectible BASE
-// that meta-relevance is layered on top of.
+//   PLAYER value  — competitive relevance: playability × live-meta relevance.
+//                   The staples of the best deck cost money; cards the format has
+//                   passed by drift to bulk. This is the "actually played" side.
+//   COLLECTOR value — rarity tier + art + the card's collector hype, scaled by
+//                   scarcity. A gorgeous secret rare is a GRAIL worth a fortune
+//                   even if it's competitively unplayable (the Pokémon side).
+//
+// max() means either path alone makes a card expensive: a meta common is valued
+// on play, an unplayable chase mythic on collectibility, and a card strong in
+// both is a true grail.
 export function fairValue(card, set, metagame) {
   const f = card.popFactors
-  // Meta relevance multiplier, 0.35–1.4. High solve & high power erode it; a
-  // fresh format where the card is on-curve maxes it.
-  const freshness = 1 - metagame.solveLevel / 140 // fresher meta → higher
-  const obsolescence = 1 - Math.max(0, metagame.powerLevel - f.playability) / 200
-  const relevance = clamp(freshness * obsolescence + 0.4, 0.35, 1.4)
-
-  // Playability is the dominant term (~60% of a typical card's value), and it's
-  // the only one scaled by meta-relevance — so the meta genuinely moves prices.
-  const playabilityVal = f.playability * relevance * 0.7
-
-  // Collectible base: rarity + art give a price even to unplayed cards, but it's
-  // a secondary floor/premium, not enough to crown a pretty-but-useless card.
-  const rarityVal = f.rarity * 0.12
-  const artVal = f.artAppeal * 0.16
 
   // Under-printed sets keep singles scarce and pricey; over-print drags them.
   const scarcity = 1 + (1 - set.printRun / 100) * 1.4
 
-  return clamp((playabilityVal + rarityVal + artVal) * scarcity * 0.6, 0.25, 5000)
+  // --- Player value: playability modulated by the live meta ---
+  const freshness = 1 - metagame.solveLevel / 140
+  const obsolescence = 1 - Math.max(0, metagame.powerLevel - f.playability) / 200
+  const relevance = clamp(freshness * obsolescence + 0.4, 0.35, 1.4)
+  const playerVal = f.playability * relevance * 0.85 * scarcity * 0.6
+
+  // --- Collector value: rarity tier + art + collector hype, fully scarcity-fed.
+  // Rarity tier (0–100 from the set's sheet) dominates; rarity scarcity is
+  // squared in so high-tier secret rares climb HARD. Independent of playability.
+  const raritySq = (f.rarity / 100) ** 1.6 * 100 // convex: top tiers pull away
+  const collectorBase = raritySq * 0.95 + f.artAppeal * 0.35 + f.hype * 0.2
+  const collectorVal = collectorBase * scarcity * 0.6
+
+  return clamp(Math.max(playerVal, collectorVal), 0.25, 12000)
 }
 
 // ---- Per-card weekly step -------------------------------------------------

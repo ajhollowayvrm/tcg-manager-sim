@@ -21,8 +21,8 @@ export default function MetaReport({ state }) {
           {report.map((c) => (
             <li key={c.id} className="meta__row">
               <span className="meta__name">
-                <SetSymbol themeId={c.themeId} rarity={c.rarity} size={14} />
-                <span className={`rarity--${c.rarity}`}>{c.name}</span>
+                <SetSymbol themeId={c.themeId} tier={c.rarityTier} size={14} />
+                <span className={`rarity--${c.rarityTier}`}>{c.name}</span>
               </span>
               <span className={`meta__tier meta__tier--${c.tier}`}>{TIER_LABEL[c.tier]}</span>
               <span className="meta__bar" title={`Meta score ${c.score}/100`}>

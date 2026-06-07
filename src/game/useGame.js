@@ -3,6 +3,7 @@ import { createInitialState } from './initialState.js'
 import { advanceWeek } from './simulation.js'
 import { releaseSet } from './sets.js'
 import { banCard, rotateFormat } from './bans.js'
+import { ripPack } from './packs.js'
 
 // Reducer-driven game state. The clock ticks via setInterval while playing;
 // each tick dispatches a 'TICK' that runs one simulation week.
@@ -68,6 +69,19 @@ function reducer(state, action) {
         clock: { ...state.clock, paused: true, pauseReason: `Rotated: ${result.rotatedNames}` },
       }
     }
+    case 'RIP_PACK': {
+      const result = ripPack(state, action.setId, action.nonce ?? 0)
+      if (!result) return state
+      // Cracking your own stock consumes one printed unit from the set.
+      const sets = state.sets.map((s) =>
+        s.id === action.setId ? { ...s, sold: Math.min((s.supply ?? 0), (s.sold ?? 0) + 1) } : s,
+      )
+      return {
+        ...state,
+        sets,
+        lastRip: { setId: action.setId, week: state.week, pullIds: result.pulls.map((c) => c.id), bestId: result.bestPull?.id ?? null },
+      }
+    }
     case 'RESET':
       return createInitialState()
     default:
@@ -115,6 +129,9 @@ export function useGame() {
   const banCardAction = useCallback((cardId) => dispatch({ type: 'BAN_CARD', cardId }), [])
   const rotate = useCallback((count) => dispatch({ type: 'ROTATE_FORMAT', count }), [])
   const reset = useCallback(() => dispatch({ type: 'RESET' }), [])
+  // A nonce so consecutive rips of the same set in the same week differ.
+  const ripNonce = useRef(0)
+  const rip = useCallback((setId) => dispatch({ type: 'RIP_PACK', setId, nonce: ripNonce.current++ }), [])
 
-  return { state, play, pause, setSpeed, release, ban: banCardAction, rotate, reset }
+  return { state, play, pause, setSpeed, release, ban: banCardAction, rotate, reset, rip }
 }

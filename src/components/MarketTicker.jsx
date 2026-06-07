@@ -3,6 +3,11 @@
 // sealed price. This is where the color budget pays off (see BRIEF.md).
 
 import SetSymbol from './SetSymbol.jsx'
+import { visualTier } from '../game/rarities.js'
+
+// Sets can now run to hundreds of cards — show only the most valuable singles so
+// the ticker stays a "what's hot" board, not a spreadsheet.
+const MAX_ROWS = 12
 
 function fmt(n) {
   return n != null ? `$${n.toFixed(2)}` : '—'
@@ -32,11 +37,11 @@ export default function MarketTicker({ state }) {
   const moverPct = new Map((state.movers ?? []).map((m) => [m.id, m.pct]))
   const week = state.week
 
-  // Look up each card's set theme for the row's set symbol.
-  const themeBySet = new Map(state.sets.map((s) => [s.id, s.themeId]))
+  // Look up each card's set (theme for the symbol, rarity sheet for the foil).
+  const setById = new Map(state.sets.map((s) => [s.id, s]))
 
-  // Sort by price desc so the chase cards sit on top.
-  const cards = [...state.cards].sort((a, b) => b.singlePrice - a.singlePrice)
+  // Sort by price desc so the chase cards sit on top; cap to the top movers/value.
+  const cards = [...state.cards].sort((a, b) => b.singlePrice - a.singlePrice).slice(0, MAX_ROWS)
 
   return (
     <div className="panel">
@@ -67,10 +72,12 @@ export default function MarketTicker({ state }) {
               // every week the card moves (React remounts only the ≤8 movers).
               const key = pct == null ? card.id : `${card.id}-${week}`
               const status = card.banned ? 'banned' : card.rotated ? 'rotated' : null
+              const set = setById.get(card.setId)
+              const tier = visualTier(set?.rarities, card.rarity)
               return (
                 <li key={key} className={`ticker__row${dir}${big}${status ? ' ticker__row--' + status : ''}`}>
-                  <span className={`ticker__name rarity--${card.rarity}`}>
-                    <SetSymbol themeId={themeBySet.get(card.setId)} rarity={card.rarity} size={14} />
+                  <span className={`ticker__name rarity--${tier}`}>
+                    <SetSymbol themeId={set?.themeId} tier={tier} size={14} />
                     {card.name}
                     {status && <span className={`tag tag--${status}`}>{status}</span>}
                   </span>
