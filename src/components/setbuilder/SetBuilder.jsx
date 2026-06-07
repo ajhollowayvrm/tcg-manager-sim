@@ -6,6 +6,8 @@ import Slider from './Slider.jsx'
 import SignatureCardEditor from './SignatureCardEditor.jsx'
 import RarityEditor from './RarityEditor.jsx'
 import PackFormatEditor from './PackFormatEditor.jsx'
+import AccordionSection from './AccordionSection.jsx'
+import { packSize, PACK_PRESETS } from '../../game/rarities.js'
 import {
   createDraft,
   createSignatureCard,
@@ -38,6 +40,12 @@ export default function SetBuilder({ setNumber, cash, artists, liveCards = [], s
   // The set auto-generates its full card list on release, so signature
   // highlights are optional — start with none.
   const [draft, setDraft] = useState(() => createDraft(setNumber))
+
+  // Accordion: sections toggle independently (multi-open). Identity is open by
+  // default; everything else starts collapsed so the modal opens short and
+  // scannable. Each collapsed header shows a one-line summary of its contents.
+  const [open, setOpen] = useState({ identity: true })
+  const toggle = (id) => setOpen((o) => ({ ...o, [id]: !o[id] }))
 
   const patch = (p) => setDraft((d) => ({ ...d, ...p }))
   const theme = getTheme(draft.themeId)
@@ -75,6 +83,17 @@ export default function SetBuilder({ setNumber, cash, artists, liveCards = [], s
       signatureCards: d.signatureCards.filter((_, i) => i !== idx),
     }))
 
+  // One-line summaries shown in each collapsed accordion header — at-a-glance
+  // confirmation of what's set inside without expanding.
+  const presetName = PACK_PRESETS.find((p) => p.id === draft.packFormat?.preset)?.name ?? 'custom'
+  const summaries = {
+    composition: `${draft.setLength} cards, ${draft.rarities.length} rarities${draft.secretCount ? `, ${draft.secretCount} secret` : ''}`,
+    booster: `${packSize(draft.packFormat)}-card ${presetName}`,
+    prerelease: draft.prerelease.enabled ? (draft.prerelease.chasePullable ? 'on, chase-pullable' : 'on') : 'off',
+    signatures: draft.signatureCards.length ? `${draft.signatureCards.length} card${draft.signatureCards.length > 1 ? 's' : ''}` : 'none',
+    reprints: (draft.reprintedCards?.length ?? 0) ? `${draft.reprintedCards.length} reprinted` : 'none',
+  }
+
   return (
     <div className="modal" role="dialog" aria-modal="true">
       <div className="modal__sheet">
@@ -84,8 +103,8 @@ export default function SetBuilder({ setNumber, cash, artists, liveCards = [], s
         </header>
 
         <div className="modal__body">
-          {/* Identity + slider layer */}
-          <section className="builder__section">
+          {/* Identity + slider layer — open by default */}
+          <AccordionSection title="Identity & set basics" open={open.identity} onToggle={() => toggle('identity')}>
             <label className="field field--full">
               <span>Set name</span>
               <input value={draft.name} onChange={(e) => patch({ name: e.target.value })} />
@@ -133,11 +152,10 @@ export default function SetBuilder({ setNumber, cash, artists, liveCards = [], s
               onChange={(v) => patch({ pricePoint: v })}
               format={(v) => '$' + v.toFixed(2)}
             />
-          </section>
+          </AccordionSection>
 
           {/* Set composition — length, secret rares, and the rarity sheet */}
-          <section className="builder__section">
-            <h3 className="builder__h3">Set composition</h3>
+          <AccordionSection title="Set composition" summary={summaries.composition} open={open.composition} onToggle={() => toggle('composition')}>
             <Slider
               label="Set length (cards)"
               value={draft.setLength}
@@ -158,11 +176,10 @@ export default function SetBuilder({ setNumber, cash, artists, liveCards = [], s
               Any card — even a humble common — can become a market darling.
             </span>
             <RarityEditor sheet={draft.rarities} onChange={(rarities) => patch({ rarities })} />
-          </section>
+          </AccordionSection>
 
           {/* Booster format — how a pack is built from the rarity sheet */}
-          <section className="builder__section">
-            <h3 className="builder__h3">Booster format</h3>
+          <AccordionSection title="Booster format" summary={summaries.booster} open={open.booster} onToggle={() => toggle('booster')}>
             <span className="field__note">
               How a pack is built from your rarities — slot counts and which
               rarities each slot pulls. Hit-heavy boosters cost a little more to
@@ -173,11 +190,10 @@ export default function SetBuilder({ setNumber, cash, artists, liveCards = [], s
               sheet={draft.rarities}
               onChange={(packFormat) => patch({ packFormat })}
             />
-          </section>
+          </AccordionSection>
 
           {/* Prerelease */}
-          <section className="builder__section">
-            <h3 className="builder__h3">Prerelease</h3>
+          <AccordionSection title="Prerelease" summary={summaries.prerelease} open={open.prerelease} onToggle={() => toggle('prerelease')}>
             <label className="check">
               <input
                 type="checkbox"
@@ -205,15 +221,17 @@ export default function SetBuilder({ setNumber, cash, artists, liveCards = [], s
               Chase cards pullable from prerelease product
               <span className="muted"> (more hype &amp; early revenue, but the meta solves sooner)</span>
             </label>
-          </section>
+          </AccordionSection>
 
           {/* Signature cards */}
-          <section className="builder__section">
+          <AccordionSection
+            title={`Signature highlights (${draft.signatureCards.length}/${MAX_SIGNATURE_CARDS})`}
+            summary={summaries.signatures}
+            open={open.signatures}
+            onToggle={() => toggle('signatures')}
+          >
             <div className="builder__sectionhead">
-              <h3 className="builder__h3">
-                Signature highlights ({draft.signatureCards.length}/{MAX_SIGNATURE_CARDS})
-                <span className="muted"> · optional marquee cards</span>
-              </h3>
+              <span className="muted">Optional marquee cards.</span>
               <div className="builder__cardbtns">
                 <button
                   className="btn"
@@ -246,15 +264,22 @@ export default function SetBuilder({ setNumber, cash, artists, liveCards = [], s
                 />
               ))}
             </div>
-          </section>
+          </AccordionSection>
 
           {/* Reprint popular cards from older sets — a fan-service / hype draw */}
-          <ReprintPicker
-            reprints={draft.reprintedCards ?? []}
-            liveCards={liveCards}
-            sets={sets}
-            onChange={(reprintedCards) => patch({ reprintedCards })}
-          />
+          <AccordionSection
+            title={`Reprint popular cards (${draft.reprintedCards?.length ?? 0}/${MAX_REPRINTED_CARDS})`}
+            summary={summaries.reprints}
+            open={open.reprints}
+            onToggle={() => toggle('reprints')}
+          >
+            <ReprintPicker
+              reprints={draft.reprintedCards ?? []}
+              liveCards={liveCards}
+              sets={sets}
+              onChange={(reprintedCards) => patch({ reprintedCards })}
+            />
+          </AccordionSection>
         </div>
 
         {/* Cost summary + release */}
@@ -324,11 +349,7 @@ function ReprintPicker({ reprints, liveCards, sets, onChange }) {
   const cardById = new Map(liveCards.map((c) => [c.id, c]))
 
   return (
-    <section className="builder__section">
-      <h3 className="builder__h3">
-        Reprint popular cards ({reprints.length}/{MAX_REPRINTED_CARDS})
-        <span className="muted"> · fan-service draws from older sets</span>
-      </h3>
+    <div className="builder__inner">
       <span className="field__note">
         Re-issue a beloved card into this set — lifts the set's hype and sales, but
         softens that card's original (it's no longer unique to its set).
@@ -371,6 +392,6 @@ function ReprintPicker({ reprints, liveCards, sets, onChange }) {
           )}
         </>
       )}
-    </section>
+    </div>
   )
 }

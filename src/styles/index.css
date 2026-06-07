@@ -200,12 +200,33 @@ body {
 }
 .modal__head h2 { margin: 0; font-size: 1.1rem; }
 .modal__foot { border-bottom: none; border-top: 1px solid var(--border); gap: var(--gap); align-items: flex-end; }
-.modal__body { padding: 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 22px; }
+.modal__body { padding: 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
 
 .builder__section { display: flex; flex-direction: column; gap: 14px; }
+.builder__inner { display: flex; flex-direction: column; gap: 14px; }
 .builder__h3 { margin: 0; font-size: 0.95rem; color: var(--accent-2); }
 .builder__sectionhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .builder__cardbtns { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* Accordion sections in the set builder — collapse to keep the modal short. */
+.acc { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); overflow: hidden; }
+.acc--open { border-color: #3a3a4f; }
+.acc__head {
+  width: 100%; display: flex; align-items: center; gap: 8px;
+  background: none; border: none; cursor: pointer; color: var(--text);
+  font: inherit; text-align: left; padding: 12px 14px;
+}
+.acc__head:hover { background: var(--surface-2); }
+.acc__chevron { color: var(--text-dim); font-size: 0.8rem; width: 12px; flex: none; }
+.acc__title { font-size: 0.92rem; font-weight: 700; color: var(--accent-2); }
+.acc__summary {
+  margin-left: auto; font-size: 0.78rem; color: var(--silver);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55%;
+}
+.acc__body {
+  padding: 4px 14px 16px; display: flex; flex-direction: column; gap: 14px;
+  border-top: 1px solid var(--border);
+}
 
 /* Fields */
 .field { display: flex; flex-direction: column; gap: 4px; font-size: 0.8rem; color: var(--text-dim); }
