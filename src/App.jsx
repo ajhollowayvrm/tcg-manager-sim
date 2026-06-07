@@ -10,6 +10,7 @@ import BansPanel from './components/BansPanel.jsx'
 import SetsPanel from './components/SetsPanel.jsx'
 import MetaReport from './components/MetaReport.jsx'
 import PackRipper from './components/PackRipper.jsx'
+import DistributorsPanel from './components/DistributorsPanel.jsx'
 import Onboarding from './components/Onboarding.jsx'
 import SetBuilder from './components/setbuilder/SetBuilder.jsx'
 
@@ -43,6 +44,7 @@ export default function App() {
     bans: <BansPanel state={game.state} onBan={game.ban} onRotate={game.rotate} />,
     feedback: <FeedbackFeed state={game.state} />,
     personas: <PersonasPanel state={game.state} onComp={game.comp} onSponsor={game.sponsor} onDropSponsor={game.unsponsor} />,
+    distributors: <DistributorsPanel state={game.state} onSign={game.signDist} onCultivate={game.cultivateDist} onDrop={game.dropDist} />,
     events: <EventsFeed state={game.state} />,
   }
 
@@ -63,6 +65,7 @@ export default function App() {
         <aside className="col col--side">
           {panels.feedback}
           {panels.personas}
+          {panels.distributors}
           {panels.events}
         </aside>
       </main>
@@ -72,7 +75,7 @@ export default function App() {
       <main className="dashboard--mobile">
         {tab === 'meta' && <div className="col">{panels.metagame}{panels.sets}</div>}
         {tab === 'market' && <div className="col">{panels.market}{panels.metaReport}{panels.packs}{panels.bans}</div>}
-        {tab === 'community' && <div className="col">{panels.feedback}{panels.personas}</div>}
+        {tab === 'community' && <div className="col">{panels.feedback}{panels.personas}{panels.distributors}</div>}
         {tab === 'events' && <div className="col">{panels.events}</div>}
       </main>
 

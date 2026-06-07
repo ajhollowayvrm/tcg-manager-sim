@@ -738,6 +738,53 @@ body {
 .mood--bad { color: var(--bad); }
 .mood--neutral { color: var(--text-dim); }
 
+/* ---- Distributors & scalper heat ---- */
+.scalp {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 12px; margin-bottom: 12px;
+}
+.scalp--hot { border-color: var(--bad); box-shadow: 0 0 0 1px var(--bad) inset; }
+.scalp__row { display: flex; justify-content: space-between; align-items: baseline; }
+.scalp__label { font-size: 0.78rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.4px; }
+.scalp__val { font-weight: 700; font-variant-numeric: tabular-nums; }
+.scalp--hot .scalp__val { color: var(--bad); }
+.scalp__track {
+  position: relative; height: 8px; margin-top: 6px;
+  background: var(--bg); border-radius: 99px; overflow: hidden;
+}
+.scalp__fill {
+  height: 100%; border-radius: 99px;
+  background: linear-gradient(90deg, var(--warn), var(--accent));
+  transition: width 0.3s ease;
+}
+.scalp__thresh {
+  position: absolute; top: -2px; bottom: -2px; width: 2px;
+  background: var(--text-dim); opacity: 0.7;
+}
+.scalp__warn { margin: 8px 0 0; font-size: 0.78rem; color: var(--bad); line-height: 1.4; }
+
+.distrib__signbar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.distrib__signlabel { font-size: 0.78rem; color: var(--text-dim); white-space: nowrap; }
+.distrib__signbar select {
+  flex: 1; background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 6px; padding: 6px 8px; font: inherit; min-width: 0;
+}
+.distrib__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.distrib {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 12px;
+}
+.distrib--active { border-color: var(--accent-2); }
+.distrib__head { display: flex; justify-content: space-between; align-items: center; }
+.distrib__name { font-weight: 700; font-size: 0.9rem; }
+.distrib__flood { font-size: 0.7rem; letter-spacing: -2px; }
+.distrib__blurb { margin: 4px 0 6px; font-size: 0.76rem; color: var(--text-dim); line-height: 1.4; }
+.distrib__terms { display: flex; gap: 6px; font-size: 0.74rem; color: var(--text-dim); margin-bottom: 8px; }
+.distrib__sign { width: 100%; text-align: center; font-size: 0.82rem; }
+.distrib__actions { display: flex; align-items: center; gap: 8px; }
+.distrib__signed { font-size: 0.76rem; color: var(--accent-2); font-weight: 600; margin-right: auto; }
+.distrib__drop { color: var(--bad); }
+
 /* ---- Bans & rotation ---- */
 .bans { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .bans__row {

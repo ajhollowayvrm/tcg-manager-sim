@@ -15,6 +15,7 @@ import { concentrate, balanceScore } from './archetypes.js'
 import { driftArtists } from './artists.js'
 import { applyCadencePressure } from './cadence.js'
 import { applyRelationships } from './relationships.js'
+import { applyDistributors } from './distributors.js'
 
 const SOLVE_DECAY_PER_WEEK = 4 // tune so a format stays fresh for a few months
 // Community sentiment loss: if the reach-weighted mood turns deeply hostile, the
@@ -114,6 +115,12 @@ export function advanceWeek(state) {
   // Relationships: cultivated bonds decay if untended; sponsored creators draw
   // weekly upkeep and amplify, but a soured sponsored name drags the base.
   applyRelationships(next)
+
+  // Distributors: active bulk-buyers resell and flood the channel, feeding
+  // scalper heat. Above the threshold, scalper culture spikes prices short-term
+  // but bleeds casuals, sours the community, and risks a bubble pop. Runs after
+  // the market/segments/personas have settled so it adjusts the resolved week.
+  applyDistributors(next)
 
   // Clock attention: classify the week just resolved so the clock can auto-slow
   // or pause on interesting moments and fast-forward through quiet ones. The

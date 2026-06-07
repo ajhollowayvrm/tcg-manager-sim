@@ -11,11 +11,15 @@ Think *Game Dev Tycoon*, but you're The Pokémon Company and the product is card
 
 **v1 core loop is built and playable.** Design a set, release it, and the world
 reacts week by week: the secondary market resolves singles & sealed prices with
-momentum and burstable hype bubbles, 18 named community personas chatter through
+momentum and burstable hype bubbles, 50+ named community personas chatter through
 a signal-vs-noise feedback feed, an events feed throws curveballs, and you wield
 bans & rotations against the metagame — all funded by a sealed-product economy
-with the twin cash / player-base death spirals. Format decay drives the whole
-thing. See [`docs/BRIEF.md`](docs/BRIEF.md) for the spec, now annotated with
+with the cash / player-base / sentiment death spirals. Format decay drives the
+whole thing. On top of the core loop you also **author the booster format**
+(slot-by-slot pack structure), **design counter cards** to answer a card or a
+runaway archetype instead of banning, and **sign distributors** for bulk-buy
+cash that can tip the game into a price-spiking, community-souring scalper
+market. See [`docs/BRIEF.md`](docs/BRIEF.md) for the spec, annotated with
 per-section build status (✅ done / ⏳ remaining) and the v2 roadmap.
 
 ### Known v1 gaps (remaining work)
@@ -26,10 +30,11 @@ per-section build status (✅ done / ⏳ remaining) and the v2 roadmap.
 After that, the brief calls for a frontend-polish pass and the open tuning
 notes (decay rate, market variance, feedback-noise ratio).
 
-_Recently completed: silent autosave — the whole run persists to localStorage on
-every change and resumes on reload (`game/persistence.js`); segment drift from
-the metagame dials (`segments.js`); and clock auto-slow / auto-pause / quiet-week
-fast-forward (`clock.js`)._
+_Recently completed: booster formats (authored pack slots — `rarities.js`/`packs.js`),
+counter cards (`sets.js` `applyCounters`), and distributors + scalper culture
+(`distributors.js`); silent autosave to localStorage (`game/persistence.js`);
+segment drift from the metagame dials (`segments.js`); and clock auto-slow /
+auto-pause / quiet-week fast-forward (`clock.js`)._
 
 ## Tech
 
@@ -58,14 +63,19 @@ src/
     useGame.js          # reducer + clock hook (+ autosave wiring)
     persistence.js      # localStorage autosave: load/save/clear the run
     rng.js              # seeded RNG (deterministic weekly resolution)
-    sets.js             # set draft, cost, card generation, release effects
+    sets.js             # set draft, cost, card generation, release + counters
+    rarities.js         # rarity sheet + booster pack formats (slots/presets)
+    packs.js            # pack ripping from the authored booster format
     market.js           # secondary market: singles & sealed price resolution
     revenue.js          # weekly sealed-product sales + supply cap
     personas.js         # persona reaction engine (signal vs noise)
+    relationships.js    # persona comp/sponsor management layer
+    distributors.js     # bulk-buyer deals + scalper-culture heat
     events.js           # events catalogue + weekly roll
     bans.js             # ban / rotate logic + community blowback
-    content/            # static rosters: artists (32), personas (18), themes (10)
-  components/           # TopBar, MetagamePanel, MarketTicker, feeds, panels
-    setbuilder/         # SetBuilder, SignatureCardEditor, Slider
+    archetypes.js       # metashare distribution math (shift/flatten/counter)
+    content/            # static rosters: artists, personas (50+), themes, distributors
+  components/           # TopBar, MetagamePanel, MarketTicker, DistributorsPanel, feeds
+    setbuilder/         # SetBuilder, SignatureCardEditor, RarityEditor, PackFormatEditor
   styles/index.css      # vivid crimson / noir dashboard skin
 ```

@@ -53,6 +53,12 @@ export function createInitialState(config) {
     // and a sponsored flag (an ongoing creator deal).
     personas: PERSONAS.map((p) => ({ ...p, sentiment: 10, relationship: 10, sponsored: false })),
 
+    // Bulk-buyer deals (signed distributors) and the scalper-culture heat gauge
+    // they drive. See distributors.js — heat over the threshold tips the game
+    // into a price-spiking, community-souring scalper market.
+    distributors: [],
+    scalperHeat: 0,
+
     feedbackFeed: [], // qualitative chatter — sometimes lies
     eventsFeed: [], // news/curveballs
     movers: [], // notable market movers from the latest week (for the ticker)

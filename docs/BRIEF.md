@@ -252,6 +252,26 @@ GameState {
 
 Grouped into three layers. Each assumes the v1 core loop is solid first.
 
+> **Shipped since v1** ✅ — three depth features have since been built on top of
+> the core loop:
+> - **Booster formats** — the player authors the pack structure slot-by-slot
+>   (counts + which rarities each slot pulls, with chase "escalate" slots), from
+>   presets or fully custom. (`rarities.js`, `packs.js`, `PackFormatEditor`.)
+> - **Counter cards** — a signature card can be designed to answer a specific
+>   live card (a silver bullet that nerfs it and bleeds its ban pressure — defuse
+>   by design instead of banning) or a whole archetype (broad tech that pushes
+>   the metashare off a runaway play style). (`sets.js` `applyCounters`,
+>   `archetypes.js` `shiftAway`.)
+> - **Distributors & scalper culture** — sign bulk-buyer clients (a Pokébank-style
+>   "card bank," big-box, LGS co-op, flippers, importers) who buy huge volume at
+>   a wholesale discount for cash now, then flood the resale channel. Heavy
+>   flooding raises a **scalper-heat** gauge; over the threshold the game tips
+>   into a scalper market — singles spike short-term, but casual players are
+>   priced out (segment bleed), the community sours ("a scalper's game"), and the
+>   bubble can pop (a crater + sealed-sales glut). Hits all three death spirals.
+>   A partial, gameplay-first realization of the market-depth layer below.
+>   (`distributors.js`, `DistributorsPanel`.)
+
 ### A. Product & market depth
 
 - **Regional staggered releases (as a hype engine, not just logistics).** A lead region drops the set first to build anticipation; the main region's drop then "goes nuts." The early region functions as both a **hype builder** and a **preview/information channel** — the player and community see which cards popped in the lead region before the wide release, which shapes anticipation and the player's print/marketing decisions. Sets get **renamed and slightly restructured** between regions (different names, tweaked card lists), mirroring how Japanese sets are renamed/recombined for Western markets. *(Player's reference example: "Ninja Spinner" → "Chaos Rising.")* This reframes the originally-parked geography layer around hype/info flow rather than pure logistics.

@@ -70,7 +70,12 @@ function weeklyDemand(set, state, rng) {
 
   const noise = range(rng, 0.85, 1.15)
 
-  const units = buyerPool * launch * freshness * ageDecay * buzz * elasticity * noise
+  // A post-pop glut (set.glutUntil) means dumped product is sitting on shelves —
+  // nobody buys sealed at retail when it's cheaper resold. Halve demand until it
+  // clears.
+  const glut = set.glutUntil && state.week < set.glutUntil ? 0.5 : 1
+
+  const units = buyerPool * launch * freshness * ageDecay * buzz * elasticity * noise * glut
   return Math.max(0, Math.round(units))
 }
 

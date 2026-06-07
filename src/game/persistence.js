@@ -9,7 +9,12 @@ const KEY = 'tcg-manager-sim/save'
 // Bump when the state shape changes incompatibly. A loaded save whose version
 // doesn't match is discarded rather than fed to a sim that expects new fields —
 // better a fresh start than a crash on a half-migrated old run.
-const VERSION = 1
+//
+// v2: added booster formats (set.packFormat), counter directives
+// (signatureCard.counter), and distributors + scalper heat (state.distributors,
+// state.scalperHeat). A v1 save lacks these; while most have safe fallbacks,
+// invalidating is cleaner than loading a half-shaped run.
+const VERSION = 2
 
 // True only where a real localStorage exists. Guards SSR / the headless
 // playtest harness (tools/playtest.mjs runs the sim in plain Node), and the

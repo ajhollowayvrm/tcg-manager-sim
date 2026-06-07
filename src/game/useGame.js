@@ -6,6 +6,7 @@ import { banCard, rotateFormat } from './bans.js'
 import { ripPack } from './packs.js'
 import { resetCadence } from './cadence.js'
 import { compProduct, sponsorCreator, dropSponsor } from './relationships.js'
+import { signDistributor, dropDistributor, cultivateDistributor } from './distributors.js'
 import { loadState, saveState, clearSave } from './persistence.js'
 
 // Reducer-driven game state. The clock ticks via setInterval while playing;
@@ -105,6 +106,40 @@ function reducer(state, action) {
         eventsFeed: [{ week: state.week, text: r.feed, kind: 'community' }, ...state.eventsFeed].slice(0, 60),
       }
     }
+    case 'SIGN_DISTRIBUTOR': {
+      const r = signDistributor(state, action.distId, action.setId)
+      if (!r) return state
+      return {
+        ...state,
+        distributors: r.distributors,
+        sets: r.sets,
+        cash: state.cash + r.cashDelta,
+        scalperHeat: r.scalperHeat,
+        // A distributor deal is a client action like comp/sponsor — it posts to
+        // the feed but doesn't hijack the clock/header (only releases pause).
+        eventsFeed: [{ week: state.week, text: r.feed, kind: 'market' }, ...state.eventsFeed].slice(0, 60),
+      }
+    }
+    case 'DROP_DISTRIBUTOR': {
+      const r = dropDistributor(state, action.distId)
+      if (!r) return state
+      return {
+        ...state,
+        distributors: r.distributors,
+        scalperHeat: r.scalperHeat,
+        eventsFeed: [{ week: state.week, text: r.feed, kind: 'market' }, ...state.eventsFeed].slice(0, 60),
+      }
+    }
+    case 'CULTIVATE_DISTRIBUTOR': {
+      const r = cultivateDistributor(state, action.distId)
+      if (!r) return state
+      return {
+        ...state,
+        distributors: r.distributors,
+        cash: state.cash + r.cashDelta,
+        eventsFeed: [{ week: state.week, text: r.feed, kind: 'market' }, ...state.eventsFeed].slice(0, 60),
+      }
+    }
     case 'START_GAME':
       // Begin a run from the onboarding config (name/archetype/cadence applied).
       return createInitialState({ ...action.config, started: true })
@@ -187,6 +222,9 @@ export function useGame() {
   const comp = useCallback((personaId) => dispatch({ type: 'COMP_PERSONA', personaId }), [])
   const sponsor = useCallback((personaId) => dispatch({ type: 'SPONSOR_PERSONA', personaId }), [])
   const unsponsor = useCallback((personaId) => dispatch({ type: 'DROP_SPONSOR', personaId }), [])
+  const signDist = useCallback((distId, setId) => dispatch({ type: 'SIGN_DISTRIBUTOR', distId, setId }), [])
+  const dropDist = useCallback((distId) => dispatch({ type: 'DROP_DISTRIBUTOR', distId }), [])
+  const cultivateDist = useCallback((distId) => dispatch({ type: 'CULTIVATE_DISTRIBUTOR', distId }), [])
 
-  return { state, play, pause, setSpeed, release, ban: banCardAction, rotate, reset, rip, startGame, comp, sponsor, unsponsor }
+  return { state, play, pause, setSpeed, release, ban: banCardAction, rotate, reset, rip, startGame, comp, sponsor, unsponsor, signDist, dropDist, cultivateDist }
 }
