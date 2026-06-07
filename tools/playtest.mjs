@@ -15,6 +15,7 @@ import { createInitialState } from '../src/game/initialState.js'
 import { advanceWeek } from '../src/game/simulation.js'
 import { createDraft, createSignatureCard, releaseSet, setCost } from '../src/game/sets.js'
 import { banCard, rotateFormat } from '../src/game/bans.js'
+import { resetCadence } from '../src/game/cadence.js'
 
 const HORIZON = 312 // ~6 years of weeks — a long run, per the brief's "year 6"
 
@@ -29,6 +30,8 @@ function applyRelease(state, draft) {
     sets: [...state.sets, set],
     cards: [...state.cards, ...cards],
     metagame,
+    // Mirror the reducer: shipping a set resets the cadence pledge clock.
+    cadence: state.cadence ? resetCadence(state.cadence, state.week) : state.cadence,
   }
 }
 function applyBan(state, cardId) {
@@ -242,7 +245,8 @@ function summarize() {
 
 function short(reason) {
   if (reason.startsWith('Bankrupt')) return 'bankrupt'
-  if (reason.startsWith('The community')) return 'players→0'
+  if (reason.includes('revolted')) return 'sentiment'
+  if (reason.includes('community is gone') || reason.includes('player base')) return 'players→0'
   return 'survived'
 }
 
