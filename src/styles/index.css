@@ -616,6 +616,24 @@ body {
 .badge--theory { background: #79e36b; }
 
 /* ---- Personas roster ---- */
+/* Roster filter/sort controls (community panel) */
+.roster__controls { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.roster__filters { display: flex; flex-wrap: wrap; gap: 4px; }
+.roster__chip {
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text-dim);
+  border-radius: 99px; padding: 3px 10px; font: inherit; font-size: 0.72rem; font-weight: 600; cursor: pointer;
+}
+.roster__chip.is-active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.roster__tools { display: flex; gap: 6px; }
+.roster__search {
+  flex: 1; min-width: 0; background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px; padding: 6px 9px; font: inherit; font-size: 0.82rem;
+}
+.roster__sort {
+  background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 6px; padding: 6px 8px; font: inherit; font-size: 0.82rem;
+}
+
 .roster { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; }
 .roster__row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 8px; background: var(--surface-2); border-radius: 6px; }
 .roster__main { display: flex; flex-direction: column; min-width: 0; }
