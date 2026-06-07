@@ -444,8 +444,14 @@ body {
   background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
   border-radius: 6px; padding: 6px 8px; font: inherit; font-size: 0.85rem; width: 100%;
 }
-.rared__num { text-align: center; }
+.rared__num { text-align: center; min-width: 0; }
 .rared__secret { justify-self: center; accent-color: var(--accent); width: 18px; height: 18px; }
+
+/* Narrow phones: shrink the number columns so the rarity NAME stays readable. */
+@media (max-width: 380px) {
+  .rared__head, .rared__row { grid-template-columns: 1fr 42px 42px 32px 24px; gap: 5px; }
+  .rared__name, .rared__num { padding: 6px 5px; font-size: 0.8rem; }
+}
 .rared__remove { color: var(--bad); padding: 4px 6px; }
 .rared__add { align-self: flex-start; margin-top: 2px; }
 
