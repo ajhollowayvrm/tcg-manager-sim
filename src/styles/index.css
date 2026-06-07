@@ -642,6 +642,10 @@ body {
 .roster__meta { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 .bar { display: inline-block; width: 54px; height: 6px; background: var(--surface); border-radius: 99px; overflow: hidden; }
 .bar__fill { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+.roster__reach { display: inline-flex; align-items: center; gap: 4px; }
+.roster__trend { font-size: 0.72rem; font-weight: 800; }
+.roster__trend--up { color: var(--good); }
+.roster__trend--down { color: var(--bad); }
 .roster__mood { font-size: 0.7rem; font-weight: 700; min-width: 56px; text-align: right; }
 .mood--good { color: var(--good); }
 .mood--bad { color: var(--bad); }

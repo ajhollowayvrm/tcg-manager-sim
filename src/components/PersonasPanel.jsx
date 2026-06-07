@@ -42,6 +42,16 @@ function sentimentLabel(s) {
   return 'Hostile'
 }
 
+// A small ↑/↓ if a voice's reach has drifted meaningfully from its seed — the
+// community learning who to trust (and feuds) play out as rising/fading voices.
+function reachTrend(p) {
+  if (p.reachSeed == null) return null
+  const d = p.reach - p.reachSeed
+  if (d >= 3) return <span className="roster__trend roster__trend--up" title="Rising voice">↑</span>
+  if (d <= -3) return <span className="roster__trend roster__trend--down" title="Fading voice">↓</span>
+  return null
+}
+
 export default function PersonasPanel({ state }) {
   const [type, setType] = useState('all')
   const [sort, setSort] = useState('reach')
@@ -99,6 +109,7 @@ export default function PersonasPanel({ state }) {
               <div className="roster__meta">
                 <span className="roster__reach" title={`Reach ${Math.round(p.reach)}`}>
                   <span className="bar"><span className="bar__fill" style={{ width: `${p.reach}%` }} /></span>
+                  {reachTrend(p)}
                 </span>
                 <span className={`roster__mood ${sentimentClass(p.sentiment)}`}>{sentimentLabel(p.sentiment)}</span>
               </div>

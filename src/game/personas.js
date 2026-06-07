@@ -184,6 +184,7 @@ export function reactPersonas(state) {
   const feedItems = []
   const cardEffects = new Map()
   const sentimentById = new Map()
+  const reachById = new Map() // weekly reach drift from how accurate a take was
   let solveDelta = 0
   let playerBaseDelta = 0
 
@@ -212,6 +213,19 @@ export function reactPersonas(state) {
     const truth = card ? cardThreat(card, fieldAvg) : 0
     const perceived = perceive(truth, persona, rng)
     const take = takeFor(persona, card, perceived, latestSet, rng)
+
+    // Reach drift: the community slowly learns who to listen to. A take that
+    // tracks reality (perceived close to truth) earns reach; a loud, confidently
+    // WRONG take (big perceived gap on a strong opinion) bleeds it. Tiny per
+    // week — a career-shaping current over a run, like the artist trajectories.
+    if (card) {
+      const errorMag = Math.abs(perceived - truth) // 0 = nailed it, ~100 = way off
+      const opinionated = Math.abs(perceived) / 80 // confident takes are judged harder
+      // Accurate takes earn reach; loud-and-wrong takes bleed it. Scaled so a
+      // run produces visibly rising/fading voices (crosses the ±3 trend cue).
+      const drift = clamp((25 - errorMag) / 50, -1, 1) * (0.8 + opinionated * 1.2)
+      reachById.set(persona.id, (reachById.get(persona.id) ?? 0) + drift)
+    }
 
     feedItems.push({
       week: state.week,
@@ -259,7 +273,7 @@ export function reactPersonas(state) {
   // Newest first; keep the feed bounded.
   const merged = [...feedItems.reverse(), ...state.feedbackFeed].slice(0, FEED_MAX)
 
-  return { feedItems: merged, cardEffects, solveDelta, playerBaseDelta, sentimentById }
+  return { feedItems: merged, cardEffects, solveDelta, playerBaseDelta, sentimentById, reachById }
 }
 
 // Apply the persona pass to the next-state in place (called from advanceWeek).
@@ -281,10 +295,14 @@ export function applyPersonaEffects(next, result) {
   next.metagame.solveLevel = clamp(next.metagame.solveLevel + result.solveDelta, 0, 100)
   next.playerBase = Math.max(0, Math.round(next.playerBase + result.playerBaseDelta))
 
-  // Persona sentiments.
-  if (result.sentimentById.size) {
-    next.personas = next.personas.map((p) =>
-      result.sentimentById.has(p.id) ? { ...p, sentiment: result.sentimentById.get(p.id) } : p,
-    )
-  }
+  // Persona sentiments + reach drift (the community learning who to trust).
+  next.personas = next.personas.map((p) => {
+    const sentiment = result.sentimentById.has(p.id) ? result.sentimentById.get(p.id) : p.sentiment
+    const rd = result.reachById.get(p.id) ?? 0
+    if (!result.sentimentById.has(p.id) && rd === 0) return p
+    // Remember the seed reach once, so the panel can show a ↑/↓ career trend.
+    const reachSeed = p.reachSeed ?? p.reach
+    const reach = clamp(p.reach + rd, 5, 100)
+    return { ...p, sentiment, reach, reachSeed }
+  })
 }

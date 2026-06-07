@@ -188,13 +188,26 @@ export const EVENTS = [
     kind: 'community',
     tone: 'neutral',
     weight: 0.8,
-    condition: () => true,
-    resolve: (s, rng) => ({
-      text: `Two big community figures are publicly feuding over your game. Drama is engagement — eyeballs are up, vibes are mixed.`,
-      effects: {
-        casualDelta: Math.round(range(rng, -120, 300)),
-      },
-    }),
+    condition: (s) => (s.personas?.length ?? 0) >= 2,
+    resolve: (s, rng) => {
+      // Name two real high-reach voices and have them feud — the winner gains a
+      // little reach, the loser loses some (a bandwagon outcome).
+      const loud = [...s.personas].sort((a, b) => b.reach - a.reach).slice(0, 8)
+      const i = Math.floor(rng() * loud.length) % loud.length
+      let j = Math.floor(rng() * loud.length) % loud.length
+      if (j === i) j = (j + 1) % loud.length
+      const a = loud[i]
+      const b = loud[j]
+      const winner = rng() < 0.5 ? a : b
+      const loser = winner === a ? b : a
+      return {
+        text: `${a.name} and ${b.name} are publicly feuding over ${s.config?.gameName || 'your game'}. Drama is engagement — and ${winner.name} is winning the room.`,
+        effects: {
+          casualDelta: Math.round(range(rng, -120, 300)),
+          reachShift: { [winner.id]: range(rng, 3, 7), [loser.id]: -range(rng, 2, 5) },
+        },
+      }
+    },
   },
   {
     id: 'market_correction',
@@ -292,5 +305,14 @@ export function applyEventEffects(next, effects) {
   if (effects.artistBreakoutId && next.artists) {
     const rng = makeRng(hashSeed(`breakout:${effects.artistBreakoutId}:${next.week}`))
     next.artists = blowUpArtist(next.artists, effects.artistBreakoutId, rng)
+  }
+
+  // Persona reach shifts (e.g. a feud's winner/loser).
+  if (effects.reachShift && next.personas) {
+    next.personas = next.personas.map((p) => {
+      const d = effects.reachShift[p.id]
+      if (!d) return p
+      return { ...p, reach: clamp(p.reach + d, 5, 100), reachSeed: p.reachSeed ?? p.reach }
+    })
   }
 }
