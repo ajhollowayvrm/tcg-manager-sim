@@ -455,10 +455,49 @@ body {
   .costs { min-width: 0; }
   .btn--release { width: 100%; text-align: center; }
 
-  /* Tighten the modal chrome on small screens. */
-  .modal { padding: 8px; }
-  .modal__sheet { max-height: 94vh; }
-  .modal__body { padding: 14px; gap: 18px; }
+  /* Tighten the modal chrome on small screens — phone is the primary device, so
+     the set builder is mobile-first here. Maximize sheet height and shrink every
+     bit of dead vertical space so more of the open section fits at a glance. */
+  .modal { padding: 6px; }
+  .modal__sheet { max-height: 96vh; }
+  .modal__head { padding: 10px 14px; }
+  .modal__body { padding: 12px; gap: 8px; }
+
+  /* Accordion: tighter headers + bodies so collapsed sections are compact and an
+     open section's controls don't run off-screen. */
+  .acc__head { padding: 10px 12px; }
+  .acc__body { padding: 2px 12px 12px; gap: 9px; }
+
+  /* The Identity section's four sliders are the tall part. Compact each: smaller
+     internal gaps and end-caption text, and pull the label/value tighter — so the
+     whole open section drops toward fitting a phone viewport. */
+  .slider { gap: 2px; }
+  .slider__head { font-size: 0.8rem; }
+  .slider__ends { font-size: 0.6rem; margin-top: -2px; }
+  .field { gap: 3px; }
+  .field input, .field select { padding: 8px 9px; } /* trims the touch-bumped height a hair */
+  .field__note { font-size: 0.68rem; line-height: 1.25; margin-top: 0; }
+
+  /* Cost summary sits tight under the body on phones. */
+  .costs { font-size: 0.8rem; }
+}
+
+/* Very short phones (iPhone SE / mini, ≤700px tall): claw back the last bit so
+   the open Identity section fits above the fold. Tighten every gap and hide just
+   the theme NOTE (the least essential line — the dropdown already shows the
+   mechanics). Keep the slider end-captions; they explain what each lever does.
+   Height-scoped so taller phones keep the note. */
+@media (max-width: 480px) and (max-height: 700px) {
+  .modal { padding: 4px; }
+  .modal__sheet { max-height: 97vh; }
+  .modal__head { padding: 8px 12px; }
+  .modal__head h2 { font-size: 1rem; }
+  .modal__body { gap: 5px; padding: 10px; }
+  .acc__head { padding: 8px 12px; }
+  .acc__body { gap: 6px; padding: 2px 12px 10px; }
+  .slider { gap: 1px; }
+  .slider__ends { margin-top: -3px; }
+  .field__note { display: none; } /* the theme note is the least essential line */
 }
 
 /* Touch devices (regardless of width): bump interactive targets toward the
