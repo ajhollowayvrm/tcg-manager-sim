@@ -28,15 +28,19 @@ export default function RarityEditor({ sheet, onChange }) {
             placeholder="Rarity name"
           />
           <input
-            className="rared__num"
+            className="rared__num rared__num--pull"
             type="number" min="0" step="0.1"
             value={r.pullWeight}
+            aria-label="Pull weight"
+            placeholder="Pull"
             onChange={(e) => update(r.id, { pullWeight: Math.max(0, Number(e.target.value)) })}
           />
           <input
-            className="rared__num"
+            className="rared__num rared__num--value"
             type="number" min="0" max="100"
             value={r.valueTier}
+            aria-label="Value tier"
+            placeholder="Value"
             onChange={(e) => update(r.id, { valueTier: Math.min(100, Math.max(0, Number(e.target.value))) })}
           />
           <input

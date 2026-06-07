@@ -447,10 +447,21 @@ body {
 .rared__num { text-align: center; min-width: 0; }
 .rared__secret { justify-self: center; accent-color: var(--accent); width: 18px; height: 18px; }
 
-/* Narrow phones: shrink the number columns so the rarity NAME stays readable. */
+/* Narrow phones: stack each rarity into two rows so the name AND the full
+   numbers are readable. Name on its own line; pull/value/secret/remove below. */
 @media (max-width: 380px) {
-  .rared__head, .rared__row { grid-template-columns: 1fr 42px 42px 32px 24px; gap: 5px; }
-  .rared__name, .rared__num { padding: 6px 5px; font-size: 0.8rem; }
+  .rared__head { display: none; } /* the column labels don't map to a stacked row */
+  .rared__row {
+    grid-template-columns: 1fr 1fr auto auto;
+    grid-template-areas: 'name name name name' 'pull value secret remove';
+    gap: 6px 8px; padding: 8px; background: var(--surface-2); border-radius: 8px;
+  }
+  .rared__name { grid-area: name; }
+  .rared__num--pull { grid-area: pull; }
+  .rared__num--value { grid-area: value; }
+  .rared__secret { grid-area: secret; align-self: center; }
+  .rared__remove { grid-area: remove; }
+  .rared__num { text-align: left; } /* room for the placeholder label */
 }
 .rared__remove { color: var(--bad); padding: 4px 6px; }
 .rared__add { align-self: flex-start; margin-top: 2px; }
