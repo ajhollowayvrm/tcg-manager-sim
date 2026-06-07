@@ -4,6 +4,7 @@ import { advanceWeek } from './simulation.js'
 import { releaseSet } from './sets.js'
 import { banCard, rotateFormat } from './bans.js'
 import { ripPack } from './packs.js'
+import { resetCadence } from './cadence.js'
 
 // Reducer-driven game state. The clock ticks via setInterval while playing;
 // each tick dispatches a 'TICK' that runs one simulation week.
@@ -33,6 +34,7 @@ function reducer(state, action) {
         sets: [...state.sets, set],
         cards: [...state.cards, ...cards],
         metagame,
+        cadence: resetCadence(state.cadence, state.week), // shipping resets the pledge clock
         eventsFeed: [
           { week: state.week, text: `${set.name} (${set.theme}) hits shelves — the metagame refreshes.` },
           ...state.eventsFeed,
@@ -82,6 +84,9 @@ function reducer(state, action) {
         lastRip: { setId: action.setId, week: state.week, pullIds: result.pulls.map((c) => c.id), bestId: result.bestPull?.id ?? null },
       }
     }
+    case 'START_GAME':
+      // Begin a run from the onboarding config (name/archetype/cadence applied).
+      return createInitialState({ ...action.config, started: true })
     case 'RESET':
       return createInitialState()
     default:
@@ -132,6 +137,7 @@ export function useGame() {
   // A nonce so consecutive rips of the same set in the same week differ.
   const ripNonce = useRef(0)
   const rip = useCallback((setId) => dispatch({ type: 'RIP_PACK', setId, nonce: ripNonce.current++ }), [])
+  const startGame = useCallback((config) => dispatch({ type: 'START_GAME', config }), [])
 
-  return { state, play, pause, setSpeed, release, ban: banCardAction, rotate, reset, rip }
+  return { state, play, pause, setSpeed, release, ban: banCardAction, rotate, reset, rip, startGame }
 }

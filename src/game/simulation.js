@@ -13,6 +13,7 @@ import { applySegmentDrift } from './segments.js'
 import { clockDirective } from './clock.js'
 import { concentrate, balanceScore } from './archetypes.js'
 import { driftArtists } from './artists.js'
+import { applyCadencePressure } from './cadence.js'
 
 const SOLVE_DECAY_PER_WEEK = 4 // tune so a format stays fresh for a few months
 // Diversity erosion: above this solve level the field starts collapsing to a few
@@ -87,6 +88,10 @@ export function advanceWeek(state) {
   // each segment reacting to the dials it cares about (now including how the
   // metashare is split). Runs after personas/events have settled the dials.
   applySegmentDrift(next)
+
+  // Cadence pledge: if the player is overdue on their promised release rhythm,
+  // unrest escalates (sentiment sours, base bleeds). Layers on top of drift.
+  applyCadencePressure(next)
 
   // Clock attention: classify the week just resolved so the clock can auto-slow
   // or pause on interesting moments and fast-forward through quiet ones. The

@@ -10,6 +10,7 @@ import BansPanel from './components/BansPanel.jsx'
 import SetsPanel from './components/SetsPanel.jsx'
 import MetaReport from './components/MetaReport.jsx'
 import PackRipper from './components/PackRipper.jsx'
+import Onboarding from './components/Onboarding.jsx'
 import SetBuilder from './components/setbuilder/SetBuilder.jsx'
 
 // Mobile tabs group the seven panels into four sections. Desktop ignores this
@@ -25,6 +26,11 @@ export default function App() {
   const game = useGame()
   const [building, setBuilding] = useState(false)
   const [tab, setTab] = useState('meta')
+
+  // First run: gate everything behind onboarding until the player launches.
+  if (!game.state.config?.started) {
+    return <Onboarding onStart={game.startGame} />
+  }
 
   // The panels, declared once and reused by both layouts so there's a single
   // source of truth for props.

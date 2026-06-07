@@ -3,19 +3,30 @@
 
 import { PERSONAS } from './content/personas.js'
 import { seedArtists } from './artists.js'
+import { defaultConfig, getArchetype } from './config.js'
 
-export function createInitialState() {
+// `config` is the onboarding result (or undefined for a bare new game). The
+// chosen archetype applies a SMALL starting nudge to segments/metashare; indie
+// also starts with less cash. Everything else is identity/flavor.
+export function createInitialState(config) {
+  const cfg = { ...defaultConfig(), ...(config ?? {}) }
+  const arch = getArchetype(cfg.archetype)
+  const segments = { ...arch.segments }
+  const playerBase = segments.competitive + segments.casual + segments.collectors
+  const cash = cfg.archetype === 'indie' ? 140_000 : 250_000
+
   return {
     week: 1,
-    cash: 250_000,
-    playerBase: 10_000,
+    cash,
+    playerBase,
 
-    // Player segments react differently to the same decision.
-    segments: {
-      competitive: 3_500, // care about diversity & solve level
-      casual: 4_500, // "new toys" crowd — fresh mechanics & power
-      collectors: 2_000, // chase value, art, scarcity
-    },
+    // Identity + onboarding choices. `started` gates the onboarding screen.
+    config: cfg,
+    // Cadence pledge tracking: weeks since last release vs the pledged rhythm.
+    cadence: { weeks: cfg.cadenceWeeks, lastReleaseWeek: 1, overdueWeeks: 0 },
+
+    // Player segments react differently to the same decision (sized by archetype).
+    segments,
 
     // Metagame health — four interacting dials (0–100).
     // solveLevel is the core-loop engine: resets low on release, decays up weekly.
@@ -27,9 +38,9 @@ export function createInitialState() {
       powerLevel: 40,
       archetypeBalance: 60, // derived; seeded to match the starting distribution
       solveLevel: 30,
-      // The field's split across the four play styles (sums to ~100). Starts a
-      // touch aggro/midrange-leaning so balance reads ~60, not a flat 100.
-      archetypes: { aggro: 30, control: 20, combo: 20, midrange: 30 },
+      // The field's split across the four play styles (sums to ~100), seeded from
+      // the chosen archetype's lean so each game starts a little different.
+      archetypes: { ...arch.archetypes },
     },
 
     sets: [],

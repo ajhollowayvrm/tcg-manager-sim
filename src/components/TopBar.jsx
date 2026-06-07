@@ -13,7 +13,9 @@ export default function TopBar({ game, onDesignSet }) {
 
   return (
     <header className="topbar">
-      <div className="topbar__brand">TCG&nbsp;Manager</div>
+      <div className="topbar__brand" title={state.config?.companyName || ''}>
+        {state.config?.gameName || 'TCG Manager'}
+      </div>
 
       <div className="topbar__stats">
         <Stat label="Week" value={week} />

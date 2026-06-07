@@ -120,6 +120,43 @@ body {
 .btn--release:disabled { background: var(--surface-2); color: var(--text-dim); }
 .btn--release:disabled:hover { background: var(--surface-2); }
 
+/* ---- Onboarding ---- */
+.onboard {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  padding: var(--gap);
+}
+.onboard__sheet {
+  width: min(640px, 100%);
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  padding: 28px; display: flex; flex-direction: column; gap: 16px;
+}
+.onboard__brand {
+  font-weight: 800; font-size: 1rem; letter-spacing: 0.5px; align-self: flex-start;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.onboard__title { margin: 0; font-size: 1.5rem; }
+.onboard__sub { margin: -6px 0 4px; color: var(--text-dim); font-size: 0.9rem; line-height: 1.4; }
+.onboard__row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.onboard__archs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
+.onboard__arch {
+  text-align: left; background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 12px; cursor: pointer; color: var(--text);
+  display: flex; flex-direction: column; gap: 3px; transition: border-color 0.15s ease, background 0.15s ease;
+}
+.onboard__arch:hover { border-color: #3a3a4f; }
+.onboard__arch.is-active { border-color: var(--accent); background: #1f1620; }
+.onboard__archname { font-weight: 700; font-size: 0.9rem; }
+.onboard__archlike { font-size: 0.68rem; color: var(--accent-2); text-transform: uppercase; letter-spacing: 0.4px; }
+.onboard__archblurb { font-size: 0.74rem; color: var(--text-dim); line-height: 1.35; }
+.onboard__start { margin-top: 6px; padding: 12px; font-size: 1rem; text-align: center; }
+
+@media (max-width: 560px) {
+  .onboard__row, .onboard__archs { grid-template-columns: 1fr; }
+  .onboard__sheet { padding: 20px; }
+}
+
 /* ---- Modal / set builder ---- */
 .modal {
   position: fixed; inset: 0; z-index: 50;
