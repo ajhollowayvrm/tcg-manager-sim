@@ -63,9 +63,15 @@ const TREND = {
   steady: { icon: '→', cls: 'trend--flat', label: 'steady' },
 }
 
-export default function SignatureCardEditor({ card, theme, artists, rarities, onChange, onRemove }) {
+const ARCHETYPE_OPTIONS = ['aggro', 'control', 'combo', 'midrange']
+
+export default function SignatureCardEditor({ card, theme, artists, rarities, liveCards = [], sets = [], onChange, onRemove }) {
   const sheet = rarities ?? defaultRaritySheet()
   const set = (patch) => onChange({ ...card, ...patch })
+  // Counter directive (defaults to 'none' for cards made before counters existed).
+  const counter = card.counter ?? { mode: 'none', targetCardId: null, targetArchetype: null }
+  const setCounter = (patch) => set({ counter: { ...counter, ...patch } })
+  const setNameById = new Map(sets.map((s) => [s.id, s.name]))
   // Merge static identity (name/specialty) with the live drifted career so the
   // displayed cost/reach and trend reflect the current week.
   const artistOf = (id) => {
@@ -172,6 +178,56 @@ export default function SignatureCardEditor({ card, theme, artists, rarities, on
           })}
         </select>
       </label>
+
+      {/* Counter directive — what (if anything) this card answers. */}
+      <div className="field field--full counter">
+        <span>
+          Counter
+          {counter.mode !== 'none' && <span className="counter__badge">⚔ active</span>}
+        </span>
+        <div className="toggle toggle--counter">
+          <button className={'toggle__opt' + (counter.mode === 'none' ? ' is-active' : '')}
+            onClick={() => setCounter({ mode: 'none' })}>None</button>
+          <button className={'toggle__opt' + (counter.mode === 'card' ? ' is-active' : '')}
+            onClick={() => setCounter({ mode: 'card' })}>A card</button>
+          <button className={'toggle__opt' + (counter.mode === 'archetype' ? ' is-active' : '')}
+            onClick={() => setCounter({ mode: 'archetype' })}>An archetype</button>
+        </div>
+
+        {counter.mode === 'card' && (
+          <select
+            className="counter__target"
+            value={counter.targetCardId ?? ''}
+            onChange={(e) => setCounter({ targetCardId: e.target.value || null })}
+          >
+            <option value="">— Pick a live card to answer —</option>
+            {liveCards.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name} ({setNameById.get(c.setId) ?? 'set'}) · pwr {Math.round(c.popFactors?.playability ?? 0)}
+                {(c.banPressure ?? 0) > 0 ? ` · ban ${Math.round(c.banPressure)}` : ''}
+              </option>
+            ))}
+          </select>
+        )}
+        {counter.mode === 'archetype' && (
+          <select
+            className="counter__target"
+            value={counter.targetArchetype ?? ''}
+            onChange={(e) => setCounter({ targetArchetype: e.target.value || null })}
+          >
+            <option value="">— Pick an archetype to suppress —</option>
+            {ARCHETYPE_OPTIONS.map((a) => (
+              <option key={a} value={a}>{a}</option>
+            ))}
+          </select>
+        )}
+        {counter.mode === 'card' && (
+          <span className="field__note">Silver bullet: tanks that card's power and bleeds its ban pressure — answer it instead of banning it.</span>
+        )}
+        {counter.mode === 'archetype' && (
+          <span className="field__note">Broad tech: pushes the field off this archetype — strongest when it's dominant.</span>
+        )}
+      </div>
         </div>
       </div>
     </div>

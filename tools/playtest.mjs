@@ -23,12 +23,13 @@ const HORIZON = 312 // ~6 years of weeks — a long run, per the brief's "year 6
 // Mirrors the transitions in useGame.js so a strategy can act on the state.
 
 function applyRelease(state, draft) {
-  const { set, cards, cashDelta, metagame } = releaseSet(state, draft)
+  const { set, cards, cashDelta, metagame, counteredCards } = releaseSet(state, draft)
   return {
     ...state,
     cash: state.cash + cashDelta,
     sets: [...state.sets, set],
-    cards: [...state.cards, ...cards],
+    // Silver-bullet counters may have patched existing cards (counteredCards).
+    cards: [...(counteredCards ?? state.cards), ...cards],
     metagame,
     // Mirror the reducer: shipping a set resets the cadence pledge clock.
     cadence: state.cadence ? resetCadence(state.cadence, state.week) : state.cadence,

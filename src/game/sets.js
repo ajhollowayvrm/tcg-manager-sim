@@ -6,7 +6,7 @@ import { getArtist } from './content/artists.js'
 import { getTheme } from './content/themes.js'
 import { clamp } from './simulation.js'
 import { printRunUnits } from './revenue.js'
-import { shiftToward, balanceScore } from './archetypes.js'
+import { shiftToward, shiftAway, balanceScore } from './archetypes.js'
 import { currentArtist } from './artists.js'
 import { defaultRaritySheet, getRarity, pickRarity, validateRaritySheet, defaultPackFormat, validatePackFormat, packRichnessDelta } from './rarities.js'
 
@@ -55,6 +55,10 @@ export function createSignatureCard(n, rarityId = 'rare') {
     mode: 'flavor', // 'flavor' | 'mechanical'
     power: 50, // flavor-mode overall power rating (0–100)
     rulesText: '', // mechanical-mode rules the sim parses (lightly, for now)
+    // Optional counter directive — what (if anything) this card is designed to
+    // answer. 'card' = a silver bullet vs one live card; 'archetype' = broad
+    // tech vs a whole play style. Resolved on release (see applyCounters).
+    counter: { mode: 'none', targetCardId: null, targetArchetype: null },
   }
 }
 
@@ -316,7 +320,15 @@ export function releaseSet(state, draft) {
   // is what lets "spam high-power aggro sets" actually create an aggro-dominated
   // format — and lets a player release a counter-archetype set to correct a tilt.
   const shiftPoints = 8 + Math.max(0, creep) * 1.2 // ~8 at budget 50, ~20 at 100
-  const archetypes = shiftToward(state.metagame.archetypes, theme.archetypes, shiftPoints)
+  let archetypes = shiftToward(state.metagame.archetypes, theme.archetypes, shiftPoints)
+
+  // Counters: any signature card flagged as a counter answers something in the
+  // live world. Archetype counters push the metashare off the targeted style
+  // (scaled by how dominant it was); card counters nerf a specific live card and
+  // bleed its ban pressure — defusing by design instead of banning. Returns the
+  // (possibly) adjusted distribution + patches to existing cards + a feed note.
+  const counterResult = applyCounters(state, draft, cards, archetypes)
+  archetypes = counterResult.archetypes
 
   const metagame = {
     // A fresh set reopens the field a little (+3), but a high-power-budget set
@@ -334,5 +346,77 @@ export function releaseSet(state, draft) {
     cards,
     cashDelta: -cost.total,
     metagame,
+    // Existing cards mutated by silver-bullet counters (null if none).
+    counteredCards: counterResult.counteredCards,
+    counterFeed: counterResult.feed,
+  }
+}
+
+// Resolve the counter directives on a draft's signature cards against the live
+// world. Two kinds:
+//
+//   archetype — broad tech: shifts metashare OFF the targeted archetype into the
+//     others, scaled by how dominant it currently is (anti-aggro tech bites hard
+//     in an aggro-dominated field, does little if aggro is already marginal).
+//
+//   card — silver bullet: the targeted live card loses playability and its ban
+//     pressure drains (you answered it in-format, so the community stops calling
+//     for a ban). The counter card itself gains a little playability if its
+//     target was a real threat — a well-aimed answer is itself good.
+//
+// Returns { archetypes, counteredCards|null, feed|null }. counteredCards is a
+// full replacement array for state.cards when any card-counter fired.
+export function applyCounters(state, draft, newCards, archetypes) {
+  const sigs = draft.signatureCards ?? []
+  const counters = sigs.filter((c) => c.counter && c.counter.mode && c.counter.mode !== 'none')
+  if (!counters.length) return { archetypes, counteredCards: null, feed: null }
+
+  let dist = archetypes
+  let liveCards = state.cards
+  let mutatedCards = false
+  const notes = []
+
+  for (const sig of counters) {
+    const { mode, targetArchetype, targetCardId } = sig.counter
+
+    if (mode === 'archetype' && targetArchetype) {
+      const share = dist[targetArchetype] ?? 0
+      // Effectiveness scales with dominance above an even field: countering a
+      // 25%-share archetype does little; a 60%-share one gets pushed back hard.
+      const dominance = Math.max(0, share - 25)
+      const points = clamp(2 + dominance * 0.5, 0, 35)
+      dist = shiftAway(dist, targetArchetype, points)
+      notes.push(`${sig.name} answers the ${targetArchetype} decks`)
+    } else if (mode === 'card' && targetCardId) {
+      const target = liveCards.find((c) => c.id === targetCardId && !c.banned && !c.rotated)
+      if (!target) continue
+      mutatedCards = true
+      const wasThreat = target.popFactors.playability > 60 || (target.banPressure ?? 0) > 30
+      liveCards = liveCards.map((c) =>
+        c.id === targetCardId
+          ? {
+              ...c,
+              popFactors: { ...c.popFactors, playability: clamp(c.popFactors.playability - 20, 0, 100) },
+              banPressure: clamp((c.banPressure ?? 0) * 0.4, 0, 100), // answered, not banned
+              momentum: Math.min(0, c.momentum ?? 0),
+            }
+          : c,
+      )
+      // A well-aimed answer to a real threat is itself a good card.
+      if (wasThreat) {
+        const idx = newCards.findIndex((c) => c.signature && c.name === sig.name)
+        if (idx >= 0) {
+          const nc = newCards[idx]
+          newCards[idx] = { ...nc, popFactors: { ...nc.popFactors, playability: clamp(nc.popFactors.playability + 12, 0, 100) } }
+        }
+      }
+      notes.push(`${sig.name} counters ${target.name}`)
+    }
+  }
+
+  return {
+    archetypes: dist,
+    counteredCards: mutatedCards ? liveCards : null,
+    feed: notes.length ? notes.join('; ') + '.' : null,
   }
 }

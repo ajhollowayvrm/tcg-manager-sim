@@ -296,6 +296,19 @@ body {
 .toggle__opt { background: var(--surface); color: var(--text-dim); border: none; padding: 6px 14px; cursor: pointer; font: inherit; }
 .toggle__opt.is-active { background: var(--accent); color: #fff; }
 
+/* Counter directive (signature card answers a card or archetype) */
+.counter { gap: 6px; }
+.counter__badge {
+  margin-left: 8px; font-size: 0.68rem; font-weight: 700; color: var(--accent-2);
+  border: 1px solid var(--accent-2); border-radius: 99px; padding: 1px 7px;
+}
+.toggle--counter { align-self: flex-start; }
+.toggle--counter .toggle__opt { padding: 6px 11px; font-size: 0.82rem; }
+.counter__target {
+  background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 6px; padding: 7px 9px; font: inherit; width: 100%;
+}
+
 /* Cost summary */
 .costs { font-size: 0.85rem; min-width: 220px; }
 .costs__line { display: flex; justify-content: space-between; padding: 2px 0; color: var(--text-dim); font-variant-numeric: tabular-nums; }

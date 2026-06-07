@@ -33,7 +33,7 @@ function nextId(cards) {
   return max + 1
 }
 
-export default function SetBuilder({ setNumber, cash, artists, onRelease, onClose }) {
+export default function SetBuilder({ setNumber, cash, artists, liveCards = [], sets = [], onRelease, onClose }) {
   // The set auto-generates its full card list on release, so signature
   // highlights are optional — start with none.
   const [draft, setDraft] = useState(() => createDraft(setNumber))
@@ -238,6 +238,8 @@ export default function SetBuilder({ setNumber, cash, artists, onRelease, onClos
                   theme={theme}
                   artists={artists}
                   rarities={draft.rarities}
+                  liveCards={liveCards}
+                  sets={sets}
                   onChange={(next) => setCard(i, next)}
                   onRemove={() => removeCard(i)}
                 />

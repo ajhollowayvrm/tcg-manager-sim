@@ -29,18 +29,23 @@ function reducer(state, action) {
     case 'SET_SPEED':
       return { ...state, clock: { ...state.clock, speed: action.speed } }
     case 'RELEASE_SET': {
-      const { set, cards, cashDelta, metagame } = releaseSet(state, action.draft)
+      const { set, cards, cashDelta, metagame, counteredCards, counterFeed } = releaseSet(state, action.draft)
+      // If silver-bullet counters mutated existing cards, build from that patched
+      // array; otherwise from the current one. Then append the new set's cards.
+      const baseCards = counteredCards ?? state.cards
+      const feed = [
+        { week: state.week, text: `${set.name} (${set.theme}) hits shelves — the metagame refreshes.` },
+        ...(counterFeed ? [{ week: state.week, text: `Counter tech: ${counterFeed}` }] : []),
+        ...state.eventsFeed,
+      ]
       return {
         ...state,
         cash: state.cash + cashDelta,
         sets: [...state.sets, set],
-        cards: [...state.cards, ...cards],
+        cards: [...baseCards, ...cards],
         metagame,
         cadence: resetCadence(state.cadence, state.week), // shipping resets the pledge clock
-        eventsFeed: [
-          { week: state.week, text: `${set.name} (${set.theme}) hits shelves — the metagame refreshes.` },
-          ...state.eventsFeed,
-        ],
+        eventsFeed: feed,
         clock: { ...state.clock, paused: true, pauseReason: `${set.name} released! Watch the market react.` },
       }
     }

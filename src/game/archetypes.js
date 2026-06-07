@@ -48,6 +48,26 @@ export function shiftToward(dist, targets, points) {
   return normalize(d)
 }
 
+// Shift `points` of metashare OUT of one archetype, redistributed to the other
+// three proportionally to their current share. This is the counter-tech move: an
+// anti-aggro card pushes share off aggro and into whatever else is playable.
+// Returns a new normalized distribution.
+export function shiftAway(dist, archetype, points) {
+  if (!ARCHETYPES.includes(archetype)) return normalize(dist)
+  const d = { ...normalize(dist) }
+  const take = Math.min(points, d[archetype]) // can't remove more than exists
+  const others = ARCHETYPES.filter((a) => a !== archetype)
+  const pool = others.reduce((s, a) => s + d[a], 0)
+  d[archetype] -= take
+  if (pool <= 0) {
+    // Nothing else on the field — spread evenly.
+    for (const a of others) d[a] += take / others.length
+  } else {
+    for (const a of others) d[a] += take * (d[a] / pool)
+  }
+  return normalize(d)
+}
+
 // Concentrate the field toward its current largest archetype (the community
 // solving the format and piling into the best deck). `intensity` 0..1 scales how
 // much share migrates this step. Returns a new normalized distribution.
