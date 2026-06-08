@@ -11,6 +11,8 @@ import { currentArtist } from './artists.js'
 import { defaultRaritySheet, getRarity, pickRarity, validateRaritySheet, defaultPackFormat, validatePackFormat, packRichnessDelta } from './rarities.js'
 import { defaultProducts, finalizeProducts, productPrintCost, validateProducts } from './products.js'
 import { makePromoCard } from './organizedplay.js'
+import { getTier, openBlock, refreshBlockWarp, mintTreatmentCards } from './blocks.js'
+import { getGimmick } from './content/gimmicks.js'
 
 export const MIN_SIGNATURE_CARDS = 0 // signature highlights are optional now
 export const MAX_SIGNATURE_CARDS = 15
@@ -19,21 +21,43 @@ export const MAX_SET_LENGTH = 250
 export const MAX_SECRET_CARDS = 12
 
 // A fresh draft the player edits in the set-creation panel.
-export function createDraft(setNumber) {
+//
+// `tier` is 'major' | 'minor' | 'micro'. A MAJOR opens a block (carries the
+// `block` spec the player tunes); a MINOR/MICRO rides a live block (carries
+// `attachBlockId`). `liveBlocks` lets the builder seed a sensible attach target
+// and inherit theme — defaults keep the bare signature working for tests.
+export function createDraft(setNumber, tier = 'major', liveBlocks = []) {
+  const t = getTier(tier)
+  // A rider inherits its block's theme; a major defaults to dragons.
+  const attach = t.ridesBlock ? (liveBlocks[liveBlocks.length - 1] ?? null) : null
+  const themeId = attach?.themeId ?? 'dragons'
   return {
-    name: `Set ${setNumber}`,
-    themeId: 'dragons',
+    name: `${t.name === 'Major set' ? 'Set' : t.name.replace(' set', '')} ${setNumber}`,
+    themeId,
+
+    // Release tier and its block wiring.
+    tier,
+    // Major: the block this set OPENS. Defaults seed the first gimmick; the
+    // builder lets the player pick/tune. Ignored for minors/micros.
+    block: {
+      gimmickId: 'mega',
+      gimmickName: '', // blank → falls back to the gimmick's own name
+      nature: getGimmick('mega')?.defaultNature ?? 30, // 0 competitive .. 100 collector
+      lean: getGimmick('mega')?.defaultLean ?? 'aggro',
+    },
+    // Minor/micro: the live block this set ATTACHES to (rides). null for a major.
+    attachBlockId: attach?.id ?? null,
 
     // Slider layer (the bulk of the set).
     powerBudget: 50, // 0–100: strength ceiling
-    rarityChase: 50, // 0–100: accessible ↔ chase-heavy
+    rarityChase: t.ridesBlock ? 70 : 50, // riders lean chase-heavy by default
     printRun: 50, // 0–100: under-print ↔ over-print
     pricePoint: 4.5, // MSRP of a sealed pack, dollars
 
     // The full set: `setLength` numbered cards generated across the rarity sheet,
     // plus `secretCount` secret rares numbered ABOVE the count (e.g. 151/150).
-    setLength: 60,
-    secretCount: 2,
+    setLength: t.defaultLength,
+    secretCount: t.ridesBlock ? 3 : 2, // riders are chase-dense → more secrets
     // Editable per-set rarity sheet (add/remove/rename; pick which a set has).
     rarities: defaultRaritySheet(),
     // Booster structure: how a pack is built from the sheet (slot counts + which
@@ -130,8 +154,6 @@ function nextCardIndex(cards) {
 
 // ---- Cost ----------------------------------------------------------------
 
-const BASE_DEV_COST = 40_000
-
 // Print cost scales with the run size; bigger runs cost more up front but
 // unlock more sealed sales. Artist commissions are summed on top.
 //
@@ -144,7 +166,10 @@ export function setCost(draft, artistOf = getArtist) {
   // pack is cost-neutral. Light: a hit-heavy pack runs ~+15-20% on the print line.
   const richness = packRichnessDelta(draft.packFormat)
   const printCost = Math.round((20_000 + (draft.printRun / 100) * 180_000) * (1 + richness * 0.25))
-  const dev = BASE_DEV_COST
+  // Development cost floors by tier: a major is a full expansion (designs a new
+  // gimmick); minors/micros are cheaper, smaller efforts. Defaults to the major
+  // floor so old call sites / tierless drafts are unchanged.
+  const dev = getTier(draft.tier ?? 'major').devCostFloor
   const art = draft.signatureCards.reduce((sum, c) => {
     const artist = c.artistId ? artistOf(c.artistId) : null
     return sum + (artist ? artist.cost : 0)
@@ -158,12 +183,39 @@ export function setCost(draft, artistOf = getArtist) {
 
 // ---- Validation ----------------------------------------------------------
 
-export function validateDraft(draft) {
+// `ctx` carries the world facts the tier/block rules need: { blocks, isFirstSet }.
+// Defaults treat it as the first-ever set with no blocks (so a bare validate of a
+// default major draft passes) — the live builder passes the real context.
+export function validateDraft(draft, ctx = {}) {
+  const blocks = ctx.blocks ?? []
+  const isFirstSet = ctx.isFirstSet ?? blocks.length === 0
+  const tier = getTier(draft.tier ?? 'major')
   const errors = []
   if (!draft.name.trim()) errors.push('Set needs a name.')
+
+  // Tier / block rules.
+  if (isFirstSet && !tier.opensBlock) {
+    errors.push('Your first set must be a Major — it opens your first block.')
+  }
+  if (tier.ridesBlock) {
+    // A minor/micro must attach to a live block.
+    if (!blocks.length) {
+      errors.push(`A ${tier.id} set rides a block — release a Major first.`)
+    } else if (draft.attachBlockId && !blocks.some((b) => b.id === draft.attachBlockId)) {
+      errors.push('The block this set rides no longer exists — pick another.')
+    }
+  }
+  if (tier.opensBlock && draft.block && !getGimmick(draft.block.gimmickId)) {
+    errors.push('Pick a gimmick for this block.')
+  }
+
+  // Tier length bounds (tighter than the global set-length cap).
   const len = draft.setLength ?? 0
+  const [lo, hi] = tier.lengthRange
   if (len < MIN_SET_LENGTH) errors.push(`Set needs at least ${MIN_SET_LENGTH} card.`)
   if (len > MAX_SET_LENGTH) errors.push(`No more than ${MAX_SET_LENGTH} cards in a set.`)
+  if (len < lo) errors.push(`A ${tier.id} set runs at least ${lo} cards.`)
+  if (len > hi) errors.push(`A ${tier.id} set runs at most ${hi} cards.`)
   if (draft.signatureCards.length > MAX_SIGNATURE_CARDS) {
     errors.push(`No more than ${MAX_SIGNATURE_CARDS} signature highlights.`)
   }
@@ -293,6 +345,19 @@ export function generateCards(draft, setId, week, artistOf = getArtist) {
 
 // ---- Release effects ------------------------------------------------------
 
+// How many rider sets (minor/micro) have shipped since the last major — drives
+// rider fatigue (each consecutive rider recruits less; a new major resets it).
+// Walks the set list backward, counting riders until it hits a major.
+function countRidersSinceLastMajor(sets) {
+  let n = 0
+  for (let i = sets.length - 1; i >= 0; i--) {
+    const t = sets[i].tier ?? 'major'
+    if (t === 'major') break
+    n++
+  }
+  return n
+}
+
 // Applies a released set to the world: deducts cost, generates cards, and
 // shifts the metagame (solve resets fresh, power level creeps with the budget).
 // Returns { sets, cards, cash, metagame, set } patches for the reducer.
@@ -301,14 +366,40 @@ export function releaseSet(state, draft) {
   // Resolve artists to their CURRENT drifted cost/reach so a risen star costs
   // (and elevates a card) what they're worth now, not their seed value.
   const artistOf = (id) => currentArtist(state, id)
+  const tier = getTier(draft.tier ?? 'major')
   const cost = setCost(draft, artistOf)
-  const theme = getTheme(draft.themeId)
+
+  // Block resolution. A MAJOR opens a fresh block (with the player's gimmick spec);
+  // a MINOR/MICRO rides a live block and INHERITS its theme. Blocks coexist — a new
+  // major never retires the old ones (their warps stack). `block` is the block this
+  // set belongs to (new or attached); `blocksPatch` is the full state.blocks array
+  // after opening/refreshing.
+  const blocks = state.blocks ?? []
+  let block = null
+  let blocksPatch = blocks
+  if (tier.opensBlock) {
+    block = openBlock(state, setId, draft.themeId, draft.block ?? {})
+    blocksPatch = [...blocks, block]
+  } else if (tier.ridesBlock) {
+    const attached = blocks.find((b) => b.id === draft.attachBlockId) ?? blocks[blocks.length - 1] ?? null
+    if (attached) {
+      block = refreshBlockWarp(attached, setId, tier.id)
+      blocksPatch = blocks.map((b) => (b.id === block.id ? block : b))
+    }
+  }
+  // A rider inherits the block's theme (the draft is seeded with it, but enforce
+  // here so a stale draft can't ship the wrong theme into a block).
+  const themeId = (tier.ridesBlock && block?.themeId) ? block.themeId : draft.themeId
+  draft = { ...draft, themeId }
+  const theme = getTheme(themeId)
   const cards = generateCards(draft, setId, state.week, artistOf)
 
   const set = {
     id: setId,
     name: draft.name,
-    themeId: draft.themeId,
+    tier: tier.id,
+    blockId: block?.id ?? null,
+    themeId,
     theme: theme.name,
     powerBudget: draft.powerBudget,
     rarityChase: draft.rarityChase,
@@ -331,17 +422,27 @@ export function releaseSet(state, draft) {
   }
 
   // Metagame shift. Releasing refreshes the format (solve resets toward fresh);
-  // a higher power budget creeps the power level and can compress diversity.
+  // a higher power budget creeps the power level and can compress diversity. The
+  // TIER scales every effect: a major is a format event (full reset + shift + a
+  // launch wave); a minor barely moves the meta; a micro is almost pure collector
+  // product. The block's gimmick creep multiplies the power-level bump.
   const creep = (draft.powerBudget - 50) / 5 // -10..+10
-  // Prerelease with chase pullable lets the community start solving early.
-  const solveReset = draft.prerelease.chasePullable ? 20 : 8
+  const blockCreep = block?.creep ?? 1
+  // Prerelease with chase pullable lets the community start solving early. Scaled
+  // by the tier — a micro set resets the format only a sliver.
+  const solveReset = (draft.prerelease.chasePullable ? 20 : 8) * tier.solveResetMul
 
   // The set pushes the field toward its theme's archetype lean, scaled by power
-  // budget: a stronger set in an archetype warps the meta toward it harder. This
-  // is what lets "spam high-power aggro sets" actually create an aggro-dominated
-  // format — and lets a player release a counter-archetype set to correct a tilt.
-  const shiftPoints = 8 + Math.max(0, creep) * 1.2 // ~8 at budget 50, ~20 at 100
+  // budget AND tier: a stronger major in an archetype warps the meta hard; a minor
+  // barely tilts it. When a major opens a block it ALSO leans toward the block's
+  // gimmick lean (the era's defining archetype), on top of the theme's lean.
+  const shiftPoints = (8 + Math.max(0, creep) * 1.2) * tier.shiftMul // major ~8–20, minor ~2–6
   let archetypes = shiftToward(state.metagame.archetypes, theme.archetypes, shiftPoints)
+  // A freshly-opened competitive block immediately bends the field toward its lean
+  // (the gimmick's launch warp) — sized by the block's current warp strength.
+  if (block && tier.opensBlock && block.warp > 0.01) {
+    archetypes = shiftToward(archetypes, [block.lean], 6 * block.warp)
+  }
 
   // Counters: any signature card flagged as a counter answers something in the
   // live world. Archetype counters push the metashare off the targeted style
@@ -362,14 +463,18 @@ export function releaseSet(state, draft) {
   )
 
   const metagame = {
-    // A fresh set reopens the field a little (+3), but a high-power-budget set
-    // also crowds out weaker archetypes (the creep term claws some back). Modest
-    // so it doesn't ratchet diversity to 100 against the weekly erosion.
-    diversity: clamp(state.metagame.diversity - Math.max(0, creep) * 0.6 + 3, 0, 100),
-    powerLevel: clamp(state.metagame.powerLevel + Math.max(0, creep), 0, 100),
+    // A fresh set reopens the field a little (+3 for a major, scaled down by tier),
+    // but a high-power-budget set also crowds out weaker archetypes (the creep term
+    // claws some back). Modest so it doesn't ratchet diversity to 100 against the
+    // weekly erosion.
+    diversity: clamp(state.metagame.diversity - Math.max(0, creep) * 0.6 + 3 * tier.shiftMul, 0, 100),
+    // Power-level creep scales with the budget AND the block gimmick's creep weight
+    // (a Mega-style power gimmick creeps harder than a Phantasmal collector one).
+    powerLevel: clamp(state.metagame.powerLevel + Math.max(0, creep) * blockCreep, 0, 100),
     archetypes,
     archetypeBalance: balanceScore(archetypes), // derived from the new split
-    solveLevel: solveReset,
+    // A rider barely refreshes a solved format — only a major really re-opens it.
+    solveLevel: clamp(state.metagame.solveLevel * (1 - tier.solveResetMul) + solveReset, 0, 100),
   }
 
   // Set buzz lift from reprinting fan-favorite cards (carried on the set record
@@ -383,10 +488,19 @@ export function releaseSet(state, draft) {
     ? [makePromoCard(state, { label: 'SPC Exclusive', prestige: 0.7, themeId: draft.themeId, nonce: `${setId}_spc` })]
     : []
 
+  // Treatment cards: the block gimmick's signature chase cards (Mega/Ascended/
+  // Phantasmal). Every set in a block can print them; count + appeal scale with
+  // the block's treatment intensity and the tier (riders are chase-dense). These
+  // ARE pullable (they live in the set's pool) — the collector engine of the era.
+  const treatmentCards = block
+    ? mintTreatmentCards(state, { block, setId, tier: tier.id, themeId, nature: block.nature, sheet: draft.rarities ?? defaultRaritySheet() })
+    : []
+
   const feedParts = [
     counterResult.feed,
     reprintResult.feed,
     promoCards.length ? `Collector box includes an exclusive promo.` : null,
+    treatmentCards.length ? `${treatmentCards.length} ${block.treatmentLabel} chase card${treatmentCards.length > 1 ? 's' : ''} debut.` : null,
   ].filter(Boolean)
 
   // Release spike: a new set draws a WAVE of new players discovering the game,
@@ -404,15 +518,40 @@ export function releaseSet(state, draft) {
   // strategies that tank sentiment can't keep buying their way to growth.
   const mood = communitySentiment(state.personas) ?? 0
   const moodMul = clamp(1 + mood / 35, 0.05, 1.5) // -100 → 0.05×, 0 → 1×, +35 → 1.5×
-  const newPlayers = Math.round((3500 + (avgHype / 100) * 13000) * moodMul)
+  // The discovery wave scales with the TIER: a major is a marquee launch event; a
+  // minor draws a fraction; a micro barely registers as a growth driver (it's a
+  // collector drop, not a tentpole). This is the structural reason a player can't
+  // just spam cheap micros to keep the base growing — only majors really recruit.
+  //
+  // RIDER FATIGUE: a collector drop's audience is finite without a fresh format
+  // beat. Each consecutive rider since the last major recruits progressively less
+  // (the people who'd discover the game via a side-set already have), so spamming
+  // riders hits diminishing returns — a NEW MAJOR re-opens the funnel. This is the
+  // teeth behind "minors can't substitute for majors": they reset the pledge, but
+  // they can't keep growing the base on their own.
+  let fatigue = 1
+  if (tier.ridesBlock) {
+    const sinceMajor = countRidersSinceLastMajor(state.sets)
+    fatigue = clamp(1 / (1 + sinceMajor * 0.6), 0.18, 1) // 1st rider ~1×, 5th ~0.25×
+  }
+  const newPlayers = Math.round((3500 + (avgHype / 100) * 13000) * moodMul * tier.discoveryMul * fatigue)
+
+  // Treatment cards lift the set's buzz (gorgeous chase product sells packs) — the
+  // collector pop the tier multiplier amplifies. Carried on the set so revenue can
+  // read it (alongside the reprint buzz).
+  set.treatmentBuzz = clamp(treatmentCards.length * 0.04 * (block?.treatment ?? 0) * tier.collectorMul, 0, 0.3)
+  set.collectorMul = tier.collectorMul // riders pop harder on the secondary market
 
   return {
     set,
-    // The new set's generated cards PLUS any reprint instances and SPC promo.
-    cards: [...cards, ...reprintResult.reprintCards, ...promoCards],
+    // The new set's generated cards PLUS treatment chase, reprint instances, SPC promo.
+    cards: [...cards, ...treatmentCards, ...reprintResult.reprintCards, ...promoCards],
     cashDelta: -cost.total,
     metagame,
     newPlayers, // discovery wave to distribute into segments (reducer + harness)
+    blocks: blocksPatch, // state.blocks after opening/refreshing this set's block
+    block, // the block this set opened or rode (for feed text), null if none
+    tier: tier.id,
     // Existing cards mutated by silver-bullet counters AND/OR card-reprint
     // softening (null if neither fired). reprintResult chained onto the counter
     // patch, so this is the final existing-cards array.

@@ -12,6 +12,7 @@ import { rollEvent, applyEventEffects } from './events.js'
 import { applySegmentDrift } from './segments.js'
 import { clockDirective } from './clock.js'
 import { concentrate, balanceScore } from './archetypes.js'
+import { decayBlocks, applyBlockPull } from './blocks.js'
 import { driftArtists } from './artists.js'
 import { applyCadencePressure } from './cadence.js'
 import { applyRelationships } from './relationships.js'
@@ -81,6 +82,16 @@ export function advanceWeek(state) {
     // Same pressure concentrates the metashare: the community piles into the best
     // deck, so the field tilts toward its already-dominant archetype as it solves.
     next.metagame.archetypes = concentrate(next.metagame.archetypes, pressure * 0.5)
+  }
+
+  // Live blocks exert a persistent warp on the archetype field: each active block
+  // gimmick keeps the format bent toward its lean for its era, then fades as its
+  // warp decays. STACKED blocks compound — the coexistence creep that makes a
+  // player reach for bans/rotations. Apply the pull, then decay every block's warp
+  // one week (an era cools unless a new set prints into the block to refresh it).
+  if (next.blocks?.length) {
+    next.metagame.archetypes = applyBlockPull(next.metagame.archetypes, next.blocks)
+    next.blocks = decayBlocks(next.blocks)
   }
 
   // Artist careers drift: rising stars get pricier/more famous (and can

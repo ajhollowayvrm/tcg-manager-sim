@@ -41,7 +41,12 @@ export function fairValue(card, set, metagame) {
   // squared in so high-tier secret rares climb HARD. Independent of playability.
   const raritySq = (f.rarity / 100) ** 1.6 * 100 // convex: top tiers pull away
   const collectorBase = raritySq * 0.95 + f.artAppeal * 0.35 + f.hype * 0.2
-  const collectorVal = collectorBase * scarcity * 0.6
+  // Chase-dense sets (minors/micros, set.collectorMul > 1) and block-gimmick
+  // treatment cards trade RICHER on the collector side — that's the secondary-
+  // market draw of a collector drop. Lifts only the collector path, so a
+  // competitively-valued staple is unaffected.
+  const collectorLift = (set.collectorMul ?? 1) * (card.treatment ? 1.25 : 1)
+  const collectorVal = collectorBase * scarcity * 0.6 * collectorLift
 
   return clamp(Math.max(playerVal, collectorVal), 0.25, 12000)
 }

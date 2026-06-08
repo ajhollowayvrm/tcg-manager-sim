@@ -23,6 +23,8 @@ import {
   MAX_REPRINTED_CARDS,
 } from '../../game/sets.js'
 import { THEMES, getTheme } from '../../game/content/themes.js'
+import { TIERS, TIER_IDS, getTier } from '../../game/blocks.js'
+import { GIMMICKS, getGimmick } from '../../game/content/gimmicks.js'
 
 function formatCash(n) {
   return '$' + n.toLocaleString('en-US')
@@ -38,10 +40,11 @@ function nextId(cards) {
   return max + 1
 }
 
-export default function SetBuilder({ setNumber, cash, artists, liveCards = [], sets = [], onRelease, onClose }) {
-  // The set auto-generates its full card list on release, so signature
-  // highlights are optional — start with none.
-  const [draft, setDraft] = useState(() => createDraft(setNumber))
+export default function SetBuilder({ setNumber, cash, artists, liveCards = [], sets = [], blocks = [], onRelease, onClose }) {
+  // The first set you ever ship MUST be a major (it opens your first block); once
+  // a block is live you can ship riders. Seed the tier accordingly.
+  const isFirstSet = blocks.length === 0
+  const [draft, setDraft] = useState(() => createDraft(setNumber, 'major', blocks))
 
   // Accordion: sections toggle independently (multi-open). Identity is open by
   // default; everything else starts collapsed so the modal opens short and
@@ -50,12 +53,40 @@ export default function SetBuilder({ setNumber, cash, artists, liveCards = [], s
   const toggle = (id) => setOpen((o) => ({ ...o, [id]: !o[id] }))
 
   const patch = (p) => setDraft((d) => ({ ...d, ...p }))
+  const tier = getTier(draft.tier)
   const theme = getTheme(draft.themeId)
+  // The block a rider is attached to (for inheritance display).
+  const attachedBlock = blocks.find((b) => b.id === draft.attachBlockId) ?? null
+
+  // Switching tier re-seeds the tier-dependent defaults (length, secrets, block
+  // wiring, inherited theme) from createDraft, but carries over the player's
+  // identity + slider work so they don't lose edits when toggling tiers.
+  const changeTier = (nextTier) =>
+    setDraft((d) => {
+      const seed = createDraft(setNumber, nextTier, blocks)
+      return {
+        ...seed,
+        name: d.name,
+        powerBudget: d.powerBudget,
+        printRun: d.printRun,
+        pricePoint: d.pricePoint,
+        rarityChase: d.rarityChase,
+        rarities: d.rarities,
+        packFormat: d.packFormat,
+        products: d.products,
+        signatureCards: d.signatureCards,
+        reprintedCards: d.reprintedCards,
+        prerelease: d.prerelease,
+        // A major keeps editing its theme; a rider inherits the block's theme.
+        themeId: getTier(nextTier).ridesBlock ? seed.themeId : d.themeId,
+      }
+    })
+
   // Resolve artists to their live drifted record so the cost summary and editor
   // reflect current prices, not the static seed.
   const artistOf = (id) => artists?.find((a) => a.id === id) ?? null
   const cost = setCost(draft, (id) => artistOf(id) ?? undefined)
-  const errors = validateDraft(draft)
+  const errors = validateDraft(draft, { blocks, isFirstSet })
   // Cash can go negative (a loan), so affordability NO LONGER blocks release —
   // it only flags that you'll dip into debt. The only release gate is validity.
   const goesIntoDebt = cash - cost.total < 0
@@ -90,7 +121,13 @@ export default function SetBuilder({ setNumber, cash, artists, liveCards = [], s
   // One-line summaries shown in each collapsed accordion header — at-a-glance
   // confirmation of what's set inside without expanding.
   const presetName = PACK_PRESETS.find((p) => p.id === draft.packFormat?.preset)?.name ?? 'custom'
+  const blockSummary = tier.opensBlock
+    ? `Opens a block — ${getGimmick(draft.block?.gimmickId)?.name ?? 'gimmick'}`
+    : attachedBlock
+      ? `Rides “${attachedBlock.name}” (${attachedBlock.gimmickName})`
+      : 'No block to ride'
   const summaries = {
+    block: blockSummary,
     composition: `${draft.setLength} cards, ${draft.rarities.length} rarities${draft.secretCount ? `, ${draft.secretCount} secret` : ''}`,
     booster: `${packSize(draft.packFormat)}-card ${presetName}`,
     products: (draft.products?.length ?? 0)
@@ -105,11 +142,30 @@ export default function SetBuilder({ setNumber, cash, artists, liveCards = [], s
     <div className="modal" role="dialog" aria-modal="true">
       <div className="modal__sheet">
         <header className="modal__head">
-          <h2>Design a Set</h2>
+          <h2>Design a {tier.name}</h2>
           <button className="btn btn--ghost" onClick={onClose}>✕</button>
         </header>
 
         <div className="modal__body">
+          {/* Release tier — the first decision. A major opens a block; a minor/
+              micro rides a live one. Drives the whole set's scale & effects. */}
+          <TierPicker tier={draft.tier} isFirstSet={isFirstSet} onChange={changeTier} />
+
+          {/* Block — open (major) or attach to (rider) an era-defining gimmick. */}
+          <AccordionSection title="Block & gimmick" summary={summaries.block} open={open.block} onToggle={() => toggle('block')}>
+            <BlockEditor
+              draft={draft}
+              tier={tier}
+              blocks={blocks}
+              attachedBlock={attachedBlock}
+              onPatchBlock={(b) => patch({ block: { ...draft.block, ...b } })}
+              onAttach={(id) => {
+                const blk = blocks.find((x) => x.id === id)
+                patch({ attachBlockId: id, themeId: blk?.themeId ?? draft.themeId })
+              }}
+            />
+          </AccordionSection>
+
           {/* Identity + slider layer — open by default */}
           <AccordionSection title="Identity & set basics" open={open.identity} onToggle={() => toggle('identity')}>
             <label className="field field--full">
@@ -118,8 +174,12 @@ export default function SetBuilder({ setNumber, cash, artists, liveCards = [], s
             </label>
 
             <label className="field field--full">
-              <span>Theme &amp; mechanics</span>
-              <select value={draft.themeId} onChange={(e) => patch({ themeId: e.target.value })}>
+              <span>Theme &amp; mechanics{tier.ridesBlock && <span className="muted"> (inherited from the block)</span>}</span>
+              <select
+                value={draft.themeId}
+                disabled={tier.ridesBlock}
+                onChange={(e) => patch({ themeId: e.target.value })}
+              >
                 {THEMES.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.name} — {t.mechanics.join(', ')}
@@ -128,8 +188,9 @@ export default function SetBuilder({ setNumber, cash, artists, liveCards = [], s
               </select>
               {theme && (
                 <span className="field__note">
-                  Pushes the metagame toward{' '}
-                  <strong>{theme.archetypes.join(' / ')}</strong> — harder at higher power.
+                  {tier.ridesBlock
+                    ? <>Inherited from the block you ride.</>
+                    : <>Pushes the metagame toward <strong>{theme.archetypes.join(' / ')}</strong> — harder at higher power.</>}
                 </span>
               )}
             </label>
@@ -164,11 +225,11 @@ export default function SetBuilder({ setNumber, cash, artists, liveCards = [], s
           {/* Set composition — length, secret rares, and the rarity sheet */}
           <AccordionSection title="Set composition" summary={summaries.composition} open={open.composition} onToggle={() => toggle('composition')}>
             <Slider
-              label="Set length (cards)"
+              label={`Set length (cards) — ${tier.name} runs ${tier.lengthRange[0]}–${tier.lengthRange[1]}`}
               value={draft.setLength}
-              min={MIN_SET_LENGTH} max={MAX_SET_LENGTH} step={1}
+              min={tier.lengthRange[0]} max={tier.lengthRange[1]} step={1}
               onChange={(v) => patch({ setLength: v })}
-              left={`${MIN_SET_LENGTH}`} right={`${MAX_SET_LENGTH}`}
+              left={`${tier.lengthRange[0]}`} right={`${tier.lengthRange[1]}`}
             />
             <Slider
               label="Secret rares (numbered above the count)"
@@ -348,6 +409,143 @@ function CostLine({ label, value, total }) {
       <span>{formatCash(value)}</span>
     </div>
   )
+}
+
+// The release-tier selector — the first decision in the builder. A major opens a
+// block; a minor/micro rides a live one. Riders are disabled until a block exists
+// (your first set must be a major). Each shows its scale + a one-line character.
+function TierPicker({ tier, isFirstSet, onChange }) {
+  return (
+    <div className="tierpicker">
+      {TIER_IDS.map((id) => {
+        const t = TIERS[id]
+        const locked = isFirstSet && t.ridesBlock // no block to ride yet
+        const active = tier === id
+        return (
+          <button
+            key={id}
+            type="button"
+            className={'tierpicker__opt' + (active ? ' is-active' : '') + (locked ? ' is-locked' : '')}
+            disabled={locked}
+            onClick={() => !locked && onChange(id)}
+            title={locked ? 'Release a Major first to open a block these can ride.' : t.blurb}
+          >
+            <span className="tierpicker__sym">{t.symbol}</span>
+            <span className="tierpicker__name">{t.name.replace(' set', '')}</span>
+            <span className="tierpicker__blurb">{t.blurb}</span>
+            {locked && <span className="tierpicker__lock">needs a block</span>}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// Block & gimmick editor. For a MAJOR: pick a gimmick from the roster, name the
+// block, tune its competitive↔collector nature, and set the archetype lean its
+// warp targets. For a MINOR/MICRO: pick which live block to ride (auto-inherits
+// its theme + gimmick, shown read-only).
+function BlockEditor({ draft, tier, blocks, attachedBlock, onPatchBlock, onAttach }) {
+  // ---- Rider: attach to a live block ----
+  if (tier.ridesBlock) {
+    if (!blocks.length) {
+      return <p className="panel__empty">No blocks yet — release a Major to open your first block.</p>
+    }
+    const g = attachedBlock ? getGimmick(attachedBlock.gimmickId) : null
+    return (
+      <div className="builder__inner">
+        <span className="field__note">
+          A {tier.id} set rides a live block — it inherits the block's theme and prints
+          its {attachedBlock?.treatmentLabel ?? 'special'} chase cards, but can't mint a new gimmick.
+        </span>
+        <label className="field field--full">
+          <span>Ride which block?</span>
+          <select value={draft.attachBlockId ?? ''} onChange={(e) => onAttach(e.target.value)}>
+            {blocks.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name} — {b.gimmickName} (opened wk {b.openedWeek})
+              </option>
+            ))}
+          </select>
+        </label>
+        {attachedBlock && (
+          <div className="blockcard blockcard--read">
+            <div className="blockcard__row"><span>Gimmick</span><strong>{attachedBlock.gimmickName}</strong></div>
+            <div className="blockcard__row"><span>Nature</span><strong>{natureLabel(attachedBlock.nature)}</strong></div>
+            <div className="blockcard__row"><span>Lean</span><strong>{attachedBlock.lean}</strong></div>
+            <div className="blockcard__row"><span>Chase tier</span><strong>{attachedBlock.treatmentLabel}</strong></div>
+            {g && <span className="field__note">{g.blurb}</span>}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // ---- Major: open a new block ----
+  const b = draft.block ?? {}
+  const g = getGimmick(b.gimmickId)
+  // Picking a gimmick seeds its default nature + lean (the player can retune).
+  const pickGimmick = (id) => {
+    const gm = getGimmick(id)
+    onPatchBlock({ gimmickId: id, nature: gm?.defaultNature ?? 50, lean: gm?.defaultLean ?? 'midrange' })
+  }
+  return (
+    <div className="builder__inner">
+      <span className="field__note">
+        A Major opens a new block and introduces its gimmick — the era-defining
+        mechanic every set in the block rides. Blocks coexist: opening a new one
+        doesn't retire the old, so their format warps stack (watch your power creep).
+      </span>
+
+      <label className="field field--full">
+        <span>Gimmick</span>
+        <select value={b.gimmickId ?? ''} onChange={(e) => pickGimmick(e.target.value)}>
+          {GIMMICKS.map((gm) => (
+            <option key={gm.id} value={gm.id}>{gm.name} — {gm.treatmentLabel} chase</option>
+          ))}
+        </select>
+        {g && <span className="field__note">{g.blurb}</span>}
+      </label>
+
+      <label className="field field--full">
+        <span>Block name <span className="muted">(blank uses the gimmick name)</span></span>
+        <input
+          value={b.gimmickName ?? ''}
+          placeholder={g?.name ?? 'Block name'}
+          onChange={(e) => onPatchBlock({ gimmickName: e.target.value })}
+        />
+      </label>
+
+      <Slider
+        label={`Gimmick nature — ${natureLabel(b.nature ?? 50)}`}
+        value={b.nature ?? 50}
+        onChange={(v) => onPatchBlock({ nature: v })}
+        left="Competitive" right="Collector"
+      />
+      <span className="field__note">
+        Competitive bends the format hard toward the lean (more power creep);
+        Collector mints denser, richer {g?.treatmentLabel ?? 'special'} chase cards instead.
+      </span>
+
+      <label className="field field--full">
+        <span>Archetype lean <span className="muted">(which style the warp favors)</span></span>
+        <select value={b.lean ?? 'midrange'} onChange={(e) => onPatchBlock({ lean: e.target.value })}>
+          {['aggro', 'control', 'combo', 'midrange'].map((a) => (
+            <option key={a} value={a}>{a}</option>
+          ))}
+        </select>
+      </label>
+    </div>
+  )
+}
+
+// A short word for where the nature slider sits.
+function natureLabel(nature) {
+  if (nature <= 25) return 'Competitive — warps the format'
+  if (nature <= 45) return 'Lean competitive'
+  if (nature < 55) return 'Balanced'
+  if (nature < 75) return 'Lean collector'
+  return 'Collector — pure chase'
 }
 
 // Pick popular cards from older sets to reprint into this new set. Reprinting a

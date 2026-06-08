@@ -63,6 +63,11 @@ export function createInitialState(config) {
 
     sets: [],
     cards: [],
+    // Live blocks — the era-defining gimmick "blocks" that majors open and
+    // minors/micros ride (see blocks.js). They coexist (a new major never retires
+    // an old block), and each exerts a persistent warp on the archetype field that
+    // decays weekly. Empty until the first major ships.
+    blocks: [],
     // Per-artist career state (cost/reach/trajectory) that drifts each week —
     // see artists.js. Identity (name/specialty) stays in the static roster.
     artists: seedArtists(),

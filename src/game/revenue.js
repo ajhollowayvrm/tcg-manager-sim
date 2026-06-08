@@ -45,7 +45,10 @@ function setBuzz(set, cards) {
   // fan-favorite cards into the set adds a further fan-service buzz lift.
   const richness = packRichnessDelta(set.packFormat)
   const reprintBuzz = set.reprintBuzz ?? 0
-  return clamp((avgHype / 100) * (1 + richness * 0.12 + reprintBuzz), 0.1, 1.4)
+  // Block-gimmick treatment cards (Mega/Ascended/Phantasmal chase) make cracking
+  // packs feel better — a further demand lift on top of richness/reprints.
+  const treatmentBuzz = set.treatmentBuzz ?? 0
+  return clamp((avgHype / 100) * (1 + richness * 0.12 + reprintBuzz + treatmentBuzz), 0.1, 1.5)
 }
 
 // Weekly demand for ONE product SKU of a set, before its supply cap. Returns a

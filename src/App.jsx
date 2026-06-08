@@ -104,6 +104,7 @@ export default function App() {
           artists={game.state.artists}
           liveCards={game.state.cards.filter((c) => !c.banned && !c.rotated)}
           sets={game.state.sets}
+          blocks={game.state.blocks ?? []}
           onRelease={game.release}
           onClose={() => setBuilding(false)}
         />

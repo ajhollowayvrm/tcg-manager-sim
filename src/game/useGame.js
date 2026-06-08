@@ -23,7 +23,7 @@ function reducer(state, action) {
       return applyClockDirective(next)
     }
     case 'RELEASE_SET': {
-      const { set, cards, cashDelta, metagame, counteredCards, counterFeed, newPlayers } = releaseSet(state, action.draft)
+      const { set, cards, cashDelta, metagame, counteredCards, counterFeed, newPlayers, blocks, block, tier } = releaseSet(state, action.draft)
       // If silver-bullet counters mutated existing cards, build from that patched
       // array; otherwise from the current one. Then append the new set's cards.
       const baseCards = counteredCards ?? state.cards
@@ -31,16 +31,26 @@ function reducer(state, action) {
       const segments = { ...state.segments }
       distributeNewPlayers(segments, state.segmentLean, newPlayers ?? 0)
       const playerBase = segments.competitive + segments.casual + segments.collectors
+      // A tier-aware launch line: a major opens a block (names the gimmick); a
+      // rider rides one. Falls back to the classic line for a blockless release.
+      const tierLabel = tier === 'minor' ? 'Minor set' : tier === 'micro' ? 'Micro set' : 'Major set'
+      const blockLine = block
+        ? (tier === 'major'
+            ? ` — opens the “${block.name}” block (${block.gimmickName}).`
+            : ` — a ${tier} set in the “${block.name}” block.`)
+        : ' — the metagame refreshes.'
+      const launch = `${tierLabel}: ${set.name} (${set.theme}) hits shelves${blockLine}${newPlayers ? ` ${newPlayers.toLocaleString()} new players discover the game.` : ''}`
       const feed = [
-        { week: state.week, text: `${set.name} (${set.theme}) hits shelves — the metagame refreshes.${newPlayers ? ` ${newPlayers.toLocaleString()} new players discover the game.` : ''}` },
-        ...(counterFeed ? [{ week: state.week, text: `Counter tech: ${counterFeed}` }] : []),
+        { week: state.week, text: launch },
+        ...(counterFeed ? [{ week: state.week, text: counterFeed }] : []),
         ...state.eventsFeed,
-      ]
+      ].slice(0, 60)
       return {
         ...state,
         cash: state.cash + cashDelta,
         sets: [...state.sets, set],
         cards: [...baseCards, ...cards],
+        blocks: blocks ?? state.blocks,
         segments,
         playerBase,
         metagame,

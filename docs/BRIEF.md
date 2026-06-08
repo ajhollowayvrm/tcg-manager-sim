@@ -316,6 +316,26 @@ Grouped into three layers. Each assumes the v1 core loop is solid first.
 >   segment, warms sentiment, and mints a scarce, unpullable promo that trades as
 >   a prestige grail (a collector-box SKU can also carry an exclusive promo).
 >   (`organizedplay.js`, `OrganizedPlayPanel`; `packs.js` excludes promos.)
+> - **Major / minor / micro sets & block gimmicks** — every release picks a
+>   **tier**. A **major** is a full expansion that OPENS A BLOCK: it introduces a
+>   block **gimmick** (a Pokémon-style Mega / Ascended / Phantasmal / Tera era
+>   mechanic) chosen from a roster and tuned on a **competitive↔collector nature**
+>   slider plus an archetype lean. The gimmick exerts a *persistent meta-warp* that
+>   bends the field toward its lean for the block's era and **decays weekly**
+>   unless a new set prints into the block to refresh it; it also mints scarce
+>   **treatment chase cards** (the collector engine). A **minor** (~40–90 cards)
+>   and a **micro** (~15–35) *ride* a live block: they inherit its theme + gimmick,
+>   barely refresh the format, draw a far smaller discovery wave (and hit **rider
+>   fatigue** — consecutive riders since the last major recruit less), but are
+>   cheap and chase-dense. **Blocks coexist** — a new major never retires the old,
+>   so their warps stack and power-creep accumulates, pushing the player toward the
+>   ban/pull-from-print relief levers. The playtest harness confirms the tension:
+>   a *major + minor* mix grows the healthiest base, rider-spam rots the metagame
+>   (lower balance), and your first set must always be a major. (`blocks.js`,
+>   `content/gimmicks.js`; tier/block wiring in `sets.js`; weekly warp in
+>   `simulation.js`; `TierPicker` + `BlockEditor` in `SetBuilder`; block grouping
+>   in `SetsPanel`.) Realizes the parked "elaborate special release events" /
+>   anniversary-set depth around a real two-tier release calendar.
 
 ### A. Product & market depth
 

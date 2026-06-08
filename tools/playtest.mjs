@@ -24,7 +24,7 @@ const HORIZON = 312 // ~6 years of weeks — a long run, per the brief's "year 6
 // Mirrors the transitions in useGame.js so a strategy can act on the state.
 
 function applyRelease(state, draft) {
-  const { set, cards, cashDelta, metagame, counteredCards, newPlayers } = releaseSet(state, draft)
+  const { set, cards, cashDelta, metagame, counteredCards, newPlayers, blocks } = releaseSet(state, draft)
   // Mirror the reducer: a release brings a discovery wave of new players.
   const segments = { ...state.segments }
   distributeNewPlayers(segments, state.segmentLean, newPlayers ?? 0)
@@ -34,6 +34,7 @@ function applyRelease(state, draft) {
     sets: [...state.sets, set],
     // Silver-bullet counters may have patched existing cards (counteredCards).
     cards: [...(counteredCards ?? state.cards), ...cards],
+    blocks: blocks ?? state.blocks, // major opens / rider refreshes a block
     segments,
     playerBase: segments.competitive + segments.casual + segments.collectors,
     metagame,
@@ -55,13 +56,18 @@ function applyPull(state, setId) {
 // ---- Draft builder --------------------------------------------------------
 // Build a releasable draft (>=5 signature cards) from a strategy's knobs.
 
-function buildDraft(setNumber, knobs, nameSalt) {
-  const d = createDraft(setNumber)
+function buildDraft(setNumber, knobs, nameSalt, tier = 'major', blocks = []) {
+  const d = createDraft(setNumber, tier, blocks)
   d.name = `${knobs.namePool[(setNumber + nameSalt) % knobs.namePool.length]} ${setNumber}`
-  d.themeId = knobs.themes[(setNumber + nameSalt) % knobs.themes.length]
+  // A major picks a theme; a rider inherits its block's theme (createDraft set it).
+  if (tier === 'major') d.themeId = knobs.themes[(setNumber + nameSalt) % knobs.themes.length]
   d.powerBudget = knobs.powerBudget
   d.printRun = knobs.printRun
   d.pricePoint = knobs.pricePoint
+  // Vary the block gimmick per major so runs differ (createDraft seeds 'mega').
+  if (tier === 'major' && knobs.gimmicks) {
+    d.block = { ...d.block, gimmickId: knobs.gimmicks[(setNumber + nameSalt) % knobs.gimmicks.length] }
+  }
   const n = 6
   d.signatureCards = Array.from({ length: n }, (_, i) => {
     const c = createSignatureCard(i + 1)
@@ -80,7 +86,10 @@ function buildDraft(setNumber, knobs, nameSalt) {
 const NAME_POOL = ['Ember', 'Frost', 'Tempest', 'Verdant', 'Obsidian', 'Radiant', 'Abyssal', 'Gilded']
 const THEMES = ['dragons', 'undead', 'cyber', 'nature', 'arcane'] // real theme ids from content/themes.js
 
-function makeStrategy({ name, cadence, knobs, banAt, rotateEvery, ignoreCash = false }) {
+// `minorEvery` (optional): drop a smaller rider set every N weeks BETWEEN majors,
+// cycling minor→micro. This is how we model the major/minor cadence: majors are
+// the format beats, riders are the in-between collector drops.
+function makeStrategy({ name, cadence, knobs, banAt, rotateEvery, ignoreCash = false, minorEvery = null }) {
   return {
     name,
     // Called each week BEFORE advanceWeek. Returns the (possibly) acted-on state.
@@ -88,13 +97,27 @@ function makeStrategy({ name, cadence, knobs, banAt, rotateEvery, ignoreCash = f
       let s = state
       // Release on cadence if we can afford it (real setCost on the actual draft,
       // with a thin safety buffer so a strategy doesn't bankrupt itself printing).
+      // The MAJOR beat tracks weeks since the last MAJOR (riders don't reset it);
+      // the rider beat tracks weeks since ANY set (so they pace between majors).
       const lastSet = s.sets[s.sets.length - 1]
-      const weeksSince = lastSet ? s.week - lastSet.releasedWeek : Infinity
-      if (s.sets.length === 0 || weeksSince >= cadence) {
-        const draft = buildDraft(s.sets.length + 1, knobs, ctx.salt)
+      const weeksSinceAny = lastSet ? s.week - lastSet.releasedWeek : Infinity
+      const lastMajor = [...s.sets].reverse().find((x) => (x.tier ?? 'major') === 'major')
+      const weeksSinceMajor = lastMajor ? s.week - lastMajor.releasedWeek : Infinity
+      const isMajorDue = s.sets.length === 0 || weeksSinceMajor >= cadence
+      if (isMajorDue) {
+        const draft = buildDraft(s.sets.length + 1, knobs, ctx.salt, 'major')
         if (ignoreCash || s.cash > setCost(draft).total * 1.15) {
           s = applyRelease(s, draft)
           ctx.releases++
+        }
+      } else if (minorEvery && s.blocks?.length && weeksSinceAny >= minorEvery) {
+        // Between majors: a rider riding the newest block. Alternate minor/micro.
+        const tier = (ctx.riders % 2 === 0) ? 'minor' : 'micro'
+        const draft = buildDraft(s.sets.length + 1, knobs, ctx.salt, tier, s.blocks)
+        if (ignoreCash || s.cash > setCost(draft).total * 1.15) {
+          s = applyRelease(s, draft)
+          ctx.releases++
+          ctx.riders++
         }
       }
       // Ban the highest-pressure live card once it crosses the threshold.
@@ -145,13 +168,35 @@ const STRATEGIES = [
   makeStrategy({ name: 'Mono-aggro spam', cadence: 10, banAt: null, rotateEvery: null,
     knobs: { powerBudget: 75, printRun: 50, pricePoint: 4.5, chasePower: 75,
       namePool: NAME_POOL, themes: ['cute', 'racing', 'pirates', 'kaiju'] } }),
+
+  // ---- Major/minor tier strategies ----------------------------------------
+  // Block-builder: a major every 16 wk that OPENS a block, plus a minor/micro
+  // rider every 6 wk between majors riding it. The "real TCG calendar" play.
+  // Should survive and run a healthy release count with rich collector drops.
+  makeStrategy({ name: 'Block builder (maj+min)', cadence: 16, minorEvery: 6, banAt: 62, rotateEvery: 90,
+    knobs: { powerBudget: 52, printRun: 50, pricePoint: 4.5, chasePower: 72,
+      namePool: NAME_POOL, themes: THEMES, gimmicks: ['mega', 'ascended', 'tera'] } }),
+  // Rider spam: a major rarely (every 24 wk) but cheap riders constantly (every
+  // 4 wk). Tests whether minors paper over a missing major — they reset cadence
+  // (any set does) but DON'T recruit (small discovery) or refresh the format
+  // much, so the base should grow slower than the block builder despite more
+  // releases. The interesting "minors can't substitute for majors" tension.
+  makeStrategy({ name: 'Rider spam (few majors)', cadence: 24, minorEvery: 4, banAt: 62, rotateEvery: 90,
+    knobs: { powerBudget: 55, printRun: 55, pricePoint: 4.5, chasePower: 75,
+      namePool: NAME_POOL, themes: THEMES, gimmicks: ['phantasmal', 'tera'] } }),
+  // Collector-gimmick blocks: Phantasmal (treatment-first) majors + chase-dense
+  // riders, never warping the meta hard. A collector-led studio — should lean on
+  // the secondary market and survive on collector demand.
+  makeStrategy({ name: 'Collector blocks', cadence: 18, minorEvery: 7, banAt: 65, rotateEvery: 104,
+    knobs: { powerBudget: 48, printRun: 40, pricePoint: 5.0, chasePower: 70,
+      namePool: NAME_POOL, themes: THEMES, gimmicks: ['phantasmal'] } }),
 ]
 
 // ---- Run a single game ----------------------------------------------------
 
 function playOne(strategy, salt, trace = false) {
   let state = createInitialState()
-  const ctx = { salt, releases: 0, bans: 0, rotations: 0 }
+  const ctx = { salt, releases: 0, bans: 0, rotations: 0, riders: 0 }
   const samples = [] // periodic snapshots for trajectory stats
   let bigMoves = 0, weeksWithMover = 0
   let minCash = Infinity, minPlayers = Infinity // closest anyone came to losing
@@ -190,6 +235,9 @@ function playOne(strategy, salt, trace = false) {
     power: state.metagame.powerLevel,
     diversity: state.metagame.diversity,
     releases: ctx.releases,
+    riders: ctx.riders, // minor/micro releases (subset of releases)
+    blocks: state.blocks?.length ?? 0,
+    treatmentCards: state.cards.filter((c) => c.treatment).length,
     bans: ctx.bans,
     rotations: ctx.rotations,
     moverRate: weeksWithMover / Math.max(1, state.week - 1),
@@ -221,9 +269,9 @@ function summarize() {
     'strategy'.padEnd(22) + 'survive'.padEnd(9) + 'endWk'.padEnd(7) +
     'cash'.padEnd(8) + 'minCash'.padEnd(9) + 'players'.padEnd(9) + 'minPpl'.padEnd(8) +
     'pow'.padEnd(5) + 'div'.padEnd(5) + 'bal'.padEnd(5) + 'top%'.padEnd(6) +
-    'rel'.padEnd(5) + 'ban'.padEnd(5) + 'rot'.padEnd(5) + 'reason',
+    'rel'.padEnd(5) + 'rid'.padEnd(5) + 'blk'.padEnd(5) + 'ban'.padEnd(5) + 'rot'.padEnd(5) + 'reason',
   )
-  console.log('-'.repeat(120))
+  console.log('-'.repeat(135))
 
   for (const strat of STRATEGIES) {
     const runs = [0, 1, 2].map((salt) => playOne(strat, salt))
@@ -245,6 +293,8 @@ function summarize() {
       avg((r) => r.balance).toFixed(0).padEnd(5) +
       (avg((r) => r.topShare).toFixed(0) + '%').padEnd(6) +
       avg((r) => r.releases).toFixed(0).padEnd(5) +
+      avg((r) => r.riders).toFixed(0).padEnd(5) +
+      avg((r) => r.blocks).toFixed(0).padEnd(5) +
       avg((r) => r.bans).toFixed(0).padEnd(5) +
       avg((r) => r.rotations).toFixed(0).padEnd(5) +
       reasons,
