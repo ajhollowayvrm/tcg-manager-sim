@@ -9,9 +9,14 @@
 // records, so their current price shows on the reveal).
 
 import { makeRng, hashSeed } from './rng.js'
-import { getRarity } from './rarities.js'
+import { getRarity, packSize, slotWeightOf } from './rarities.js'
 
 const LEGACY_PACK_SIZE = 6 // cards per pack for sets saved before authored formats
+
+// A god pack: the real-hobby legend where every slot in the pack hits high
+// rarity (real odds run roughly 1-in-several-thousand). Deliberately rare —
+// this is a story players tell, not a routine outcome.
+const GOD_PACK_CHANCE = 1 / 2500
 
 // Draw one pack from a released set. Returns { pulls, bestPull } where pulls is
 // an array of the live card records pulled (with a per-pull seededness so the
@@ -25,8 +30,12 @@ const LEGACY_PACK_SIZE = 6 // cards per pack for sets saved before authored form
 export function ripPack(state, setId, nonce = 0) {
   const set = state.sets.find((s) => s.id === setId)
   if (!set || set.rotated) return null
-  // Promos never appear in a booster — that's what makes them promos.
-  const setCards = state.cards.filter((c) => c.setId === setId && !c.banned && !c.rotated && !c.promo)
+  // Promos never appear in a booster — that's what makes them promos. A fully-
+  // issued serialized card (see sets.js) is equally unpullable — it's gone.
+  const setCards = state.cards.filter((c) =>
+    c.setId === setId && !c.banned && !c.rotated && !c.promo &&
+    !(c.serialCap && c.serialIssued >= c.serialCap),
+  )
   if (!setCards.length) return null
 
   const sheet = set.rarities ?? []
@@ -39,6 +48,20 @@ export function ripPack(state, setId, nonce = 0) {
     byRarity.get(c.rarity).push(c)
   }
 
+  // Tracks how many of each serialized card THIS rip has already issued, so
+  // pulling the same one twice in one pack numbers them sequentially instead
+  // of colliding (seeded from the card's live serialIssued count).
+  const issuedThisRip = new Map()
+
+  // God pack: a vanishingly rare roll where every position in the pack hits
+  // the set's highest available rarity tier instead of the normal per-slot
+  // odds — the real-hobby "every card in the box is a hit" legend.
+  if (rng() < GOD_PACK_CHANCE) {
+    const godPulls = drawGodPack(setCards, sheet, packSize(set.packFormat) || LEGACY_PACK_SIZE, issuedThisRip, rng)
+    const bestPull = godPulls.reduce((a, b) => (b.singlePrice > (a?.singlePrice ?? -1) ? b : a), null)
+    return { pulls: godPulls, bestPull, isGodPack: true }
+  }
+
   const slots = resolveSlots(set, sheet)
 
   const pulls = []
@@ -46,15 +69,71 @@ export function ripPack(state, setId, nonce = 0) {
     const count = Math.max(0, Math.round(slot.count || 0))
     for (let i = 0; i < count; i++) {
       const rarityId = drawSlotRarity(slot, sheet, byRarity, rng)
-      const pool = byRarity.get(rarityId)
+      let pool = byRarity.get(rarityId)
       if (!pool || !pool.length) continue
-      pulls.push(pool[Math.floor(rng() * pool.length) % pool.length])
+      // An icon-only slot is reserved for cards featuring an icon-status
+      // character (see characters.js) — the alt-art/foil chase slot. Falls
+      // back to the normal pool if the set has no icon card at this rarity yet,
+      // so the slot never fails to pull.
+      if (slot.iconOnly) {
+        const iconPool = pool.filter((c) => c.treatment === 'icon')
+        if (iconPool.length) pool = iconPool
+      }
+      // A serialized card fully issued EARLIER IN THIS SAME RIP (e.g. a /1
+      // already pulled by an earlier slot) is excluded too, not just ones
+      // exhausted before the rip started.
+      const eligible = pool.filter((c) => {
+        if (!c.serialCap) return true
+        const issuedSoFar = c.serialIssued + (issuedThisRip.get(c.id) ?? 0)
+        return issuedSoFar < c.serialCap
+      })
+      const drawPool = eligible.length ? eligible : pool
+      const card = drawPool[Math.floor(rng() * drawPool.length) % drawPool.length]
+      if (card.serialCap) {
+        const nextNumber = card.serialIssued + (issuedThisRip.get(card.id) ?? 0) + 1
+        issuedThisRip.set(card.id, (issuedThisRip.get(card.id) ?? 0) + 1)
+        pulls.push({ ...card, _serialPulled: nextNumber })
+      } else {
+        pulls.push(card)
+      }
     }
   }
 
   // The "best" pull = highest current single price (what you'd brag about).
   const bestPull = pulls.reduce((a, b) => (b.singlePrice > (a?.singlePrice ?? -1) ? b : a), null)
   return { pulls, bestPull }
+}
+
+// Fill every position of a god pack from the set's highest available rarity
+// tier (by the sheet's valueTier), still honoring serial caps so a god pack
+// can't mint more copies of a numbered chase card than its cap allows.
+// `issuedThisRip` is shared with the caller so a serialized card pulled here
+// is correctly reflected if (implausibly) the god-pack roll ever coexists
+// with other draws — it never does today, but keeps the bookkeeping honest.
+function drawGodPack(setCards, sheet, count, issuedThisRip, rng) {
+  const tierOf = new Map(sheet.map((r) => [r.id, r.valueTier ?? 0]))
+  const topTier = setCards.reduce((max, c) => Math.max(max, tierOf.get(c.rarity) ?? 0), 0)
+  const topPool = setCards.filter((c) => (tierOf.get(c.rarity) ?? 0) >= topTier)
+  const pool = topPool.length ? topPool : setCards
+
+  const pulls = []
+  for (let i = 0; i < count; i++) {
+    const eligible = pool.filter((c) => {
+      if (!c.serialCap) return true
+      const issuedSoFar = c.serialIssued + (issuedThisRip.get(c.id) ?? 0)
+      return issuedSoFar < c.serialCap
+    })
+    const drawPool = eligible.length ? eligible : pool
+    const card = drawPool[Math.floor(rng() * drawPool.length) % drawPool.length]
+    if (card.serialCap) {
+      const nextNumber = card.serialIssued + (issuedThisRip.get(card.id) ?? 0) + 1
+      issuedThisRip.set(card.id, (issuedThisRip.get(card.id) ?? 0) + 1)
+      pulls.push({ ...card, _serialPulled: nextNumber })
+    } else {
+      pulls.push(card)
+    }
+  }
+  return pulls
 }
 
 // The slot list to draw from: the set's authored format, or a legacy fallback
@@ -72,9 +151,10 @@ function resolveSlots(set, sheet) {
 }
 
 // Draw a rarity id for one authored slot. The slot's `rarityIds` restrict the
-// pool; only rarities actually present in the set's cards are eligible. Weight is
-// pullWeight; an `escalate` slot squares the rarity bias so it leans to the top
-// of its list (the chase-slot feel). Falls back to the commonest present rarity.
+// pool; only rarities actually present in the set's cards are eligible. Weight
+// comes from slotWeightOf (rarities.js) — shared with the odds-panel math so a
+// published "these are the odds" claim can never drift from the real draw.
+// Falls back to the commonest present rarity.
 function drawSlotRarity(slot, sheet, byRarity, rng) {
   const ids = new Set(slot.rarityIds ?? [])
   let pool = sheet.filter((r) => ids.has(r.id) && byRarity.has(r.id))
@@ -83,15 +163,7 @@ function drawSlotRarity(slot, sheet, byRarity, rng) {
   if (!pool.length) pool = sheet.filter((r) => byRarity.has(r.id))
   if (!pool.length) return [...byRarity.keys()][0]
 
-  if (slot.escalate) {
-    // Escalate: bias toward the rarer end WITHOUT inverting the order. We compress
-    // pullWeight toward equal (sqrt), which flattens the steep common→secret
-    // falloff so the rare end shows up far more than in a flat draw — but the
-    // natural ordering holds (a holo still beats an ultra beats a secret). The
-    // result is a chase slot that mostly lands holo/ultra with a secret thrill.
-    return weightedPick(pool, (r) => Math.max(0.0001, r.pullWeight) ** 0.5, rng)
-  }
-  return weightedPick(pool, (r) => Math.max(0, r.pullWeight), rng)
+  return weightedPick(pool, (r) => slotWeightOf(r, slot.escalate), rng)
 }
 
 function weightedPick(items, weightOf, rng) {

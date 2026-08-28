@@ -20,3 +20,9 @@ npm-debug.log*
 # Env
 .env
 .env.local
+
+# iOS — the Xcode project is GENERATED from ios/project.yml by `npm run ios:project`.
+ios/*.xcodeproj
+ios/build
+ios/DerivedData
+ios/shots

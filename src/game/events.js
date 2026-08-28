@@ -5,8 +5,8 @@
 // game state makes them relevant — a "dominant card" event needs a real
 // high-pressure card; a "beloved artist" spike needs cards by a popular artist).
 // resolve() returns { text, tone, effects } where effects is a patch applied to
-// the world: cash, per-card price/hype/banPressure bumps, segment & player-base
-// deltas, and metagame nudges. Effects make events matter, not just flavor.
+// the world: cash, per-card price/hype/controversy bumps, and segment &
+// player-base deltas. Effects make events matter, not just flavor.
 
 import { makeRng, hashSeed, range } from './rng.js'
 import { getArtist } from './content/artists.js'
@@ -28,11 +28,11 @@ function pickCard(cards, rng) {
   return cards[Math.floor(rng() * cards.length) % cards.length]
 }
 
-// The most "dominant" live card = highest playability (what the meta warps around).
+// The most "dominant" live card = highest punch (what the meta warps around).
 function dominantCard(state) {
   const live = liveCards(state)
   if (!live.length) return null
-  return live.reduce((a, b) => (b.popFactors.playability > a.popFactors.playability ? b : a))
+  return live.reduce((a, b) => (b.popFactors.punch > a.popFactors.punch ? b : a))
 }
 
 // A card whose artist is a high-reach name (for "beloved artist" events).
@@ -44,10 +44,17 @@ function cardByHotArtist(state, rng) {
   return pickCard(live, rng)
 }
 
+// The priciest live card in a set — the natural "hit" a god-pack story names.
+function priciestCardInSet(state, setId) {
+  const live = liveCards(state).filter((c) => c.setId === setId)
+  if (!live.length) return null
+  return live.reduce((a, b) => (b.singlePrice > a.singlePrice ? b : a))
+}
+
 // ---- Effect application helpers ----
 
 // Multiply a single card's price/hype by factors; returns a cards array patch.
-function bumpCard(cards, cardId, { priceMul = 1, hype = 0, banPressure = 0 }) {
+function bumpCard(cards, cardId, { priceMul = 1, hype = 0, controversy = 0 }) {
   return cards.map((c) =>
     c.id === cardId
       ? {
@@ -55,7 +62,7 @@ function bumpCard(cards, cardId, { priceMul = 1, hype = 0, banPressure = 0 }) {
           singlePrice: Math.round(c.singlePrice * priceMul * 100) / 100,
           priceHistory: [...c.priceHistory, Math.round(c.singlePrice * priceMul * 100) / 100].slice(-26),
           hype: clamp((c.hype ?? 0) + hype, 0, 3),
-          banPressure: clamp((c.banPressure ?? 0) + banPressure, 0, 100),
+          controversy: clamp((c.controversy ?? 0) + controversy, 0, 100),
         }
       : c,
   )
@@ -82,18 +89,46 @@ export const EVENTS = [
     },
   },
   {
-    id: 'cheating_scandal',
+    id: 'shill_bidding_scandal',
     kind: 'scandal',
     tone: 'bad',
     weight: 1,
     condition: (s) => s.sets.some((x) => !x.rotated),
     resolve: (s, rng) => ({
-      text: `Tournament-cheating story breaks at a major event. The competitive scene is rattled.`,
+      text: `A shill-bidding ring is exposed inflating auction prices on the secondary market. Trust in the market takes a hit.`,
       effects: {
-        competitiveDelta: -Math.round(s.segments.competitive * range(rng, 0.02, 0.05)),
-        metagame: { archetypeBalance: -range(rng, 1, 4) },
+        collectorsDelta: -Math.round(s.segments.collectors * range(rng, 0.02, 0.05)),
       },
     }),
+  },
+  {
+    id: 'odds_transparency_backlash',
+    kind: 'scandal',
+    tone: 'bad',
+    weight: 0.6,
+    // Only a risk for an obscured, genuinely chase-heavy set — a published one
+    // structurally can't draw this (see weightMul below).
+    condition: (s) => s.sets.some((x) => !x.rotated && !x.oddsPublished && (x.rarityChase ?? 50) >= 60),
+    weightMul: (s) => {
+      const obscuredChaseSets = s.sets.filter((x) => !x.rotated && !x.oddsPublished && (x.rarityChase ?? 50) >= 60).length
+      const anyPublished = s.sets.some((x) => x.oddsPublished)
+      return clamp(1 + obscuredChaseSets * 0.35 - (anyPublished ? 0.4 : 0), 0.2, 3)
+    },
+    resolve: (s, rng) => {
+      const candidates = s.sets.filter((x) => !x.rotated && !x.oddsPublished && (x.rarityChase ?? 50) >= 60)
+      const target = candidates[Math.floor(rng() * candidates.length) % candidates.length]
+      let cards = s.cards
+      for (const c of liveCards(s).filter((c) => c.setId === target.id)) {
+        cards = bumpCard(cards, c.id, { priceMul: range(rng, 0.85, 0.95) })
+      }
+      return {
+        text: `Regulators and the community spotlight ${target.name}'s undisclosed pull rates — a gambling-mechanics story goes viral.`,
+        effects: {
+          cards,
+          collectorsDelta: -Math.round(s.segments.collectors * range(rng, 0.01, 0.03)),
+        },
+      }
+    },
   },
   {
     id: 'artist_spike',
@@ -135,8 +170,12 @@ export const EVENTS = [
     tone: 'bad',
     weight: 0.9,
     condition: (s) => s.sets.some((x) => !x.rotated && (x.sold ?? 0) < (x.supply ?? 0)),
+    // Investing in supply-chain capacity makes this event both rarer AND
+    // cheaper when it does hit — see distributors.js's upgradeSupplyChain.
+    weightMul: (s) => 1 - (s.supplyChainCapacity ?? 40) / 100 * 0.6,
     resolve: (s, rng) => {
-      const cost = Math.round(range(rng, 8_000, 25_000))
+      const capacityRelief = 1 - (s.supplyChainCapacity ?? 40) / 100 * 0.6
+      const cost = Math.round(range(rng, 8_000, 25_000) * capacityRelief)
       return {
         text: `Print/supply-chain snag: a distribution delay and emergency reprint run costs you $${cost.toLocaleString()}.`,
         effects: { cash: -cost },
@@ -144,23 +183,23 @@ export const EVENTS = [
     },
   },
   {
-    id: 'dominant_card_ban_demand',
-    kind: 'meta',
+    id: 'manufactured_scarcity_backlash',
+    kind: 'scandal',
     tone: 'bad',
     weight: 1.4,
     condition: (s) => {
       const d = dominantCard(s)
-      // Fires for a genuinely strong card, or one already drawing ban pressure —
-      // reachable without maxing the power slider, but not for a fine format.
-      return d && (d.popFactors.playability > 68 || (d.banPressure ?? 0) > 35)
+      // Fires for a genuinely splashy card, or one already drawing controversy —
+      // reachable without a maxed-out chase design, but not for a quiet catalog.
+      return d && (d.popFactors.punch > 68 || (d.controversy ?? 0) > 35)
     },
     resolve: (s, rng) => {
       const card = dominantCard(s)
       return {
-        text: `${card.name} is so dominant the community is openly demanding a ban. Pressure is mounting.`,
+        text: `Accusations fly that ${card.name}'s scarcity was manufactured to juice its price. The community is openly calling for you to pull it from print.`,
         effects: {
-          cards: bumpCard(s.cards, card.id, { banPressure: range(rng, 12, 22) }),
-          metagame: { diversity: -range(rng, 2, 5) },
+          cards: bumpCard(s.cards, card.id, { controversy: range(rng, 12, 22) }),
+          collectorsDelta: -Math.round(s.segments.collectors * range(rng, 0.005, 0.015)),
         },
       }
     },
@@ -179,6 +218,31 @@ export const EVENTS = [
         effects: {
           cards: bumpCard(s.cards, card.id, { priceMul: range(rng, 1.1, 1.35), hype: 0.5 }),
           casualDelta: newPlayers,
+        },
+      }
+    },
+  },
+  {
+    id: 'god_pack_pulled',
+    kind: 'viral',
+    tone: 'good',
+    weight: 0.4, // rarer than most events — this is a real-hobby legend, not routine
+    condition: (s) => s.sets.some((x) => !x.rotated) && liveCards(s).length > 0,
+    resolve: (s, rng) => {
+      const set = [...s.sets].filter((x) => !x.rotated)[Math.floor(rng() * s.sets.filter((x) => !x.rotated).length)]
+      const card = priciestCardInSet(s, set.id) ?? pickCard(liveCards(s), rng)
+      const others = liveCards(s).filter((c) => c.setId === set.id && c.id !== card.id)
+      let cards = bumpCard(s.cards, card.id, { priceMul: range(rng, 1.3, 1.7), hype: 0.6 })
+      // A couple of the set's other cards ride the wave too — that's the
+      // marketing-moment effect, not just one card spiking in isolation.
+      for (const c of others.slice(0, 2)) {
+        cards = bumpCard(cards, c.id, { priceMul: range(rng, 1.05, 1.2), hype: 0.2 })
+      }
+      return {
+        text: `A collector claims to have pulled a GOD PACK of ${set.name} — every card a hit, headlined by ${card.name}. The story is everywhere.`,
+        effects: {
+          cards,
+          collectorsDelta: Math.round(s.segments.collectors * range(rng, 0.01, 0.03)),
         },
       }
     },
@@ -235,7 +299,6 @@ export const EVENTS = [
       text: `A rival card game drops a hyped set this week, pulling attention and wallets away from yours.`,
       effects: {
         casualDelta: -Math.round(s.segments.casual * range(rng, 0.01, 0.03)),
-        competitiveDelta: -Math.round(s.segments.competitive * range(rng, 0.005, 0.02)),
       },
     }),
   },
@@ -248,8 +311,7 @@ export const EVENTS = [
     resolve: (s, rng) => ({
       text: `Local game stores report a great weekend of events around your game — grassroots goodwill ticks up.`,
       effects: {
-        casualDelta: Math.round(range(rng, 80, 250)),
-        competitiveDelta: Math.round(range(rng, 30, 120)),
+        casualDelta: Math.round(range(rng, 100, 340)),
       },
     }),
   },
@@ -266,13 +328,17 @@ export function rollEvent(state) {
   const eligible = EVENTS.filter((e) => e.condition(state))
   if (!eligible.length) return null
 
-  // Weighted pick.
-  const total = eligible.reduce((s, e) => s + e.weight, 0)
+  // Weighted pick. An optional `weightMul(state)` lets an event's own effective
+  // weight react to world state (e.g. supply-chain capacity dampening the
+  // supply_chain event) without touching every other event's static weight.
+  const effectiveWeight = (e) => e.weight * (e.weightMul ? e.weightMul(state) : 1)
+  const total = eligible.reduce((s, e) => s + effectiveWeight(e), 0)
   let r = rng() * total
   let chosen = eligible[eligible.length - 1]
   for (const e of eligible) {
-    if (r < e.weight) { chosen = e; break }
-    r -= e.weight
+    const w = effectiveWeight(e)
+    if (r < w) { chosen = e; break }
+    r -= w
   }
 
   const { text, effects } = chosen.resolve(state, rng)
@@ -289,16 +355,9 @@ export function applyEventEffects(next, effects) {
 
   const seg = next.segments
   if (effects.casualDelta) seg.casual = Math.max(0, seg.casual + effects.casualDelta)
-  if (effects.competitiveDelta) seg.competitive = Math.max(0, seg.competitive + effects.competitiveDelta)
   if (effects.collectorsDelta) seg.collectors = Math.max(0, seg.collectors + effects.collectorsDelta)
-  if (effects.casualDelta || effects.competitiveDelta || effects.collectorsDelta) {
-    next.playerBase = Math.max(0, seg.casual + seg.competitive + seg.collectors)
-  }
-
-  if (effects.metagame) {
-    for (const [k, d] of Object.entries(effects.metagame)) {
-      next.metagame[k] = clamp(next.metagame[k] + d, 0, 100)
-    }
+  if (effects.casualDelta || effects.collectorsDelta) {
+    next.playerBase = Math.max(0, seg.casual + seg.collectors)
   }
 
   // An artist breaking out: spike their commission cost/reach and graduate them.

@@ -3,41 +3,52 @@
 // runs feel a little different without diverging the whole sim.
 
 // The game your TCG resembles. Each gives a vibe blurb, a default cadence the
-// genre is known for, and a light starting tilt (segment mix + metashare lean).
+// genre is known for, and a light starting tilt (segment mix).
 export const ARCHETYPES = [
   {
     id: 'collectible', name: 'Collectible-first', resembles: 'Pokémon-like',
-    blurb: 'A beloved collectible. Art and chase rarities drive the base; the competitive scene is real but secondary.',
+    blurb: 'A beloved collectible. Art, chase rarities, and nostalgia drive the base above all else.',
     defaultCadence: 14,
-    // Tilt: bigger collector segment, smaller hardcore competitive.
-    segments: { competitive: 2_500, casual: 5_000, collectors: 4_000 },
-    archetypes: { aggro: 28, control: 22, combo: 22, midrange: 28 },
+    segments: { casual: 5_000, collectors: 4_000 },
   },
   {
-    id: 'competitive', name: 'Competitive-first', resembles: 'Magic-like',
-    blurb: 'A deep, tournament-driven game. The meta and your staples are what the audience lives for.',
+    id: 'staples', name: 'Staple-driven', resembles: 'Magic-like',
+    blurb: 'A deep, beloved core cardpool people build around for years — prized for its classic staples and long memory.',
     defaultCadence: 12,
-    segments: { competitive: 5_000, casual: 3_500, collectors: 2_000 },
-    archetypes: { aggro: 30, control: 25, combo: 25, midrange: 20 },
+    segments: { casual: 3_500, collectors: 4_500 },
   },
   {
     id: 'combo', name: 'Combo-driven', resembles: 'Yu-Gi-Oh-like',
-    blurb: 'Fast, explosive, combo-forward. A hungry player base that churns through power quickly.',
+    blurb: 'Fast, flashy, chase-forward. A hungry crowd that churns through new drops quickly.',
     defaultCadence: 9,
-    segments: { competitive: 4_500, casual: 4_500, collectors: 1_500 },
-    archetypes: { aggro: 30, control: 15, combo: 35, midrange: 20 },
+    segments: { casual: 5_500, collectors: 3_000 },
   },
   {
     id: 'indie', name: 'Scrappy indie', resembles: 'Indie / Kickstarter',
     blurb: 'A small passionate community. Less cash, more goodwill — every set matters.',
     defaultCadence: 16,
-    segments: { competitive: 2_000, casual: 2_500, collectors: 1_500 },
-    archetypes: { aggro: 25, control: 25, combo: 25, midrange: 25 },
+    segments: { casual: 2_500, collectors: 2_000 },
   },
 ]
 
 export function getArchetype(id) {
   return ARCHETYPES.find((a) => a.id === id) ?? ARCHETYPES[0]
+}
+
+// Persistent market identity tilt (see market.js's fairValue): beyond the
+// one-time starting nudge to segments above, the chosen archetype keeps a
+// small, permanent lean on how richly the game prices collectibility every
+// week. Small (≤12%) so it flavors the curve without swamping the shared
+// fair-value math.
+export const MARKET_TILT = {
+  collectible: { collector: 1.12 },
+  staples: { collector: 1.05 },
+  combo: { collector: 1.03 },
+  indie: { collector: 1 },
+}
+
+export function getMarketTilt(id) {
+  return MARKET_TILT[id] ?? MARKET_TILT.collectible
 }
 
 // Cadence pledge bounds (weeks between releases).

@@ -26,7 +26,31 @@ const KEY = 'tcg-manager-sim/save'
 // v7: zero-player / zero-satisfaction start + reworked loss model (cash can go
 // negative as a loan with weekly interest; debt-spiral / broke-and-abandoned /
 // -100 revolt are the only ruins). New state.segmentLean; segments start at 0.
-const VERSION = 7
+// v8: persistent character roster (state.characters), signature cards can carry
+// characterId/treatment, cards can carry characterId. A v7 save predates the
+// roster entirely.
+// v9: the collector/reseller pivot — competitive UI hidden (bans/organized
+// play/metagame panels removed, sim still runs headless); new state.franchise
+// (Franchise Reputation), state.supplyChainCapacity, state.pendingWaves
+// (staggered regional releases); products carry a `channels` split; pack
+// format slots carry `iconOnly`. A v8 save predates all of these.
+// v10: serialized chase cards (card.serialCap/serialIssued), grading partners
+// (state.gradingPartners, card.graded), and regional-depth extras on
+// pendingWaves entries (leadRegionName, adjusted). A v9 save predates all of
+// these.
+// v11: mimicking the live hobby — god packs (state.lastRip.isGodPack, no new
+// persisted fields beyond that), live box breaks (no new state), the anti-
+// scalping toolkit (state.purchaseLimitPolicy/phantomStockPolicy), and
+// population reports (card.gradedPopulation). A v10 save predates these.
+// v12: the counter directive is gone — competitive silver-bullet/archetype-
+// suppression cards were the last competitive-only feature in the set builder
+// (signatureCard.counter removed). A v11 save predates this.
+// v13: the competitive engine is fully removed — no more state.metagame
+// (archetypes/diversity/solveLevel/powerLevel/archetypeBalance), no more
+// `competitive` player segment (state.segments/segmentLean are now
+// {casual, collectors} only), new state.printIntensity (nostalgia-erosion
+// dial) and per-set `buzz`. A v12 save predates all of these.
+const VERSION = 13
 
 // True only where a real localStorage exists. Guards SSR / the headless
 // playtest harness (tools/playtest.mjs runs the sim in plain Node), and the

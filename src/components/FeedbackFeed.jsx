@@ -5,14 +5,15 @@
 
 const TYPE_BADGE = {
   streamer: { label: 'STREAM', cls: 'badge--streamer' },
-  competitor: { label: 'PRO', cls: 'badge--competitor' },
+  authenticator: { label: 'AUTH', cls: 'badge--competitor' },
   collector: { label: 'INVEST', cls: 'badge--collector' },
   reviewer: { label: 'REVIEW', cls: 'badge--reviewer' },
-  theorycrafter: { label: 'THEORY', cls: 'badge--theory' },
+  analyst: { label: 'ANALYST', cls: 'badge--theory' },
 }
 
 const STANCE_CLS = {
-  ban: 'item--ban',
+  pull: 'item--ban',
+  alarm: 'item--ban',
   warn: 'item--warn',
   pan: 'item--pan',
   hype: 'item--hype',

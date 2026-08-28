@@ -1,24 +1,25 @@
 import { useState } from 'react'
 import { useGame } from './game/useGame.js'
 import TopBar from './components/TopBar.jsx'
-import MetagamePanel from './components/MetagamePanel.jsx'
 import MarketTicker from './components/MarketTicker.jsx'
 import FeedbackFeed from './components/FeedbackFeed.jsx'
 import EventsFeed from './components/EventsFeed.jsx'
 import PersonasPanel from './components/PersonasPanel.jsx'
-import BansPanel from './components/BansPanel.jsx'
+import CastPanel from './components/CastPanel.jsx'
 import SetsPanel from './components/SetsPanel.jsx'
-import MetaReport from './components/MetaReport.jsx'
 import PackRipper from './components/PackRipper.jsx'
 import DistributorsPanel from './components/DistributorsPanel.jsx'
-import OrganizedPlayPanel from './components/OrganizedPlayPanel.jsx'
 import Onboarding from './components/Onboarding.jsx'
 import SetBuilder from './components/setbuilder/SetBuilder.jsx'
 
-// Mobile tabs group the seven panels into four sections. Desktop ignores this
-// and shows the full two-column dashboard; the tab bar only appears on mobile.
+// Mobile tabs group the panels into sections. Desktop ignores this and shows
+// the full two-column dashboard; the tab bar only appears on mobile. There is
+// no competitive-play system left, even headless — the dashboard is purely
+// collector/reseller-first: sets & scarcity, market & packs, community &
+// distribution, news. Organized play and manually banning a card are gone
+// entirely; pull-from-print and promo SKUs are the collector-era replacements.
 const TABS = [
-  { id: 'meta', label: 'Meta', icon: '📊' },
+  { id: 'sets', label: 'Sets', icon: '📦' },
   { id: 'market', label: 'Market', icon: '📈' },
   { id: 'community', label: 'Community', icon: '💬' },
   { id: 'events', label: 'News', icon: '📰' },
@@ -27,7 +28,7 @@ const TABS = [
 export default function App() {
   const game = useGame()
   const [building, setBuilding] = useState(false)
-  const [tab, setTab] = useState('meta')
+  const [tab, setTab] = useState('sets')
 
   // First run: gate everything behind onboarding until the player launches.
   if (!game.state.config?.started) {
@@ -37,16 +38,19 @@ export default function App() {
   // The panels, declared once and reused by both layouts so there's a single
   // source of truth for props.
   const panels = {
-    metagame: <MetagamePanel state={game.state} />,
-    sets: <SetsPanel state={game.state} onReprint={game.reprint} />,
+    sets: <SetsPanel state={game.state} onReprint={game.reprint} onPull={game.pull} onAdjustWave={game.adjustWave} onToggleOdds={game.toggleOddsPublished} />,
     market: <MarketTicker state={game.state} />,
-    metaReport: <MetaReport state={game.state} />,
-    packs: <PackRipper state={game.state} onRip={game.rip} />,
-    bans: <BansPanel state={game.state} onBan={game.ban} onPull={game.pull} />,
+    packs: <PackRipper state={game.state} onRip={game.rip} onRunBreak={game.runBreak} />,
     feedback: <FeedbackFeed state={game.state} />,
     personas: <PersonasPanel state={game.state} onComp={game.comp} onSponsor={game.sponsor} onDropSponsor={game.unsponsor} />,
-    distributors: <DistributorsPanel state={game.state} onSign={game.signDist} onCultivate={game.cultivateDist} onDrop={game.dropDist} />,
-    organizedPlay: <OrganizedPlayPanel state={game.state} onRun={game.runOP} />,
+    cast: <CastPanel state={game.state} />,
+    distributors: <DistributorsPanel
+      state={game.state}
+      onSign={game.signDist} onCultivate={game.cultivateDist} onDrop={game.dropDist}
+      onUpgradeSupplyChain={game.upgradeSupplyChain}
+      onSignGrading={game.signGrading} onCultivateGrading={game.cultivateGrading} onDropGrading={game.dropGrading}
+      onTogglePurchaseLimits={game.togglePurchaseLimits} onTogglePhantomStock={game.togglePhantomStock}
+    />,
     events: <EventsFeed state={game.state} />,
   }
 
@@ -57,18 +61,15 @@ export default function App() {
       {/* Desktop: the rich two-column dashboard. Hidden on mobile via CSS. */}
       <main className="dashboard dashboard--desktop">
         <section className="col col--main">
-          {panels.metagame}
           {panels.sets}
           {panels.market}
-          {panels.metaReport}
           {panels.packs}
-          {panels.bans}
         </section>
         <aside className="col col--side">
           {panels.feedback}
           {panels.personas}
+          {panels.cast}
           {panels.distributors}
-          {panels.organizedPlay}
           {panels.events}
         </aside>
       </main>
@@ -76,9 +77,9 @@ export default function App() {
       {/* Mobile: one tab's panels at a time, with a bottom tab bar. Hidden on
           desktop via CSS. */}
       <main className="dashboard--mobile">
-        {tab === 'meta' && <div className="col">{panels.metagame}{panels.sets}</div>}
-        {tab === 'market' && <div className="col">{panels.market}{panels.metaReport}{panels.packs}{panels.bans}</div>}
-        {tab === 'community' && <div className="col">{panels.feedback}{panels.personas}{panels.distributors}{panels.organizedPlay}</div>}
+        {tab === 'sets' && <div className="col">{panels.sets}</div>}
+        {tab === 'market' && <div className="col">{panels.market}{panels.packs}</div>}
+        {tab === 'community' && <div className="col">{panels.feedback}{panels.personas}{panels.cast}{panels.distributors}</div>}
         {tab === 'events' && <div className="col">{panels.events}</div>}
       </main>
 
@@ -102,9 +103,11 @@ export default function App() {
           setNumber={game.state.sets.length + 1}
           cash={game.state.cash}
           artists={game.state.artists}
+          characters={game.state.characters ?? []}
           liveCards={game.state.cards.filter((c) => !c.banned && !c.rotated)}
           sets={game.state.sets}
           blocks={game.state.blocks ?? []}
+          franchise={game.state.franchise}
           onRelease={game.release}
           onClose={() => setBuilding(false)}
         />

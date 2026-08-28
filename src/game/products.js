@@ -6,28 +6,61 @@
 // more revenue channels, but each costs its own print run up front.
 //
 // A product on a released set: { kind, name, price, printRun, supply, sold,
-// appeal:{casual,competitive,collectors}, demandMul, exclusivePromo? }.
+// appeal:{casual,collectors}, demandMul, exclusivePromo? }.
 // `appeal` weights how much each player segment buys this SKU; `demandMul` is a
 // flat volume multiplier vs. boosters (a $90 box moves far fewer units than a
 // $4.50 pack, before price elasticity).
 
 import { printRunUnits } from './revenue.js'
 
+// Where a product's supply ACTUALLY goes — the channel-allocation layer. Each
+// channel trades margin against reach and scalper exposure: direct-to-consumer
+// keeps the most margin but reaches fewer buyers and barely feeds resellers;
+// big-box moves the most volume at the steepest discount and the highest
+// scalper exposure; LGS/indie is the friendliest, safest, modest-volume
+// channel; international is a fair middle ground. `channels` on a product is a
+// { direct, lgs, bigBox, international } split that sums to 1.
+// marginMul/reachMul are tuned so DEFAULT_CHANNELS' weighted average of each is
+// ~1.0 — verified against tools/playtest.mjs, which should show roughly the
+// same cash trajectories as before this system existed for a player who never
+// touches channel allocation. Deviating from the default trades one for the
+// other (and moves scalperExposure, whose default isn't meant to be neutral —
+// it's a new baseline heat pressure that channel choice can raise or lower).
+export const CHANNELS = {
+  direct: { label: 'Direct-to-consumer', marginMul: 1.25, reachMul: 0.60, scalperExposure: 0.05 },
+  lgs: { label: 'LGS / indie', marginMul: 1.00, reachMul: 0.90, scalperExposure: 0.10 },
+  bigBox: { label: 'Big-box retail', marginMul: 0.60, reachMul: 1.80, scalperExposure: 0.55 },
+  international: { label: 'International', marginMul: 0.85, reachMul: 1.30, scalperExposure: 0.25 },
+}
+
+// The default split every product starts with — margin/reach-neutral by
+// construction (see the CHANNELS comment above) so a player who never touches
+// channel allocation sees roughly the same economy as before this system
+// existed.
+export const DEFAULT_CHANNELS = { direct: 0.4, lgs: 0.3, bigBox: 0.2, international: 0.1 }
+
+// Weighted blend of a channel stat across a product's split.
+export function channelBlend(channels, stat) {
+  const c = channels ?? DEFAULT_CHANNELS
+  return Object.entries(c).reduce((sum, [id, share]) => sum + share * (CHANNELS[id]?.[stat] ?? 1), 0)
+}
+
 // The SKU catalogue. `booster` is the base; the other three are opt-in. Defaults
 // here seed the builder; the player can tune price/printRun per set.
 export const SKU_TYPES = {
   booster: {
     kind: 'booster', name: 'Booster packs', defaultPrice: 4.5, defaultPrintRun: 50,
-    // Boosters are the reference product: broad appeal, neutral multiplier. These
-    // values reproduce the original single-product economy exactly.
-    appeal: { casual: 0.26, competitive: 0.1, collectors: 0.16 }, demandMul: 1,
+    // Boosters are the reference product: broad appeal, neutral multiplier.
+    // (Weights re-normalized to the 2-segment model — same total buyer-pool
+    // magnitude as the original 3-segment split.)
+    appeal: { casual: 0.32, collectors: 0.20 }, demandMul: 1,
     blurb: 'The base product. Broad appeal, the secondary market flows from here.',
     priceRange: [2, 12], elasticityRef: 4.5,
   },
   bundle: {
     kind: 'bundle', name: 'Bundle box', defaultPrice: 25, defaultPrintRun: 40,
     // Casual value play: a box of packs + extras. Casual-heavy, decent volume.
-    appeal: { casual: 0.34, competitive: 0.08, collectors: 0.12 }, demandMul: 0.22,
+    appeal: { casual: 0.40, collectors: 0.14 }, demandMul: 0.22,
     blurb: 'A value box of packs + extras. Courts casual fans; lower margin, good volume.',
     priceRange: [12, 60], elasticityRef: 28,
   },
@@ -35,14 +68,14 @@ export const SKU_TYPES = {
     kind: 'spc', name: 'Collector box (SPC)', defaultPrice: 90, defaultPrintRun: 25,
     // Premium collector product: low volume, high margin, collector-leaning. Can
     // carry an exclusive promo (set in the builder) that only ships in this SKU.
-    appeal: { casual: 0.05, competitive: 0.08, collectors: 0.42 }, demandMul: 0.06,
+    appeal: { casual: 0.06, collectors: 0.49 }, demandMul: 0.06,
     blurb: 'A premium collector box — low volume, high margin. Can include an exclusive promo.',
     priceRange: [40, 200], elasticityRef: 95,
   },
   tin: {
     kind: 'tin', name: 'Tins', defaultPrice: 18, defaultPrintRun: 45,
-    // Impulse retail: small, broad, mid-margin. A blend of casual + competitive.
-    appeal: { casual: 0.2, competitive: 0.12, collectors: 0.1 }, demandMul: 0.16,
+    // Impulse retail: small, broad, mid-margin.
+    appeal: { casual: 0.28, collectors: 0.14 }, demandMul: 0.16,
     blurb: 'Impulse retail tins — small, broad reach, mid margin.',
     priceRange: [10, 40], elasticityRef: 18,
   },
@@ -66,6 +99,7 @@ export function boosterProduct(draft) {
     name: SKU_TYPES.booster.name,
     price: draft.pricePoint,
     printRun: draft.printRun,
+    channels: draft.boosterChannels,
   })
 }
 
@@ -79,7 +113,7 @@ export function finalizeProducts(draft) {
 export function makeProduct(kind) {
   const t = SKU_TYPES[kind]
   if (!t) return null
-  return { kind, name: t.name, price: t.defaultPrice, printRun: t.defaultPrintRun, exclusivePromo: false }
+  return { kind, name: t.name, price: t.defaultPrice, printRun: t.defaultPrintRun, exclusivePromo: false, channels: { ...DEFAULT_CHANNELS } }
 }
 
 // The print/manufacturing cost of one product line, scaled by its print run and
@@ -118,6 +152,7 @@ export function finalizeProduct(product) {
     demandMul: t.demandMul,
     elasticityRef: t.elasticityRef,
     exclusivePromo: !!product.exclusivePromo,
+    channels: product.channels ?? { ...DEFAULT_CHANNELS },
     supply: productSupply(product),
     sold: 0,
   }

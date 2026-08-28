@@ -5,58 +5,64 @@
 
 import { makeRng, hashSeed, range } from './rng.js'
 import { clamp } from './simulation.js'
+import { legacyMultiplier } from './franchise.js'
+import { getMarketTilt } from './config.js'
 
 const PRICE_HISTORY_LEN = 26 // ~half a year of weekly points kept per card
 
 // ---- Fair value ----------------------------------------------------------
 
-// A card's fair value is the MAX of two independent economies — a card is worth
-// whatever it's most valuable FOR. This game has a thriving collector base AND a
-// player base, and they can want completely different cards:
-//
-//   PLAYER value  — competitive relevance: playability × live-meta relevance.
-//                   The staples of the best deck cost money; cards the format has
-//                   passed by drift to bulk. This is the "actually played" side.
-//   COLLECTOR value — rarity tier + art + the card's collector hype, scaled by
-//                   scarcity. A gorgeous secret rare is a GRAIL worth a fortune
-//                   even if it's competitively unplayable (the Pokémon side).
-//
-// max() means either path alone makes a card expensive: a meta common is valued
-// on play, an unplayable chase mythic on collectibility, and a card strong in
-// both is a true grail.
-export function fairValue(card, set, metagame) {
+// A card's fair value is a pure COLLECTOR economy — rarity tier + art + the
+// card's collector hype, scaled by scarcity. A gorgeous secret rare is a GRAIL
+// worth a fortune purely on collectibility; there is no separate "actually
+// played" price path.
+// `legacyMul` (default 1, from franchise.js's legacyMultiplier) lifts old
+// vintage cards for reasons independent of any one card's own stats — a
+// franchise's growing reputation makes the whole back-catalog worth more.
+// `archetypeId` (the identity picked at onboarding, see config.js's
+// MARKET_TILT) applies a small permanent collector-side lean, so the choice
+// keeps mattering all game, not just at the start.
+export function fairValue(card, set, legacyMul = 1, archetypeId = 'collectible') {
   const f = card.popFactors
+  const tilt = getMarketTilt(archetypeId)
 
   // Under-printed sets keep singles scarce and pricey; over-print drags them.
-  const scarcity = 1 + (1 - set.printRun / 100) * 1.4
+  // A set that's actually SOLD THROUGH (live sell-through, not just its static
+  // print-run dial) is scarcer in practice than one sitting on shelves at the
+  // same print run — depletion sharpens scarcity beyond the authored number.
+  const sellThrough = set.supply > 0 ? clamp((set.sold ?? 0) / set.supply, 0, 1) : 0
+  const scarcity = 1 + (1 - set.printRun / 100) * 1.4 + sellThrough * 0.5
 
-  // --- Player value: playability modulated by the live meta ---
-  const freshness = 1 - metagame.solveLevel / 140
-  const obsolescence = 1 - Math.max(0, metagame.powerLevel - f.playability) / 200
-  const relevance = clamp(freshness * obsolescence + 0.4, 0.35, 1.4)
-  const playerVal = f.playability * relevance * 0.85 * scarcity * 0.6
-
-  // --- Collector value: rarity tier + art + collector hype, fully scarcity-fed.
   // Rarity tier (0–100 from the set's sheet) dominates; rarity scarcity is
-  // squared in so high-tier secret rares climb HARD. Independent of playability.
+  // squared in so high-tier secret rares climb HARD.
   const raritySq = (f.rarity / 100) ** 1.6 * 100 // convex: top tiers pull away
   const collectorBase = raritySq * 0.95 + f.artAppeal * 0.35 + f.hype * 0.2
   // Chase-dense sets (minors/micros, set.collectorMul > 1) and block-gimmick
-  // treatment cards trade RICHER on the collector side — that's the secondary-
-  // market draw of a collector drop. Lifts only the collector path, so a
-  // competitively-valued staple is unaffected.
-  const collectorLift = (set.collectorMul ?? 1) * (card.treatment ? 1.25 : 1)
-  const collectorVal = collectorBase * scarcity * 0.6 * collectorLift
+  // treatment cards trade RICHER — that's the secondary-market draw of a
+  // collector drop.
+  // A hard-capped serialized card (see sets.js) is worth dramatically more the
+  // smaller its cap — a true 1-of-1 caps at 15×, a /99 barely lifts at ~1.5×.
+  const serialLift = card.serialCap ? clamp(120 / card.serialCap, 1.5, 15) : 1
+  // A third-party-graded card (see grading.js) carries a flat, permanent
+  // certification premium.
+  const gradedLift = card.graded ? 1.4 : 1
+  // A set the player tuned chase-heavy (draft.rarityChase, 0=accessible..
+  // 100=chase-heavy, see SetBuilder's "Rarity distribution" slider) trades
+  // richer across every card in it — the design choice to make pulls feel
+  // special pays off directly in secondary-market value.
+  const chaseLift = 0.7 + ((set.rarityChase ?? 50) / 100) * 0.6
+  const collectorLift = (set.collectorMul ?? 1) * (card.treatment ? 1.25 : 1) * serialLift * gradedLift * chaseLift
+  const collectorVal = collectorBase * scarcity * 0.6 * collectorLift * legacyMul * tilt.collector
 
-  return clamp(Math.max(playerVal, collectorVal), 0.25, 12000)
+  return clamp(collectorVal, 0.25, 12000)
 }
 
 // ---- Per-card weekly step -------------------------------------------------
 
 // Mutates a card-market record in place for one week and returns a "mover"
 // descriptor if the move is big enough to surface on the ticker.
-function stepCard(card, set, metagame, rng) {
-  const fair = fairValue(card, set, metagame)
+function stepCard(card, set, rng, legacyMul = 1, archetypeId = 'collectible') {
+  const fair = fairValue(card, set, legacyMul, archetypeId)
   const prev = card.singlePrice
 
   // Hype is a self-reinforcing bubble term that decays. While elevated it
@@ -65,7 +71,10 @@ function stepCard(card, set, metagame, rng) {
   card.hype = card.hype ?? card.popFactors.hype / 100 // 0..~1+
   // Speculative drift: hype occasionally spikes (persona-driven later), then bleeds off.
   const spike = rng() < 0.06 ? range(rng, 0.15, 0.5) : 0
-  card.hype = clamp(card.hype * 0.86 + spike, 0, 2)
+  // A bigger, more established franchise can support a bigger bubble before it
+  // matters — the hype ceiling rises a little with legacyMul (i.e. reputation).
+  const hypeCap = 2 + (legacyMul - 1) * 1.2
+  card.hype = clamp(card.hype * 0.86 + spike, 0, hypeCap)
 
   // Momentum: last week's move persists a little (trends), creating runs.
   card.momentum = card.momentum ?? 0
@@ -100,7 +109,11 @@ function stepCard(card, set, metagame, rng) {
 export function sealedPrice(set, weeksSince) {
   // An out-of-print (pulled) set is no longer being made — treat it as maximally
   // scarce so its sealed asymptotes to a higher ceiling (the out-of-print bump).
-  const printScarcity = 1 + (1 - set.printRun / 100) * 2.2 // 1.0 (over) .. ~3.2 (under)
+  // Live sell-through sharpens this beyond the static print-run dial, same as
+  // fairValue — a set that's actually sold out prices tighter than one that
+  // merely has a low print run but is sitting unsold.
+  const sellThrough = set.supply > 0 ? clamp((set.sold ?? 0) / set.supply, 0, 1) : 0
+  const printScarcity = 1 + (1 - set.printRun / 100) * 2.2 + sellThrough * 0.8 // 1.0 (over) .. ~4.0 (under+sold out)
   const scarcity = set.outOfPrint ? Math.max(printScarcity, 3.0) * 1.25 : printScarcity
   const ceiling = set.price * scarcity // where sealed asymptotes as it dries up
   // Exponential approach to the ceiling: 0 weeks → MSRP, → ceiling over time.
@@ -118,6 +131,8 @@ export function sealedPrice(set, weeksSince) {
 export function resolveMarket(state) {
   const setById = new Map(state.sets.map((s) => [s.id, s]))
   const rng = makeRng(hashSeed(`market:${state.week}`))
+  const reputation = state.franchise?.reputation ?? 0
+  const archetypeId = state.config?.archetype ?? 'collectible'
 
   const movers = []
   const cards = state.cards.map((orig) => {
@@ -141,23 +156,25 @@ export function resolveMarket(state) {
     const set = setById.get(card.setId)
     if (!set) return card
 
-    // Banned/rotated cards leave the competitive market — they drift on a
-    // collector floor rather than trading on playability, and never appear as
-    // movers. An OUT-OF-PRINT (pulled) set is different from a banned/legacy-
-    // rotated one: its supply is fixed and shrinking, so it drifts gently UPWARD
-    // (scarcity appreciation) instead of flat, and its sealed is priced as a
-    // permanently out-of-print collectible.
-    if (card.banned || card.rotated) {
-      const outOfPrint = card.outOfPrint || set.outOfPrint
-      const drift = outOfPrint ? range(rng, 0.0, 0.025) : range(rng, -0.01, 0.015)
+    // A pulled-from-print card's supply is fixed and shrinking — it drifts
+    // gently UPWARD (scarcity appreciation) instead of trading on the normal
+    // gravity/hype step, and its sealed is priced as a permanently
+    // out-of-print collectible.
+    if (card.outOfPrint) {
+      const drift = range(rng, 0.0, 0.025)
       card.singlePrice = Math.round(card.singlePrice * (1 + drift) * 100) / 100
       card.priceHistory = [...card.priceHistory, card.singlePrice].slice(-26)
       card.sealedPrice = sealedPrice(set, state.week - set.releasedWeek)
       return card
     }
 
-    const mover = stepCard(card, set, state.metagame, rng)
-    card.sealedPrice = sealedPrice(set, state.week - set.releasedWeek)
+    const ageWeeks = state.week - set.releasedWeek
+    const legacyMul = legacyMultiplier(reputation, ageWeeks, { anniversaryBoost: set.tier === 'anniversary' })
+    const mover = stepCard(card, set, rng, legacyMul, archetypeId)
+    card.sealedPrice = sealedPrice(set, ageWeeks)
+    // A rough dollar estimate of how much of this week's price is the franchise-
+    // reputation "legacy" premium, for the ticker to show as a distinct line.
+    card.legacyValue = legacyMul > 1 ? Math.round((legacyMul - 1) * card.singlePrice * 100) / 100 : 0
 
     // Surface only meaningful moves (>=6%) as ticker movers.
     if (Math.abs(mover.pct) >= 0.06) movers.push(mover)

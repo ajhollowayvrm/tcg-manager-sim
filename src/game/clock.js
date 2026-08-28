@@ -15,7 +15,7 @@
 
 // Tunables — thresholds for "this deserves attention."
 const BIG_MOVER_PCT = 0.25 // a single jumping/crashing ≥25% in a week
-const BAN_PRESSURE_PAUSE = 70 // a card crossing this ban-pressure is a decision point
+const CONTROVERSY_PAUSE = 70 // a card crossing this ban-pressure is a decision point
 const PLAYER_SWING_PCT = 0.04 // ±4% of the base in one week is notable
 const CASH_CRISIS = 40_000 // dipping under this (from above) is a hard stop
 
@@ -33,11 +33,19 @@ export function clockDirective(prev, next, event) {
     (c) =>
       !c.banned &&
       !c.rotated &&
-      (c.banPressure ?? 0) >= BAN_PRESSURE_PAUSE &&
-      (prevPressure(prev, c.id) < BAN_PRESSURE_PAUSE),
+      (c.controversy ?? 0) >= CONTROVERSY_PAUSE &&
+      (prevPressure(prev, c.id) < CONTROVERSY_PAUSE),
   )
   if (crossed) {
-    return { pause: true, reason: `${crossed.name} is drawing serious ban pressure — decide what to do.` }
+    // Name the fix, not just the problem: manual banning is retired (see
+    // docs/BRIEF.md "Bans & rotations") — the live relief lever is pulling the
+    // card's own set from print (SetsPanel). Naming the set here is what makes
+    // "pull from print" a legible response to this specific signal instead of
+    // a guess.
+    const home = next.sets.find((s) => s.id === crossed.setId)
+    const where = home ? ` (${home.name})` : ''
+    const pullHint = home ? `pulling ${home.name} from print` : 'pulling its set from print'
+    return { pause: true, reason: `${crossed.name}${where} is drawing serious ban pressure — consider ${pullHint}.` }
   }
 
   // Cash just crossed below the crisis line (from above it) — funding is at risk.
@@ -78,5 +86,5 @@ export function clockDirective(prev, next, event) {
 
 function prevPressure(prev, cardId) {
   const c = prev.cards.find((x) => x.id === cardId)
-  return c ? (c.banPressure ?? 0) : 0
+  return c ? (c.controversy ?? 0) : 0
 }

@@ -3,30 +3,30 @@
 
 import { PERSONAS } from './content/personas.js'
 import { seedArtists } from './artists.js'
+import { seedCharacters } from './characters.js'
 import { defaultConfig, getArchetype } from './config.js'
 
 // Normalize an archetype's seed segment numbers into fractions that sum to 1 —
 // the LEAN that new players distribute into as the base grows from zero.
 function normalizeLean(seg) {
-  const total = (seg.competitive ?? 0) + (seg.casual ?? 0) + (seg.collectors ?? 0)
-  if (total <= 0) return { competitive: 1 / 3, casual: 1 / 3, collectors: 1 / 3 }
+  const total = (seg.casual ?? 0) + (seg.collectors ?? 0)
+  if (total <= 0) return { casual: 1 / 2, collectors: 1 / 2 }
   return {
-    competitive: seg.competitive / total,
     casual: seg.casual / total,
     collectors: seg.collectors / total,
   }
 }
 
 // `config` is the onboarding result (or undefined for a bare new game). The
-// chosen archetype applies a SMALL starting nudge to segments/metashare; indie
-// also starts with less cash. Everything else is identity/flavor.
+// chosen archetype applies a SMALL starting nudge to segments; indie also
+// starts with less cash. Everything else is identity/flavor.
 export function createInitialState(config) {
   const cfg = { ...defaultConfig(), ...(config ?? {}) }
   const arch = getArchetype(cfg.archetype)
   // You start with NO players — nobody knows your game yet. The archetype's
   // segment numbers are kept only as the LEAN (the ratio new players discover
   // into); the base itself grows from zero via word-of-mouth + releases.
-  const segments = { competitive: 0, casual: 0, collectors: 0 }
+  const segments = { casual: 0, collectors: 0 }
   const playerBase = 0
   const cash = cfg.archetype === 'indie' ? 140_000 : 250_000
 
@@ -46,31 +46,25 @@ export function createInitialState(config) {
     segments,
     segmentLean: normalizeLean(arch.segments),
 
-    // Metagame health — four interacting dials (0–100).
-    // solveLevel is the core-loop engine: resets low on release, decays up weekly.
-    // archetypeBalance is DERIVED from `archetypes` each tick (see simulation.js)
-    // — it's how even the metashare is. The distribution below is the real state;
-    // releases tilt it, solving concentrates it, bans/rotations flatten it.
-    metagame: {
-      diversity: 70,
-      powerLevel: 40,
-      archetypeBalance: 60, // derived; seeded to match the starting distribution
-      solveLevel: 30,
-      // The field's split across the four play styles (sums to ~100), seeded from
-      // the chosen archetype's lean so each game starts a little different.
-      archetypes: { ...arch.archetypes },
-    },
+    // Nostalgia-erosion dial (0–100): loud modern card design mildly bleeds the
+    // collectors segment past a mid floor. Pushed up by a high-power-budget
+    // release, cools slowly on its own each week, relieved faster by pulling a
+    // hot set from print. See segments.js / simulation.js / bans.js.
+    printIntensity: 35,
 
     sets: [],
     cards: [],
     // Live blocks — the era-defining gimmick "blocks" that majors open and
-    // minors/micros ride (see blocks.js). They coexist (a new major never retires
-    // an old block), and each exerts a persistent warp on the archetype field that
-    // decays weekly. Empty until the first major ships.
+    // minors/micros ride (see blocks.js). They coexist (a new major never
+    // retires an old block). Empty until the first major ships.
     blocks: [],
     // Per-artist career state (cost/reach/trajectory) that drifts each week —
     // see artists.js. Identity (name/specialty) stays in the static roster.
     artists: seedArtists(),
+    // Persistent character roster (recurring cast a signature card can feature) —
+    // fame drifts each week off how their live cards are doing. See characters.js.
+    // Empty until the player creates their first character in the set builder.
+    characters: seedCharacters(),
     // Personas carry mutable run state on top of their static identity:
     // sentiment (mood), relationship (how cultivated — decays if neglected),
     // and a sponsored flag (an ongoing creator deal).
@@ -82,6 +76,22 @@ export function createInitialState(config) {
     // into a price-spiking, community-souring scalper market.
     distributors: [],
     scalperHeat: 0,
+    // Grading-partner deals — third-party authentication services that
+    // ambiently certify high-value singles each week. See grading.js.
+    gradingPartners: [],
+    // Anti-scalping policy toggles (see distributors.js/revenue.js) — free
+    // standing stances, off by default, each a real revenue/reach tradeoff.
+    purchaseLimitPolicy: false,
+    phantomStockPolicy: false,
+    // Shipping/production capacity — a logistics stat the player can invest in
+    // to reduce supply-chain event frequency/severity. See distributors.js
+    // upgradeSupplyChain() and events.js's supply_chain weightMul.
+    supplyChainCapacity: 40,
+    // Franchise Reputation — a slow-moving brand-prestige stat. See franchise.js.
+    franchise: { reputation: 5, cadenceEwma: 50, sentimentEwma: 0 },
+    // Scheduled "wide release" waves from a staggered regional launch — see
+    // sets.js/useGame.js RELEASE_SET and simulation.js's weekly check.
+    pendingWaves: [],
 
     feedbackFeed: [], // qualitative chatter — sometimes lies
     eventsFeed: [], // news/curveballs

@@ -9,20 +9,20 @@ function money(n) { return '$' + Math.round(n).toLocaleString('en-US') }
 
 const TYPE_LABEL = {
   streamer: 'Streamer',
-  competitor: 'Pro',
+  authenticator: 'Authenticator',
   collector: 'Investor',
   reviewer: 'Reviewer',
-  theorycrafter: 'Theorycrafter',
+  analyst: 'Analyst',
 }
 
 // Filter chips: All + each type.
 const TYPE_FILTERS = [
   { id: 'all', label: 'All' },
   { id: 'streamer', label: 'Streamers' },
-  { id: 'competitor', label: 'Pros' },
+  { id: 'authenticator', label: 'Authenticators' },
   { id: 'collector', label: 'Investors' },
   { id: 'reviewer', label: 'Reviewers' },
-  { id: 'theorycrafter', label: 'Theorycrafters' },
+  { id: 'analyst', label: 'Analysts' },
 ]
 
 const SORTS = {

@@ -217,6 +217,19 @@ Tools the **player** wields, with **unpredictable community blowback**:
 - Banning a hated, oppressive card can be celebrated *or* backfire, depending on hidden community sentiment.
 - Rotations restore metagame diversity & reset power creep, but cost goodwill (especially with collectors holding rotated cards).
 
+> **Status:** manually banning a card is retired from the UI as of the
+> collector/reseller pivot — `bans.js`'s `banCard` is kept only for the
+> headless playtest harness (`tools/playtest.mjs`), with no in-game way to
+> trigger it. **Pull from publication** (below, under Shipped since v1) is
+> the live player-facing lever: pick any set, stop printing it, and its
+> cards leave the format on a scarcity pop instead of a ban's crater.
+> `rotateFormat` (retire the oldest set(s)) is likewise kept only for the
+> harness. Ban pressure itself still runs headlessly — personas and events
+> keep nudging a card's `banPressure`, which still feeds the clock's
+> attention note and gives a counter card something to answer — the player
+> just responds to it by designing a counter or pulling the set, not by
+> clicking Ban.
+
 ---
 
 ## Economy & loss conditions (summary) ✅
@@ -302,7 +315,7 @@ Grouped into three layers. Each assumes the v1 core loop is solid first.
 >   set builder, reprint a beloved card from an old set into the new one — a
 >   fan-service draw that lifts the new set's hype while softening the original.
 >   Realizes the "1st-Edition vs Unlimited" and "reprints as a market-management
->   tool" items parked below. (`sets.js` `reprintSet` / `applyCardReprints`.)
+>   tool" items parked below. (`sets.js` `reprintAsUnlimited` / `applyCardReprints`.)
 > - **Product SKUs** — a set ships a player-chosen product lineup beyond boosters:
 >   bundles (casual value), a collector box / SPC (low-volume, high-margin,
 >   collector-leaning, can carry an exclusive promo), and tins (impulse). Each SKU
@@ -310,12 +323,13 @@ Grouped into three layers. Each assumes the v1 core loop is solid first.
 >   own weekly demand curve — more channels mean more revenue but a bigger up-front
 >   print bet. Boosters remain the base product, economically unchanged.
 >   (`products.js`, `ProductLineupEditor`; per-SKU resolution in `revenue.js`.)
-> - **Promo cards & organized play** — cards you can NEVER pull from a booster,
->   awarded instead through funded programs (championship circuits, league
->   seasons, prerelease events). Each program costs cash, grows the competitive
->   segment, warms sentiment, and mints a scarce, unpullable promo that trades as
->   a prestige grail (a collector-box SKU can also carry an exclusive promo).
->   (`organizedplay.js`, `OrganizedPlayPanel`; `packs.js` excludes promos.)
+> - **Promo cards** — cards you can NEVER pull from a booster: a scarce,
+>   unpullable single that trades as a prestige grail. Originally minted via
+>   funded organized-play programs (championship circuits, league seasons,
+>   prerelease events); that funded-program action is retired as of the
+>   collector/reseller pivot below. The one remaining mint path is a
+>   Collector-box (SPC) SKU flagged as carrying an exclusive promo.
+>   (`promos.js` `makePromoCard`; `packs.js` excludes promos.)
 > - **Major / minor / micro sets & block gimmicks** — every release picks a
 >   **tier**. A **major** is a full expansion that OPENS A BLOCK: it introduces a
 >   block **gimmick** (a Pokémon-style Mega / Ascended / Phantasmal / Tera era
@@ -336,15 +350,73 @@ Grouped into three layers. Each assumes the v1 core loop is solid first.
 >   `simulation.js`; `TierPicker` + `BlockEditor` in `SetBuilder`; block grouping
 >   in `SetsPanel`.) Realizes the parked "elaborate special release events" /
 >   anniversary-set depth around a real two-tier release calendar.
+> - **The collector/reseller pivot** — the dashboard now reads
+>   collector/reseller-first (sets & scarcity, market & packs, community &
+>   distribution, news); the competitive-only panels (Bans, Organized Play,
+>   Metagame, Meta Report) are removed from the UI, though the metagame
+>   simulation they read (ban pressure, the four dials) still runs headless
+>   underneath and feeds card pricing. Ships alongside it:
+>   - **Franchise Reputation & persistent characters** — a slow,
+>     EWMA-smoothed brand-prestige stat that grows off a sustained healthy
+>     release cadence and community mood (plus made-it-big characters), and
+>     lifts old/vintage sets' collector floor independent of any one card's
+>     hype — the real-world Base Set Charizard effect. Characters are a
+>     persistent "who" a signature card can feature (new or existing), whose
+>     fame drifts weekly off how their live cards perform, unlocking a
+>     reserved icon-tier treatment once a character graduates.
+>     (`characters.js`, `franchise.js`; wired into `market.js`'s `fairValue`
+>     and hype ceiling, and `sets.js`'s pop factors.)
+>   - **Grading partners** — a distributor-shaped relationship with a
+>     third-party authenticator: a flat sign-on cost, then it ambiently
+>     certifies a slice of the market's highest-value singles each week (a
+>     flat collector-value premium) and carries its own weekly scandal risk
+>     that can strip a card's certification and crater its price.
+>     Cultivating the relationship tightens standards and halves that risk
+>     at max warmth. (`grading.js`, `content/grading.js`; surfaced in
+>     `DistributorsPanel` and `MarketTicker`'s "graded" tag + population
+>     count.)
+>   - **Live box breaks & god packs** — a collector-hype marketing spend
+>     (sponsor a streamed break of a live set), parallel to the retired
+>     organized-play spend: it grows the collector segment and lifts the
+>     broken set's hype instead of the competitive scene. Packs can also
+>     roll a vanishingly rare **god pack** (every slot hits the set's top
+>     rarity tier), a real-hobby legend that lifts hype across the whole
+>     set and posts to the events feed. (`breaks.js`, `content/breaks.js`;
+>     `packs.js` `drawGodPack`.)
+>   - **Serialized chase cards** — a signature card can carry a hard total
+>     copy cap (10/25/50/99/1-of-1) independent of the set's print run; once
+>     that many copies are pulled from packs, ever, it stops appearing.
+>     Realizes the "serial-numbered cards" item from the market-depth
+>     roadmap (the other two items there, 1st-Edition/Unlimited and
+>     reprints-as-a-market-tool, already shipped via Reprints above).
+>     (`sets.js`, `packs.js`; numbered pulls surfaced in `PackRipper` and
+>     `MarketTicker`.)
+>   - **Channel mix & the anti-scalping toolkit** — each product's supply
+>     splits across direct/LGS/big-box/international channels, trading
+>     margin against reach and scalper exposure (`products.js` `CHANNELS`);
+>     a big-box-heavy lineup runs hotter than a direct-to-consumer one even
+>     with no distributor deals signed. Two free-standing policy toggles
+>     counter it: **purchase limits** (caps how much any one distributor
+>     deal can take) and **phantom stock** (shows "sold out" early to deter
+>     bots, at a small real-demand cost). (`distributors.js`, `revenue.js`;
+>     toggles in `DistributorsPanel`.)
+>   - **Supply-chain capacity** — a logistics investment that makes the
+>     print/supply-chain-snag event both rarer and cheaper when it does hit.
+>     (`distributors.js` `upgradeSupplyChain`; `events.js`'s `supply_chain`
+>     `weightMul`.)
+>   - **Regional staggered releases** — a major-only lever: a lead region
+>     drops first as a smaller discovery wave and a preview/hype channel
+>     (its biggest mover gets named in the wide-release feed line), and the
+>     wider "rest of the world" wave lands automatically a few weeks later.
+>     The player gets one read-the-room call during the window: invest more
+>     marketing into the wide release, or pull back. Realizes the "regional
+>     staggered releases" item from the market-depth roadmap below.
+>     (`sets.js` `releaseSet`/`adjustPendingWave`; weekly check in
+>     `simulation.js`; wave UI in `SetsPanel`.)
 
 ### A. Product & market depth
 
-- **Regional staggered releases (as a hype engine, not just logistics).** A lead region drops the set first to build anticipation; the main region's drop then "goes nuts." The early region functions as both a **hype builder** and a **preview/information channel** — the player and community see which cards popped in the lead region before the wide release, which shapes anticipation and the player's print/marketing decisions. Sets get **renamed and slightly restructured** between regions (different names, tweaked card lists), mirroring how Japanese sets are renamed/recombined for Western markets. *(Player's reference example: "Ninja Spinner" → "Chaos Rising.")* This reframes the originally-parked geography layer around hype/info flow rather than pure logistics.
-
-- **Serialized cards & variants.** A whole secondary-market depth layer:
-  - **Serial-numbered cards** (e.g. /99, /10, 1/1) as ultra-chase pull-rate lottery items that drive sealed demand and create market legends.
-  - **1st Edition vs. Unlimited** print distinction — a 1st-Edition stamp creates a permanent premium tier (the real-world Base Set Charizard effect). A core collector-economy lever.
-  - **Reprints as a market-management tool** — reprint a runaway single to crush its price and improve accessibility, at the cost of angering collectors holding it. Direct tension lever against the secondary market.
+*(Regional staggered releases and serialized cards & variants have shipped — see the collector/reseller pivot under Shipped since v1 above. One nuance from the original pitch remains parked: sets don't actually get renamed/restructured with different card lists per region, the way Japanese sets are recombined for Western markets — the shipped lead-region name is cosmetic flavor text over the same card pool.)*
 
 ### B. Relationship & community depth
 

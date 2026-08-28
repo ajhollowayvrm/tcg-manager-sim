@@ -29,11 +29,10 @@ export function applyCadencePressure(next) {
   // Escalating player-base bleed (grows with how late you are).
   const bleed = CADENCE_BLEED_PER_WK * lateBy
   const seg = next.segments
-  // Casual fans flake first, then competitive; collectors care least about cadence.
+  // Casual fans flake first; collectors care least about cadence.
   seg.casual = Math.max(0, Math.round(seg.casual * (1 - bleed)))
-  seg.competitive = Math.max(0, Math.round(seg.competitive * (1 - bleed * 0.7)))
   seg.collectors = Math.max(0, Math.round(seg.collectors * (1 - bleed * 0.3)))
-  next.playerBase = Math.max(0, seg.casual + seg.competitive + seg.collectors)
+  next.playerBase = Math.max(0, seg.casual + seg.collectors)
 
   // Sentiment sours across the roster, scaled by how late.
   const drop = CADENCE_SENTIMENT_PER_WK * lateBy

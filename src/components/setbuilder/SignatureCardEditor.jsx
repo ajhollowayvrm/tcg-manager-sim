@@ -3,6 +3,7 @@
 
 import { ARTISTS, getArtist } from '../../game/content/artists.js'
 import { getRarity, visualTier, defaultRaritySheet } from '../../game/rarities.js'
+import { TREATMENTS, getTreatment } from '../../game/characters.js'
 import SetSymbol from '../SetSymbol.jsx'
 
 function formatCash(n) {
@@ -63,15 +64,17 @@ const TREND = {
   steady: { icon: '→', cls: 'trend--flat', label: 'steady' },
 }
 
-const ARCHETYPE_OPTIONS = ['aggro', 'control', 'combo', 'midrange']
+// Fame trajectory cues, mirroring the artist TREND badges above.
+const CHAR_TREND = {
+  rising: { icon: '↑', cls: 'trend--up', label: 'rising' },
+  established: { icon: '◆', cls: 'trend--est', label: 'established' },
+  fading: { icon: '↓', cls: 'trend--down', label: 'fading' },
+  icon: { icon: '★', cls: 'trend--est', label: 'icon' },
+}
 
-export default function SignatureCardEditor({ card, theme, artists, rarities, liveCards = [], sets = [], onChange, onRemove }) {
+export default function SignatureCardEditor({ card, theme, artists, characters = [], rarities, onChange, onRemove }) {
   const sheet = rarities ?? defaultRaritySheet()
   const set = (patch) => onChange({ ...card, ...patch })
-  // Counter directive (defaults to 'none' for cards made before counters existed).
-  const counter = card.counter ?? { mode: 'none', targetCardId: null, targetArchetype: null }
-  const setCounter = (patch) => set({ counter: { ...counter, ...patch } })
-  const setNameById = new Map(sets.map((s) => [s.id, s.name]))
   // Merge static identity (name/specialty) with the live drifted career so the
   // displayed cost/reach and trend reflect the current week.
   const artistOf = (id) => {
@@ -105,6 +108,21 @@ export default function SignatureCardEditor({ card, theme, artists, rarities, li
             {sheet.map((r) => (
               <option key={r.id} value={r.id}>{r.name}</option>
             ))}
+          </select>
+        </label>
+
+        <label className="field" title="A hard-capped total copy count, independent of the set's print run — a true numbered chase card. Once this many are pulled, ever, it's gone.">
+          <span>Serial numbered</span>
+          <select
+            value={card.serialCap ?? ''}
+            onChange={(e) => set({ serialCap: e.target.value ? Number(e.target.value) : null })}
+          >
+            <option value="">None</option>
+            <option value="99">/99</option>
+            <option value="50">/50</option>
+            <option value="25">/25</option>
+            <option value="10">/10</option>
+            <option value="1">1-of-1</option>
           </select>
         </label>
 
@@ -179,57 +197,101 @@ export default function SignatureCardEditor({ card, theme, artists, rarities, li
         </select>
       </label>
 
-      {/* Counter directive — what (if anything) this card answers. */}
-      <div className="field field--full counter">
-        <span>
-          Counter
-          {counter.mode !== 'none' && <span className="counter__badge">⚔ active</span>}
-        </span>
-        <div className="toggle toggle--counter">
-          <button className={'toggle__opt' + (counter.mode === 'none' ? ' is-active' : '')}
-            onClick={() => setCounter({ mode: 'none' })}>None</button>
-          <button className={'toggle__opt' + (counter.mode === 'card' ? ' is-active' : '')}
-            onClick={() => setCounter({ mode: 'card' })}>A card</button>
-          <button className={'toggle__opt' + (counter.mode === 'archetype' ? ' is-active' : '')}
-            onClick={() => setCounter({ mode: 'archetype' })}>An archetype</button>
+      <CharacterPicker card={card} characters={characters} set={set} />
         </div>
+      </div>
+    </div>
+  )
+}
 
-        {counter.mode === 'card' && (
+// Feature a character on this card instead of a one-off: mint a brand-new one
+// (a debut appearance, no fame to draw on yet) or pull in an existing roster
+// entry (its fame bumps the card's appeal, scaled by the chosen treatment).
+function CharacterPicker({ card, characters, set }) {
+  const mode = card.characterId ? 'existing' : card.newCharacterName ? 'new' : 'none'
+  const selected = card.characterId ? characters.find((c) => c.id === card.characterId) : null
+  // An icon treatment is reserved for characters that have actually graduated —
+  // it's a reward for a character blowing up, not a day-one purchase option.
+  const treatmentOptions = TREATMENTS.filter((t) => !t.requiresIcon || selected?.trajectory === 'icon')
+
+  return (
+    <div className="field field--full counter">
+      <span>
+        Character
+        {mode !== 'none' && <span className="counter__badge">🎭 featured</span>}
+      </span>
+      <div className="toggle toggle--counter">
+        <button className={'toggle__opt' + (mode === 'none' ? ' is-active' : '')}
+          onClick={() => set({ characterId: null, newCharacterName: '', newCharacterSpecies: '', treatment: 'debut' })}>
+          One-off
+        </button>
+        <button className={'toggle__opt' + (mode === 'new' ? ' is-active' : '')}
+          onClick={() => set({ characterId: null, newCharacterName: card.name || '', treatment: 'debut' })}>
+          New character
+        </button>
+        <button className={'toggle__opt' + (mode === 'existing' ? ' is-active' : '')}
+          disabled={characters.length === 0}
+          title={characters.length === 0 ? 'No characters yet — create one first.' : undefined}
+          onClick={() => set({
+            newCharacterName: '', newCharacterSpecies: '',
+            characterId: characters[0]?.id ?? null, treatment: 'debut',
+          })}>
+          Existing character
+        </button>
+      </div>
+
+      {mode === 'new' && (
+        <>
+          <input
+            className="counter__target"
+            value={card.newCharacterName}
+            onChange={(e) => set({ newCharacterName: e.target.value })}
+            placeholder="Character name"
+          />
+          <input
+            className="counter__target"
+            value={card.newCharacterSpecies}
+            onChange={(e) => set({ newCharacterSpecies: e.target.value })}
+            placeholder="Species / archetype (flavor only, e.g. 'dragon')"
+          />
+          <span className="field__note">
+            Debuts on release with a small starting fame — future cards can bring
+            {' '}{card.newCharacterName || 'this character'} back as an existing character.
+          </span>
+        </>
+      )}
+
+      {mode === 'existing' && (
+        <>
           <select
             className="counter__target"
-            value={counter.targetCardId ?? ''}
-            onChange={(e) => setCounter({ targetCardId: e.target.value || null })}
+            value={card.characterId ?? ''}
+            onChange={(e) => set({ characterId: e.target.value || null })}
           >
-            <option value="">— Pick a live card to answer —</option>
-            {liveCards.map((c) => (
+            {characters.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.name} ({setNameById.get(c.setId) ?? 'set'}) · pwr {Math.round(c.popFactors?.playability ?? 0)}
-                {(c.banPressure ?? 0) > 0 ? ` · ban ${Math.round(c.banPressure)}` : ''}
+                {c.name} · fame {Math.round(c.fame)} {CHAR_TREND[c.trajectory]?.icon ?? ''} {CHAR_TREND[c.trajectory]?.label ?? c.trajectory}
               </option>
             ))}
           </select>
-        )}
-        {counter.mode === 'archetype' && (
+          {selected && (
+            <span className={'trend ' + (CHAR_TREND[selected.trajectory]?.cls ?? '')}>
+              {CHAR_TREND[selected.trajectory]?.icon} {selected.name} is {CHAR_TREND[selected.trajectory]?.label ?? selected.trajectory}
+              {selected.trajectory === 'icon' && ' — icon treatment unlocked'}
+            </span>
+          )}
           <select
             className="counter__target"
-            value={counter.targetArchetype ?? ''}
-            onChange={(e) => setCounter({ targetArchetype: e.target.value || null })}
+            value={card.treatment ?? 'debut'}
+            onChange={(e) => set({ treatment: e.target.value })}
           >
-            <option value="">— Pick an archetype to suppress —</option>
-            {ARCHETYPE_OPTIONS.map((a) => (
-              <option key={a} value={a}>{a}</option>
+            {treatmentOptions.map((t) => (
+              <option key={t.id} value={t.id}>{t.name} (×{t.costMul} cost)</option>
             ))}
           </select>
-        )}
-        {counter.mode === 'card' && (
-          <span className="field__note">Silver bullet: tanks that card's power and bleeds its ban pressure — answer it instead of banning it.</span>
-        )}
-        {counter.mode === 'archetype' && (
-          <span className="field__note">Broad tech: pushes the field off this archetype — strongest when it's dominant.</span>
-        )}
-      </div>
-        </div>
-      </div>
+          <span className="field__note">{getTreatment(card.treatment).blurb}</span>
+        </>
+      )}
     </div>
   )
 }

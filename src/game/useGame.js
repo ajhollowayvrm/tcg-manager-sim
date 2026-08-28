@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useReducer, useRef } from 'react'
 import { createInitialState } from './initialState.js'
-import { advanceWeek } from './simulation.js'
-import { releaseSet, reprintSet } from './sets.js'
-import { banCard, pullFromPrint } from './bans.js'
+import { advanceWeek, clamp } from './simulation.js'
+import { releaseSet, reprintAsUnlimited, adjustPendingWave } from './sets.js'
+import { pullFromPrint } from './bans.js'
 import { ripPack } from './packs.js'
 import { resetCadence } from './cadence.js'
 import { distributeNewPlayers } from './segments.js'
 import { compProduct, sponsorCreator, dropSponsor } from './relationships.js'
-import { signDistributor, dropDistributor, cultivateDistributor } from './distributors.js'
-import { runOrganizedPlay } from './organizedplay.js'
+import { signDistributor, dropDistributor, cultivateDistributor, upgradeSupplyChain } from './distributors.js'
+import { signGradingPartner, dropGradingPartner, cultivateGradingPartner } from './grading.js'
+import { runBreak } from './breaks.js'
 import { loadState, saveState, clearSave } from './persistence.js'
 
 // Reducer-driven game state. Time is MANUAL: the player clicks "Advance Week",
@@ -23,14 +24,14 @@ function reducer(state, action) {
       return applyClockDirective(next)
     }
     case 'RELEASE_SET': {
-      const { set, cards, cashDelta, metagame, counteredCards, counterFeed, newPlayers, blocks, block, tier } = releaseSet(state, action.draft)
-      // If silver-bullet counters mutated existing cards, build from that patched
+      const { set, existingSets, cards, cashDelta, printIntensity, softenedCards, releaseFeed, newPlayers, pendingWave, blocks, block, tier, characters, personaSentimentBump } = releaseSet(state, action.draft)
+      // If a card reprint softened existing originals, build from that patched
       // array; otherwise from the current one. Then append the new set's cards.
-      const baseCards = counteredCards ?? state.cards
+      const baseCards = softenedCards ?? state.cards
       // Release discovery wave: distribute the new players into segments by lean.
       const segments = { ...state.segments }
       distributeNewPlayers(segments, state.segmentLean, newPlayers ?? 0)
-      const playerBase = segments.competitive + segments.casual + segments.collectors
+      const playerBase = segments.casual + segments.collectors
       // A tier-aware launch line: a major opens a block (names the gimmick); a
       // rider rides one. Falls back to the classic line for a blockless release.
       const tierLabel = tier === 'minor' ? 'Minor set' : tier === 'micro' ? 'Micro set' : 'Major set'
@@ -38,39 +39,58 @@ function reducer(state, action) {
         ? (tier === 'major'
             ? ` — opens the “${block.name}” block (${block.gimmickName}).`
             : ` — a ${tier} set in the “${block.name}” block.`)
-        : ' — the metagame refreshes.'
-      const launch = `${tierLabel}: ${set.name} (${set.theme}) hits shelves${blockLine}${newPlayers ? ` ${newPlayers.toLocaleString()} new players discover the game.` : ''}`
+        : ' — fresh chase pulls hit the shelves.'
+      // Regional stagger: the lead region gets its own (cosmetic) name in the
+      // launch line, and the wide release lands separately — see pendingWaves.
+      const regionLine = pendingWave ? ` It launches in the lead region as “${pendingWave.leadRegionName}.”` : ''
+      const launch = `${tierLabel}: ${set.name} (${set.theme}) hits shelves${blockLine}${regionLine}${newPlayers ? ` ${newPlayers.toLocaleString()} new players discover the game.` : ''}`
       const feed = [
         { week: state.week, text: launch },
-        ...(counterFeed ? [{ week: state.week, text: counterFeed }] : []),
+        ...(releaseFeed ? [{ week: state.week, text: releaseFeed }] : []),
         ...state.eventsFeed,
       ].slice(0, 60)
       return {
         ...state,
         cash: state.cash + cashDelta,
-        sets: [...state.sets, set],
+        sets: [...(existingSets ?? state.sets), set],
         cards: [...baseCards, ...cards],
         blocks: blocks ?? state.blocks,
+        characters: characters ?? state.characters,
+        pendingWaves: pendingWave ? [...(state.pendingWaves ?? []), pendingWave] : state.pendingWaves,
         segments,
         playerBase,
-        metagame,
+        printIntensity,
+        personas: applySentimentBump(state.personas, personaSentimentBump),
         cadence: resetCadence(state.cadence, state.week), // shipping resets the pledge clock
         eventsFeed: feed,
         clock: { ...state.clock, reason: `${set.name} released — advance the week to watch the market react.` },
       }
     }
-    case 'BAN_CARD': {
-      const result = banCard(state, action.cardId)
-      if (!result) return state
+    case 'TOGGLE_ODDS_PUBLISHED': {
+      // One-directional: obscured → published only (mirrors a real "we started
+      // disclosing" move — you don't un-ring that bell). Re-applies the same
+      // trust bump a published release gets, since this set's cards weren't
+      // hyped for the trade-off at release time.
+      const sets = state.sets.map((s) => (s.id === action.setId && !s.oddsPublished
+        ? { ...s, oddsPublished: true, oddsPublishedWeek: state.week }
+        : s))
+      if (sets === state.sets || !sets.some((s, i) => s !== state.sets[i])) return state
+      const target = sets.find((s) => s.id === action.setId)
       return {
         ...state,
-        cards: result.cards,
-        metagame: result.metagame,
-        segments: result.segments,
-        playerBase: result.playerBase,
-        personas: result.personas,
-        eventsFeed: [{ week: state.week, text: result.feed }, ...state.eventsFeed],
-        clock: { ...state.clock, reason: result.banReason },
+        sets,
+        personas: applySentimentBump(state.personas, { fairnessFloor: 0.4, fairnessAmount: 3, ambientAmount: 1 }),
+        eventsFeed: [{ week: state.week, text: `${target.name}'s pull rates are now published — the community's watching.`, kind: 'market' }, ...state.eventsFeed].slice(0, 60),
+      }
+    }
+    case 'ADJUST_PENDING_WAVE': {
+      const r = adjustPendingWave(state, action.setId, action.direction)
+      if (!r) return state
+      return {
+        ...state,
+        pendingWaves: r.pendingWaves,
+        cash: state.cash + r.cashDelta,
+        eventsFeed: [{ week: state.week, text: r.feed, kind: 'market' }, ...state.eventsFeed].slice(0, 60),
       }
     }
     case 'PULL_FROM_PRINT': {
@@ -80,7 +100,7 @@ function reducer(state, action) {
         ...state,
         sets: result.sets,
         cards: result.cards,
-        metagame: result.metagame,
+        printIntensity: result.printIntensity,
         segments: result.segments,
         playerBase: result.playerBase,
         personas: result.personas,
@@ -89,7 +109,7 @@ function reducer(state, action) {
       }
     }
     case 'REPRINT_SET': {
-      const result = reprintSet(state, action.setId, action.printRun)
+      const result = reprintAsUnlimited(state, action.setId, action.printRun)
       if (!result) return state
       // Flag the original set as a first edition AND as already reprinted (one
       // Unlimited run per set). firstEditionCards already carries the card patch.
@@ -110,10 +130,39 @@ function reducer(state, action) {
       const sets = state.sets.map((s) =>
         s.id === action.setId ? { ...s, sold: Math.min((s.supply ?? 0), (s.sold ?? 0) + 1) } : s,
       )
+      // A serialized card pulled this rip bumps its live serialIssued count —
+      // sum how many times each id was pulled (a rip can draw the same card
+      // more than once) so the catalog record's count stays accurate.
+      const serialBumps = new Map()
+      for (const p of result.pulls) {
+        if (p._serialPulled) serialBumps.set(p.id, (serialBumps.get(p.id) ?? 0) + 1)
+      }
+      let cards = serialBumps.size
+        ? state.cards.map((c) => serialBumps.has(c.id) ? { ...c, serialIssued: c.serialIssued + serialBumps.get(c.id) } : c)
+        : state.cards
+      // A god pack — every slot hit — is a real marketing moment: it lifts
+      // hype across the rest of that set's live cards too, not just the
+      // pulled copies.
+      const godPackFeed = []
+      if (result.isGodPack) {
+        cards = cards.map((c) =>
+          c.setId === action.setId && !c.banned && !c.rotated
+            ? { ...c, hype: Math.min(3, (c.hype ?? 0) + 0.15) }
+            : c,
+        )
+        godPackFeed.push({ week: state.week, kind: 'market', text: '🌟 GOD PACK! Every card in this pack hit — the community is losing it.' })
+      }
       return {
         ...state,
         sets,
-        lastRip: { setId: action.setId, week: state.week, pullIds: result.pulls.map((c) => c.id), bestId: result.bestPull?.id ?? null },
+        cards,
+        lastRip: {
+          setId: action.setId, week: state.week,
+          pullIds: result.pulls.map((c) => c.id), bestId: result.bestPull?.id ?? null,
+          serials: result.pulls.map((c) => c._serialPulled ?? null),
+          isGodPack: !!result.isGodPack,
+        },
+        eventsFeed: godPackFeed.length ? [...godPackFeed, ...state.eventsFeed].slice(0, 60) : state.eventsFeed,
       }
     }
     case 'COMP_PERSONA':
@@ -163,8 +212,36 @@ function reducer(state, action) {
         eventsFeed: [{ week: state.week, text: r.feed, kind: 'market' }, ...state.eventsFeed].slice(0, 60),
       }
     }
-    case 'RUN_ORGANIZED_PLAY': {
-      const r = runOrganizedPlay(state, action.kind, action.nonce ?? 0)
+    case 'SIGN_GRADING_PARTNER':
+    case 'DROP_GRADING_PARTNER':
+    case 'CULTIVATE_GRADING_PARTNER': {
+      const fn = action.type === 'SIGN_GRADING_PARTNER' ? signGradingPartner
+        : action.type === 'DROP_GRADING_PARTNER' ? dropGradingPartner : cultivateGradingPartner
+      const r = fn(state, action.partnerId)
+      if (!r) return state
+      return {
+        ...state,
+        gradingPartners: r.gradingPartners,
+        cash: state.cash + (r.cashDelta ?? 0),
+        eventsFeed: [{ week: state.week, text: r.feed, kind: 'market' }, ...state.eventsFeed].slice(0, 60),
+      }
+    }
+    case 'UPGRADE_SUPPLY_CHAIN': {
+      const r = upgradeSupplyChain(state)
+      if (!r) return state
+      return {
+        ...state,
+        supplyChainCapacity: r.supplyChainCapacity,
+        cash: state.cash + r.cashDelta,
+        eventsFeed: [{ week: state.week, text: r.feed, kind: 'market' }, ...state.eventsFeed].slice(0, 60),
+      }
+    }
+    case 'TOGGLE_PURCHASE_LIMITS':
+      return { ...state, purchaseLimitPolicy: !state.purchaseLimitPolicy }
+    case 'TOGGLE_PHANTOM_STOCK':
+      return { ...state, phantomStockPolicy: !state.phantomStockPolicy }
+    case 'RUN_BREAK': {
+      const r = runBreak(state, action.kind, action.setId, action.nonce ?? 0)
       if (!r) return state
       return {
         ...state,
@@ -185,6 +262,18 @@ function reducer(state, action) {
     default:
       return state
   }
+}
+
+// Apply a small persona-wide sentiment bump (see sets.js's odds-transparency
+// trade-off): fairness-minded voices (taste.fairness >= floor) get the full
+// amount, everyone else a smaller ambient goodwill tick. `bump` is null for a
+// no-op (personas pass through unchanged).
+function applySentimentBump(personas, bump) {
+  if (!bump) return personas
+  return personas.map((p) => {
+    const amt = (p.taste?.fairness ?? 0) >= bump.fairnessFloor ? bump.fairnessAmount : bump.ambientAmount
+    return { ...p, sentiment: clamp(p.sentiment + amt, -100, 100) }
+  })
 }
 
 // Surface the just-resolved week's attention note. With a manual clock there's
@@ -229,9 +318,10 @@ export function useGame() {
   // Manual time: advance one week per click. No timer, no play/pause/speed.
   const advanceWeekAction = useCallback(() => dispatch({ type: 'TICK' }), [])
   const release = useCallback((draft) => dispatch({ type: 'RELEASE_SET', draft }), [])
-  const banCardAction = useCallback((cardId) => dispatch({ type: 'BAN_CARD', cardId }), [])
   const pull = useCallback((setId) => dispatch({ type: 'PULL_FROM_PRINT', setId }), [])
   const reprint = useCallback((setId, printRun) => dispatch({ type: 'REPRINT_SET', setId, printRun }), [])
+  const toggleOddsPublished = useCallback((setId) => dispatch({ type: 'TOGGLE_ODDS_PUBLISHED', setId }), [])
+  const adjustWave = useCallback((setId, direction) => dispatch({ type: 'ADJUST_PENDING_WAVE', setId, direction }), [])
   const reset = useCallback(() => dispatch({ type: 'RESET' }), [])
   // A nonce so consecutive rips of the same set in the same week differ.
   const ripNonce = useRef(0)
@@ -243,8 +333,14 @@ export function useGame() {
   const signDist = useCallback((distId, setId) => dispatch({ type: 'SIGN_DISTRIBUTOR', distId, setId }), [])
   const dropDist = useCallback((distId) => dispatch({ type: 'DROP_DISTRIBUTOR', distId }), [])
   const cultivateDist = useCallback((distId) => dispatch({ type: 'CULTIVATE_DISTRIBUTOR', distId }), [])
-  const opNonce = useRef(0)
-  const runOP = useCallback((kind) => dispatch({ type: 'RUN_ORGANIZED_PLAY', kind, nonce: opNonce.current++ }), [])
+  const upgradeSupplyChainAction = useCallback(() => dispatch({ type: 'UPGRADE_SUPPLY_CHAIN' }), [])
+  const signGrading = useCallback((partnerId) => dispatch({ type: 'SIGN_GRADING_PARTNER', partnerId }), [])
+  const dropGrading = useCallback((partnerId) => dispatch({ type: 'DROP_GRADING_PARTNER', partnerId }), [])
+  const cultivateGrading = useCallback((partnerId) => dispatch({ type: 'CULTIVATE_GRADING_PARTNER', partnerId }), [])
+  const breakNonce = useRef(0)
+  const runBreakAction = useCallback((kind, setId) => dispatch({ type: 'RUN_BREAK', kind, setId, nonce: breakNonce.current++ }), [])
+  const togglePurchaseLimits = useCallback(() => dispatch({ type: 'TOGGLE_PURCHASE_LIMITS' }), [])
+  const togglePhantomStock = useCallback(() => dispatch({ type: 'TOGGLE_PHANTOM_STOCK' }), [])
 
-  return { state, advanceWeek: advanceWeekAction, release, ban: banCardAction, pull, reprint, reset, rip, startGame, comp, sponsor, unsponsor, signDist, dropDist, cultivateDist, runOP }
+  return { state, advanceWeek: advanceWeekAction, release, pull, reprint, adjustWave, reset, rip, startGame, comp, sponsor, unsponsor, signDist, dropDist, cultivateDist, upgradeSupplyChain: upgradeSupplyChainAction, signGrading, dropGrading, cultivateGrading, runBreak: runBreakAction, togglePurchaseLimits, togglePhantomStock, toggleOddsPublished }
 }

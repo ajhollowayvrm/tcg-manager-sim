@@ -1,6 +1,6 @@
 // The persona reaction engine. Each week, personas observe the world through
 // their taste profile and emit feedback items — and those items cause real
-// effects on the market, ban pressure, and community sentiment.
+// effects on the market, controversy heat, and community sentiment.
 //
 // The central mechanic is SIGNAL vs. NOISE (see docs/BRIEF.md):
 //   - A persona forms a *take* on a card. How close that take lands to the
@@ -10,27 +10,28 @@
 //   - REACH governs how loud/prominent the item is, never how true.
 //
 // Effects by type:
-//   streamer    → hype on a card spikes its market demand (a live pop)
-//   competitor  → "broken" call accumulates BAN PRESSURE on the card
-//   collector   → hyping a card inflates a bubble (extra hype that can burst)
-//   reviewer    → verdict on a fresh set drives sales/goodwill sentiment
-//   theorycrafter → solves the format faster (nudges solveLevel) + reads power
+//   streamer      → hype on a card spikes its market demand (a live pop)
+//   authenticator → skeptical of a card's splashiness; a "get this verified"
+//                   call accumulates CONTROVERSY heat on the card
+//   collector     → hyping a card inflates a bubble (extra hype that can burst)
+//   reviewer      → verdict on a fresh set drives sales/goodwill sentiment
+//   analyst       → reads price patterns / population reports; a loud "this is
+//                   overvalued" call also accumulates controversy heat
 
 import { makeRng, hashSeed, range } from './rng.js'
 import { clamp } from './simulation.js'
 
 const FEED_MAX = 60 // cap the feedback feed length
 
-// How "true power" of a card reads to the format. A card is oppressive when it
-// is an OUTLIER — far stronger than the other cards it shares the format with —
-// not merely because the whole set is strong (a uniformly powerful set just
-// resets the baseline). We blend that set-relative standing with a contribution
-// from raw absolute power, so a genuinely busted card reads busted regardless
-// of how its setmates look. Deliberately NOT keyed off metagame.powerLevel,
-// which the releasing set itself inflated.
-function cardThreat(card, fieldAvgPlayability) {
-  const relative = card.popFactors.playability - fieldAvgPlayability // outlier-ness
-  const absolute = card.popFactors.playability - 65 // raw "above curve" pressure
+// How suspicious a card's splashiness reads. A card draws scrutiny when it is
+// an OUTLIER — far punchier than the other cards it shares the catalog with —
+// not merely because the whole set is strong (a uniformly splashy set just
+// resets the baseline). We blend that set-relative standing with a
+// contribution from raw absolute punch, so a genuinely over-the-top card
+// reads suspicious regardless of how its setmates look.
+function cardThreat(card, fieldAvgPunch) {
+  const relative = card.popFactors.punch - fieldAvgPunch // outlier-ness
+  const absolute = card.popFactors.punch - 65 // raw "above curve" pressure
   return clamp(relative * 0.9 + absolute * 0.7, -60, 60) // -60 weak .. +60 busted
 }
 
@@ -46,7 +47,7 @@ function perceive(truth, persona, rng) {
 }
 
 // Pick the card a persona is most likely to fixate on this week, weighted by
-// their taste (a collector eyes high-value cards; a competitor eyes strong ones).
+// their taste (a collector eyes high-value cards; an authenticator eyes splashy ones).
 // Low-credibility personas have a much noisier focus — they latch onto the
 // wrong card more often, which (with a noisy read) is how a rage-baiter ends up
 // screaming about a perfectly fine card.
@@ -56,7 +57,7 @@ function focusCard(cards, persona, rng) {
   const scored = cards.map((c) => {
     const f = c.popFactors
     const score =
-      persona.taste.power * f.playability +
+      persona.taste.power * f.punch +
       persona.taste.value * Math.min(c.singlePrice, 200) * 0.5 +
       persona.taste.art * f.artAppeal +
       persona.taste.fun * f.hype +
@@ -74,33 +75,51 @@ function pick(rng, pool) {
   return pool[Math.floor(rng() * pool.length) % pool.length]
 }
 
-function takeFor(persona, card, perceived, set, rng) {
+function takeFor(persona, card, perceived, set, rng, displayName) {
   const strong = perceived > 25
   const busted = perceived > 50
   const weak = perceived < -20
   const t = persona.type
-  const c = card?.name
+  const c = displayName ?? card?.name
   const s = set?.name ?? 'the set'
 
-  if (t === 'competitor' || t === 'theorycrafter') {
-    if (busted) return { stance: 'ban', text: pick(rng, [
-      `${c} is breaking the format. This needs to go.`,
-      `There's no answer to ${c}. Ban it.`,
-      `Every top deck runs ${c}. That's not a format, that's a tax.`,
+  if (t === 'authenticator') {
+    if (busted) return { stance: 'pull', text: pick(rng, [
+      `${c}'s "scarcity" doesn't add up. This needs independent verification.`,
+      `Something's off with ${c}'s numbers. I'd want this pulled and audited.`,
+      `Too many red flags on ${c}. Get it authenticated before you pay that price.`,
     ]) }
     if (strong) return { stance: 'warn', text: pick(rng, [
-      `Keeping an eye on ${c} — it's over-rate and warping games.`,
-      `${c} is quietly everywhere. Watch this one.`,
-      `${c} pushes win rates higher than it should. Noted.`,
+      `Keeping an eye on ${c} — the population count looks thin for how many are moving.`,
+      `${c} is quietly everywhere for how "scarce" it's supposed to be. Watch this one.`,
+      `${c}'s pull rate doesn't match the odds sheet. Noted.`,
     ]) }
     if (weak) return { stance: 'pan', text: pick(rng, [
-      `${c} is a trap. Doesn't make the cut.`,
-      `Tried ${c}, cut it by round two. Unplayable.`,
+      `${c} checks out. Nothing to see here.`,
+      `Verified ${c}. It's exactly what it says on the tin.`,
     ]) }
     return { stance: 'neutral', text: pick(rng, [
-      `${c} looks fair. Format feels healthy so far.`,
-      `Reps on ${c} say it's fine. Diversity's holding.`,
-      `Nothing scary in the data this week.`,
+      `${c} looks legit. The catalog feels honest so far.`,
+      `Nothing scary in the population data this week.`,
+    ]) }
+  }
+  if (t === 'analyst') {
+    if (busted) return { stance: 'pull', text: pick(rng, [
+      `${c} is way overpriced relative to its real scarcity. This is a bubble.`,
+      `The spreadsheet says ${c} is a sell. Way ahead of fair value.`,
+      `${c}'s chart is a blow-off top waiting to happen.`,
+    ]) }
+    if (strong) return { stance: 'warn', text: pick(rng, [
+      `${c} is running hot — I'd take some profit here.`,
+      `${c}'s momentum is strong but stretched. Watch this one.`,
+    ]) }
+    if (weak) return { stance: 'pan', text: pick(rng, [
+      `${c} is a trap buy. Doesn't hold value.`,
+      `Modeled ${c}, it's dead money long-term.`,
+    ]) }
+    return { stance: 'neutral', text: pick(rng, [
+      `${c} is fairly priced. Nothing to chase or dump here.`,
+      `Reps on ${c} say it's holding steady. Market feels healthy.`,
     ]) }
   }
   if (t === 'collector') {
@@ -139,22 +158,22 @@ function takeFor(persona, card, perceived, set, rng) {
   // value/fun-leaning one is a hype-merchant who pumps everything.
   const ragey = persona.taste.fairness >= 0.4
   if (ragey) {
-    if (strong) return { stance: 'ban', text: pick(rng, [
-      `${c} IS BUSTED AND NOBODY IS TALKING ABOUT IT. FIX YOUR GAME`,
-      `delete ${c}. unplayable. devs asleep at the wheel`,
+    if (strong) return { stance: 'alarm', text: pick(rng, [
+      `${c} IS OBVIOUSLY OVERPRINTED AND NOBODY IS TALKING ABOUT IT. FIX YOUR PRINT RUNS`,
+      `they're printing ${c} into the ground. devs asleep at the wheel`,
     ]) }
     if (weak) return { stance: 'pan', text: pick(rng, [
       `${c}? trash. devs are clueless`,
       `imagine printing ${c}. embarrassing`,
     ]) }
     return { stance: 'warn', text: pick(rng, [
-      `whole format feels off rn, just saying`,
-      `this meta is cooked and you all know it`,
+      `whole catalog feels off rn, just saying`,
+      `this set is cooked and you all know it`,
     ]) }
   }
-  if (busted) return { stance: 'ban', text: pick(rng, [
-    `YO ${c} IS ABSOLUTELY BUSTED THIS IS UNPLAYABLE`,
-    `${c} broke my whole lobby LOL devs pls`,
+  if (busted) return { stance: 'alarm', text: pick(rng, [
+    `YO ${c} IS ABSOLUTELY INSANE THIS IS TOO GOOD TO BE REAL`,
+    `${c} broke my whole binder LOL devs pls`,
   ]) }
   if (strong) return { stance: 'hype', text: pick(rng, [
     `${c} is INSANE, pulled three today, chat went wild`,
@@ -171,8 +190,7 @@ function takeFor(persona, card, perceived, set, rng) {
 
 // Returns patches the reducer/sim applies:
 //   feedItems   — new feedback feed entries (newest first when prepended)
-//   cardEffects — Map<cardId, {hype, banPressure}> deltas to apply
-//   solveDelta  — extra solve-level pressure from theorycrafters
+//   cardEffects — Map<cardId, {hype, controversy}> deltas to apply
 //   sentimentById — Map<personaId, newSentiment>
 //   playerBaseDelta — small drift from reviewer/streamer sway on a fresh set
 export function reactPersonas(state) {
@@ -185,11 +203,10 @@ export function reactPersonas(state) {
   const cardEffects = new Map()
   const sentimentById = new Map()
   const reachById = new Map() // weekly reach drift from how accurate a take was
-  let solveDelta = 0
   let playerBaseDelta = 0
 
   const bump = (id, key, amt) => {
-    const e = cardEffects.get(id) ?? { hype: 0, banPressure: 0 }
+    const e = cardEffects.get(id) ?? { hype: 0, controversy: 0 }
     e[key] += amt
     cardEffects.set(id, e)
   }
@@ -198,7 +215,7 @@ export function reactPersonas(state) {
   // conversation. The "field" average and persona focus both work off live cards.
   const liveCards = state.cards.filter((c) => !c.banned && !c.rotated && !c.promo)
   const fieldAvg = liveCards.length
-    ? liveCards.reduce((s, c) => s + c.popFactors.playability, 0) / liveCards.length
+    ? liveCards.reduce((s, c) => s + c.popFactors.punch, 0) / liveCards.length
     : 50
 
   for (const persona of state.personas) {
@@ -212,7 +229,12 @@ export function reactPersonas(state) {
 
     const truth = card ? cardThreat(card, fieldAvg) : 0
     const perceived = perceive(truth, persona, rng)
-    const take = takeFor(persona, card, perceived, latestSet, rng)
+    // Once a featured character is famous enough, the community talks about
+    // THEM rather than the specific printing — "Charflare is the chase of Set
+    // 2" instead of "Emberwing Charflare is...".
+    const character = card?.characterId ? state.characters?.find((ch) => ch.id === card.characterId) : null
+    const displayName = character && character.fame >= 50 ? character.name : undefined
+    const take = takeFor(persona, card, perceived, latestSet, rng, displayName)
 
     // Reach drift: the community slowly learns who to listen to. A take that
     // tracks reality (perceived close to truth) earns reach; a loud, confidently
@@ -248,19 +270,15 @@ export function reactPersonas(state) {
       if (persona.type === 'collector' && take.stance === 'hype') {
         bump(card.id, 'hype', 0.22 * loud) // inflate a bubble (may burst later)
       }
-      if ((persona.type === 'competitor' || persona.type === 'theorycrafter')) {
-        if (take.stance === 'ban') bump(card.id, 'banPressure', 14 * loud)
-        else if (take.stance === 'warn') bump(card.id, 'banPressure', 5 * loud)
+      if ((persona.type === 'authenticator' || persona.type === 'analyst')) {
+        if (take.stance === 'pull') bump(card.id, 'controversy', 14 * loud)
+        else if (take.stance === 'warn') bump(card.id, 'controversy', 5 * loud)
       }
       // Persona's own mood: airing an alarm sours them, enthusiasm lifts them.
       // (warn is mildly negative, so a chronic rage-baiter drifts hostile.)
-      const moodByStance = { ban: -6, warn: -2.5, pan: -1.5, neutral: 0.5, hype: 4, love: 4 }
+      const moodByStance = { pull: -6, alarm: -6, warn: -2.5, pan: -1.5, neutral: 0.5, hype: 4, love: 4 }
       const mood = moodByStance[take.stance] ?? 0
       sentimentById.set(persona.id, clamp(persona.sentiment + mood, -100, 100))
-    }
-
-    if (persona.type === 'theorycrafter') {
-      solveDelta += 0.6 * loud // they crack the format faster
     }
 
     // A reviewer's verdict on a fresh set sways the casual base's willingness to buy.
@@ -273,26 +291,25 @@ export function reactPersonas(state) {
   // Newest first; keep the feed bounded.
   const merged = [...feedItems.reverse(), ...state.feedbackFeed].slice(0, FEED_MAX)
 
-  return { feedItems: merged, cardEffects, solveDelta, playerBaseDelta, sentimentById, reachById }
+  return { feedItems: merged, cardEffects, playerBaseDelta, sentimentById, reachById }
 }
 
 // Apply the persona pass to the next-state in place (called from advanceWeek).
 export function applyPersonaEffects(next, result) {
   next.feedbackFeed = result.feedItems
 
-  // Card hype/ban-pressure effects.
+  // Card hype/controversy effects.
   next.cards = next.cards.map((card) => {
     const e = result.cardEffects.get(card.id)
     if (!e) return card
     return {
       ...card,
       hype: clamp((card.hype ?? 0) + e.hype, 0, 3),
-      banPressure: clamp((card.banPressure ?? 0) + e.banPressure, 0, 100),
+      controversy: clamp((card.controversy ?? 0) + e.controversy, 0, 100),
     }
   })
 
-  // Theorycrafters accelerate solve; reviewers/streamers sway the base.
-  next.metagame.solveLevel = clamp(next.metagame.solveLevel + result.solveDelta, 0, 100)
+  // Reviewers/streamers sway the base.
   next.playerBase = Math.max(0, Math.round(next.playerBase + result.playerBaseDelta))
 
   // Persona sentiments + reach drift (the community learning who to trust).

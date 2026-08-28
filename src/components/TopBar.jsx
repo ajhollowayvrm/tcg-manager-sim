@@ -2,6 +2,7 @@
 // the manual "Advance Week" control. Time is manual — each week is a click.
 
 import { communitySentiment } from '../game/simulation.js'
+import { SCALPER_THRESHOLD } from '../game/distributors.js'
 
 function formatCash(n) {
   return '$' + n.toLocaleString('en-US')
@@ -22,6 +23,8 @@ export default function TopBar({ game, onDesignSet }) {
   const rev = lastRevenue?.total ?? 0
   const interest = state.lastDebtInterest ?? 0
   const sentiment = communitySentiment(state.personas)
+  const reputation = state.franchise?.reputation ?? 0
+  const heat = Math.round(state.scalperHeat ?? 0)
 
   return (
     <header className="topbar">
@@ -55,6 +58,7 @@ export default function TopBar({ game, onDesignSet }) {
           pct={clampPct((playerBase / 15_000) * 100)}
           danger={playerBase < PLAYERS_WARN}
           loss="recoverable — grow it back"
+          extra={<SegmentMix segments={state.segments} />}
         />
         <Meter
           label="Satisfaction"
@@ -64,6 +68,21 @@ export default function TopBar({ game, onDesignSet }) {
           pct={sentiment == null ? 50 : clampPct(((sentiment - SENTIMENT_COLLAPSE) / (100 - SENTIMENT_COLLAPSE)) * 100)}
           danger={sentiment != null && sentiment <= -70}
           loss={`${SENTIMENT_COLLAPSE} = revolt`}
+        />
+        <Meter
+          label="Franchise Rep"
+          value={Math.round(reputation)}
+          // Purely a growth stat — uncapped, so the bar is a soft visual
+          // reference (150) rather than a real ceiling.
+          pct={clampPct((reputation / 150) * 100)}
+          footer="brand prestige — no ceiling, lifts old sets' value"
+        />
+        <Meter
+          label="Scalper Heat"
+          value={heat}
+          pct={clampPct(heat)}
+          danger={heat >= SCALPER_THRESHOLD}
+          footer={`${SCALPER_THRESHOLD}+ = scalper culture, bubble risk`}
         />
       </div>
 
@@ -87,10 +106,12 @@ export default function TopBar({ game, onDesignSet }) {
 }
 
 // One health meter: a label, the current value, a fill bar that reddens in the
-// danger zone, and the loss threshold as a hint.
-function Meter({ label, value, pct, danger, loss, delta }) {
+// danger zone, and the loss threshold as a hint. `extra` renders a small
+// element below the track (e.g. the Players meter's segment-mix bar).
+function Meter({ label, value, pct, danger, loss, footer, delta, extra }) {
+  const caption = footer ?? loss
   return (
-    <div className={'meter' + (danger ? ' meter--danger' : '')} title={`Loss: ${loss}`}>
+    <div className={'meter' + (danger ? ' meter--danger' : '')} title={footer ?? `Loss: ${loss}`}>
       <div className="meter__top">
         <span className="meter__label">{label}</span>
         <span className="meter__value">{value}</span>
@@ -98,10 +119,33 @@ function Meter({ label, value, pct, danger, loss, delta }) {
       <div className="meter__track">
         <div className="meter__fill" style={{ width: `${pct}%` }} />
       </div>
+      {extra}
       <div className="meter__foot">
         {delta && <span className="meter__delta">{delta}</span>}
-        <span className="meter__loss">{loss}</span>
+        <span className="meter__loss">{caption}</span>
       </div>
+    </div>
+  )
+}
+
+// Casual/collectors composition, always hidden elsewhere in the dashboard even
+// though nearly every mechanic (cadence bleed, distributor casual-bleed,
+// segment drift, break/pull effects) treats these two asymmetrically. A thin
+// stacked bar makes the mix the player is actually managing legible at a
+// glance, without adding a whole new panel.
+function SegmentMix({ segments }) {
+  const casual = segments?.casual ?? 0
+  const collectors = segments?.collectors ?? 0
+  const total = casual + collectors
+  if (total <= 0) return null
+  const pct = (n) => Math.round((n / total) * 100)
+  return (
+    <div
+      className="segmix"
+      title={`Casual ${pct(casual)}% · Collectors ${pct(collectors)}%`}
+    >
+      <span className="segmix__seg segmix__seg--cas" style={{ width: `${pct(casual)}%` }} />
+      <span className="segmix__seg segmix__seg--col" style={{ width: `${pct(collectors)}%` }} />
     </div>
   )
 }

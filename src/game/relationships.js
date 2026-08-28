@@ -119,7 +119,7 @@ export function applyRelationships(next) {
     // Their reach makes the betrayal land on the casual base.
     const hit = Math.round(next.segments.casual * 0.01 * souredSponsorDrag)
     next.segments.casual = Math.max(0, next.segments.casual - hit)
-    next.playerBase = Math.max(0, next.segments.casual + next.segments.competitive + next.segments.collectors)
+    next.playerBase = Math.max(0, next.segments.casual + next.segments.collectors)
   }
   next.lastUpkeep = upkeep
 }

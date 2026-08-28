@@ -9,16 +9,24 @@ import { resolveMarket } from './market.js'
 import { reactPersonas, applyPersonaEffects } from './personas.js'
 import { resolveRevenue } from './revenue.js'
 import { rollEvent, applyEventEffects } from './events.js'
-import { applySegmentDrift } from './segments.js'
+import { applySegmentDrift, distributeNewPlayers } from './segments.js'
 import { clockDirective } from './clock.js'
-import { concentrate, balanceScore } from './archetypes.js'
-import { decayBlocks, applyBlockPull } from './blocks.js'
 import { driftArtists } from './artists.js'
+import { driftCharacters } from './characters.js'
+import { updateFranchiseReputation } from './franchise.js'
 import { applyCadencePressure } from './cadence.js'
 import { applyRelationships } from './relationships.js'
 import { applyDistributors } from './distributors.js'
+import { applyGrading } from './grading.js'
 
-const SOLVE_DECAY_PER_WEEK = 4 // tune so a format stays fresh for a few months
+// Buzz half-life: how fast a set's own release-buzz fades between drops (tuned
+// so a set stays fresh-feeling for a few months, then needs a new release to
+// reignite it — see sets.js's set.buzz seeding).
+const BUZZ_DECAY_PER_WEEK = 0.965
+// Nostalgia-erosion dial: a slow natural cooldown each week (design fatigue
+// eases between drops), separate from the relief a pulled-from-print set gives
+// (see bans.js's pullFromPrint).
+const PRINT_INTENSITY_DECAY_PER_WEEK = 0.25
 // Community sentiment loss: sentiment runs -100..100. Only a TOTAL revolt (the
 // floor) ends the run — short of that, bad sentiment is a recoverable pressure
 // that craters your sales, not an instant death.
@@ -54,45 +62,23 @@ export function communitySentiment(personas) {
   }
   return total ? wSum / total : null
 }
-// Diversity erosion: above this solve level the field starts collapsing to a few
-// decks; rate is the max weekly diversity loss at fully-solved (solve=100).
-const DIVERSITY_EROSION_SOLVE_FLOOR = 40
-const DIVERSITY_EROSION_RATE = 5
 
 export function advanceWeek(state) {
   const next = structuredClone(state)
 
   next.week += 1
 
-  // Format decay: the community solves the meta over time. This is the
-  // pressure that pushes the player to release the next set.
-  next.metagame.solveLevel = clamp(
-    next.metagame.solveLevel + SOLVE_DECAY_PER_WEEK,
-    0,
-    100,
+  // Release-pressure decay: every live set's own buzz fades a little each week
+  // (the "the current drop cools, pressuring you to release again" beat — see
+  // docs/BRIEF.md's core loop, now per-set instead of a single global dial).
+  next.sets = next.sets.map((s) =>
+    s.rotated ? s : { ...s, buzz: clamp((s.buzz ?? 50) * BUZZ_DECAY_PER_WEEK, 0, 100) },
   )
 
-  // As the format gets solved, the field collapses toward a few dominant decks —
-  // diversity erodes. Without this, diversity only ever ratchets UP on release
-  // and pegs at 100; this is the downward pressure that makes it a live dial and
-  // gives releasing a real diversity-restoring purpose.
-  if (next.metagame.solveLevel > DIVERSITY_EROSION_SOLVE_FLOOR) {
-    const pressure = (next.metagame.solveLevel - DIVERSITY_EROSION_SOLVE_FLOOR) / 100
-    next.metagame.diversity = clamp(next.metagame.diversity - pressure * DIVERSITY_EROSION_RATE, 0, 100)
-    // Same pressure concentrates the metashare: the community piles into the best
-    // deck, so the field tilts toward its already-dominant archetype as it solves.
-    next.metagame.archetypes = concentrate(next.metagame.archetypes, pressure * 0.5)
-  }
-
-  // Live blocks exert a persistent warp on the archetype field: each active block
-  // gimmick keeps the format bent toward its lean for its era, then fades as its
-  // warp decays. STACKED blocks compound — the coexistence creep that makes a
-  // player reach for bans/rotations. Apply the pull, then decay every block's warp
-  // one week (an era cools unless a new set prints into the block to refresh it).
-  if (next.blocks?.length) {
-    next.metagame.archetypes = applyBlockPull(next.metagame.archetypes, next.blocks)
-    next.blocks = decayBlocks(next.blocks)
-  }
+  // Nostalgia-erosion dial cools slowly on its own each week (design fatigue
+  // eases between drops); a release pushes it up (sets.js), pulling a hot set
+  // from print relieves it faster (bans.js).
+  next.printIntensity = clamp((next.printIntensity ?? 40) - PRINT_INTENSITY_DECAY_PER_WEEK, 0, 100)
 
   // Artist careers drift: rising stars get pricier/more famous (and can
   // graduate or blow up), fading names decline. Commissioning a cheap rising
@@ -105,6 +91,13 @@ export function advanceWeek(state) {
   next.sets = rev.sets
   next.cash += rev.cashDelta
   next.lastRevenue = { week: next.week, total: rev.cashDelta, units: rev.unitsSold, perSet: rev.perSet }
+
+  // Channel mix (direct/LGS/big-box/international) feeds scalper heat alongside
+  // signed bulk-buyer deals — a big-box-heavy lineup runs hotter than a direct-
+  // to-consumer one, even with no distributor deals signed at all. Applied here
+  // (before applyDistributors reads/decays heat below) so both sources compound
+  // into the one gauge.
+  next.scalperHeat = clamp((next.scalperHeat ?? 0) + (rev.channelHeatDelta ?? 0), 0, 100)
 
   // Debt interest. Negative cash is a LOAN — survivable, but not free. It accrues
   // compounding weekly interest, so a brief dip is cheap while chronic deep debt
@@ -119,7 +112,7 @@ export function advanceWeek(state) {
   }
 
   // Secondary market: resolve every card's singles & sealed price for the week.
-  // resolveMarket reads next.week/metagame (already advanced) and the cards.
+  // resolveMarket reads next.week (already advanced) and the cards.
   const { cards, movers } = resolveMarket(next)
   next.cards = cards
   next.movers = movers
@@ -137,16 +130,10 @@ export function advanceWeek(state) {
     next.eventsFeed = [event.entry, ...next.eventsFeed].slice(0, 60)
   }
 
-  // Re-derive the Archetype Balance dial from the (now settled) distribution, so
-  // the scalar the UI/clock/events read always reflects the real metashare after
-  // this week's release/solve/ban effects. The distribution is the source of
-  // truth; the scalar is a view of how even it is.
-  next.metagame.archetypeBalance = balanceScore(next.metagame.archetypes)
-
-  // Segment drift: the four metagame dials exert a slow weekly pull on the
-  // player segments — a healthy meta grows the base, a rotting one bleeds it,
-  // each segment reacting to the dials it cares about (now including how the
-  // metashare is split). Runs after personas/events have settled the dials.
+  // Segment drift: catalog buzz, franchise reputation, character fame, and the
+  // nostalgia-erosion dial exert a slow weekly pull on the player segments — a
+  // healthy catalog grows the base, a stale/over-designed one bleeds it. Runs
+  // after personas/events have settled this week's numbers.
   applySegmentDrift(next)
 
   // Cadence pledge: if the player is overdue on their promised release rhythm,
@@ -157,11 +144,65 @@ export function advanceWeek(state) {
   // weekly upkeep and amplify, but a soured sponsored name drags the base.
   applyRelationships(next)
 
+  // Character fame: each character's fame drifts off how their live cards are
+  // actually doing this week (chase-pull momentum/hype/punch, and any
+  // controversy heat) — the persistent "who" behind a card, tracked separately
+  // from any one printing. Runs after the market/personas have settled so it
+  // reads this week's real numbers.
+  driftCharacters(next)
+
   // Distributors: active bulk-buyers resell and flood the channel, feeding
   // scalper heat. Above the threshold, scalper culture spikes prices short-term
   // but bleeds casuals, sours the community, and risks a bubble pop. Runs after
   // the market/segments/personas have settled so it adjusts the resolved week.
   applyDistributors(next)
+
+  // Grading partners: an active partner ambiently certifies a slice of the
+  // market's highest-value eligible singles each week and carries its own
+  // scandal risk. Runs alongside distributors — same "living systems" beat.
+  applyGrading(next)
+
+  // Regional staggered releases: a lead-region wave applied immediately at
+  // release, then a second "wide release" wave lands automatically once its
+  // target week arrives (see sets.js/useGame.js RELEASE_SET for how a wave is
+  // scheduled). Mirrors the week-gated pattern set.glutUntil already uses.
+  if (next.pendingWaves?.length) {
+    const due = next.pendingWaves.filter((w) => w.applyWeek <= next.week)
+    if (due.length) {
+      const segments = { ...next.segments }
+      const feedEntries = []
+      for (const wave of due) {
+        distributeNewPlayers(segments, next.segmentLean, wave.amount)
+        // The preview-channel payoff: name whichever of the set's cards moved
+        // the most during the lead-region window, off the same priceHistory
+        // the ticker's sparkline already renders — no new tracking needed.
+        const setCards = next.cards.filter((c) => c.setId === wave.setId && c.priceHistory?.length >= 2)
+        const breakout = setCards.reduce((best, c) => {
+          const first = c.priceHistory[0]
+          const pct = first > 0 ? (c.singlePrice - first) / first : 0
+          return !best || pct > best.pct ? { card: c, pct } : best
+        }, null)
+        const buzzLine = breakout && breakout.pct > 0.1
+          ? ` The lead region's early buzz was all about ${breakout.card.name}.`
+          : ''
+        feedEntries.push({
+          week: next.week,
+          text: `Wide release: ${wave.leadRegionName ?? wave.setName} hits the rest of the world as “${wave.setName}.”${buzzLine} ${Math.round(wave.amount).toLocaleString()} more players discover the game.`,
+        })
+      }
+      next.segments = segments
+      next.playerBase = segments.casual + segments.collectors
+      next.eventsFeed = [...feedEntries, ...next.eventsFeed].slice(0, 60)
+      next.pendingWaves = next.pendingWaves.filter((w) => w.applyWeek > next.week)
+    }
+  }
+
+  // Franchise reputation: a slow-moving brand-prestige stat that grows off a
+  // sustained healthy cadence + community mood + made-it-big characters, and
+  // lifts old sets' collector floor independent of any one card's hype. Needs
+  // this week's settled cadence/sentiment/character-fame numbers, so it runs
+  // last among the "living systems" ticks.
+  updateFranchiseReputation(next)
 
   // Clock attention: classify the week just resolved so the clock can auto-slow
   // or pause on interesting moments and fast-forward through quiet ones. The

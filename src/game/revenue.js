@@ -13,6 +13,17 @@
 import { makeRng, hashSeed, range } from './rng.js'
 import { clamp } from './simulation.js'
 import { packRichnessDelta } from './rarities.js'
+import { channelBlend } from './products.js'
+
+// Anti-scalping toolkit — phantom-stock policy (see toggleAntiScalpingPolicy):
+// damps the channel-mix heat contribution, at a small real-demand cost.
+const PHANTOM_STOCK_REACH_DAMP = 0.9
+const PHANTOM_STOCK_HEAT_DAMP = 0.6
+
+// How hard channel-mix scalper exposure feeds the shared heat gauge, per unit
+// sold. Small — this is a slow ambient pressure alongside signed distributor
+// deals, not a replacement for them (see distributors.js's SPIKE_HEAT).
+const CHANNEL_HEAT_SCALE = 0.00004
 
 // Map the 0–100 print-run slider to actual units printed. A LOW print run must
 // mean genuinely few units (real lost sales — the brief's cost of scarcity), so
@@ -33,9 +44,12 @@ function priceElasticity(price, ref = 4.5) {
   return clamp(1.7 - price / (5.5 * scale), 0.06, 1.5)
 }
 
-// A set's average signature-card hype, as a buzz signal for how much people
-// want to crack packs of it. Falls back to neutral if a set somehow has no cards.
-function setBuzz(set, cards) {
+// A set's average signature-card hype, as an appeal signal for how much people
+// want to crack packs of it. Falls back to neutral if a set somehow has no
+// cards. (Distinct from `set.buzz` — the persisted, release-pressure stat that
+// decays weekly in simulation.js; this is recomputed fresh each week from the
+// set's live cards.)
+function setAppeal(set, cards) {
   const own = cards.filter((c) => c.setId === set.id)
   if (own.length === 0) return 0.5
   const avgHype = own.reduce((s, c) => s + (c.popFactors?.hype ?? 50), 0) / own.length
@@ -64,20 +78,26 @@ function weeklyDemand(set, product, state, rng) {
   const launchPeak = set.prerelease?.enabled ? 3.0 : 2.4
   const launch = 1 + (launchPeak - 1) * Math.exp(-age / 6)
 
-  // Staleness: as the format gets solved, sealed interest for an aging set fades,
-  // but never fully dies while the set is in print (floor keeps a long tail).
-  const freshness = clamp(1 - state.metagame.solveLevel / 220, 0.55, 1)
+  // Staleness: as THIS set's own buzz cools, sealed interest fades, but never
+  // fully dies while the set is in print (floor keeps a long tail).
+  const freshness = clamp(0.55 + (set.buzz ?? 50) / 100 * 0.45, 0.55, 1)
   const ageDecay = clamp(Math.exp(-age / 30), 0.12, 1) // gentle, long-lived tail
 
-  const buzz = 0.3 + setBuzz(set, state.cards) * 1.1 // 0.41 (dead) .. 1.62 (hot)
+  const buzz = 0.3 + setAppeal(set, state.cards) * 1.1 // 0.41 (dead) .. 1.62 (hot)
   const elasticity = priceElasticity(product.price, product.elasticityRef ?? 4.5)
 
-  // Buyer pool, weighted by THIS SKU's appeal to each segment. Boosters use the
-  // original weights (0.26/0.1/0.16) so they're unchanged; a collector box leans
-  // hard on collectors, a bundle on casuals, etc.
+  // A bigger, more established franchise sells sealed product a little easier —
+  // brand pull, not just this set's own hype (mirrors legacyMultiplier's lift on
+  // the collector side in market.js; here it's the SEALED-demand side of the same
+  // reputation stat). Small and capped so a young studio's own hype still carries
+  // most of the weight.
+  const reputationMul = clamp(1 + (state.franchise?.reputation ?? 0) / 400, 1, 1.35)
+
+  // Buyer pool, weighted by THIS SKU's appeal to each segment. A collector box
+  // leans hard on collectors, a bundle on casuals, etc.
   const seg = state.segments
-  const a = product.appeal ?? { casual: 0.26, competitive: 0.1, collectors: 0.16 }
-  const buyerPool = seg.casual * a.casual + seg.competitive * a.competitive + seg.collectors * a.collectors
+  const a = product.appeal ?? { casual: 0.32, collectors: 0.20 }
+  const buyerPool = seg.casual * a.casual + seg.collectors * a.collectors
 
   const noise = range(rng, 0.85, 1.15)
 
@@ -90,7 +110,16 @@ function weeklyDemand(set, product, state, rng) {
   // units than a pack). 1 for boosters → identical to the old formula.
   const mul = product.demandMul ?? 1
 
-  const units = buyerPool * launch * freshness * ageDecay * buzz * elasticity * noise * glut * mul
+  // Channel mix (direct/LGS/big-box/international) further scales volume by
+  // audience reach — a big-box-heavy split reaches more buyers, a direct-only
+  // split fewer (see products.js CHANNELS/channelBlend).
+  let reachMul = channelBlend(product.channels, 'reachMul')
+  // Phantom-stock policy (see toggleAntiScalpingPolicy): showing "sold out"
+  // before stock is truly gone deters bots, but some genuine customers bounce
+  // off the fake sign too — a small real demand cost for the anti-scalping win.
+  if (state.phantomStockPolicy) reachMul *= PHANTOM_STOCK_REACH_DAMP
+
+  const units = buyerPool * launch * freshness * ageDecay * buzz * elasticity * noise * glut * mul * reachMul * reputationMul
   return Math.max(0, Math.round(units))
 }
 
@@ -101,7 +130,7 @@ function setProducts(set) {
   if (set.products?.length) return set.products
   return [{
     kind: 'booster', name: 'Booster packs', price: set.price,
-    appeal: { casual: 0.26, competitive: 0.1, collectors: 0.16 }, demandMul: 1, elasticityRef: 4.5,
+    appeal: { casual: 0.32, collectors: 0.20 }, demandMul: 1, elasticityRef: 4.5,
     supply: set.supply ?? printRunUnits(set.printRun), sold: set.sold ?? 0,
   }]
 }
@@ -114,6 +143,7 @@ export function resolveRevenue(state) {
   const rng = makeRng(hashSeed(`revenue:${state.week}`))
   let cashDelta = 0
   let unitsSold = 0
+  let channelHeatDelta = 0
   const perSet = []
 
   const sets = state.sets.map((set) => {
@@ -132,12 +162,19 @@ export function resolveRevenue(state) {
 
       const demand = weeklyDemand(set, p, state, rng)
       const units = Math.min(demand, remaining)
-      const revenue = Math.round(units * p.price)
+      // Channel margin: a big-box/international-heavy split nets less per unit
+      // than direct/LGS (see products.js CHANNELS); the booster/SKU price stays
+      // the sticker price, marginMul is what you actually keep.
+      const marginMul = channelBlend(p.channels, 'marginMul')
+      const revenue = Math.round(units * p.price * marginMul)
+      const exposure = channelBlend(p.channels, 'scalperExposure')
 
       cashDelta += revenue
       unitsSold += units
       setUnits += units
       setRevenue += revenue
+      const phantomDamp = state.phantomStockPolicy ? PHANTOM_STOCK_HEAT_DAMP : 1
+      channelHeatDelta += units * exposure * CHANNEL_HEAT_SCALE * phantomDamp
       if (units > 0) perProduct.push({ kind: p.kind, name: p.name, units, revenue })
 
       return { ...p, supply, sold: sold + units }
@@ -151,5 +188,5 @@ export function resolveRevenue(state) {
     return { ...set, products: nextProducts, supply: booster.supply, sold: booster.sold }
   })
 
-  return { sets, cashDelta, unitsSold, perSet }
+  return { sets, cashDelta, unitsSold, perSet, channelHeatDelta }
 }

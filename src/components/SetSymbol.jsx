@@ -35,6 +35,8 @@ const RARITY_COLOR = {
   common: 'var(--silver)',
   uncommon: '#e8ecf5',
   rare: 'var(--accent-2)',
+  ultra: 'var(--ultra)',
+  illustration: 'var(--illustration)',
   mythic: 'var(--pop)',
 }
 

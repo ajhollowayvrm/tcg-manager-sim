@@ -35,6 +35,13 @@ export const SCALPER_THRESHOLD = 55 // scalper culture activates above this
 const HEAT_DECAY = 2 // points/week heat cools when not being fed
 const SPIKE_HEAT = 9 // heat added per active distributor per week (resale pressure)
 
+// Anti-scalping toolkit (see toggleAntiScalpingPolicy) — TPCi's real 2026
+// playbook: purchase limits per channel, and "phantom stock" (see revenue.js's
+// channel-mix heat, which phantomStockPolicy damps). Both are free standing
+// policy stances, off by default, each a real tradeoff against revenue/reach.
+const PURCHASE_LIMIT_CAP = 0.15 // no single deal can take more than this share
+const PURCHASE_LIMIT_FLOOD_DAMP = 0.65 // weekly flood/heat contribution while the policy is on
+
 // ---- Sign a distributor ---------------------------------------------------
 
 // Up-front bulk buy of a live set. Returns reducer patches:
@@ -52,8 +59,14 @@ export function signDistributor(state, distId, setId) {
   const remaining = Math.max(0, supply - (set.sold ?? 0))
   if (remaining <= 0) return null // nothing left to wholesale
 
+  // Purchase-limit policy (see toggleAntiScalpingPolicy): caps how much of a
+  // set any single deal can take, mirroring real per-channel purchase limits —
+  // smaller deals, but they feed scalper heat less too (heat below reads off
+  // the same capped appetite via units/remaining).
+  const appetite = state.purchaseLimitPolicy ? Math.min(dist.appetite, PURCHASE_LIMIT_CAP) : dist.appetite
+
   // Volume they take = appetite × remaining; revenue = volume × MSRP × discount.
-  const units = Math.round(remaining * dist.appetite)
+  const units = Math.round(remaining * appetite)
   if (units <= 0) return null
   const revenue = Math.round(units * set.price * dist.discount)
 
@@ -120,6 +133,27 @@ export function cultivateDistributor(state, distId) {
   return { distributors, cashDelta: -cost, feed: `You wined and dined ${dist.name}. A warmer relationship means gentler flooding and better future terms.` }
 }
 
+// ---- Supply chain capacity -------------------------------------------------
+
+// Shipping/production capacity you can invest in: reduces supply-chain event
+// frequency/severity (see events.js's supply_chain event). A logistics lever —
+// slower/cheaper stays lean and risky, capacity is the safer, pricier bet.
+const SUPPLY_CHAIN_STEP = 10
+const SUPPLY_CHAIN_MAX = 100
+
+export function upgradeSupplyChain(state) {
+  const capacity = state.supplyChainCapacity ?? 40
+  if (capacity >= SUPPLY_CHAIN_MAX) return null
+  // Cost climbs steeply as you approach full capacity (the last mile of
+  // logistics investment is always the priciest).
+  const cost = Math.round(15_000 + capacity * 900)
+  return {
+    supplyChainCapacity: Math.min(SUPPLY_CHAIN_MAX, capacity + SUPPLY_CHAIN_STEP),
+    cashDelta: -cost,
+    feed: `Invested in supply-chain capacity (+${SUPPLY_CHAIN_STEP}) — fewer and lighter print/shipping snags ahead.`,
+  }
+}
+
 // ---- Weekly tick (called from advanceWeek) -------------------------------
 
 // Active distributors resell each week — flooding the market and feeding scalper
@@ -133,13 +167,14 @@ export function applyDistributors(next) {
   // --- Heat: fed by active resale flood, decays otherwise ---
   let heat = next.scalperHeat ?? 0
   let floodPressure = 0
+  const limitDamp = next.purchaseLimitPolicy ? PURCHASE_LIMIT_FLOOD_DAMP : 1
   for (const deal of active) {
     const dist = getDistributor(deal.id)
     if (!dist) continue
     // A cultivated relationship damps the flood (down to ~40% at max warmth).
     const warmth = 1 - (deal.relationship ?? 0) / 100 * 0.6
-    floodPressure += dist.flood * warmth
-    heat += SPIKE_HEAT * dist.flood * warmth
+    floodPressure += dist.flood * warmth * limitDamp
+    heat += SPIKE_HEAT * dist.flood * warmth * limitDamp
     // The relationship cools slowly if untended.
     deal.relationship = clamp((deal.relationship ?? 0) - 0.5, 0, 100)
   }
@@ -175,7 +210,7 @@ export function applyDistributors(next) {
     if (next.segments) {
       const bleed = Math.round(next.segments.casual * intensity * 0.012)
       next.segments.casual = Math.max(0, next.segments.casual - bleed)
-      next.playerBase = Math.max(0, next.segments.casual + next.segments.competitive + next.segments.collectors)
+      next.playerBase = Math.max(0, next.segments.casual + next.segments.collectors)
     }
     if (next.personas) {
       // Reviewers and fairness-minded voices sour fastest on a "scalper's game".

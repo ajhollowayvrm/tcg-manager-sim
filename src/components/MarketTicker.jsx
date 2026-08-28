@@ -85,10 +85,27 @@ export default function MarketTicker({ state }) {
                   <span className={`ticker__name rarity--${tier}`}>
                     <SetSymbol themeId={set?.themeId} tier={tier} size={14} />
                     {card.name}
+                    {card.serialCap && (
+                      <span className="tag tag--serial" title="A hard-capped serialized chase card">
+                        {card.serialIssued}/{card.serialCap}
+                      </span>
+                    )}
+                    {card.graded && (
+                      <span className="tag tag--graded" title="Certified by a grading partner — population is how many submitted copies exist">
+                        ✅ graded{card.gradedPopulation > 1 ? ` ×${card.gradedPopulation}` : ''}
+                      </span>
+                    )}
                     {status && <span className={`tag tag--${status}`}>{statusLabel}</span>}
                   </span>
                   <Sparkline history={card.priceHistory} />
-                  <span className="ticker__sealed" title="Sealed price">📦 {fmt(card.sealedPrice)}</span>
+                  <span className="ticker__scarcity">
+                    <span className="ticker__sealed" title="Sealed price">📦 {fmt(card.sealedPrice)}</span>
+                    {card.legacyValue > 0 && (
+                      <span className="ticker__legacy" title="Premium from your franchise's growing reputation — this vintage card is appreciating on its own">
+                        🏛 +{fmt(card.legacyValue)}
+                      </span>
+                    )}
+                  </span>
                   <span className="ticker__price">
                     {fmt(card.singlePrice)}
                     {pct != null && (

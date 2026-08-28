@@ -2,7 +2,7 @@
 // state (advanceWeek + the action helpers), so we can play full multi-year runs
 // in milliseconds with no browser — and sweep many strategies to get the
 // *distributions* the brief's open tuning notes ask about (release cadence,
-// survival, power-creep trajectory, market variance).
+// survival, catalog-buzz trajectory, market variance).
 //
 // Run:  node tools/playtest.mjs            (summary across all strategies)
 //       node tools/playtest.mjs --trace    (week-by-week for one run)
@@ -14,7 +14,7 @@
 import { createInitialState } from '../src/game/initialState.js'
 import { advanceWeek } from '../src/game/simulation.js'
 import { createDraft, createSignatureCard, releaseSet, setCost } from '../src/game/sets.js'
-import { banCard, pullFromPrint } from '../src/game/bans.js'
+import { pullFromPrint } from '../src/game/bans.js'
 import { resetCadence } from '../src/game/cadence.js'
 import { distributeNewPlayers } from '../src/game/segments.js'
 
@@ -24,33 +24,28 @@ const HORIZON = 312 // ~6 years of weeks — a long run, per the brief's "year 6
 // Mirrors the transitions in useGame.js so a strategy can act on the state.
 
 function applyRelease(state, draft) {
-  const { set, cards, cashDelta, metagame, counteredCards, newPlayers, blocks } = releaseSet(state, draft)
+  const { set, existingSets, cards, cashDelta, printIntensity, softenedCards, newPlayers, blocks } = releaseSet(state, draft)
   // Mirror the reducer: a release brings a discovery wave of new players.
   const segments = { ...state.segments }
   distributeNewPlayers(segments, state.segmentLean, newPlayers ?? 0)
   return {
     ...state,
     cash: state.cash + cashDelta,
-    sets: [...state.sets, set],
-    // Silver-bullet counters may have patched existing cards (counteredCards).
-    cards: [...(counteredCards ?? state.cards), ...cards],
+    sets: [...(existingSets ?? state.sets), set],
+    // A card reprint may have softened existing originals (softenedCards).
+    cards: [...(softenedCards ?? state.cards), ...cards],
     blocks: blocks ?? state.blocks, // major opens / rider refreshes a block
     segments,
-    playerBase: segments.competitive + segments.casual + segments.collectors,
-    metagame,
+    playerBase: segments.casual + segments.collectors,
+    printIntensity,
     // Mirror the reducer: shipping a set resets the cadence pledge clock.
     cadence: state.cadence ? resetCadence(state.cadence, state.week) : state.cadence,
   }
 }
-function applyBan(state, cardId) {
-  const r = banCard(state, cardId)
-  if (!r) return state
-  return { ...state, cards: r.cards, metagame: r.metagame, segments: r.segments, playerBase: r.playerBase, personas: r.personas }
-}
 function applyPull(state, setId) {
   const r = pullFromPrint(state, setId)
   if (!r) return state
-  return { ...state, sets: r.sets, cards: r.cards, metagame: r.metagame, segments: r.segments, playerBase: r.playerBase, personas: r.personas }
+  return { ...state, sets: r.sets, cards: r.cards, printIntensity: r.printIntensity, segments: r.segments, playerBase: r.playerBase, personas: r.personas }
 }
 
 // ---- Draft builder --------------------------------------------------------
@@ -89,7 +84,7 @@ const THEMES = ['dragons', 'undead', 'cyber', 'nature', 'arcane'] // real theme 
 // `minorEvery` (optional): drop a smaller rider set every N weeks BETWEEN majors,
 // cycling minor→micro. This is how we model the major/minor cadence: majors are
 // the format beats, riders are the in-between collector drops.
-function makeStrategy({ name, cadence, knobs, banAt, rotateEvery, ignoreCash = false, minorEvery = null }) {
+function makeStrategy({ name, cadence, knobs, rotateEvery, ignoreCash = false, minorEvery = null }) {
   return {
     name,
     // Called each week BEFORE advanceWeek. Returns the (possibly) acted-on state.
@@ -120,24 +115,15 @@ function makeStrategy({ name, cadence, knobs, banAt, rotateEvery, ignoreCash = f
           ctx.riders++
         }
       }
-      // Ban the highest-pressure live card once it crosses the threshold.
-      if (banAt != null) {
-        const live = s.cards.filter((c) => !c.banned && !c.rotated)
-        const worst = live.reduce((a, c) => ((c.banPressure ?? 0) > (a?.banPressure ?? 0) ? c : a), null)
-        if (worst && (worst.banPressure ?? 0) >= banAt) {
-          s = applyBan(s, worst.id)
-          ctx.bans++
-        }
-      }
-      // Periodically pull the oldest in-print set to reset creep (the new lever
-      // that replaced rotation — picks any set; here we pick the oldest).
+      // Periodically pull the oldest in-print set to relieve design loudness
+      // (the collector-native lever — picks any set; here we pick the oldest).
       if (rotateEvery && s.week > 0 && s.week % rotateEvery === 0) {
         const inPrint = s.sets.filter((x) => !x.rotated && !x.outOfPrint)
           .sort((a, b) => a.releasedWeek - b.releasedWeek)
         if (inPrint.length >= 2) {
           const before = s.sets.filter((x) => x.outOfPrint).length
           s = applyPull(s, inPrint[0].id)
-          if (s.sets.filter((x) => x.outOfPrint).length > before) ctx.rotations++
+          if (s.sets.filter((x) => x.outOfPrint).length > before) ctx.pulls++
         }
       }
       return s
@@ -146,26 +132,26 @@ function makeStrategy({ name, cadence, knobs, banAt, rotateEvery, ignoreCash = f
 }
 
 const STRATEGIES = [
-  makeStrategy({ name: 'Conservative', cadence: 16, banAt: 60, rotateEvery: 104,
+  makeStrategy({ name: 'Conservative', cadence: 16, rotateEvery: 104,
     knobs: { powerBudget: 45, printRun: 45, pricePoint: 4.5, chasePower: 60, namePool: NAME_POOL, themes: THEMES } }),
-  makeStrategy({ name: 'Balanced', cadence: 12, banAt: 65, rotateEvery: 78,
+  makeStrategy({ name: 'Balanced', cadence: 12, rotateEvery: 78,
     knobs: { powerBudget: 55, printRun: 55, pricePoint: 4.5, chasePower: 70, namePool: NAME_POOL, themes: THEMES } }),
-  makeStrategy({ name: 'Aggressive creep', cadence: 8, banAt: 75, rotateEvery: 60,
+  makeStrategy({ name: 'Aggressive creep', cadence: 8, rotateEvery: 60,
     knobs: { powerBudget: 80, printRun: 65, pricePoint: 5.0, chasePower: 88, namePool: NAME_POOL, themes: THEMES } }),
-  makeStrategy({ name: 'Overprint greed', cadence: 5, banAt: null, rotateEvery: null,
+  makeStrategy({ name: 'Overprint greed', cadence: 5, rotateEvery: null,
     knobs: { powerBudget: 70, printRun: 78, pricePoint: 8.0, chasePower: 80, namePool: NAME_POOL, themes: THEMES } }),
-  makeStrategy({ name: 'Underprint scarcity', cadence: 14, banAt: 60, rotateEvery: 104,
+  makeStrategy({ name: 'Underprint scarcity', cadence: 14, rotateEvery: 104,
     knobs: { powerBudget: 50, printRun: 12, pricePoint: 5.5, chasePower: 72, namePool: NAME_POOL, themes: THEMES } }),
-  makeStrategy({ name: 'Idle (never release)', cadence: Infinity, banAt: null, rotateEvery: null,
+  makeStrategy({ name: 'Idle (never release)', cadence: Infinity, rotateEvery: null,
     knobs: { powerBudget: 50, printRun: 50, pricePoint: 4.5, chasePower: 60, namePool: NAME_POOL, themes: THEMES } }),
   // Reckless: release as fast as possible at a punishing price regardless of
   // cash — should bankrupt itself. Confirms the loss condition is reachable.
-  makeStrategy({ name: 'Reckless spender', cadence: 4, banAt: null, rotateEvery: null, ignoreCash: true,
+  makeStrategy({ name: 'Reckless spender', cadence: 4, rotateEvery: null, ignoreCash: true,
     knobs: { powerBudget: 75, printRun: 80, pricePoint: 9.0, chasePower: 82, namePool: NAME_POOL, themes: THEMES } }),
-  // Mono-aggro: only releases aggro-leading themes at high power and never bans
-  // or rotates to flatten the field. Should drive aggro to dominate the metashare
-  // and bleed the segments that dislike a one-style format (competitive especially).
-  makeStrategy({ name: 'Mono-aggro spam', cadence: 10, banAt: null, rotateEvery: null,
+  // Loud/splashy: only releases splashy, high-punch themes at high power and
+  // never pulls a set to relieve design loudness. Should run printIntensity hot
+  // and test whether collectors bleed under sustained loud design.
+  makeStrategy({ name: 'Loud design spam', cadence: 10, rotateEvery: null,
     knobs: { powerBudget: 75, printRun: 50, pricePoint: 4.5, chasePower: 75,
       namePool: NAME_POOL, themes: ['cute', 'racing', 'pirates', 'kaiju'] } }),
 
@@ -173,21 +159,21 @@ const STRATEGIES = [
   // Block-builder: a major every 16 wk that OPENS a block, plus a minor/micro
   // rider every 6 wk between majors riding it. The "real TCG calendar" play.
   // Should survive and run a healthy release count with rich collector drops.
-  makeStrategy({ name: 'Block builder (maj+min)', cadence: 16, minorEvery: 6, banAt: 62, rotateEvery: 90,
+  makeStrategy({ name: 'Block builder (maj+min)', cadence: 16, minorEvery: 6, rotateEvery: 90,
     knobs: { powerBudget: 52, printRun: 50, pricePoint: 4.5, chasePower: 72,
       namePool: NAME_POOL, themes: THEMES, gimmicks: ['mega', 'ascended', 'tera'] } }),
   // Rider spam: a major rarely (every 24 wk) but cheap riders constantly (every
   // 4 wk). Tests whether minors paper over a missing major — they reset cadence
-  // (any set does) but DON'T recruit (small discovery) or refresh the format
-  // much, so the base should grow slower than the block builder despite more
-  // releases. The interesting "minors can't substitute for majors" tension.
-  makeStrategy({ name: 'Rider spam (few majors)', cadence: 24, minorEvery: 4, banAt: 62, rotateEvery: 90,
+  // (any set does) but DON'T recruit (small discovery) much, so the base should
+  // grow slower than the block builder despite more releases. The interesting
+  // "minors can't substitute for majors" tension.
+  makeStrategy({ name: 'Rider spam (few majors)', cadence: 24, minorEvery: 4, rotateEvery: 90,
     knobs: { powerBudget: 55, printRun: 55, pricePoint: 4.5, chasePower: 75,
       namePool: NAME_POOL, themes: THEMES, gimmicks: ['phantasmal', 'tera'] } }),
   // Collector-gimmick blocks: Phantasmal (treatment-first) majors + chase-dense
-  // riders, never warping the meta hard. A collector-led studio — should lean on
-  // the secondary market and survive on collector demand.
-  makeStrategy({ name: 'Collector blocks', cadence: 18, minorEvery: 7, banAt: 65, rotateEvery: 104,
+  // riders. A collector-led studio — should lean on the secondary market and
+  // survive on collector demand.
+  makeStrategy({ name: 'Collector blocks', cadence: 18, minorEvery: 7, rotateEvery: 104,
     knobs: { powerBudget: 48, printRun: 40, pricePoint: 5.0, chasePower: 70,
       namePool: NAME_POOL, themes: THEMES, gimmicks: ['phantasmal'] } }),
 ]
@@ -196,7 +182,7 @@ const STRATEGIES = [
 
 function playOne(strategy, salt, trace = false) {
   let state = createInitialState()
-  const ctx = { salt, releases: 0, bans: 0, rotations: 0, riders: 0 }
+  const ctx = { salt, releases: 0, pulls: 0, riders: 0 }
   const samples = [] // periodic snapshots for trajectory stats
   let bigMoves = 0, weeksWithMover = 0
   let minCash = Infinity, minPlayers = Infinity // closest anyone came to losing
@@ -214,13 +200,12 @@ function playOne(strategy, salt, trace = false) {
     if (state.cash < minCash) minCash = state.cash
     if (state.playerBase < minPlayers) minPlayers = state.playerBase
     if (i % 26 === 0) {
-      samples.push({ week: state.week, cash: state.cash, players: state.playerBase, power: state.metagame.powerLevel })
+      samples.push({ week: state.week, cash: state.cash, players: state.playerBase, printIntensity: state.printIntensity })
     }
     if (trace) {
-      const m = state.metagame
       console.log(
         `w${String(state.week).padStart(3)} cash=${fmt(state.cash).padStart(9)} ppl=${fmt(state.playerBase).padStart(7)} ` +
-        `div=${m.diversity.toFixed(0).padStart(3)} pow=${m.powerLevel.toFixed(0).padStart(3)} solve=${m.solveLevel.toFixed(0).padStart(3)} ` +
+        `buzz=${avgBuzz(state.sets).toFixed(0).padStart(3)} pInt=${(state.printIntensity ?? 0).toFixed(0).padStart(3)} ` +
         `sets=${state.sets.length} movers=${state.movers?.length ?? 0}`,
       )
     }
@@ -232,20 +217,17 @@ function playOne(strategy, salt, trace = false) {
     reason: state.gameOver?.reason ?? 'survived horizon',
     cash: state.cash,
     players: state.playerBase,
-    power: state.metagame.powerLevel,
-    diversity: state.metagame.diversity,
+    printIntensity: state.printIntensity ?? 0,
+    avgBuzz: avgBuzz(state.sets),
     releases: ctx.releases,
     riders: ctx.riders, // minor/micro releases (subset of releases)
     blocks: state.blocks?.length ?? 0,
     treatmentCards: state.cards.filter((c) => c.treatment).length,
-    bans: ctx.bans,
-    rotations: ctx.rotations,
+    pulls: ctx.pulls,
     moverRate: weeksWithMover / Math.max(1, state.week - 1),
     bigMoves,
     minCash,
     minPlayers,
-    balance: state.metagame.archetypeBalance,
-    topShare: topArchetypeShare(state.metagame.archetypes),
     samples,
   }
 }
@@ -257,10 +239,11 @@ function fmt(n) {
   return Math.abs(r) >= 1000 ? (r / 1000).toFixed(0) + 'k' : String(r)
 }
 
-// Largest archetype's share of the field (0–100) — how dominated the meta is.
-function topArchetypeShare(archetypes) {
-  if (!archetypes) return 0
-  return Math.max(...Object.values(archetypes))
+// Average buzz across live (in-print) sets, 0–100.
+function avgBuzz(sets) {
+  const live = (sets ?? []).filter((s) => !s.rotated)
+  if (!live.length) return 0
+  return live.reduce((s, x) => s + (x.buzz ?? 0), 0) / live.length
 }
 
 function summarize() {
@@ -268,10 +251,10 @@ function summarize() {
   console.log(
     'strategy'.padEnd(22) + 'survive'.padEnd(9) + 'endWk'.padEnd(7) +
     'cash'.padEnd(8) + 'minCash'.padEnd(9) + 'players'.padEnd(9) + 'minPpl'.padEnd(8) +
-    'pow'.padEnd(5) + 'div'.padEnd(5) + 'bal'.padEnd(5) + 'top%'.padEnd(6) +
-    'rel'.padEnd(5) + 'rid'.padEnd(5) + 'blk'.padEnd(5) + 'ban'.padEnd(5) + 'rot'.padEnd(5) + 'reason',
+    'pInt'.padEnd(6) + 'buzz'.padEnd(6) +
+    'rel'.padEnd(5) + 'rid'.padEnd(5) + 'blk'.padEnd(5) + 'pull'.padEnd(6) + 'reason',
   )
-  console.log('-'.repeat(135))
+  console.log('-'.repeat(125))
 
   for (const strat of STRATEGIES) {
     const runs = [0, 1, 2].map((salt) => playOne(strat, salt))
@@ -288,15 +271,12 @@ function summarize() {
       fmt(avg((r) => r.minCash)).padEnd(9) +
       fmt(avg((r) => r.players)).padEnd(9) +
       fmt(avg((r) => r.minPlayers)).padEnd(8) +
-      avg((r) => r.power).toFixed(0).padEnd(5) +
-      avg((r) => r.diversity).toFixed(0).padEnd(5) +
-      avg((r) => r.balance).toFixed(0).padEnd(5) +
-      (avg((r) => r.topShare).toFixed(0) + '%').padEnd(6) +
+      avg((r) => r.printIntensity).toFixed(0).padEnd(6) +
+      avg((r) => r.avgBuzz).toFixed(0).padEnd(6) +
       avg((r) => r.releases).toFixed(0).padEnd(5) +
       avg((r) => r.riders).toFixed(0).padEnd(5) +
       avg((r) => r.blocks).toFixed(0).padEnd(5) +
-      avg((r) => r.bans).toFixed(0).padEnd(5) +
-      avg((r) => r.rotations).toFixed(0).padEnd(5) +
+      avg((r) => r.pulls).toFixed(0).padEnd(6) +
       reasons,
     )
   }

@@ -5,7 +5,7 @@
 //   pullWeight — relative frequency in a pack (higher = MORE common). A common
 //                has a huge weight; a secret rare a tiny one.
 //   valueTier  — collector desirability 0–100. This is the COLLECTOR side of a
-//                card's value (independent of playability) — a high-tier rarity
+//                card's value (independent of punch) — a high-tier rarity
 //                makes a card worth money even if it's competitively useless.
 //   secret     — a "secret rare" sits ABOVE the numbered set count (e.g. 151/150)
 //                and is the scarcest chase.
@@ -20,14 +20,20 @@ function rid(base) {
 }
 
 // The default sheet a new set starts from. The player edits a copy of this.
+// An 8-tier chase ladder in the vein of the current Pokémon TCG: Common through
+// Rare are the accessible base, Double Rare/Ace Spec are the first real chase,
+// Illustration Rare/Special Illustration Rare are the art-chase tier, and Hyper
+// Rare is the top gold grail (the only tier numbered above the set count).
 export function defaultRaritySheet() {
   return [
-    { id: 'common', name: 'Common', pullWeight: 100, valueTier: 8, secret: false },
-    { id: 'uncommon', name: 'Uncommon', pullWeight: 45, valueTier: 22, secret: false },
-    { id: 'rare', name: 'Rare', pullWeight: 18, valueTier: 45, secret: false },
-    { id: 'holo', name: 'Holo Rare', pullWeight: 8, valueTier: 62, secret: false },
-    { id: 'ultra', name: 'Ultra Rare', pullWeight: 3, valueTier: 80, secret: false },
-    { id: 'secret', name: 'Secret Rare', pullWeight: 0.6, valueTier: 96, secret: true },
+    { id: 'common', name: 'Common', pullWeight: 100, valueTier: 5, secret: false },
+    { id: 'uncommon', name: 'Uncommon', pullWeight: 50, valueTier: 15, secret: false },
+    { id: 'rare', name: 'Rare', pullWeight: 20, valueTier: 32, secret: false },
+    { id: 'dbl', name: 'Double Rare', pullWeight: 6, valueTier: 50, secret: false },
+    { id: 'ace', name: 'Ace Spec', pullWeight: 1.2, valueTier: 62, secret: false },
+    { id: 'ir', name: 'Illustration Rare', pullWeight: 0.6, valueTier: 74, secret: false },
+    { id: 'sir', name: 'Special Illustration Rare', pullWeight: 0.18, valueTier: 88, secret: false },
+    { id: 'hyper', name: 'Hyper Rare', pullWeight: 0.05, valueTier: 97, secret: true },
   ]
 }
 
@@ -55,15 +61,17 @@ export function pickRarity(sheet, rng) {
   return sheet[sheet.length - 1].id
 }
 
-// Map a rarity (by id, against a sheet) to one of four VISUAL tiers the UI knows
-// how to foil/colour: common / uncommon / rare / mythic. Custom or renamed
-// rarities still render sensibly, bucketed by their valueTier (and secrets always
-// read as the top 'mythic' tier).
+// Map a rarity (by id, against a sheet) to one of six VISUAL tiers the UI knows
+// how to foil/colour: common / uncommon / rare / ultra / illustration / mythic.
+// Custom or renamed rarities still render sensibly, bucketed by their valueTier
+// (and secrets always read as the top 'mythic' tier).
 export function visualTier(sheet, id) {
   const r = getRarity(sheet, id)
-  if (r.secret || r.valueTier >= 75) return 'mythic'
-  if (r.valueTier >= 50) return 'rare'
-  if (r.valueTier >= 25) return 'uncommon'
+  if (r.secret || r.valueTier >= 91) return 'mythic'
+  if (r.valueTier >= 69) return 'illustration'
+  if (r.valueTier >= 45) return 'ultra'
+  if (r.valueTier >= 25) return 'rare'
+  if (r.valueTier >= 12) return 'uncommon'
   return 'common'
 }
 
@@ -79,41 +87,41 @@ export function visualTier(sheet, id) {
 // format authored before a rarity was renamed/removed never breaks a pull.
 
 // Default sheet rarity ids, for building presets that line up with it.
-const D = { common: 'common', uncommon: 'uncommon', rare: 'rare', holo: 'holo', ultra: 'ultra', secret: 'secret' }
+const D = { common: 'common', uncommon: 'uncommon', rare: 'rare', dbl: 'dbl', ace: 'ace', ir: 'ir', sir: 'sir', hyper: 'hyper' }
 
 // Named pack templates the builder offers as a starting point. Each yields a
 // fresh format object (slots are cloned so editing one set never mutates another).
 export const PACK_PRESETS = [
   {
-    id: 'classic', name: 'Classic', blurb: '7 common · 2 uncommon→holo · 1 hit',
+    id: 'classic', name: 'Classic', blurb: '7 common · 2 uncommon · 1 hit (rare→hyper)',
     build: () => ({
       preset: 'classic',
       slots: [
         { count: 7, rarityIds: [D.common], escalate: false },
-        { count: 2, rarityIds: [D.uncommon, D.holo], escalate: false },
-        { count: 1, rarityIds: [D.rare, D.holo, D.ultra, D.secret], escalate: true },
+        { count: 2, rarityIds: [D.uncommon], escalate: false },
+        { count: 1, rarityIds: [D.rare, D.dbl, D.ace, D.ir, D.sir, D.hyper], escalate: true },
       ],
     }),
   },
   {
-    id: 'premium', name: 'Premium', blurb: '5 common · 3 uncommon→holo · 2 hits',
+    id: 'premium', name: 'Premium', blurb: '5 common · 3 uncommon · 2 hits (double rare→hyper)',
     build: () => ({
       preset: 'premium',
       slots: [
         { count: 5, rarityIds: [D.common], escalate: false },
-        { count: 3, rarityIds: [D.uncommon, D.holo], escalate: false },
-        { count: 2, rarityIds: [D.holo, D.ultra, D.secret], escalate: true },
+        { count: 3, rarityIds: [D.uncommon], escalate: false },
+        { count: 2, rarityIds: [D.dbl, D.ace, D.ir, D.sir, D.hyper], escalate: true },
       ],
     }),
   },
   {
-    id: 'jumbo', name: 'Jumbo', blurb: '10 common · 4 uncommon · 1 guaranteed holo+',
+    id: 'jumbo', name: 'Jumbo', blurb: '10 common · 4 uncommon · 1 guaranteed illustration+',
     build: () => ({
       preset: 'jumbo',
       slots: [
         { count: 10, rarityIds: [D.common], escalate: false },
         { count: 4, rarityIds: [D.uncommon], escalate: false },
-        { count: 1, rarityIds: [D.holo, D.ultra, D.secret], escalate: true },
+        { count: 1, rarityIds: [D.ir, D.sir, D.hyper], escalate: true },
       ],
     }),
   },
@@ -129,9 +137,12 @@ export function buildPreset(id) {
   return PACK_PRESETS.find((p) => p.id === id)?.build() ?? null
 }
 
-// A blank slot for the editor's "add slot" button.
+// A blank slot for the editor's "add slot" button. `iconOnly` reserves the
+// slot for cards featuring an icon-status character (see characters.js) — a
+// no-op until the set actually has one, at which point it's the dedicated
+// alt-art/foil chase slot for that character.
 export function makePackSlot() {
-  return { count: 1, rarityIds: [], escalate: false }
+  return { count: 1, rarityIds: [], escalate: false, iconOnly: false }
 }
 
 // Total cards in a pack = sum of slot counts. Safe on a missing/empty format.
@@ -148,7 +159,7 @@ export function packSize(format) {
 // Rarity ids that read as a genuine "hit" (chase) when a slot can reach them.
 // We don't have the sheet here, so this is a name-based heuristic on the default
 // ids; custom rarities just won't be counted as hits (a safe under-count).
-const HIT_RARITY_IDS = new Set(['holo', 'ultra', 'secret'])
+const HIT_RARITY_IDS = new Set(['dbl', 'ace', 'ir', 'sir', 'hyper'])
 
 export function packRichness(format) {
   const size = packSize(format)
@@ -181,6 +192,53 @@ export function packRichnessDelta(format) {
 
 function clampUnit(x) {
   return Math.min(1.2, Math.max(0, x))
+}
+
+// The weight one rarity carries in a slot's draw — shared by the REAL draw
+// (packs.js) and the odds panel below, so a published "these are the odds"
+// claim can never drift from what actually pulls. An escalating (chase) slot
+// compresses pullWeight toward equal (sqrt), biasing toward the rarer end
+// without inverting the natural ordering.
+export function slotWeightOf(rarity, escalate) {
+  return escalate ? Math.max(0.0001, rarity.pullWeight) ** 0.5 : Math.max(0, rarity.pullWeight)
+}
+
+// Derive the REAL per-slot and per-pack pull odds from a set's rarity sheet +
+// pack format — nothing here is authored separately, so there's no odds data
+// to go stale. Returns:
+//   { packSize, slots: [{ index, count, escalate, breakdown:[{rarityId,name,prob}] }],
+//     perRarity: [{ rarityId, name, probAtLeastOnePerPack, oddsOneIn }] }
+// `prob` is the chance a single card drawn FROM THAT SLOT is the given rarity.
+// `probAtLeastOnePerPack` is the chance at least one copy of that rarity shows
+// up anywhere in the whole pack (independent draws across slots/counts).
+export function computePackOdds(sheet, format) {
+  const slots = format?.slots ?? []
+  const perSlot = slots.map((slot, index) => {
+    const ids = new Set(slot.rarityIds ?? [])
+    const pool = sheet.filter((r) => ids.has(r.id))
+    const usable = pool.length ? pool : sheet
+    const total = usable.reduce((s, r) => s + slotWeightOf(r, slot.escalate), 0)
+    const breakdown = usable.map((r) => ({
+      rarityId: r.id,
+      name: r.name,
+      prob: total > 0 ? slotWeightOf(r, slot.escalate) / total : 0,
+    }))
+    return { index, count: Math.max(0, Math.round(slot.count || 0)), escalate: !!slot.escalate, breakdown }
+  })
+
+  const perRarity = sheet.map((r) => {
+    let probNone = 1
+    for (const s of perSlot) {
+      const hit = s.breakdown.find((b) => b.rarityId === r.id)
+      const p = hit ? hit.prob : 0
+      probNone *= (1 - p) ** s.count
+    }
+    const probAtLeastOnePerPack = 1 - probNone
+    const oddsOneIn = probAtLeastOnePerPack > 0 ? Math.round(1 / probAtLeastOnePerPack) : Infinity
+    return { rarityId: r.id, name: r.name, probAtLeastOnePerPack, oddsOneIn }
+  })
+
+  return { packSize: packSize(format), slots: perSlot, perRarity }
 }
 
 // Validate a pack format for the builder. A pack needs at least one card and

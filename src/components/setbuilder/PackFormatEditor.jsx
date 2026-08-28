@@ -74,6 +74,14 @@ export default function PackFormatEditor({ format, sheet, onChange }) {
               />
               <span>escalate</span>
             </label>
+            <label className="packfmt__esc" title="Reserved for cards featuring an icon-status character — no effect until the set has one">
+              <input
+                type="checkbox"
+                checked={!!slot.iconOnly}
+                onChange={(e) => updateSlot(i, { iconOnly: e.target.checked })}
+              />
+              <span>icon chase</span>
+            </label>
             <button
               className="btn btn--ghost packfmt__remove"
               onClick={() => removeSlot(i)}
