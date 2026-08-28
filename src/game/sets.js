@@ -86,6 +86,11 @@ export function createDraft(setNumber, tier = 'major', liveBlocks = []) {
     // Prerelease: the one real sub-decision.
     prerelease: { enabled: false, chasePullable: false },
 
+    // Special release event: an optional marketing flavor on top of a normal
+    // release. 'none' | 'midnight' | 'themed'. Mutually exclusive — different
+    // presentations of the SAME release, not stackable levers.
+    releaseEvent: { type: 'none' },
+
     // Pack-odds transparency: publish the real pull rates (see rarities.js's
     // computePackOdds) to the community, or keep them obscured. Obscured is
     // the historical default — publishing trades a little hype/mystique for
@@ -211,10 +216,13 @@ export function setCost(draft, artistOf = getArtist) {
     return sum + artist.cost * mul
   }, 0)
   const prerelease = draft.prerelease.enabled ? 15_000 : 0
+  // A midnight launch pays for the event itself; a themed drop is a curated
+  // presentation angle, not extra staffing — free.
+  const releaseEvent = draft.releaseEvent?.type === 'midnight' ? 6_000 : 0
   // Each EXTRA SKU (bundle/spc/tin) costs its own print run. Boosters are already
   // covered by printCost above, so a boosters-only set's total is unchanged.
   const skus = (draft.products ?? []).reduce((sum, p) => sum + productPrintCost(p), 0)
-  return { dev, printCost, art, prerelease, skus, total: dev + printCost + art + prerelease + skus }
+  return { dev, printCost, art, prerelease, releaseEvent, skus, total: dev + printCost + art + prerelease + releaseEvent + skus }
 }
 
 // ---- Validation ----------------------------------------------------------
@@ -556,6 +564,8 @@ export function releaseSet(state, draft) {
     promoCards.length ? `Collector box includes an exclusive promo.` : null,
     anniversaryCards.length ? `${anniversaryCards.length} anniversary chase card${anniversaryCards.length > 1 ? 's' : ''} debut — instant nostalgia for the faithful.` : null,
     treatmentCards.length ? `${treatmentCards.length} ${block.treatmentLabel} chase card${treatmentCards.length > 1 ? 's' : ''} debut — the chase pulls driving extra demand for this set's packs.` : null,
+    draft.releaseEvent?.type === 'midnight' ? `A midnight launch draws a line out the door for ${draft.name} — buzz spikes, and scalper chatter with it.` : null,
+    draft.releaseEvent?.type === 'themed' ? `A themed drop event gives ${draft.name} a curated spotlight — the shelf feels like an occasion.` : null,
     draft.oddsPublished
       ? `Pull rates published — the community's watching.`
       : `Pull rates kept under wraps for this one.`,
@@ -573,6 +583,22 @@ export function releaseSet(state, draft) {
   // set's own average hype; always starts high, decays over the following
   // weeks until the next drop.
   set.buzz = clamp(40 + avgHype * 0.6, 10, 100)
+
+  // Special release event: a midnight launch trades cash + a scalper-heat bump
+  // (real lines draw flippers) for a bigger immediate buzz spike; a themed drop
+  // is a free, smaller, safe lift — a curated-presentation angle instead of an
+  // event-staffing spend. Deterministic (not a backfire roll) — the "risk" for
+  // midnight is the compounding scalperHeat it feeds, not a random failure.
+  const eventRng = makeRng(hashSeed(`releaseEvent:${setId}:${state.week}`))
+  const releaseEventType = draft.releaseEvent?.type ?? 'none'
+  let releaseEventScalperBump = 0
+  if (releaseEventType === 'midnight') {
+    set.buzz = clamp(set.buzz + range(eventRng, 8, 14), 0, 100)
+    releaseEventScalperBump = range(eventRng, 2, 5) // a line out the door draws flippers
+  } else if (releaseEventType === 'themed') {
+    set.buzz = clamp(set.buzz + range(eventRng, 4, 8), 0, 100)
+  }
+
   // A launch wave. Early sets (when you have few players) need to be a real
   // growth engine, so this is sized to take a fledgling studio from a trickle to
   // a viable base over its first few releases. Scales with chase hype — AND with
@@ -663,6 +689,7 @@ export function releaseSet(state, draft) {
     softenedCards: reprintResult.softenedCards,
     releaseFeed: feedParts.length ? feedParts.join(' ') : null,
     personaSentimentBump, // odds-transparency goodwill bump, or null
+    scalperHeatDelta: releaseEventScalperBump || null, // only non-null for a midnight launch
   }
 }
 

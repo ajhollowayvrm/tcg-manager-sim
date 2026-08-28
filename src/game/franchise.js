@@ -70,7 +70,11 @@ export function updateFranchiseReputation(next) {
     ? (Math.abs(sentimentEwma) - Math.abs(EROSION_SENTIMENT_FLOOR)) * EROSION_RATE
     : 0
 
-  const reputation = clamp(f.reputation + growth - erosion, 0, Infinity)
+  // A landed cross-media hit (see media.js) permanently floors reputation —
+  // it can still erode ABOVE the floor from a soured community, but never
+  // below it. Defaults to 0 (no-op) until a deal actually lands.
+  const floor = next.mediaReputationFloor ?? 0
+  const reputation = clamp(Math.max(f.reputation + growth - erosion, floor), 0, Infinity)
 
   next.franchise = { reputation: Math.round(reputation * 100) / 100, cadenceEwma, sentimentEwma }
 }

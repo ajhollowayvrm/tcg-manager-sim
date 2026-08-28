@@ -92,6 +92,143 @@ export function dropSponsor(state, personaId) {
   return { personas, cashDelta: 0, feed: `You ended your deal with ${persona.name}. They didn't take it well.` }
 }
 
+// ---- One-off: invite to a prerelease ---------------------------------------
+
+const PRERELEASE_WINDOW_WEEKS = 3 // how long after release a set still counts as "in its prerelease window"
+
+// Cost to invite a persona to a live set's prerelease — cheaper than a full
+// comp since it's a narrower gesture (one event, one set), with a premium if
+// the set's chase cards are pullable (a bigger, riskier perk).
+export function invitePrereleaseCost(persona, set) {
+  return Math.round(1_500 + persona.reach * 120 + (set?.prerelease?.chasePullable ? 2_000 : 0))
+}
+
+// Find the set (if any) currently eligible for a prerelease invite: prerelease
+// enabled, still in print, and within its window. Ties break toward the most
+// recently released set.
+export function eligiblePrereleaseSet(state) {
+  const candidates = (state.sets ?? []).filter((s) =>
+    s.prerelease?.enabled && !s.rotated && !s.outOfPrint &&
+    (state.week - s.releasedWeek) <= PRERELEASE_WINDOW_WEEKS,
+  )
+  if (!candidates.length) return null
+  return candidates.reduce((best, s) => (!best || s.releasedWeek > best.releasedWeek ? s : best), null)
+}
+
+// Returns reducer patches { personas, sets, cashDelta, feed } or null.
+export function invitePrerelease(state, personaId, setId) {
+  const persona = state.personas.find((p) => p.id === personaId)
+  const set = state.sets.find((s) => s.id === setId)
+  if (!persona || !set || !set.prerelease?.enabled || set.rotated || set.outOfPrint) return null
+  if (state.week - set.releasedWeek > PRERELEASE_WINDOW_WEEKS) return null
+  const cost = invitePrereleaseCost(persona, set)
+
+  const rng = makeRng(hashSeed(`invite:${personaId}:${setId}:${state.week}`))
+  // Backfire: lower baseline than compProduct (a curated invite reads better
+  // than unsolicited comped product) but chase-pullable adds real scoop risk
+  // — they crack chase pulls and leak them before your own reveal.
+  const backfireOdds = 0.15 + (1 - persona.credibility / 100) * 0.2
+    + (persona.sentiment < 0 ? 0.12 : 0) + (set.prerelease.chasePullable ? 0.08 : 0)
+  const backfired = rng() < backfireOdds
+
+  const personas = state.personas.map((p) => {
+    if (p.id !== personaId) return p
+    if (backfired) {
+      return { ...p, relationship: clamp((p.relationship ?? 10) + 4, 0, 100),
+        sentiment: clamp(p.sentiment - range(rng, 6, 12), -100, 100) }
+    }
+    return { ...p, relationship: clamp((p.relationship ?? 10) + range(rng, 10, 16), 0, 100),
+      sentiment: clamp(p.sentiment + range(rng, 5, 10), -100, 100) }
+  })
+
+  const sets = state.sets.map((s) => {
+    if (s.id !== setId) return s
+    const buzz = backfired
+      ? clamp((s.buzz ?? 50) - range(rng, 3, 6), 0, 100)
+      : clamp((s.buzz ?? 50) + range(rng, 6, 10), 0, 100)
+    return { ...s, buzz }
+  })
+
+  const feed = backfired
+    ? `You invited ${persona.name} to ${set.name}'s prerelease — they leaked chase pulls early, stealing your own reveal's thunder.`
+    : `You invited ${persona.name} to ${set.name}'s prerelease. Their early cracks are driving buzz ahead of full release.`
+
+  return { personas, sets, cashDelta: -cost, feed }
+}
+
+// ---- One-off: sponsor a tournament -----------------------------------------
+//
+// Unlike sponsorCreator (an ONGOING retainer), this is a one-off marquee
+// spend — real tournaments are discrete events, not a weekly upkeep line.
+// Its distinct hook: it lifts the current hottest live set's buzz (a bigger
+// jolt than invitePrerelease, since it's a public event, not a private
+// favor), plus a small goodwill ripple to the wider "competitive-minded"
+// slice of the roster — a real event moves the scene, not just the sponsored
+// voice.
+//
+// Gating: there's no dedicated competitor/pro persona TYPE in this roster
+// (content/personas.js only has streamer|authenticator|collector|reviewer|
+// analyst) — taste.power is used as the closest existing proxy for "a
+// competitive-minded voice" instead of adding a new type.
+export const COMPETITIVE_TASTE_THRESHOLD = 0.6
+
+export function sponsorTournamentCost(persona) {
+  return Math.round(6_000 + persona.reach * 420) // ~$19k reach-30, ~$46k reach-95, one-off
+}
+
+function hottestLiveSet(sets) {
+  const live = (sets ?? []).filter((s) => !s.rotated && !s.outOfPrint)
+  if (!live.length) return null
+  return live.reduce((best, s) => (!best || (s.buzz ?? 0) > (best.buzz ?? 0) ? s : best), null)
+}
+
+// Returns reducer patches { personas, sets, cashDelta, feed } or null.
+export function sponsorTournament(state, personaId) {
+  const persona = state.personas.find((p) => p.id === personaId)
+  if (!persona || (persona.taste?.power ?? 0) < COMPETITIVE_TASTE_THRESHOLD) return null
+  const target = hottestLiveSet(state.sets)
+  if (!target) return null
+  const cost = sponsorTournamentCost(persona)
+
+  const rng = makeRng(hashSeed(`tourney:${personaId}:${state.week}`))
+  // Lowest backfire baseline of the three actions — a curated, run event
+  // carries less inherent scandal risk than comped product or an open invite.
+  const backfireOdds = 0.12 + (1 - persona.credibility / 100) * 0.18 + (persona.sentiment < 0 ? 0.1 : 0)
+  const backfired = rng() < backfireOdds
+
+  const personas = state.personas.map((p) => {
+    if (p.id === personaId) {
+      if (backfired) {
+        // A scandal at YOUR sponsored event hits harder for a bigger name —
+        // scale the sting by reach.
+        return { ...p, relationship: clamp((p.relationship ?? 10) + 2, 0, 100),
+          sentiment: clamp(p.sentiment - range(rng, 8, 16) * (1 + p.reach / 200), -100, 100) }
+      }
+      return { ...p, relationship: clamp((p.relationship ?? 10) + range(rng, 6, 10), 0, 100),
+        sentiment: clamp(p.sentiment + range(rng, 3, 6), -100, 100) }
+    }
+    // Success ripple: the wider competitive-minded scene notices a real event.
+    if (!backfired && (p.taste?.power ?? 0) >= COMPETITIVE_TASTE_THRESHOLD) {
+      return { ...p, sentiment: clamp(p.sentiment + range(rng, 2, 4), -100, 100) }
+    }
+    return p
+  })
+
+  const sets = state.sets.map((s) => {
+    if (s.id !== target.id) return s
+    const buzz = backfired
+      ? clamp((s.buzz ?? 50) - range(rng, 4, 8), 0, 100)
+      : clamp((s.buzz ?? 50) + range(rng, 12, 18), 0, 100)
+    return { ...s, buzz }
+  })
+
+  const feed = backfired
+    ? `The ${target.name} tournament you sponsored, fronted by ${persona.name}, turned into a scandal — the scene is not impressed.`
+    : `You sponsored a ${target.name} tournament with ${persona.name} headlining. Buzz for the set spikes across the competitive-minded crowd.`
+
+  return { personas, sets, cashDelta: -cost, feed }
+}
+
 // ---- Weekly upkeep (called from advanceWeek) -----------------------------
 
 // Relationships decay if untended; sponsored creators draw weekly cash upkeep,

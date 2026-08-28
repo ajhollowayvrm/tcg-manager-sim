@@ -84,6 +84,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
         signatureCards: d.signatureCards,
         reprintedCards: d.reprintedCards,
         prerelease: d.prerelease,
+        releaseEvent: d.releaseEvent,
         // A major keeps editing its theme; a rider inherits the block's theme.
         themeId: getTier(nextTier).ridesBlock ? seed.themeId : d.themeId,
       }
@@ -149,6 +150,8 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
       ? ['Boosters', ...draft.products.map((p) => SKU_TYPES[p.kind]?.name.split(' ')[0] ?? p.kind)].join(' + ')
       : 'Boosters only',
     prerelease: draft.prerelease.enabled ? (draft.prerelease.chasePullable ? 'on, chase-pullable' : 'on') : 'off',
+    releaseEvent: draft.releaseEvent?.type === 'midnight' ? 'Midnight launch'
+      : draft.releaseEvent?.type === 'themed' ? 'Themed drop' : 'Standard',
     signatures: draft.signatureCards.length ? `${draft.signatureCards.length} card${draft.signatureCards.length > 1 ? 's' : ''}` : 'none',
     reprints: (draft.reprintedCards?.length ?? 0) ? `${draft.reprintedCards.length} reprinted` : 'none',
   }
@@ -376,6 +379,37 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
             </label>
           </AccordionSection>
 
+          {/* Special release event — flavor on top of a normal release */}
+          <AccordionSection title="Release event" summary={summaries.releaseEvent} open={open.releaseEvent} onToggle={() => toggle('releaseEvent')}>
+            <label className="check">
+              <input
+                type="radio"
+                name="releaseEvent"
+                checked={(draft.releaseEvent?.type ?? 'none') === 'none'}
+                onChange={() => patch({ releaseEvent: { type: 'none' } })}
+              />
+              Standard release
+            </label>
+            <label className="check">
+              <input
+                type="radio"
+                name="releaseEvent"
+                checked={draft.releaseEvent?.type === 'midnight'}
+                onChange={() => patch({ releaseEvent: { type: 'midnight' } })}
+              />
+              Midnight launch <span className="muted">(+$6,000 — bigger buzz spike, but stokes scalper chatter)</span>
+            </label>
+            <label className="check">
+              <input
+                type="radio"
+                name="releaseEvent"
+                checked={draft.releaseEvent?.type === 'themed'}
+                onChange={() => patch({ releaseEvent: { type: 'themed' } })}
+              />
+              Themed drop <span className="muted">(free — a smaller, safe buzz lift)</span>
+            </label>
+          </AccordionSection>
+
           {/* Signature cards */}
           <AccordionSection
             title={`Signature highlights (${draft.signatureCards.length}/${MAX_SIGNATURE_CARDS})`}
@@ -445,6 +479,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
             {cost.skus > 0 && <CostLine label="Other SKUs print" value={cost.skus} />}
             <CostLine label="Art commissions" value={cost.art} />
             {cost.prerelease > 0 && <CostLine label="Prerelease" value={cost.prerelease} />}
+            {cost.releaseEvent > 0 && <CostLine label="Release event" value={cost.releaseEvent} />}
             <CostLine label="Total" value={cost.total} total />
             <div className={'costs__cash' + (goesIntoDebt ? ' is-bad' : '')}>
               On hand: {formatCash(cash)}

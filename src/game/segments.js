@@ -32,14 +32,15 @@ function rate(score) {
 // long run shouldn't dilute this toward zero just because most of its back
 // catalog has gone quiet — one fresh drop is enough to make the shelf exciting
 // again, same as the old global solve-level dial any release refreshed.
-function catalogBuzz(sets) {
+export function catalogBuzz(sets) {
   const live = (sets ?? []).filter((s) => !s.rotated)
   if (!live.length) return 0
   return Math.max(...live.map((x) => x.buzz ?? 0))
 }
 
 // Average fame of the top-3 characters — a "hot cast" signal for casual pull.
-function hotCastSignal(characters) {
+// Also reused by merch.js/media.js as a "hot mascot" demand/odds signal.
+export function hotCastSignal(characters) {
   const top = [...(characters ?? [])].sort((a, b) => b.fame - a.fame).slice(0, 3)
   if (!top.length) return 0
   return top.reduce((s, c) => s + c.fame, 0) / top.length
@@ -96,7 +97,12 @@ function applyWordOfMouth(next, seg) {
   // More sets in print = more shelf presence (diminishing).
   const presence = clamp(0.6 + Math.log2(1 + liveSets) * 0.35, 0.6, 1.2)
 
-  const newcomers = Math.round(WORD_OF_MOUTH_BASE * health * communityBuzz * presence)
+  // A landed cross-media hit (see media.js) permanently lifts the organic
+  // discovery ceiling — the actual "massively expand the player base long-run"
+  // mechanic. Additively stacking across multiple hits; defaults to 1 (no-op).
+  const mediaMul = next.mediaWomMultiplier ?? 1
+
+  const newcomers = Math.round(WORD_OF_MOUTH_BASE * health * communityBuzz * presence * mediaMul)
   if (newcomers <= 0) return 0
 
   distributeNewPlayers(seg, next.segmentLean, newcomers)

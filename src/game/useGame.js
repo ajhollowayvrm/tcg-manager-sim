@@ -6,9 +6,11 @@ import { pullFromPrint } from './bans.js'
 import { ripPack } from './packs.js'
 import { resetCadence } from './cadence.js'
 import { distributeNewPlayers } from './segments.js'
-import { compProduct, sponsorCreator, dropSponsor } from './relationships.js'
+import { compProduct, sponsorCreator, dropSponsor, invitePrerelease, sponsorTournament } from './relationships.js'
 import { signDistributor, dropDistributor, cultivateDistributor, upgradeSupplyChain } from './distributors.js'
 import { signGradingPartner, dropGradingPartner, cultivateGradingPartner } from './grading.js'
+import { launchMerchLine, refreshMerchLine, retireMerchLine } from './merch.js'
+import { pitchMediaDeal } from './media.js'
 import { runBreak } from './breaks.js'
 import { loadState, saveState, clearSave } from './persistence.js'
 
@@ -24,7 +26,7 @@ function reducer(state, action) {
       return applyClockDirective(next)
     }
     case 'RELEASE_SET': {
-      const { set, existingSets, cards, cashDelta, printIntensity, softenedCards, releaseFeed, newPlayers, pendingWave, blocks, block, tier, characters, personaSentimentBump } = releaseSet(state, action.draft)
+      const { set, existingSets, cards, cashDelta, printIntensity, softenedCards, releaseFeed, newPlayers, pendingWave, blocks, block, tier, characters, personaSentimentBump, scalperHeatDelta } = releaseSet(state, action.draft)
       // If a card reprint softened existing originals, build from that patched
       // array; otherwise from the current one. Then append the new set's cards.
       const baseCards = softenedCards ?? state.cards
@@ -60,6 +62,7 @@ function reducer(state, action) {
         segments,
         playerBase,
         printIntensity,
+        scalperHeat: scalperHeatDelta ? clamp((state.scalperHeat ?? 0) + scalperHeatDelta, 0, 100) : state.scalperHeat,
         personas: applySentimentBump(state.personas, personaSentimentBump),
         cadence: resetCadence(state.cadence, state.week), // shipping resets the pledge clock
         eventsFeed: feed,
@@ -179,6 +182,28 @@ function reducer(state, action) {
         eventsFeed: [{ week: state.week, text: r.feed, kind: 'community' }, ...state.eventsFeed].slice(0, 60),
       }
     }
+    case 'INVITE_PRERELEASE': {
+      const r = invitePrerelease(state, action.personaId, action.setId)
+      if (!r) return state
+      return {
+        ...state,
+        personas: r.personas,
+        sets: r.sets,
+        cash: state.cash + r.cashDelta,
+        eventsFeed: [{ week: state.week, text: r.feed, kind: 'community' }, ...state.eventsFeed].slice(0, 60),
+      }
+    }
+    case 'SPONSOR_TOURNAMENT': {
+      const r = sponsorTournament(state, action.personaId)
+      if (!r) return state
+      return {
+        ...state,
+        personas: r.personas,
+        sets: r.sets,
+        cash: state.cash + r.cashDelta,
+        eventsFeed: [{ week: state.week, text: r.feed, kind: 'community' }, ...state.eventsFeed].slice(0, 60),
+      }
+    }
     case 'SIGN_DISTRIBUTOR': {
       const r = signDistributor(state, action.distId, action.setId)
       if (!r) return state
@@ -224,6 +249,30 @@ function reducer(state, action) {
         gradingPartners: r.gradingPartners,
         cash: state.cash + (r.cashDelta ?? 0),
         eventsFeed: [{ week: state.week, text: r.feed, kind: 'market' }, ...state.eventsFeed].slice(0, 60),
+      }
+    }
+    case 'LAUNCH_MERCH_LINE':
+    case 'REFRESH_MERCH_LINE':
+    case 'RETIRE_MERCH_LINE': {
+      const fn = action.type === 'LAUNCH_MERCH_LINE' ? launchMerchLine
+        : action.type === 'REFRESH_MERCH_LINE' ? refreshMerchLine : retireMerchLine
+      const r = fn(state, action.kind)
+      if (!r) return state
+      return {
+        ...state,
+        merchLines: r.merchLines,
+        cash: state.cash + (r.cashDelta ?? 0),
+        eventsFeed: [{ week: state.week, text: r.feed, kind: 'merch' }, ...state.eventsFeed].slice(0, 60),
+      }
+    }
+    case 'PITCH_MEDIA_DEAL': {
+      const r = pitchMediaDeal(state, action.dealId)
+      if (!r) return state
+      return {
+        ...state,
+        mediaDeals: r.mediaDeals,
+        cash: state.cash + r.cashDelta,
+        eventsFeed: [{ week: state.week, text: r.feed, kind: 'media' }, ...state.eventsFeed].slice(0, 60),
       }
     }
     case 'UPGRADE_SUPPLY_CHAIN': {
@@ -330,6 +379,8 @@ export function useGame() {
   const comp = useCallback((personaId) => dispatch({ type: 'COMP_PERSONA', personaId }), [])
   const sponsor = useCallback((personaId) => dispatch({ type: 'SPONSOR_PERSONA', personaId }), [])
   const unsponsor = useCallback((personaId) => dispatch({ type: 'DROP_SPONSOR', personaId }), [])
+  const invitePrereleaseAction = useCallback((personaId, setId) => dispatch({ type: 'INVITE_PRERELEASE', personaId, setId }), [])
+  const sponsorTournamentAction = useCallback((personaId) => dispatch({ type: 'SPONSOR_TOURNAMENT', personaId }), [])
   const signDist = useCallback((distId, setId) => dispatch({ type: 'SIGN_DISTRIBUTOR', distId, setId }), [])
   const dropDist = useCallback((distId) => dispatch({ type: 'DROP_DISTRIBUTOR', distId }), [])
   const cultivateDist = useCallback((distId) => dispatch({ type: 'CULTIVATE_DISTRIBUTOR', distId }), [])
@@ -341,6 +392,10 @@ export function useGame() {
   const runBreakAction = useCallback((kind, setId) => dispatch({ type: 'RUN_BREAK', kind, setId, nonce: breakNonce.current++ }), [])
   const togglePurchaseLimits = useCallback(() => dispatch({ type: 'TOGGLE_PURCHASE_LIMITS' }), [])
   const togglePhantomStock = useCallback(() => dispatch({ type: 'TOGGLE_PHANTOM_STOCK' }), [])
+  const launchMerch = useCallback((kind) => dispatch({ type: 'LAUNCH_MERCH_LINE', kind }), [])
+  const refreshMerch = useCallback((kind) => dispatch({ type: 'REFRESH_MERCH_LINE', kind }), [])
+  const retireMerch = useCallback((kind) => dispatch({ type: 'RETIRE_MERCH_LINE', kind }), [])
+  const pitchMedia = useCallback((dealId) => dispatch({ type: 'PITCH_MEDIA_DEAL', dealId }), [])
 
-  return { state, advanceWeek: advanceWeekAction, release, pull, reprint, adjustWave, reset, rip, startGame, comp, sponsor, unsponsor, signDist, dropDist, cultivateDist, upgradeSupplyChain: upgradeSupplyChainAction, signGrading, dropGrading, cultivateGrading, runBreak: runBreakAction, togglePurchaseLimits, togglePhantomStock, toggleOddsPublished }
+  return { state, advanceWeek: advanceWeekAction, release, pull, reprint, adjustWave, reset, rip, startGame, comp, sponsor, unsponsor, invitePrerelease: invitePrereleaseAction, sponsorTournament: sponsorTournamentAction, signDist, dropDist, cultivateDist, upgradeSupplyChain: upgradeSupplyChainAction, signGrading, dropGrading, cultivateGrading, runBreak: runBreakAction, togglePurchaseLimits, togglePhantomStock, toggleOddsPublished, launchMerch, refreshMerch, retireMerch, pitchMedia }
 }

@@ -3,6 +3,8 @@
 
 import { communitySentiment } from '../game/simulation.js'
 import { SCALPER_THRESHOLD } from '../game/distributors.js'
+import { RIVAL_HOT_THRESHOLD } from '../game/rival.js'
+import { getRival } from '../game/content/rivals.js'
 
 function formatCash(n) {
   return '$' + n.toLocaleString('en-US')
@@ -25,6 +27,8 @@ export default function TopBar({ game, onDesignSet }) {
   const sentiment = communitySentiment(state.personas)
   const reputation = state.franchise?.reputation ?? 0
   const heat = Math.round(state.scalperHeat ?? 0)
+  const rivalStrength = Math.round(state.rival?.strength ?? 0)
+  const rivalName = getRival(state.rival?.id)?.name ?? 'A rival'
 
   return (
     <header className="topbar">
@@ -83,6 +87,13 @@ export default function TopBar({ game, onDesignSet }) {
           pct={clampPct(heat)}
           danger={heat >= SCALPER_THRESHOLD}
           footer={`${SCALPER_THRESHOLD}+ = scalper culture, bubble risk`}
+        />
+        <Meter
+          label="Rival Threat"
+          value={rivalStrength}
+          pct={clampPct(rivalStrength)}
+          danger={rivalStrength >= RIVAL_HOT_THRESHOLD}
+          footer={`${rivalName} — ${RIVAL_HOT_THRESHOLD}+ = bigger, more frequent bites`}
         />
       </div>
 

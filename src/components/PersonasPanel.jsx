@@ -3,7 +3,7 @@
 // box. Credibility stays hidden — the player learns who to trust by watching.
 
 import { useMemo, useState } from 'react'
-import { compCost, sponsorCost } from '../game/relationships.js'
+import { compCost, sponsorCost, invitePrereleaseCost, sponsorTournamentCost, eligiblePrereleaseSet, COMPETITIVE_TASTE_THRESHOLD } from '../game/relationships.js'
 
 function money(n) { return '$' + Math.round(n).toLocaleString('en-US') }
 
@@ -55,11 +55,13 @@ function reachTrend(p) {
   return null
 }
 
-export default function PersonasPanel({ state, onComp, onSponsor, onDropSponsor }) {
+export default function PersonasPanel({ state, onComp, onSponsor, onDropSponsor, onInvitePrerelease, onSponsorTournament }) {
   const [type, setType] = useState('all')
   const [sort, setSort] = useState('reach')
   const [query, setQuery] = useState('')
   const [openId, setOpenId] = useState(null) // expanded persona for relationship actions
+
+  const prereleaseTarget = useMemo(() => eligiblePrereleaseSet(state), [state.sets, state.week])
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -108,6 +110,9 @@ export default function PersonasPanel({ state, onComp, onSponsor, onDropSponsor 
             const open = openId === p.id
             const comp = compCost(p)
             const sponsor = sponsorCost(p)
+            const inviteCost = prereleaseTarget ? invitePrereleaseCost(p, prereleaseTarget) : null
+            const isCompetitive = (p.taste?.power ?? 0) >= COMPETITIVE_TASTE_THRESHOLD
+            const tourCost = isCompetitive ? sponsorTournamentCost(p) : null
             return (
               <li key={p.id} className={'roster__row' + (open ? ' is-open' : '')}>
                 <button className="roster__head" onClick={() => setOpenId(open ? null : p.id)} title={p.blurb}>
@@ -142,6 +147,16 @@ export default function PersonasPanel({ state, onComp, onSponsor, onDropSponsor 
                       ) : (
                         <button className="btn" onClick={() => onSponsor(p.id)}>
                           Sponsor · {money(sponsor * 0.5)} + upkeep
+                        </button>
+                      )}
+                      {prereleaseTarget && (
+                        <button className="btn" onClick={() => onInvitePrerelease(p.id, prereleaseTarget.id)}>
+                          Invite to prerelease ({prereleaseTarget.name}) · {money(inviteCost)}
+                        </button>
+                      )}
+                      {isCompetitive && (
+                        <button className="btn" onClick={() => onSponsorTournament(p.id)}>
+                          Sponsor tournament · {money(tourCost)}
                         </button>
                       )}
                     </div>

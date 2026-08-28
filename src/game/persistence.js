@@ -50,7 +50,20 @@ const KEY = 'tcg-manager-sim/save'
 // `competitive` player segment (state.segments/segmentLean are now
 // {casual, collectors} only), new state.printIntensity (nostalgia-erosion
 // dial) and per-set `buzz`. A v12 save predates all of these.
-const VERSION = 13
+// v14: two new one-off persona actions (invitePrerelease, sponsorTournament —
+// no new persisted fields, just personas/sets patches already covered by
+// existing shapes) and special release events (set.releaseEvent on the
+// draft/set, optional, defaults to 'none'). A v13 save degrades gracefully
+// (all new fields read with ?./??), bumped for hygiene only.
+// v15: a rival TCG (state.rival — a persistent competitor strength gauge, see
+// rival.js), replacing the old one-shot rival_release flavor event. A v14
+// save predates state.rival; applyRival no-ops on a missing rival, but
+// invalidating keeps the new TopBar meter consistent from week 1.
+// v16: merchandise (state.merchLines, state.lastMerchRevenue — see merch.js)
+// and cross-media ventures (state.mediaDeals, state.mediaReputationFloor,
+// state.mediaWomMultiplier — see media.js). A v15 save predates all of these;
+// the new fields' ?./?? fallbacks would otherwise silently no-op them.
+const VERSION = 16
 
 // True only where a real localStorage exists. Guards SSR / the headless
 // playtest harness (tools/playtest.mjs runs the sim in plain Node), and the

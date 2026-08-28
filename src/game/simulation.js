@@ -18,6 +18,9 @@ import { applyCadencePressure } from './cadence.js'
 import { applyRelationships } from './relationships.js'
 import { applyDistributors } from './distributors.js'
 import { applyGrading } from './grading.js'
+import { applyRival } from './rival.js'
+import { resolveMerchRevenue } from './merch.js'
+import { advanceMediaDeals } from './media.js'
 
 // Buzz half-life: how fast a set's own release-buzz fades between drops (tuned
 // so a set stays fresh-feeling for a few months, then needs a new release to
@@ -92,6 +95,14 @@ export function advanceWeek(state) {
   next.cash += rev.cashDelta
   next.lastRevenue = { week: next.week, total: rev.cashDelta, units: rev.unitsSold, perSet: rev.perSet }
 
+  // Merchandise revenue: a sibling to resolveRevenue, not folded into it — a
+  // merch line has no set/card state at all (see merch.js), which is what
+  // actually makes it decoupled from metagame health. Never feeds scalperHeat.
+  const merchRev = resolveMerchRevenue(next)
+  next.merchLines = merchRev.merchLines
+  next.cash += merchRev.cashDelta
+  next.lastMerchRevenue = { week: next.week, total: merchRev.cashDelta }
+
   // Channel mix (direct/LGS/big-box/international) feeds scalper heat alongside
   // signed bulk-buyer deals — a big-box-heavy lineup runs hotter than a direct-
   // to-consumer one, even with no distributor deals signed at all. Applied here
@@ -139,6 +150,13 @@ export function advanceWeek(state) {
   // Cadence pledge: if the player is overdue on their promised release rhythm,
   // unrest escalates (sentiment sours, base bleeds). Layers on top of drift.
   applyCadencePressure(next)
+
+  // Rival TCG: an ambient competitor for shelf space. Reads the freshly-settled
+  // cadence overdue-ness (release TIMING) and printIntensity (a proxy for loud
+  // power-creep design) to decide how hard its own periodic release bites your
+  // base. No player actions — pure pressure. Runs before every other "living
+  // systems" tick below, all of which must land before updateFranchiseReputation.
+  applyRival(next)
 
   // Relationships: cultivated bonds decay if untended; sponsored creators draw
   // weekly upkeep and amplify, but a soured sponsored name drags the base.
@@ -196,6 +214,14 @@ export function advanceWeek(state) {
       next.pendingWaves = next.pendingWaves.filter((w) => w.applyWeek > next.week)
     }
   }
+
+  // Cross-media ventures: pitched deals progress toward greenlight/production/
+  // resolution; a landing injects players + a permanent reputation floor and
+  // word-of-mouth lift, a flop costs real cash with no insulation. Runs after
+  // characters/personas have settled so its odds read this week's real
+  // numbers, and before updateFranchiseReputation so a fresh hit's floor
+  // applies immediately.
+  advanceMediaDeals(next)
 
   // Franchise reputation: a slow-moving brand-prestige stat that grows off a
   // sustained healthy cadence + community mood + made-it-big characters, and

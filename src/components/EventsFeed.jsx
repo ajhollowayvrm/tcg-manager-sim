@@ -10,6 +10,8 @@ const KIND_LABEL = {
   viral: 'VIRAL',
   artist: 'ARTIST',
   community: 'COMMUNITY',
+  merch: 'MERCH',
+  media: 'MEDIA',
 }
 
 export default function EventsFeed({ state }) {

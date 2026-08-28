@@ -39,7 +39,8 @@ export function printRunUnits(printRun) {
 // moves more units; over-priced collapses demand hard. `ref` lets each SKU have
 // its own sweet spot (a $90 collector box isn't judged against $4.50). With
 // ref=4.5 this reproduces the original booster curve exactly.
-function priceElasticity(price, ref = 4.5) {
+// Exported for merch.js — merch's own weekly demand needs the same curve.
+export function priceElasticity(price, ref = 4.5) {
   const scale = ref / 4.5 // stretch the curve to the SKU's price band
   return clamp(1.7 - price / (5.5 * scale), 0.06, 1.5)
 }

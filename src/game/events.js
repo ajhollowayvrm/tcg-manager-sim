@@ -290,19 +290,6 @@ export const EVENTS = [
     },
   },
   {
-    id: 'rival_release',
-    kind: 'community',
-    tone: 'bad',
-    weight: 0.7,
-    condition: () => true,
-    resolve: (s, rng) => ({
-      text: `A rival card game drops a hyped set this week, pulling attention and wallets away from yours.`,
-      effects: {
-        casualDelta: -Math.round(s.segments.casual * range(rng, 0.01, 0.03)),
-      },
-    }),
-  },
-  {
     id: 'lgs_appreciation',
     kind: 'community',
     tone: 'good',

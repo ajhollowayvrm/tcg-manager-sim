@@ -4,6 +4,8 @@
 import { PERSONAS } from './content/personas.js'
 import { seedArtists } from './artists.js'
 import { seedCharacters } from './characters.js'
+import { seedRival } from './rival.js'
+import { makeRng, hashSeed } from './rng.js'
 import { defaultConfig, getArchetype } from './config.js'
 
 // Normalize an archetype's seed segment numbers into fractions that sum to 1 —
@@ -89,6 +91,24 @@ export function createInitialState(config) {
     supplyChainCapacity: 40,
     // Franchise Reputation — a slow-moving brand-prestige stat. See franchise.js.
     franchise: { reputation: 5, cadenceEwma: 50, sentimentEwma: 0 },
+    // A rival TCG — a persistent, ambient competitor for attention/shelf space.
+    // v1 is read-only pressure: no player actions, just a strength gauge that
+    // reacts to your cadence/catalog health and periodically bites the casual
+    // segment (and, once your design has run loud, a smaller collectors
+    // nibble) when it drops its own set. See rival.js.
+    rival: seedRival(makeRng(hashSeed(`rival-seed:${cfg.gameName || 'x'}:${cfg.companyName || 'x'}`))),
+
+    // Merchandise lines — a revenue stream decoupled from metagame health. See
+    // merch.js.
+    merchLines: [],
+    lastMerchRevenue: null, // { week, total } from the latest week — mirrors lastRevenue
+    // Cross-media ventures (anime/game/film deals) — the long-run ambition
+    // layer. See media.js. mediaWomMultiplier/mediaReputationFloor are
+    // permanent buffs a landed hit grants (read by segments.js/franchise.js);
+    // both default to a no-op until a deal actually lands.
+    mediaDeals: [],
+    mediaReputationFloor: 0,
+    mediaWomMultiplier: 1,
     // Scheduled "wide release" waves from a staggered regional launch — see
     // sets.js/useGame.js RELEASE_SET and simulation.js's weekly check.
     pendingWaves: [],

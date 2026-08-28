@@ -9,6 +9,7 @@ import CastPanel from './components/CastPanel.jsx'
 import SetsPanel from './components/SetsPanel.jsx'
 import PackRipper from './components/PackRipper.jsx'
 import DistributorsPanel from './components/DistributorsPanel.jsx'
+import AmbitionPanel from './components/AmbitionPanel.jsx'
 import Onboarding from './components/Onboarding.jsx'
 import SetBuilder from './components/setbuilder/SetBuilder.jsx'
 
@@ -42,7 +43,7 @@ export default function App() {
     market: <MarketTicker state={game.state} />,
     packs: <PackRipper state={game.state} onRip={game.rip} onRunBreak={game.runBreak} />,
     feedback: <FeedbackFeed state={game.state} />,
-    personas: <PersonasPanel state={game.state} onComp={game.comp} onSponsor={game.sponsor} onDropSponsor={game.unsponsor} />,
+    personas: <PersonasPanel state={game.state} onComp={game.comp} onSponsor={game.sponsor} onDropSponsor={game.unsponsor} onInvitePrerelease={game.invitePrerelease} onSponsorTournament={game.sponsorTournament} />,
     cast: <CastPanel state={game.state} />,
     distributors: <DistributorsPanel
       state={game.state}
@@ -50,6 +51,11 @@ export default function App() {
       onUpgradeSupplyChain={game.upgradeSupplyChain}
       onSignGrading={game.signGrading} onCultivateGrading={game.cultivateGrading} onDropGrading={game.dropGrading}
       onTogglePurchaseLimits={game.togglePurchaseLimits} onTogglePhantomStock={game.togglePhantomStock}
+    />,
+    ambition: <AmbitionPanel
+      state={game.state}
+      onLaunchMerch={game.launchMerch} onRefreshMerch={game.refreshMerch} onRetireMerch={game.retireMerch}
+      onPitchMedia={game.pitchMedia}
     />,
     events: <EventsFeed state={game.state} />,
   }
@@ -70,6 +76,7 @@ export default function App() {
           {panels.personas}
           {panels.cast}
           {panels.distributors}
+          {panels.ambition}
           {panels.events}
         </aside>
       </main>
@@ -79,7 +86,7 @@ export default function App() {
       <main className="dashboard--mobile">
         {tab === 'sets' && <div className="col">{panels.sets}</div>}
         {tab === 'market' && <div className="col">{panels.market}{panels.packs}</div>}
-        {tab === 'community' && <div className="col">{panels.feedback}{panels.personas}{panels.cast}{panels.distributors}</div>}
+        {tab === 'community' && <div className="col">{panels.feedback}{panels.personas}{panels.cast}{panels.distributors}{panels.ambition}</div>}
         {tab === 'events' && <div className="col">{panels.events}</div>}
       </main>
 

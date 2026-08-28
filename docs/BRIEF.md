@@ -413,26 +413,62 @@ Grouped into three layers. Each assumes the v1 core loop is solid first.
 >     staggered releases" item from the market-depth roadmap below.
 >     (`sets.js` `releaseSet`/`adjustPendingWave`; weekly check in
 >     `simulation.js`; wave UI in `SetsPanel`.)
+> - **Deeper persona relationships & creator sponsorship** — two new one-off
+>   actions on top of the existing comp/sponsor minigame: inviting a persona to
+>   a live set's prerelease (a narrower, cheaper gesture than a full comp,
+>   with real scoop risk if the set's chase cards are pullable), and
+>   sponsoring a tournament (a one-off marquee spend, not an ongoing deal,
+>   since there's no metagame/ban-pressure dial left for an ongoing version to
+>   compound on — see the collector/reseller pivot above). A backfire on
+>   either stings harder for a bigger name, per the brief's original "hits
+>   *harder* because of their reach" note. (`relationships.js`
+>   `invitePrerelease`/`sponsorTournament`.)
+> - **Special release events** — a set's release carries an optional flavor:
+>   a midnight launch (a real cash cost for a bigger buzz spike, but it stokes
+>   scalper heat — a line out the door draws flippers) or a themed drop (free,
+>   a smaller, safe lift). Extends the existing prerelease/anniversary
+>   machinery rather than inventing a new release-type system.
+>   (`sets.js` `releaseSet`'s `releaseEvent` field.)
+> - **A rival TCG** — a persistent, ambient competitor for attention and
+>   shelf space, read-only pressure with no player-facing actions (the
+>   brief's most speculative v2 item, so shipped at its smallest useful
+>   scope). A strength gauge drifts off your own catalog freshness and is
+>   damped by franchise reputation; periodically the rival drops its own
+>   release, biting your casual segment harder the staler your catalog and
+>   the more overdue your cadence pledge (the "release timing" tie-in), with
+>   a smaller collectors nibble once your own design has run loud (the
+>   "power level" tie-in, via `printIntensity` — the dial that's actually
+>   still live post-pivot). Replaces the old one-shot `rival_release` flavor
+>   event. (`rival.js`, `content/rivals.js`; meter in `TopBar`.)
+> - **Merchandise** — plush/apparel/accessories/art-book lines with NO print
+>   run or supply cap (produced to order), sold every week they're active at
+>   a demand driven by franchise reputation and cast fame rather than any
+>   set's hype — the structural reason it's decoupled from metagame health.
+>   Never feeds scalper heat. Sign/refresh/retire mirrors the distributor
+>   relationship shape. (`merch.js`, `content/merch.js`; `AmbitionPanel`.)
+> - **Cross-media ventures** — pitch an anime/game/film deal (gated on
+>   franchise reputation); it then progresses on its own, mirroring
+>   `characters.js`'s autonomous fame-drift shape, through greenlight and
+>   production to a hit/flop/fell-through resolution — no mid-flight lever,
+>   since these are framed as bets you watch play out, not relationships you
+>   tend. A landed hit grants a one-time player injection PLUS two permanent
+>   buffs: a word-of-mouth multiplier (`segments.js`) and a franchise-
+>   reputation floor (`franchise.js`) — the concrete "massively expand the
+>   player base and insulate the brand" payoff. A flop costs real cash on top
+>   of the sunk pitch spend and grants neither buff. (`media.js`,
+>   `content/mediaDeals.js`; `AmbitionPanel`.)
 
 ### A. Product & market depth
 
 *(Regional staggered releases and serialized cards & variants have shipped — see the collector/reseller pivot under Shipped since v1 above. One nuance from the original pitch remains parked: sets don't actually get renamed/restructured with different card lists per region, the way Japanese sets are recombined for Western markets — the shipped lead-region name is cosmetic flavor text over the same card pool.)*
 
-### B. Relationship & community depth
+### B. Relationship & community depth ✅
 
-- **Deeper persona relationships & creator sponsorship.** Expands lean-v1 personas into a full management minigame: cultivate relationships over time, **seed streamers/creators with product early** as a hype lever (with risk — looks like favoritism, or a sponsored creator pans the set anyway), sponsor pros, invite to prereleases, run sponsored tournaments. Upside hype; downside a big name turning on you mid-relationship hits *harder* because of their reach. Folds in the original tournament-sponsorship idea.
+*(All three items shipped — see "Shipped since v1" above. Deeper persona relationships & creator sponsorship: the base comp/sponsor minigame shipped earlier in `relationships.js`; prerelease invites and sponsored tournaments shipped alongside this pass. Rival TCGs shipped at the brief's own suggested minimal scope — read-only ambient pressure, no player actions; a fuller version with a counter-lever, e.g. "poach a designer," remains a possible follow-up if the ambient version tests as too flat. Special release events shipped as midnight launches/themed drops on top of the already-shipped anniversary-set/prerelease machinery.)*
 
-- **Competitors / rival TCGs** *(possible — v1 is scoped "you vs. the market," but a rival publisher fighting for player attention and shelf space is a natural expansion that would make release timing and power level decisions more adversarial).*
+### C. Business expansion & cultural impact (the long-run ambition layer) ✅
 
-- **Elaborate special release events** — midnight launches, anniversary sets, themed drops.
-
-### C. Business expansion & cultural impact (the long-run ambition layer)
-
-These give a long, win-condition-less run something to *build toward* and insulate a mature brand against metagame churn.
-
-- **Official merchandise** — plush, apparel, accessories, art books. A revenue stream **decoupled from metagame health**, so it acts as a stability/diversification lever and a brand-building investment rather than a card-sales gamble.
-
-- **Cross-media ventures** — someone wants to make an anime, a video game, or a film out of your game. Big, expensive, risky bets that, if they land, **massively expand the player base and brand longevity** (and partially insulate you from format churn) — modeling the cultural-impact flywheel that turns a card game into a phenomenon. This is effectively the endgame ambition for a deep run.
+*(Both items shipped — see "Shipped since v1" above. These give a long, win-condition-less run something to build toward and insulate a mature brand against metagame churn: merchandise as the stability/diversification revenue lever, cross-media ventures as the big-bet endgame-ambition layer.)*
 
 ---
 
