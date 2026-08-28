@@ -6,9 +6,9 @@ import { seedArtists } from './artists.js'
 import { seedCharacters } from './characters.js'
 import { seedRival } from './rival.js'
 import { makeRng, hashSeed } from './rng.js'
-import { defaultConfig, getArchetype } from './config.js'
+import { defaultConfig, STARTING_SEGMENT_LEAN, STARTING_CASH } from './config.js'
 
-// Normalize an archetype's seed segment numbers into fractions that sum to 1 —
+// Normalize the starting seed segment numbers into fractions that sum to 1 —
 // the LEAN that new players distribute into as the base grows from zero.
 function normalizeLean(seg) {
   const total = (seg.casual ?? 0) + (seg.collectors ?? 0)
@@ -19,18 +19,15 @@ function normalizeLean(seg) {
   }
 }
 
-// `config` is the onboarding result (or undefined for a bare new game). The
-// chosen archetype applies a SMALL starting nudge to segments; indie also
-// starts with less cash. Everything else is identity/flavor.
+// `config` is the onboarding result (or undefined for a bare new game).
 export function createInitialState(config) {
   const cfg = { ...defaultConfig(), ...(config ?? {}) }
-  const arch = getArchetype(cfg.archetype)
-  // You start with NO players — nobody knows your game yet. The archetype's
+  // You start with NO players — nobody knows your game yet. The starting
   // segment numbers are kept only as the LEAN (the ratio new players discover
   // into); the base itself grows from zero via word-of-mouth + releases.
   const segments = { casual: 0, collectors: 0 }
   const playerBase = 0
-  const cash = cfg.archetype === 'indie' ? 140_000 : 250_000
+  const cash = STARTING_CASH
 
   return {
     week: 1,
@@ -44,9 +41,9 @@ export function createInitialState(config) {
 
     // Player segments react differently to the same decision. Start empty; new
     // players (word-of-mouth + releases) distribute into them by `segmentLean`,
-    // the archetype's preferred mix (normalized from its seed segment numbers).
+    // the starting mix (normalized from STARTING_SEGMENT_LEAN).
     segments,
-    segmentLean: normalizeLean(arch.segments),
+    segmentLean: normalizeLean(STARTING_SEGMENT_LEAN),
 
     // Nostalgia-erosion dial (0–100): loud modern card design mildly bleeds the
     // collectors segment past a mid floor. Pushed up by a high-power-budget

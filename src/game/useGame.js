@@ -303,7 +303,7 @@ function reducer(state, action) {
       }
     }
     case 'START_GAME':
-      // Begin a run from the onboarding config (name/archetype/cadence applied).
+      // Begin a run from the onboarding config (name/cadence applied).
       return createInitialState({ ...action.config, started: true })
     case 'RESET':
       clearSave() // don't let the finished run resurrect on the next reload

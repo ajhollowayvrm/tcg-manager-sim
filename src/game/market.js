@@ -6,7 +6,7 @@
 import { makeRng, hashSeed, range } from './rng.js'
 import { clamp } from './simulation.js'
 import { legacyMultiplier } from './franchise.js'
-import { getMarketTilt } from './config.js'
+import { COLLECTOR_MARKET_TILT } from './config.js'
 
 const PRICE_HISTORY_LEN = 26 // ~half a year of weekly points kept per card
 
@@ -19,12 +19,8 @@ const PRICE_HISTORY_LEN = 26 // ~half a year of weekly points kept per card
 // `legacyMul` (default 1, from franchise.js's legacyMultiplier) lifts old
 // vintage cards for reasons independent of any one card's own stats — a
 // franchise's growing reputation makes the whole back-catalog worth more.
-// `archetypeId` (the identity picked at onboarding, see config.js's
-// MARKET_TILT) applies a small permanent collector-side lean, so the choice
-// keeps mattering all game, not just at the start.
-export function fairValue(card, set, legacyMul = 1, archetypeId = 'collectible') {
+export function fairValue(card, set, legacyMul = 1) {
   const f = card.popFactors
-  const tilt = getMarketTilt(archetypeId)
 
   // Under-printed sets keep singles scarce and pricey; over-print drags them.
   // A set that's actually SOLD THROUGH (live sell-through, not just its static
@@ -52,7 +48,7 @@ export function fairValue(card, set, legacyMul = 1, archetypeId = 'collectible')
   // special pays off directly in secondary-market value.
   const chaseLift = 0.7 + ((set.rarityChase ?? 50) / 100) * 0.6
   const collectorLift = (set.collectorMul ?? 1) * (card.treatment ? 1.25 : 1) * serialLift * gradedLift * chaseLift
-  const collectorVal = collectorBase * scarcity * 0.6 * collectorLift * legacyMul * tilt.collector
+  const collectorVal = collectorBase * scarcity * 0.6 * collectorLift * legacyMul * COLLECTOR_MARKET_TILT
 
   return clamp(collectorVal, 0.25, 12000)
 }
@@ -61,8 +57,8 @@ export function fairValue(card, set, legacyMul = 1, archetypeId = 'collectible')
 
 // Mutates a card-market record in place for one week and returns a "mover"
 // descriptor if the move is big enough to surface on the ticker.
-function stepCard(card, set, rng, legacyMul = 1, archetypeId = 'collectible') {
-  const fair = fairValue(card, set, legacyMul, archetypeId)
+function stepCard(card, set, rng, legacyMul = 1) {
+  const fair = fairValue(card, set, legacyMul)
   const prev = card.singlePrice
 
   // Hype is a self-reinforcing bubble term that decays. While elevated it
@@ -132,7 +128,6 @@ export function resolveMarket(state) {
   const setById = new Map(state.sets.map((s) => [s.id, s]))
   const rng = makeRng(hashSeed(`market:${state.week}`))
   const reputation = state.franchise?.reputation ?? 0
-  const archetypeId = state.config?.archetype ?? 'collectible'
 
   const movers = []
   const cards = state.cards.map((orig) => {
@@ -170,7 +165,7 @@ export function resolveMarket(state) {
 
     const ageWeeks = state.week - set.releasedWeek
     const legacyMul = legacyMultiplier(reputation, ageWeeks, { anniversaryBoost: set.tier === 'anniversary' })
-    const mover = stepCard(card, set, rng, legacyMul, archetypeId)
+    const mover = stepCard(card, set, rng, legacyMul)
     card.sealedPrice = sealedPrice(set, ageWeeks)
     // A rough dollar estimate of how much of this week's price is the franchise-
     // reputation "legacy" premium, for the ticker to show as a distinct line.

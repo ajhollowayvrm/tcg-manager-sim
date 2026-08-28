@@ -1,55 +1,23 @@
-// Onboarding config — the identity and starting flavor the player sets before a
-// run. Mostly cosmetic, with a SMALL starting nudge per "resembles" archetype so
-// runs feel a little different without diverging the whole sim.
+// Onboarding config — the identity the player sets before a run. Every TCG in
+// this sim is a collectible-first, Pokémon-like game (art, chase rarities, and
+// nostalgia drive the base) — there's no genre choice, just a name and a
+// release-cadence pledge.
 
-// The game your TCG resembles. Each gives a vibe blurb, a default cadence the
-// genre is known for, and a light starting tilt (segment mix).
-export const ARCHETYPES = [
-  {
-    id: 'collectible', name: 'Collectible-first', resembles: 'Pokémon-like',
-    blurb: 'A beloved collectible. Art, chase rarities, and nostalgia drive the base above all else.',
-    defaultCadence: 14,
-    segments: { casual: 5_000, collectors: 4_000 },
-  },
-  {
-    id: 'staples', name: 'Staple-driven', resembles: 'Magic-like',
-    blurb: 'A deep, beloved core cardpool people build around for years — prized for its classic staples and long memory.',
-    defaultCadence: 12,
-    segments: { casual: 3_500, collectors: 4_500 },
-  },
-  {
-    id: 'combo', name: 'Combo-driven', resembles: 'Yu-Gi-Oh-like',
-    blurb: 'Fast, flashy, chase-forward. A hungry crowd that churns through new drops quickly.',
-    defaultCadence: 9,
-    segments: { casual: 5_500, collectors: 3_000 },
-  },
-  {
-    id: 'indie', name: 'Scrappy indie', resembles: 'Indie / Kickstarter',
-    blurb: 'A small passionate community. Less cash, more goodwill — every set matters.',
-    defaultCadence: 16,
-    segments: { casual: 2_500, collectors: 2_000 },
-  },
-]
+// Starting segment lean: the casual/collector split new players discover into
+// as the base grows from zero (see initialState.js/segments.js).
+export const STARTING_SEGMENT_LEAN = { casual: 5_000, collectors: 4_000 }
 
-export function getArchetype(id) {
-  return ARCHETYPES.find((a) => a.id === id) ?? ARCHETYPES[0]
-}
+// A fresh studio's starting cash.
+export const STARTING_CASH = 250_000
 
-// Persistent market identity tilt (see market.js's fairValue): beyond the
-// one-time starting nudge to segments above, the chosen archetype keeps a
-// small, permanent lean on how richly the game prices collectibility every
-// week. Small (≤12%) so it flavors the curve without swamping the shared
-// fair-value math.
-export const MARKET_TILT = {
-  collectible: { collector: 1.12 },
-  staples: { collector: 1.05 },
-  combo: { collector: 1.03 },
-  indie: { collector: 1 },
-}
+// Genre norm for a collectible-first TCG's release rhythm.
+export const DEFAULT_CADENCE_WEEKS = 14
 
-export function getMarketTilt(id) {
-  return MARKET_TILT[id] ?? MARKET_TILT.collectible
-}
+// Persistent market identity tilt (see market.js's fairValue): a small,
+// permanent lean on how richly the game prices collectibility every week.
+// Small (≤12%) so it flavors the curve without swamping the shared fair-value
+// math.
+export const COLLECTOR_MARKET_TILT = 1.12
 
 // Cadence pledge bounds (weeks between releases).
 export const MIN_CADENCE = 6
@@ -66,8 +34,7 @@ export function defaultConfig() {
   return {
     companyName: '',
     gameName: '',
-    archetype: 'collectible',
-    cadenceWeeks: 14,
+    cadenceWeeks: DEFAULT_CADENCE_WEEKS,
     started: false,
   }
 }

@@ -1,18 +1,13 @@
-// First-run onboarding. Name your company & game, pick the game it resembles
-// (a light starting flavor tilt), and pledge a release cadence the community
-// will hold you to. "Start" begins the run.
+// First-run screen. Name your company & game, pledge a release cadence the
+// community will hold you to, then start. Every TCG here is collectible-first
+// (Pokémon-like) — there's no genre picker.
 
 import { useState } from 'react'
-import { ARCHETYPES, getArchetype, MIN_CADENCE, MAX_CADENCE, defaultConfig } from '../game/config.js'
+import { MIN_CADENCE, MAX_CADENCE, DEFAULT_CADENCE_WEEKS, defaultConfig } from '../game/config.js'
 
 export default function Onboarding({ onStart }) {
   const [cfg, setCfg] = useState(() => defaultConfig())
   const set = (patch) => setCfg((c) => ({ ...c, ...patch }))
-  const arch = getArchetype(cfg.archetype)
-
-  // Picking an archetype snaps the cadence to its genre default (until the
-  // player nudges the slider themselves).
-  const pickArchetype = (id) => set({ archetype: id, cadenceWeeks: getArchetype(id).defaultCadence })
 
   const canStart = cfg.companyName.trim() && cfg.gameName.trim()
 
@@ -35,23 +30,6 @@ export default function Onboarding({ onStart }) {
         </div>
 
         <div className="field field--full">
-          <span>What does your game resemble?</span>
-          <div className="onboard__archs">
-            {ARCHETYPES.map((a) => (
-              <button
-                key={a.id}
-                className={'onboard__arch' + (cfg.archetype === a.id ? ' is-active' : '')}
-                onClick={() => pickArchetype(a.id)}
-              >
-                <span className="onboard__archname">{a.name}</span>
-                <span className="onboard__archlike">{a.resembles}</span>
-                <span className="onboard__archblurb">{a.blurb}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="field field--full">
           <span>
             Release cadence pledge — a set every <strong>{cfg.cadenceWeeks}</strong> weeks
           </span>
@@ -63,7 +41,7 @@ export default function Onboarding({ onStart }) {
           <span className="field__note">
             Miss your pledged rhythm and — after a short grace period — the community
             gets restless: sentiment sours and players drift away the longer you go dark.
-            Genre norm for {arch.resembles}: ~{arch.defaultCadence} weeks.
+            Genre norm: ~{DEFAULT_CADENCE_WEEKS} weeks.
           </span>
         </div>
 
