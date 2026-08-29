@@ -37,7 +37,31 @@ export function launchMerchLine(state, kind) {
     merchBuzz: 100, totalSold: 0, totalRevenue: 0, active: true,
   }
   const merchLines = [...(state.merchLines ?? []).filter((m) => m.kind !== kind), line]
-  return { merchLines, cashDelta: -t.launchCost, feed: `Launched a ${t.name} line — official merch now on shelves, independent of any one set.` }
+
+  // The community has a view on merch, and it turns on RESTRAINT. A line
+  // fronted by a beloved character is a delight; a shelf groaning with tie-in
+  // product reads as a cash grab and sours the people who care about value.
+  // (Merch used to be a pure cash faucet — three actions, tens of thousands of
+  // dollars each, and not one persona ever mentioned it.)
+  const activeCount = merchLines.filter((m) => m.active).length
+  const fame = hotCastSignal(state.characters) // 0–100
+  const delight = clamp((fame - 30) / 70, 0, 1) // a hot cast makes merch wanted
+  const overreach = clamp((activeCount - 2) / 3, 0, 1) // past two lines it's a lot
+  const bump = {
+    tasteKey: 'value',
+    floor: 0.4,
+    amount: Math.round((delight * 3 - overreach * 6) * 10) / 10,
+    ambientAmount: Math.round((delight * 2 - overreach * 2) * 10) / 10,
+  }
+
+  return {
+    merchLines,
+    cashDelta: -t.launchCost,
+    personaSentimentBump: bump,
+    feed: overreach > 0.5
+      ? `Launched a ${t.name} line — that's ${activeCount} merch lines running now, and people are starting to say so.`
+      : `Launched a ${t.name} line — official merch now on shelves, independent of any one set.`,
+  }
 }
 
 // A smaller spend (new print/variant/drop) that bumps buzz back up.

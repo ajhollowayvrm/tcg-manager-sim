@@ -77,6 +77,17 @@ function buildDraft(setNumber, knobs, nameSalt, tier = 'major', blocks = []) {
   if (tier === 'major' && knobs.gimmicks) {
     d.block = { ...d.block, gimmickId: knobs.gimmicks[(setNumber + nameSalt) % knobs.gimmicks.length] }
   }
+  // A deliberately lean pack: drop the guaranteed hit slot and pad with commons.
+  // This is the "stingy" grievance — packs that feel bad to open.
+  if (knobs.leanPack) {
+    d.packFormat = {
+      ...d.packFormat,
+      slots: [
+        { count: 9, rarityIds: ['common'], escalate: false },
+        { count: 1, rarityIds: ['uncommon'], escalate: false },
+      ],
+    }
+  }
   const n = 6
   d.signatureCards = Array.from({ length: n }, (_, i) => {
     const c = createSignatureCard(i + 1)
@@ -84,6 +95,9 @@ function buildDraft(setNumber, knobs, nameSalt, tier = 'major', blocks = []) {
     c.rarity = i < 2 ? 'mythic' : 'rare'
     // A strategy's "chase appeal" sets how loud its signature cards are.
     c.appeal = Math.min(100, knobs.chaseAppeal + (i === 0 ? 15 : 0))
+    // Serialized chase cards — a 15x singles multiplier that used to be free
+    // and community-invisible.
+    if (knobs.serialize && i < 3) c.serialCap = [1, 10, 25][i]
     return c
   })
   return d
@@ -190,6 +204,21 @@ const STRATEGIES = [
   makeStrategy({ name: 'Collector blocks', cadence: 18, minorEvery: 7, rotateEvery: 104,
     knobs: { designLoudness: 48, printRun: 40, pricePoint: 5.0, chaseAppeal: 70,
       namePool: NAME_POOL, themes: THEMES, gimmicks: ['phantasmal'] } }),
+
+  // ---- Greed strategies ----------------------------------------------------
+  // Each isolates ONE way of squeezing the player base for money. Before the
+  // systems-audit pass these were free: nothing in personas.js read price,
+  // print run, pack richness or serialization, so greed was pure arithmetic.
+  // Each should now show sentiment damage, and none should be strictly optimal.
+  makeStrategy({ name: 'Price gouging ($11)', cadence: 12, rotateEvery: 78,
+    knobs: { designLoudness: 55, printRun: 55, pricePoint: 11, chaseAppeal: 70,
+      namePool: NAME_POOL, themes: THEMES, gimmicks: ['mega'] } }),
+  makeStrategy({ name: 'Stingy packs', cadence: 12, rotateEvery: 78,
+    knobs: { designLoudness: 55, printRun: 55, pricePoint: 4.5, chaseAppeal: 70, leanPack: true,
+      namePool: NAME_POOL, themes: THEMES, gimmicks: ['mega'] } }),
+  makeStrategy({ name: 'Scarcity farming', cadence: 12, rotateEvery: 78,
+    knobs: { designLoudness: 55, printRun: 12, pricePoint: 4.5, chaseAppeal: 70, serialize: true,
+      namePool: NAME_POOL, themes: THEMES, gimmicks: ['mega'] } }),
 
   // ---- Set-size strategies -------------------------------------------------
   // Both mirror 'Balanced' exactly except for set SIZE, so the pair isolates

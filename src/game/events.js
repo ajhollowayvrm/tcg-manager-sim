@@ -36,6 +36,20 @@ function dominantCard(state) {
   return live.reduce((a, b) => (b.popFactors.punch > a.popFactors.punch ? b : a))
 }
 
+// The card most exposed to a manufactured-scarcity accusation: a serialized
+// card first (the scarcest cap wins — a /1 is the loudest possible statement),
+// otherwise a conspicuously loud or already-controversial one.
+function scarcityTarget(state) {
+  const live = liveCards(state)
+  if (!live.length) return null
+  const serialized = live.filter((c) => c.serialCap)
+  if (serialized.length) {
+    return serialized.reduce((a, b) => (b.serialCap < a.serialCap ? b : a))
+  }
+  const d = live.reduce((a, b) => (b.popFactors.punch > a.popFactors.punch ? b : a))
+  return d && (d.popFactors.punch > 68 || (d.controversy ?? 0) > 35) ? d : null
+}
+
 // A card whose artist is a high-reach name (for "beloved artist" events).
 function cardByHotArtist(state, rng) {
   const live = liveCards(state).filter((c) => {
@@ -218,22 +232,46 @@ export const EVENTS = [
     kind: 'scandal',
     tone: 'bad',
     weight: 1.4,
-    condition: (s) => {
-      const d = dominantCard(s)
-      // Fires for a genuinely splashy card, or one already drawing controversy —
-      // reachable without a maxed-out chase design, but not for a quiet catalog.
-      return d && (d.popFactors.punch > 68 || (d.controversy ?? 0) > 35)
+    // A SERIALIZED card is the purest case of manufactured scarcity: a hard cap
+    // the publisher chose. Those are the prime candidates; a merely splashy or
+    // already-controversial card can still draw it. (This used to read `punch`
+    // alone — i.e. presentation loudness — so the "manufactured scarcity" event
+    // had nothing to do with any scarcity the player actually manufactured.)
+    condition: (s) => !!scarcityTarget(s),
+    weightMul: (s) => {
+      const serialized = liveCards(s).filter((c) => c.serialCap).length
+      return clamp(1 + serialized * 0.5, 0.4, 3)
     },
     resolve: (s, rng) => {
-      const card = dominantCard(s)
+      const card = scarcityTarget(s)
+      const serial = card.serialCap
       return {
-        text: `Accusations fly that ${card.name}'s scarcity was manufactured to juice its price. The community is openly calling for you to pull it from print.`,
+        text: serial
+          ? `Accusations fly that ${card.name}'s /${serial} print cap exists purely to juice its price. "Manufactured scarcity," the community calls it — and they are not wrong.`
+          : `Accusations fly that ${card.name}'s scarcity was manufactured to juice its price. The community is openly calling for you to pull it from print.`,
         effects: {
           cards: bumpCard(s.cards, card.id, { controversy: range(rng, 12, 22) }),
-          collectorsDelta: -Math.round(s.segments.collectors * range(rng, 0.005, 0.015)),
+          collectorsDelta: -Math.round(s.segments.collectors * range(rng, serial ? 0.01 : 0.005, serial ? 0.025 : 0.015)),
         },
       }
     },
+  },
+  {
+    id: 'phantom_stock_exposed',
+    kind: 'scandal',
+    tone: 'bad',
+    weight: 1.1,
+    // Showing "sold out" while stock remains is a lie told to your own
+    // customers. It deters bots (revenue.js damps scalper heat for it) — and it
+    // can be found out. Without this the policy was a free anti-scalping win.
+    condition: (s) => !!s.phantomStockPolicy,
+    resolve: (s, rng) => ({
+      text: 'A shop worker posts receipts: your "sold out" listings were never sold out. The phantom-stock policy is public, and it reads as lying to your own customers.',
+      effects: {
+        personaSentimentDelta: { tasteKey: 'fairness', floor: 0.4, amount: -range(rng, 6, 11), ambientAmount: -range(rng, 2, 4) },
+        collectorsDelta: -Math.round(s.segments.collectors * range(rng, 0.005, 0.02)),
+      },
+    }),
   },
   {
     id: 'viral_moment',
@@ -382,6 +420,19 @@ export function applyEventEffects(next, effects) {
   if (effects.artistBreakoutId && next.artists) {
     const rng = makeRng(hashSeed(`breakout:${effects.artistBreakoutId}:${next.week}`))
     next.artists = blowUpArtist(next.artists, effects.artistBreakoutId, rng)
+  }
+
+  // A taste-keyed persona sentiment shift (e.g. a scandal the fairness-minded
+  // take hardest). Mirrors useGame.js's applySentimentBump, kept here so an
+  // event can carry the same shape without importing the reducer.
+  if (effects.personaSentimentDelta && next.personas) {
+    const b = effects.personaSentimentDelta
+    const key = b.tasteKey ?? 'fairness'
+    const floor = b.floor ?? 0.4
+    next.personas = next.personas.map((p) => {
+      const amt = (p.taste?.[key] ?? 0) >= floor ? b.amount : b.ambientAmount
+      return { ...p, sentiment: clamp(p.sentiment + amt, -100, 100) }
+    })
   }
 
   // Persona reach shifts (e.g. a feud's winner/loser).

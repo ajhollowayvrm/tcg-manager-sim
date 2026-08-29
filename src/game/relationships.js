@@ -27,6 +27,11 @@ export function sponsorCost(persona) {
 
 const RELATIONSHIP_DECAY = 0.6 // points/week a cultivated bond cools if untended
 const SPONSOR_UPKEEP_WARMTH = 2 // sponsored creators stay a bit warm each week
+// Weekly reach a funded channel gains. Small — a sponsorship grows a voice over
+// a season, it doesn't mint a superstar overnight. Reach feeds the
+// reach-weighted community sentiment, so amplifying a friendly voice really
+// does move the room.
+const SPONSOR_REACH_GROWTH = 0.25
 
 // ---- One-off: comp product -----------------------------------------------
 
@@ -242,13 +247,19 @@ export function applyRelationships(next) {
   next.personas = next.personas.map((p) => {
     let relationship = clamp((p.relationship ?? 0) - RELATIONSHIP_DECAY, 0, 100)
     let sentiment = p.sentiment
+    let reach = p.reach
     if (p.sponsored) {
       upkeep += Math.round(sponsorCost(p) * 0.18) // ongoing weekly cost
       sentiment = clamp(sentiment + SPONSOR_UPKEEP_WARMTH, -100, 100)
       relationship = clamp(relationship + RELATIONSHIP_DECAY + 0.4, 0, 100) // tended by the deal
+      // The deal buys AMPLIFICATION, which is the whole point of sponsoring a
+      // creator — a funded channel posts more and reaches further. This is what
+      // the module header has always promised ("amplifies their reach") and
+      // never actually did. Slow, and it decays back once the deal ends.
+      reach = clamp(reach + SPONSOR_REACH_GROWTH, 5, 100)
       if (sentiment < -10) souredSponsorDrag += (p.reach / 100) // a sponsored name turning on you is worse
     }
-    return { ...p, relationship, sentiment }
+    return { ...p, relationship, sentiment, reach, reachSeed: p.reachSeed ?? p.reach }
   })
 
   if (upkeep > 0) next.cash = next.cash - upkeep

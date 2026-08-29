@@ -41,7 +41,16 @@ export function fairValue(card, set, legacyMul = 1) {
   const serialLift = card.serialCap ? clamp(120 / card.serialCap, 1.5, 15) : 1
   // A third-party-graded card (see grading.js) carries a flat, permanent
   // certification premium.
-  const gradedLift = card.graded ? 1.4 : 1
+  // Grading lifts a card — but the POPULATION REPORT is the thing collectors
+  // actually price off: a high-grade card is worth more when few others exist.
+  // `gradedPopulation` was tracked (grading.js) and displayed (MarketTicker)
+  // but never priced, so the defining mechanic of grading did nothing.
+  // Anchored so a TYPICAL population (~25 slabs) reproduces the historical flat
+  // 1.4×: a freshly-slabbed rarity runs up to ~1.65×, a mass-graded card decays
+  // toward ~1.19×. Population matters, without repricing the whole market.
+  const pop = card.gradedPopulation ?? 0
+  const popScarcity = clamp(1.18 - Math.log10(1 + pop) * 0.13, 0.85, 1.18)
+  const gradedLift = card.graded ? 1.4 * popScarcity : 1
   // A set the player tuned chase-heavy (draft.rarityChase, 0=accessible..
   // 100=chase-heavy, see SetBuilder's "Rarity distribution" slider) trades
   // richer across every card in it — the design choice to make pulls feel

@@ -50,10 +50,49 @@ export function priceElasticity(price, ref = 4.5) {
 // cards. (Distinct from `set.buzz` — the persisted, release-pressure stat that
 // decays weekly in simulation.js; this is recomputed fresh each week from the
 // set's live cards.)
+// How much a single card contributes to its set's pack demand.
+//
+// LIVE hype, not the frozen release-time number. `popFactors.hype` is the card's
+// intrinsic desirability, fixed at printing; `card.hype` is what the community
+// is ACTUALLY excited about right now — moved every week by personas, box
+// breaks, god packs and pre-launch reveals. Reading only the former is why the
+// community's loudest effect on cards used to have no path into pack sales at
+// all (it reached singles prices via market.js and stopped there).
+//
+// Anchored with `max`, not a blend, for a specific reason: `card.hype` seeds at
+// `popFactors.hype / 100` and then decays ~14%/wk (market.js's stepCard). Using
+// it raw would decay a set's demand a THIRD time, on top of `ageDecay` and
+// `freshness`, and quietly gut every back-catalogue set. Taking the max means a
+// set never sells worse than its intrinsic quality, but a card the community
+// talks itself into a frenzy over really does move packs.
+function cardPull(card) {
+  const intrinsic = card.popFactors?.hype ?? 50
+  const live = (card.hype ?? 0) * 100 // card.hype is 0..~3 on a /100 scale
+  return clamp(Math.max(intrinsic, live), 0, 150)
+}
+
+// How much a card COUNTS toward its set's appeal. A 120-card set is mostly bulk
+// commons nobody buys a box for, so a flat mean buried the player's design work
+// (driving every signature card from 5 to 100 moved the old average ~6 points).
+// Weighting by collector tier means the cards people actually chase are the ones
+// that sell the packs.
+function cardWeight(card) {
+  const tier = (card.popFactors?.rarity ?? 40) / 100
+  const chase = card.treatment || card.secret || card.signature ? 1.4 : 1
+  return (0.35 + Math.pow(clamp(tier, 0, 1), 1.5) * 2.2) * chase
+}
+
 function setAppeal(set, cards) {
   const own = cards.filter((c) => c.setId === set.id)
   if (own.length === 0) return 0.5
-  const avgHype = own.reduce((s, c) => s + (c.popFactors?.hype ?? 50), 0) / own.length
+  let wSum = 0
+  let weight = 0
+  for (const c of own) {
+    const w = cardWeight(c)
+    wSum += cardPull(c) * w
+    weight += w
+  }
+  const avgHype = weight > 0 ? wSum / weight : 50
   // A booster richer than Classic makes cracking packs feel better — a modest
   // demand lift, paid for by the higher print cost; a leaner pack buzzes a touch
   // less. Relative to Classic, so the default pack is demand-neutral. Reprinting

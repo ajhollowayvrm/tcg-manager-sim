@@ -225,12 +225,14 @@ export function applyDistributors(next) {
     if (rng() < popOdds) {
       popped = true
       const crater = 1 - range(rng, 0.25, 0.45) // singles lose 25-45%
+      // No priceHistory append here: this runs BEFORE resolveMarket, which
+      // records exactly one history entry per card per week. Appending here too
+      // would double-count the week and desync the ticker's sparkline.
       next.cards = next.cards.map((c) =>
         c.banned || c.rotated ? c : {
           ...c,
           singlePrice: Math.round(c.singlePrice * crater * 100) / 100,
           hype: 0, momentum: Math.min(0, c.momentum ?? 0),
-          priceHistory: [...(c.priceHistory ?? []), Math.round(c.singlePrice * crater * 100) / 100].slice(-26),
         }
       )
       // A glut of dumped stock also guts sealed demand: collapse heat (bubble's

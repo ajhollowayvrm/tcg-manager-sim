@@ -308,8 +308,27 @@ export function setCost(draft, artistOf = getArtist) {
   // exactly on the old flat floor — existing balance is preserved.
   const gimmick = draft.block?.gimmickId ? getGimmick(draft.block.gimmickId) : null
   const gimmickMul = gimmick?.devCostMul ?? (draft.block?.gimmickId ? 1 : NO_GIMMICK.devCostMul)
+  // Chase intensity is NOT free. It scales how many treatment cards the era
+  // mints and how rich they are (blocks.js's gimmickIntensity), so it has to
+  // scale their design cost too — otherwise cranking it to maximum is strictly
+  // dominant. Weighted by the gimmick's own treatmentWeight for the same reason.
+  const intensity = clamp(draft.block?.intensity ?? gimmick?.defaultIntensity ?? 50, 0, 100)
+  const chaseMul = gimmick ? 1 + (intensity / 100) * (gimmick.treatmentWeight ?? 1) * 0.35 : 1
+  // Louder presentation costs more to produce: bigger frames, more foil, more
+  // art direction across the whole set. Anchored at 1.0 for the default
+  // loudness of 50, so this doesn't silently reprice every existing set.
+  const loudnessMul = 0.85 + (loudnessOf(draft) / 100) * 0.3
+  // Secret rares are extra cards to design and extra plates to print. They used
+  // to be entirely free — and, being excluded from sizeProfile, couldn't even
+  // create bloat, so the dial was pure upside. Charged RELATIVE to the tier's
+  // own default, so a stock set is unchanged and only padding costs extra.
+  const tierDef = getTier(draft.tier ?? 'major')
+  const secretBase = tierDef.ridesBlock ? 3 : 2 // mirrors createDraft's seed
+  const secretMul = 1 + (clamp(draft.secretCount ?? 0, 0, MAX_SECRET_CARDS) - secretBase) * 0.02
   const dev = Math.round(
-    getTier(draft.tier ?? 'major').devCostFloor * gimmickMul * (0.55 + 0.45 * size.lengthMul),
+    tierDef.devCostFloor
+    * gimmickMul * chaseMul * loudnessMul * secretMul
+    * (0.55 + 0.45 * size.lengthMul),
   )
   const art = draft.signatureCards.reduce((sum, c) => {
     const artist = c.artistId ? artistOf(c.artistId) : null
@@ -319,6 +338,13 @@ export function setCost(draft, artistOf = getArtist) {
     const mul = c.characterId ? getTreatment(c.treatment).costMul : 1
     // A richer printing finish costs more to produce, too.
     return sum + artist.cost * mul * getFinish(c.finish).costMul
+  }, 0)
+  // Serialized chase cards: hand-numbering a capped run is a real production
+  // line, and the scarcer the cap the more it costs per card. Previously free —
+  // a /1 was a 15× singles multiplier (market.js) that cost nothing to print.
+  const serialization = draft.signatureCards.reduce((sum, c) => {
+    if (!c.serialCap) return sum
+    return sum + Math.round(4_000 + 60_000 / Math.max(1, c.serialCap))
   }, 0)
   // An art director is a whole-set commission — double their card rate.
   const director = draft.artDirectorId ? artistOf(draft.artDirectorId) : null
@@ -333,8 +359,8 @@ export function setCost(draft, artistOf = getArtist) {
   // Previewing cards ahead of launch buys placement — a real, if modest, spend.
   const spotlight = Math.min((draft.spotlight?.picks?.length ?? 0), MAX_SPOTLIGHT_PICKS) * SPOTLIGHT_COST_EACH
   return {
-    dev, printCost, art, artDirection, prerelease, releaseEvent, skus, spotlight,
-    total: dev + printCost + art + artDirection + prerelease + releaseEvent + skus + spotlight,
+    dev, printCost, art, artDirection, serialization, prerelease, releaseEvent, skus, spotlight,
+    total: dev + printCost + art + artDirection + serialization + prerelease + releaseEvent + skus + spotlight,
   }
 }
 
@@ -675,10 +701,23 @@ export function releaseSet(state, draft) {
     cards, state.cards, artistOf,
   )
 
-  // Nostalgia-erosion dial: only pushed UP by a LOUD release
-  // (scaled by the block gimmick's creep weight); it decays on its own weekly
-  // and can be relieved by pulling a hot set from print (bans.js).
-  const printIntensity = clamp((state.printIntensity ?? 40) + Math.max(0, creep) * blockCreep * 0.5, 0, 100)
+  // Nostalgia-erosion dial. A LOUD release pushes it up (scaled by the block
+  // gimmick's own creep weight — a Mega era reads louder than a Throwback one);
+  // a RESTRAINED one actively pulls it back down.
+  //
+  // The downward half matters: this used to be `Math.max(0, creep)`, which made
+  // the entire bottom half of the loudness slider a no-op AND — because creep is
+  // exactly 0 at the default loudness of 50 — multiplied every gimmick's creep
+  // weight by zero, collapsing the whole roster's character to nothing unless
+  // the player happened to push loudness past the midpoint. Letting a quiet set
+  // relieve the dial makes "restrained" a real strategy and gives each gimmick's
+  // creep value something to scale at default settings. It still decays on its
+  // own weekly and can be relieved further by pulling a set from print (bans.js).
+  //
+  // A quiet set relieves at half the rate a loud one erodes: it's easier to
+  // wear a back catalogue out than to make people love it again.
+  const creepPush = creep >= 0 ? creep * blockCreep : creep * 0.5
+  const printIntensity = clamp((state.printIntensity ?? 40) + creepPush * 0.5, 0, 100)
 
   // Set buzz lift from reprinting fan-favorite cards (carried on the set record
   // so revenue/market can read it).
@@ -886,7 +925,7 @@ export function releaseSet(state, draft) {
   // everyone; obscuring carries no bump (its cost is the backlash-event risk
   // instead — see events.js's odds_transparency_backlash).
   const personaSentimentBump = draft.oddsPublished
-    ? { fairnessFloor: 0.4, fairnessAmount: 3, ambientAmount: 1 }
+    ? { tasteKey: 'fairness', floor: 0.4, amount: 3, ambientAmount: 1 }
     : null
 
   return {
@@ -1138,12 +1177,30 @@ export function reprintAsUnlimited(state, originalSetId, printRun = 55) {
 
   const feed = `${original.name} reprinted as an Unlimited run (${printRunUnits(printRun).toLocaleString('en-US')} units). Fresh supply to sell — and the original printing is now a first-edition premium.`
 
+  // The community has an opinion about this. Re-issuing a set people already
+  // bought is a genuine trade: it makes the game accessible again (newcomers
+  // and casuals can finally get in), but a HEAVY Unlimited run reads as
+  // devaluing what collectors already own. Value-minded voices feel it most.
+  //
+  // Scaled by how big the reprint run is: a modest re-issue is welcomed, a
+  // flood is resented.
+  const flood = clamp((printRun - 45) / 55, 0, 1)
+  const reprintSentimentBump = {
+    tasteKey: 'value',
+    floor: 0.4,
+    // Collectors: welcome at a light run, resentful at a flood.
+    amount: Math.round((2.5 - flood * 8) * 10) / 10,
+    // Everyone else mostly just sees more product on shelves.
+    ambientAmount: Math.round((1.5 - flood * 2) * 10) / 10,
+  }
+
   return {
     set: reprintSetRecord,
     cards: reprintCards,
     firstEditionCards,
     cashDelta: -cost,
     feed,
+    personaSentimentBump: reprintSentimentBump,
   }
 }
 

@@ -147,7 +147,10 @@ export function openBlock(state, setId, themeId, blockSpec) {
       || gimmick?.name
       || (getTheme(themeId)?.name ? `${getTheme(themeId).name} Block` : 'Block'),
     gimmickId: gimmick?.id ?? null,
-    gimmickName: gimmick?.name ?? null,
+    // The player's own era name wins if they gave one — this used to be
+    // unconditionally the gimmick's name, so a custom era name was written to
+    // `name` above and then thrown away here before any UI read it.
+    gimmickName: blockSpec.gimmickName?.trim() || gimmick?.name || null,
     gimmickCategory: gimmick?.category ?? null,
     treatmentLabel: gimmick?.treatmentLabel ?? null,
     intensity, // 0 subtle .. 100 maximal chase

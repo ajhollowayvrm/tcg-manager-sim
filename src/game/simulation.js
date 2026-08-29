@@ -122,6 +122,17 @@ export function advanceWeek(state) {
     next.lastDebtInterest = 0
   }
 
+  // Distributors: active bulk-buyers resell and flood the channel, feeding
+  // scalper heat. Above the threshold, scalper culture spikes prices short-term
+  // but bleeds casuals, sours the community, and risks a bubble pop.
+  //
+  // Runs BEFORE the market resolves, so channel pressure is an INPUT to this
+  // week's pricing rather than an edit applied after the fact. (It used to run
+  // last, which left `movers` and every card's priceHistory describing prices
+  // the game had already overwritten — the ticker's sparkline disagreed with
+  // the number printed beside it.)
+  applyDistributors(next)
+
   // Secondary market: resolve every card's singles & sealed price for the week.
   // resolveMarket reads next.week (already advanced) and the cards.
   const { cards, movers } = resolveMarket(next)
@@ -168,12 +179,6 @@ export function advanceWeek(state) {
   // from any one printing. Runs after the market/personas have settled so it
   // reads this week's real numbers.
   driftCharacters(next)
-
-  // Distributors: active bulk-buyers resell and flood the channel, feeding
-  // scalper heat. Above the threshold, scalper culture spikes prices short-term
-  // but bleeds casuals, sours the community, and risks a bubble pop. Runs after
-  // the market/segments/personas have settled so it adjusts the resolved week.
-  applyDistributors(next)
 
   // Grading partners: an active partner ambiently certifies a slice of the
   // market's highest-value eligible singles each week and carries its own

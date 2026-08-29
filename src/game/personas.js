@@ -20,6 +20,7 @@
 
 import { makeRng, hashSeed, range } from './rng.js'
 import { clamp } from './simulation.js'
+import { packRichnessDelta } from './rarities.js'
 
 const FEED_MAX = 60 // cap the feedback feed length
 
@@ -72,6 +73,96 @@ function focusCard(cards, persona, rng) {
   return scored[0].c
 }
 
+// ---- Grievances -----------------------------------------------------------
+
+// What the community has to COMPLAIN about in a set, read off the actual
+// business decisions the player made rather than off card stats.
+//
+// This exists because the sim had a structural hole: MSRP, print run, pack
+// richness and manufactured scarcity are the biggest levers in the game, and
+// nothing in this file read any of them. Greed was a pure arithmetic
+// optimization — the only cost of a $12 pack was the elasticity curve, and
+// nobody ever said a word about it. (The one line in here that mentioned print
+// runs fired off `punch`, which has nothing to do with print runs.)
+//
+// Each grievance is 0 (nobody minds) .. 1 (loudly indefensible). `worst` names
+// the loudest one so a take can be specific about what it's angry about.
+const GENRE_NORM_PRICE = 4.5 // the booster elasticity reference (products.js)
+
+export function setGrievances(set, cards = []) {
+  if (!set) return { worst: null, score: 0, all: {} }
+  const price = set.price ?? GENRE_NORM_PRICE
+  const printRun = set.printRun ?? 50
+  const sellThrough = set.supply > 0 ? clamp((set.sold ?? 0) / set.supply, 0, 1) : 0
+
+  // Gouging: how far MSRP runs past the genre norm. ~$7 starts to sting, $12 is
+  // indefensible.
+  const gouging = clamp((price - GENRE_NORM_PRICE - 1.5) / 5, 0, 1)
+
+  // Overprinting: a big run that ISN'T selling. A big run that sells through is
+  // just a popular set — the grievance is warehouses of unwanted product
+  // tanking what people already own.
+  const overprint = clamp((printRun - 60) / 40, 0, 1) * clamp((0.65 - sellThrough) / 0.5, 0, 1)
+
+  // Manufactured scarcity: a deliberately thin run that sold out, plus any
+  // serialized cards. Serial-numbered chase is the purest form of it.
+  const serialCount = cards.filter((c) => c.setId === set.id && c.serialCap).length
+  const scarcity = clamp(
+    clamp((45 - printRun) / 40, 0, 1) * clamp((sellThrough - 0.5) / 0.4, 0, 1) + serialCount * 0.18,
+    0, 1,
+  )
+
+  // Stinginess: a pack leaner than the Classic baseline. packRichnessDelta is
+  // already computed for cost/appeal — this is the community's read on it.
+  // (Guarded: a set with no authored format is a legacy record, not a stingy
+  // one — packRichnessDelta reads an absent format as maximally lean.)
+  const stingy = set.packFormat ? clamp(-packRichnessDelta(set.packFormat) * 3, 0, 1) : 0
+
+  // NOTE: bloat is deliberately NOT a grievance. It already has three channels
+  // of its own — the reviewer's dedicated branch below, the collector-drift
+  // term in segments.js, and events.js's bloated_set_backlash. Adding a fourth
+  // here triple-counted it and turned a landmark-size set from a trade-off into
+  // a death sentence.
+  const all = { gouging, overprint, scarcity, stingy }
+  let worst = null
+  let score = 0
+  for (const [k, v] of Object.entries(all)) {
+    if (v > score) { worst = k; score = v }
+  }
+  return { worst, score, all }
+}
+
+// The lines the community reaches for, per grievance. Kept beside the data so
+// adding a grievance means adding its voice too.
+const GRIEVANCE_LINES = {
+  gouging: [
+    (s, set) => `$${(set.price ?? 0).toFixed(2)} a pack for ${s}. They're taking the mick.`,
+    (s) => `${s} is priced like a luxury good and it is not one.`,
+    (s, set) => `Genuinely can't recommend ${s} at $${(set.price ?? 0).toFixed(2)}. Wait for a sale.`,
+  ],
+  overprint: [
+    (s) => `${s} is everywhere and nothing in it holds value. They printed way too much.`,
+    (s) => `You cannot give ${s} away. Pallets of it sitting in every shop.`,
+    (s) => `${s} is a bargain-bin set already. Overprinted, plain and simple.`,
+  ],
+  scarcity: [
+    (s) => `${s} is artificially scarce and they know exactly what they're doing.`,
+    (s) => `Nobody can actually buy ${s} at retail. This is manufactured hype.`,
+    (s) => `Serial-numbered chase in ${s} — engineered for the secondary market, not for us.`,
+  ],
+  stingy: [
+    (s) => `${s} packs are thin. You feel robbed opening them.`,
+    (s) => `Cracking ${s} is miserable. There's nothing IN these packs.`,
+    (s) => `${s} has the stingiest pack I've opened in a while.`,
+  ],
+  // Kept for the reviewer's own bloat branch, which reads set.bloat directly.
+  bloat: [
+    (s, set) => `${s} is bloated. ${set.setLength} cards, and maybe six of them matter.`,
+    (s) => `Master-setting ${s} is a second job. Too much filler around too few hits.`,
+    (s) => `${s} is padded out. The chase gets lost in the noise.`,
+  ],
+}
+
 // ---- Take generation ------------------------------------------------------
 
 // Pick one line from a pool, deterministically off the week's RNG.
@@ -79,13 +170,38 @@ function pick(rng, pool) {
   return pool[Math.floor(rng() * pool.length) % pool.length]
 }
 
-function takeFor(persona, card, perceived, set, rng, displayName) {
+function takeFor(persona, card, perceived, set, rng, displayName, grievances) {
   const strong = perceived > 25
   const busted = perceived > 50
   const weak = perceived < -20
   const t = persona.type
   const c = displayName ?? card?.name
   const s = set?.name ?? 'the set'
+
+  // GRIEVANCES COME FIRST. If the player has done something the community
+  // objects to — gouged on price, overprinted, manufactured scarcity, shipped a
+  // stingy pack, bloated the set — that's what people talk about, ahead of any
+  // individual card.
+  //
+  // Sensitivity is `taste.fairness`, which until now read no card or set field
+  // anywhere in the sim: it was a perception bias and a branch threshold and
+  // nothing else. This is the axis's real job — fairness-minded voices are the
+  // ones who notice when you're being greedy, and they notice sooner.
+  const fairness = persona.taste?.fairness ?? 0
+  if (grievances?.worst && set && GRIEVANCE_LINES[grievances.worst]) {
+    // Probabilistic, not a hard gate: even a flagrantly greedy set doesn't make
+    // EVERY voice say the same thing in the same week. The louder the
+    // grievance and the more the persona cares about fairness, the likelier
+    // they lead with it — but plenty still talk about cards, so the feed keeps
+    // its texture instead of turning into one repeated complaint.
+    const notices = (0.25 + fairness * 0.55 + (t === 'reviewer' ? 0.25 : 0)) * grievances.score
+    if (rng() < notices) {
+      // A loud grievance from a fairness-minded voice is a call to action;
+      // otherwise it's a pan.
+      const stance = grievances.score > 0.75 && fairness >= 0.4 ? 'alarm' : 'pan'
+      return { stance, text: pick(rng, GRIEVANCE_LINES[grievances.worst])(s, set) }
+    }
+  }
 
   if (t === 'authenticator') {
     if (busted) return { stance: 'pull', text: pick(rng, [
@@ -143,9 +259,8 @@ function takeFor(persona, card, perceived, set, rng, displayName) {
   }
   if (t === 'reviewer') {
     if (set) {
-      // SET SIZE is the first thing a reviewer reacts to — before any single
-      // card. A sprawling set reads as padding to the value-minded; a tight one
-      // reads as a set you can actually finish.
+      // Set size the reviewer still reads directly (bloat is also a grievance
+      // above, but a TIGHT set is a compliment, which grievances don't model).
       const bloat = set.bloat ?? 0
       const size = set.sizeScore ?? 0
       if (bloat > 0.5 && persona.taste.value >= 0.3) return { stance: 'pan', text: pick(rng, [
@@ -177,8 +292,8 @@ function takeFor(persona, card, perceived, set, rng, displayName) {
   const ragey = persona.taste.fairness >= 0.4
   if (ragey) {
     if (strong) return { stance: 'alarm', text: pick(rng, [
-      `${c} IS OBVIOUSLY OVERPRINTED AND NOBODY IS TALKING ABOUT IT. FIX YOUR PRINT RUNS`,
-      `they're printing ${c} into the ground. devs asleep at the wheel`,
+      `${c} IS SO OVER THE TOP AND NOBODY IS TALKING ABOUT IT. read the room`,
+      `every card in this era is shouting louder than the last. ${c} is the worst of it`,
     ]) }
     if (weak) return { stance: 'pan', text: pick(rng, [
       `${c}? trash. devs are clueless`,
@@ -210,7 +325,10 @@ function takeFor(persona, card, perceived, set, rng, displayName) {
 //   feedItems   — new feedback feed entries (newest first when prepended)
 //   cardEffects — Map<cardId, {hype, controversy}> deltas to apply
 //   sentimentById — Map<personaId, newSentiment>
-//   playerBaseDelta — small drift from reviewer/streamer sway on a fresh set
+//   casualDelta — small drift from reviewer sway on a fresh set. Applied to
+//                 segments.casual, NOT playerBase: applySegmentDrift recomputes
+//                 playerBase from the segments later in the same tick, so
+//                 anything written straight to playerBase is discarded.
 export function reactPersonas(state) {
   const rng = makeRng(hashSeed(`personas:${state.week}`))
   const latestSet = state.sets.length ? state.sets[state.sets.length - 1] : null
@@ -221,7 +339,7 @@ export function reactPersonas(state) {
   const cardEffects = new Map()
   const sentimentById = new Map()
   const reachById = new Map() // weekly reach drift from how accurate a take was
-  let playerBaseDelta = 0
+  let casualDelta = 0
 
   const bump = (id, key, amt) => {
     const e = cardEffects.get(id) ?? { hype: 0, controversy: 0 }
@@ -232,6 +350,10 @@ export function reactPersonas(state) {
   // Only live cards are part of the format — banned/rotated cards are out of the
   // conversation. The "field" average and persona focus both work off live cards.
   const liveCards = state.cards.filter((c) => !c.banned && !c.rotated && !c.promo)
+  // What the community has to complain about in the newest set, read off the
+  // player's actual business decisions (price, print run, pack richness,
+  // manufactured scarcity, bloat) rather than off card stats.
+  const grievances = latestSet ? setGrievances(latestSet, state.cards) : null
   const fieldAvg = liveCards.length
     ? liveCards.reduce((s, c) => s + c.popFactors.punch, 0) / liveCards.length
     : 50
@@ -252,7 +374,7 @@ export function reactPersonas(state) {
     // 2" instead of "Emberwing Charflare is...".
     const character = card?.characterId ? state.characters?.find((ch) => ch.id === card.characterId) : null
     const displayName = character && character.fame >= 50 ? character.name : undefined
-    const take = takeFor(persona, card, perceived, latestSet, rng, displayName)
+    const take = takeFor(persona, card, perceived, latestSet, rng, displayName, grievances)
 
     // Reach drift: the community slowly learns who to listen to. A take that
     // tracks reality (perceived close to truth) earns reach; a loud, confidently
@@ -281,6 +403,7 @@ export function reactPersonas(state) {
     // ---- Effects (scaled by reach — loudness moves players) ----
     const loud = persona.reach / 100
 
+    // Card-specific effects only land when the take was ABOUT a card.
     if (card) {
       if (persona.type === 'streamer' && (take.stance === 'hype')) {
         bump(card.id, 'hype', 0.18 * loud) // live demand pop
@@ -292,24 +415,31 @@ export function reactPersonas(state) {
         if (take.stance === 'pull') bump(card.id, 'controversy', 14 * loud)
         else if (take.stance === 'warn') bump(card.id, 'controversy', 5 * loud)
       }
-      // Persona's own mood: airing an alarm sours them, enthusiasm lifts them.
-      // (warn is mildly negative, so a chronic rage-baiter drifts hostile.)
-      const moodByStance = { pull: -6, alarm: -6, warn: -2.5, pan: -1.5, neutral: 0.5, hype: 4, love: 4 }
-      const mood = moodByStance[take.stance] ?? 0
-      sentimentById.set(persona.id, clamp(persona.sentiment + mood, -100, 100))
     }
 
-    // A reviewer's verdict on a fresh set sways the casual base's willingness to buy.
+    // Persona's own mood: airing an alarm sours them, enthusiasm lifts them.
+    // (warn is mildly negative, so a chronic rage-baiter drifts hostile.)
+    //
+    // Applies to EVERY take, not just card-focused ones — a reviewer panning a
+    // bloated set or praising a tight one is an opinion about the game and has
+    // to move their mood, or the whole set-level reaction path is decorative.
+    const moodByStance = { pull: -6, alarm: -6, warn: -2.5, pan: -1.5, neutral: 0.5, hype: 4, love: 4 }
+    const mood = moodByStance[take.stance] ?? 0
+    sentimentById.set(persona.id, clamp(persona.sentiment + mood, -100, 100))
+
+    // A reviewer's verdict on a fresh set sways the casual base's willingness to
+    // buy. Casuals specifically — collectors care about scarcity and legacy, not
+    // about what a reviewer thought of this week's set.
     if (persona.type === 'reviewer' && setFresh) {
       const sway = take.stance === 'love' ? 1 : take.stance === 'pan' ? -1.2 : take.stance === 'warn' ? -0.2 : 0
-      playerBaseDelta += sway * loud * 60
+      casualDelta += sway * loud * 60
     }
   }
 
   // Newest first; keep the feed bounded.
   const merged = [...feedItems.reverse(), ...state.feedbackFeed].slice(0, FEED_MAX)
 
-  return { feedItems: merged, cardEffects, playerBaseDelta, sentimentById, reachById }
+  return { feedItems: merged, cardEffects, casualDelta, sentimentById, reachById }
 }
 
 // Apply the persona pass to the next-state in place (called from advanceWeek).
@@ -327,8 +457,15 @@ export function applyPersonaEffects(next, result) {
     }
   })
 
-  // Reviewers/streamers sway the base.
-  next.playerBase = Math.max(0, Math.round(next.playerBase + result.playerBaseDelta))
+  // Reviewers sway the casual base. This MUST land on segments, not playerBase:
+  // applySegmentDrift (simulation.js, later this same tick) recomputes
+  // playerBase from the segments, so a direct playerBase write is thrown away.
+  // Mirrors how events.js applies its casualDelta.
+  if (result.casualDelta) {
+    const seg = next.segments
+    seg.casual = Math.max(0, Math.round(seg.casual + result.casualDelta))
+    next.playerBase = Math.max(0, seg.casual + seg.collectors)
+  }
 
   // Persona sentiments + reach drift (the community learning who to trust).
   next.personas = next.personas.map((p) => {

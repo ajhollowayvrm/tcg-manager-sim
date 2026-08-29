@@ -41,7 +41,19 @@ status (✅ done / ⏳ remaining) and the v2 roadmap.
 After that, the brief calls for a frontend-polish pass and the open tuning
 notes (decay rate, market variance, feedback-noise ratio).
 
-_Recently completed: **a collector-first set-creation redesign** — the power-budget
+_Recently completed: **a systems-wiring audit** — every player decision now moves
+both sales and community opinion. It fixed three dead effects (reviewer verdicts
+were overwritten within the same tick; set-level persona takes never moved
+sentiment; distributors rewrote prices after the market had already published
+them), closed the missing opinion→sales loop (pack demand read each card's frozen
+release-time hype, so live community excitement could never sell a pack), made
+greed visible (MSRP, print run, manufactured scarcity, stingy packs, Unlimited
+reprints and merch all draw community reactions now, via a new `setGrievances`
+that finally gives the inert `taste.fairness` axis something to read), priced the
+levers that were free (chase intensity, secret rares, serialized caps, design
+loudness), and removed the dead travel in the loudness slider — `Math.max(0, creep)`
+meant its bottom half did nothing and every gimmick's creep weight was multiplied
+by zero at default settings; **a collector-first set-creation redesign** — the power-budget
 slider is now **design loudness**, theme "mechanics" are naming **motifs**, and
 signature cards dropped rules text entirely for standout appeal, a printing
 **finish**, flavor text and art notes; block **gimmicks are optional** (a plain

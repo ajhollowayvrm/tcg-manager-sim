@@ -384,6 +384,42 @@ Grouped into three layers. Each assumes the v1 core loop is solid first.
 >   `simulation.js`; `TierPicker` + `BlockEditor` in `SetBuilder`; block grouping
 >   in `SetsPanel`.) Realizes the parked "elaborate special release events" /
 >   anniversary-set depth around a real two-tier release calendar.
+> - **The wiring rule: every decision moves sales AND opinion** — a systems audit
+>   pass over every set-draft field, every reducer action, and both engines. It
+>   found the rule broken four ways and fixed them.
+>   **Three dead effects:** reviewer verdicts on a fresh set wrote `playerBase`,
+>   which `applySegmentDrift` then overwrote in the same tick (now applied to
+>   `segments.casual`, like events do); persona mood updates sat inside
+>   `if (card)`, so set-level takes were decorative; and `applyDistributors` ran
+>   *after* `resolveMarket`, leaving the ticker's sparkline describing prices the
+>   game had already overwritten (distributors now run before the market, so
+>   channel pressure is an input to pricing rather than an edit after it).
+>   **The missing loop:** `setAppeal` averaged each card's *frozen release-time*
+>   hype, so the live `card.hype` that personas, breaks, god packs and previews
+>   move all game reached singles prices and stopped — community excitement could
+>   not sell a single pack. It now reads live hype (floored at intrinsic quality
+>   so a set never decays a third time), weighted toward the cards people
+>   actually chase.
+>   **Greed made visible:** a new `setGrievances` reads the player's real
+>   business decisions — MSRP vs. the genre norm, print run vs. sell-through,
+>   manufactured scarcity (serialized caps), pack stinginess, bloat — and the
+>   community leads with whatever it objects to. This finally gives
+>   `taste.fairness` something to read: it governed a perception bias and nothing
+>   else, so the axis that should notice greed was inert. (The one line in the
+>   game about print runs fired off `punch`, a field with nothing to do with
+>   print runs.) Unlimited reprints, merch lines and both anti-scalping toggles
+>   now carry sentiment too.
+>   **Free levers priced:** chase intensity, `treatmentWeight`, secret rares,
+>   serialized caps and design loudness all cost money now — all anchored so a
+>   default-length, default-loudness set is unchanged.
+>   **Dead travel removed:** `printIntensity` used `Math.max(0, creep)`, so the
+>   bottom half of the loudness slider was a no-op *and* — creep being exactly 0
+>   at the default loudness — every gimmick's creep weight was multiplied by
+>   zero. A restrained set now actively relieves nostalgia erosion.
+>   Also: graded **population** finally prices (the point of grading);
+>   sponsorships deliver the reach they always promised; a landed media hit
+>   raises sentiment (only the flop did); and a custom era name survives
+>   `openBlock`.
 > - **Set creation, redesigned collector-first** — the builder's last competitive
 >   framing is gone. The **power budget** slider became **design loudness** (same
 >   nostalgia-erosion role, reframed as presentation rather than strength);
