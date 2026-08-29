@@ -24,7 +24,7 @@ export function makePromoCard(state, { label, prestige, themeId, nonce }) {
   const rng = makeRng(hashSeed(`promo:${label}:${state.week}:${nonce}`))
   const theme = getTheme(themeId) ?? getTheme('dragons')
   const NOUNS = ['Champion', 'Sovereign', 'Avatar', 'Eidolon', 'Paragon', 'Warlord', 'Archon']
-  const lead = theme?.mechanics?.length ? theme.mechanics[Math.floor(rng() * theme.mechanics.length)] : 'Prize'
+  const lead = theme?.motifs?.length ? theme.motifs[Math.floor(rng() * theme.motifs.length)] : 'Prize'
   const name = `${lead} ${NOUNS[Math.floor(rng() * NOUNS.length)]} (${label} Promo)`
 
   // Collector value scales with prestige; punch is a modest random (a promo

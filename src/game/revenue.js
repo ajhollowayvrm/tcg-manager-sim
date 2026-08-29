@@ -60,10 +60,13 @@ function setAppeal(set, cards) {
   // fan-favorite cards into the set adds a further fan-service buzz lift.
   const richness = packRichnessDelta(set.packFormat)
   const reprintBuzz = set.reprintBuzz ?? 0
-  // Block-gimmick treatment cards (Mega/Ascended/Phantasmal chase) make cracking
+  // Block-gimmick treatment cards (the era's chase subtype) make cracking
   // packs feel better — a further demand lift on top of richness/reprints.
   const treatmentBuzz = set.treatmentBuzz ?? 0
-  return clamp((avgHype / 100) * (1 + richness * 0.12 + reprintBuzz + treatmentBuzz), 0.1, 1.5)
+  // Cards previewed before launch arrive already wanted — a modest sealed-demand
+  // lift on top of the rest (see sets.js's spotlight curve).
+  const spotlightAppeal = set.spotlightAppeal ?? 0
+  return clamp((avgHype / 100) * (1 + richness * 0.12 + reprintBuzz + treatmentBuzz + spotlightAppeal), 0.1, 1.5)
 }
 
 // Weekly demand for ONE product SKU of a set, before its supply cap. Returns a

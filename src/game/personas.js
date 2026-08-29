@@ -25,19 +25,23 @@ const FEED_MAX = 60 // cap the feedback feed length
 
 // How suspicious a card's splashiness reads. A card draws scrutiny when it is
 // an OUTLIER — far punchier than the other cards it shares the catalog with —
-// not merely because the whole set is strong (a uniformly splashy set just
-// resets the baseline). We blend that set-relative standing with a
-// contribution from raw absolute punch, so a genuinely over-the-top card
-// reads suspicious regardless of how its setmates look.
+// not merely because the whole set shouts (a uniformly splashy set just resets
+// the baseline). We blend that set-relative standing with a contribution from
+// raw absolute standout, so a genuinely over-the-top card reads conspicuous
+// regardless of how its setmates look.
+//
+// `punch` here is PRESENTATION LOUDNESS — how hard a card is pushed relative to
+// its shelfmates — not a power level. Nothing in this game is designed around
+// what a card does.
 function cardThreat(card, fieldAvgPunch) {
   const relative = card.popFactors.punch - fieldAvgPunch // outlier-ness
-  const absolute = card.popFactors.punch - 65 // raw "above curve" pressure
-  return clamp(relative * 0.9 + absolute * 0.7, -60, 60) // -60 weak .. +60 busted
+  const absolute = card.popFactors.punch - 65 // raw "louder than the norm" pressure
+  return clamp(relative * 0.9 + absolute * 0.7, -60, 60) // -60 muted .. +60 overbearing
 }
 
 // A persona's *perceived* threat = the truth blurred by (1 - credibility).
 // High credibility → perception ≈ truth. Low credibility → perception is mostly
-// their own noise, biased by how much they care about power/fairness.
+// their own noise, biased by how much they care about loudness/fairness.
 function perceive(truth, persona, rng) {
   const cred = persona.credibility / 100
   const noise = range(rng, -55, 55) * (1 - cred)
@@ -139,9 +143,23 @@ function takeFor(persona, card, perceived, set, rng, displayName) {
   }
   if (t === 'reviewer') {
     if (set) {
+      // SET SIZE is the first thing a reviewer reacts to — before any single
+      // card. A sprawling set reads as padding to the value-minded; a tight one
+      // reads as a set you can actually finish.
+      const bloat = set.bloat ?? 0
+      const size = set.sizeScore ?? 0
+      if (bloat > 0.5 && persona.taste.value >= 0.3) return { stance: 'pan', text: pick(rng, [
+        `${s} is bloated. ${set.setLength} cards, and maybe six of them matter.`,
+        `Master-setting ${s} is a second job. Too much filler around too few hits.`,
+        `${s} is padded out. The chase gets lost in the noise.`,
+      ]) }
+      if (size <= -0.5) return { stance: 'love', text: pick(rng, [
+        `${s} is tight. ${set.setLength} cards, every one earning its slot — a completable set.`,
+        `Finally, a set you can actually finish. ${s} respects your binder.`,
+      ]) }
       if (perceived > 20) return { stance: 'warn', text: pick(rng, [
-        `${s} is powerful — fun now, but watch the creep.`,
-        `${s} hits hard. Great today; I worry about next year.`,
+        `${s} is loud — gorgeous now, but I worry what it does to last year's cards.`,
+        `${s} really shouts. Great on the shelf today; ask me again next year.`,
       ]) }
       if (weak) return { stance: 'pan', text: pick(rng, [
         `${s} feels flat. Not much to chase here.`,

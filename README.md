@@ -41,7 +41,16 @@ status (✅ done / ⏳ remaining) and the v2 roadmap.
 After that, the brief calls for a frontend-polish pass and the open tuning
 notes (decay rate, market variance, feedback-noise ratio).
 
-_Recently completed: a grow-from-nothing start — 0 players / 0 satisfaction,
+_Recently completed: **a collector-first set-creation redesign** — the power-budget
+slider is now **design loudness**, theme "mechanics" are naming **motifs**, and
+signature cards dropped rules text entirely for standout appeal, a printing
+**finish**, flavor text and art notes; block **gimmicks are optional** (a plain
+themed era is a cheaper, first-class choice) and the roster grew **4 → 28** across
+six categories; **set size matters** — length drives the launch wave, buzz, dev
+cost and chase density, with a bloat penalty on oversized sets that reviewers pan
+and collectors drift away from; and you can now **spotlight** up to five cards
+before launch, pick a **cover character**, and hire a whole-set **art director**
+(`sets.js` `sizeProfile`, `content/gimmicks.js`, `SetBuilder`); a grow-from-nothing start — 0 players / 0 satisfaction,
 additive word-of-mouth + release discovery waves (`segments.js` / `sets.js`), and
 a forgiving recoverable-pressure loss model (negative cash = a loan with weekly
 interest; only a debt spiral / broke-and-abandoned / −100 revolt ends a run —

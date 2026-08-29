@@ -365,9 +365,30 @@ body {
   font-size: 0.68rem; color: var(--text-dim); text-transform: capitalize;
 }
 .cardframe__power { color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
+/* The printing finish, called out on the type line when it isn't Standard. */
+.cardframe__finish {
+  color: var(--text); font-weight: 600; font-size: 0.62rem;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
 .cardframe__text {
   background: rgba(0,0,0,0.25); border-radius: 6px; padding: 6px 7px;
   font-size: 0.72rem; color: var(--text); min-height: 34px; line-height: 1.35;
+}
+/* Flavor text reads as the italic line it is on a real card. */
+.cardframe__text--flavor { font-style: italic; color: var(--text-dim); }
+
+/* Printing finishes. Each adds a sheen over the whole card so the preview
+   actually looks like the finish you picked — the frame's rarity foil still
+   shows through underneath. */
+.cardframe--finish-holo { box-shadow: inset 0 0 22px rgba(120, 200, 255, 0.20); }
+.cardframe--finish-fullart .cardframe__art { min-height: 120px; }
+.cardframe--finish-textured {
+  box-shadow: inset 0 0 22px rgba(255, 255, 255, 0.14);
+  background-image: repeating-linear-gradient(115deg, rgba(255,255,255,0.05) 0 2px, transparent 2px 5px);
+}
+.cardframe--finish-goldetch {
+  box-shadow: inset 0 0 26px rgba(255, 200, 90, 0.28);
+  border-color: rgba(220, 175, 70, 0.75);
 }
 .cardframe__footer {
   display: flex; align-items: center; justify-content: space-between; gap: 6px;
@@ -570,6 +591,19 @@ body {
   padding-bottom: 8px; border-bottom: 1px solid var(--border);
 }
 .panel__empty { color: var(--text-dim); font-size: 0.9rem; margin: 0; }
+
+/* Spotlight & preview — the pre-launch reveal picker. Three labelled groups
+   (signatures / chase cards / reprints) of checkboxes. */
+.spotlight { display: grid; gap: 12px; }
+.spotlight__group { display: grid; gap: 4px; }
+.spotlight__title {
+  margin: 0; font-size: 0.78rem; font-weight: 600; color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+
+/* A field note that's warning the player about a choice, not just explaining
+   it (an oversized set, every reveal spent). */
+.field__note.is-warn { color: var(--warn, #e0a03a); }
 .panel__subtitle {
   margin: 16px 0 8px; font-size: 0.8rem; font-weight: 700; color: var(--text-dim);
   text-transform: uppercase; letter-spacing: 0.5px;

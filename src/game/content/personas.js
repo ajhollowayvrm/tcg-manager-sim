@@ -14,7 +14,7 @@
 //   value     — secondary-market price & investment
 //   art       — art appeal & collectibility
 //   fairness  — catalog trust, "is this scarcity claim legit"
-//   fun       — fresh mechanics, new toys
+//   fun       — fresh ideas, new toys
 //
 // type — streamer | authenticator | collector | reviewer | analyst
 // affinity — optional theme tags this voice is biased toward; a set in a theme

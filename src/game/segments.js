@@ -66,8 +66,18 @@ function segmentHealth(next) {
     (reputation - 15) / 85 // franchise legacy pull
     + (activeGrading ? 0.15 : 0) // certification trust
     - Math.max(0, printIntensity - 50) / 60 // nostalgia erosion past a mid floor
+    - liveAvgBloat(next.sets) * 0.15 // sprawling, uncompletable sets wear on set-collectors
 
   return { casual: clamp(casual, -1, 1), collectors: clamp(collectors, -1, 1) }
+}
+
+// Mean bloat across the in-print catalogue (see sets.js's sizeProfile). A
+// catalogue of sprawling, hard-to-complete sets wears on set-completionists —
+// the same shape as nostalgia erosion above: a slow current, not a cliff.
+export function liveAvgBloat(sets) {
+  const live = (sets ?? []).filter((s) => !s.rotated)
+  if (!live.length) return 0
+  return live.reduce((sum, s) => sum + (s.bloat ?? 0), 0) / live.length
 }
 
 // Additive weekly "word of mouth" — new players DISCOVERING the game. Crucially

@@ -28,7 +28,8 @@ function pickCard(cards, rng) {
   return cards[Math.floor(rng() * cards.length) % cards.length]
 }
 
-// The most "dominant" live card = highest punch (what the meta warps around).
+// The most conspicuous live card = the loudest-presenting one (the card an era
+// gets remembered by, for better or worse).
 function dominantCard(state) {
   const live = liveCards(state)
   if (!live.length) return null
@@ -126,6 +127,36 @@ export const EVENTS = [
         effects: {
           cards,
           collectorsDelta: -Math.round(s.segments.collectors * range(rng, 0.01, 0.03)),
+        },
+      }
+    },
+  },
+  {
+    id: 'bloated_set_backlash',
+    kind: 'community',
+    tone: 'bad',
+    weight: 0.7,
+    // Only a risk once a genuinely sprawling set is in print. `bloat` is set at
+    // release from the set's position in its tier's size band (sets.js's
+    // sizeProfile) — a set at or near its tier default can never draw this.
+    condition: (s) => s.sets.some((x) => !x.rotated && (x.bloat ?? 0) > 0.55),
+    weightMul: (s) => clamp(1 + s.sets.filter((x) => !x.rotated && (x.bloat ?? 0) > 0.55).length * 0.4, 0.2, 3),
+    resolve: (s, rng) => {
+      // The worst offender in print draws the discourse.
+      const target = s.sets
+        .filter((x) => !x.rotated && (x.bloat ?? 0) > 0.55)
+        .reduce((a, b) => ((b.bloat ?? 0) > (a.bloat ?? 0) ? b : a))
+      // The bulk of the set softens — the chase cards themselves are fine, it's
+      // everything around them that nobody wants.
+      let cards = s.cards
+      for (const c of liveCards(s).filter((c) => c.setId === target.id && !c.secret && !c.treatment)) {
+        cards = bumpCard(cards, c.id, { priceMul: range(rng, 0.85, 0.95) })
+      }
+      return {
+        text: `"${target.name} is too big" becomes the discourse — ${target.setLength} cards, and the bulk is drowning the chase. Set-completionists are checking out.`,
+        effects: {
+          cards,
+          collectorsDelta: -Math.round(s.segments.collectors * range(rng, 0.015, 0.035)),
         },
       }
     },
