@@ -91,6 +91,12 @@ function applyOutcome(next, entry, feedEntries) {
     next.playerBase = next.segments.casual + next.segments.collectors
     next.mediaWomMultiplier = (next.mediaWomMultiplier ?? 1) + deal.womMultiplierBoost
     next.mediaReputationFloor = Math.max(next.mediaReputationFloor ?? 0, deal.reputationFloorBoost)
+    // A landed cross-media hit is the single best week the brand can have —
+    // and until now it moved no sentiment at all, while a FLOP cost -4. The
+    // biggest bet in the game was muted on the upside and only on the upside.
+    if (next.personas) {
+      next.personas = next.personas.map((p) => ({ ...p, sentiment: clamp(p.sentiment + 5, -100, 100) }))
+    }
     feedEntries.push({
       week: next.week, kind: 'media', tone: 'good',
       text: `IT LANDED: ${deal.name} is a hit. ${injection.toLocaleString()} new players discover the game — and the brand's staying power just went up for good.`,

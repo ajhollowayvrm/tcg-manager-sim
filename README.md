@@ -41,7 +41,28 @@ status (✅ done / ⏳ remaining) and the v2 roadmap.
 After that, the brief calls for a frontend-polish pass and the open tuning
 notes (decay rate, market variance, feedback-noise ratio).
 
-_Recently completed: a grow-from-nothing start — 0 players / 0 satisfaction,
+_Recently completed: **a systems-wiring audit** — every player decision now moves
+both sales and community opinion. It fixed three dead effects (reviewer verdicts
+were overwritten within the same tick; set-level persona takes never moved
+sentiment; distributors rewrote prices after the market had already published
+them), closed the missing opinion→sales loop (pack demand read each card's frozen
+release-time hype, so live community excitement could never sell a pack), made
+greed visible (MSRP, print run, manufactured scarcity, stingy packs, Unlimited
+reprints and merch all draw community reactions now, via a new `setGrievances`
+that finally gives the inert `taste.fairness` axis something to read), priced the
+levers that were free (chase intensity, secret rares, serialized caps, design
+loudness), and removed the dead travel in the loudness slider — `Math.max(0, creep)`
+meant its bottom half did nothing and every gimmick's creep weight was multiplied
+by zero at default settings; **a collector-first set-creation redesign** — the power-budget
+slider is now **design loudness**, theme "mechanics" are naming **motifs**, and
+signature cards dropped rules text entirely for standout appeal, a printing
+**finish**, flavor text and art notes; block **gimmicks are optional** (a plain
+themed era is a cheaper, first-class choice) and the roster grew **4 → 28** across
+six categories; **set size matters** — length drives the launch wave, buzz, dev
+cost and chase density, with a bloat penalty on oversized sets that reviewers pan
+and collectors drift away from; and you can now **spotlight** up to five cards
+before launch, pick a **cover character**, and hire a whole-set **art director**
+(`sets.js` `sizeProfile`, `content/gimmicks.js`, `SetBuilder`); a grow-from-nothing start — 0 players / 0 satisfaction,
 additive word-of-mouth + release discovery waves (`segments.js` / `sets.js`), and
 a forgiving recoverable-pressure loss model (negative cash = a loan with weekly
 interest; only a debt spiral / broke-and-abandoned / −100 revolt ends a run —

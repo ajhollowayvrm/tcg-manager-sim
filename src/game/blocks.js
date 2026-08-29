@@ -2,11 +2,13 @@
 // "block" a major opens. See docs/BRIEF.md and content/gimmicks.js.
 //
 // FOUR TIERS. Every set carries a `tier`:
-//   • major — the full expansion. OPENS A BLOCK: introduces a gimmick (Mega /
-//     Ascended / Phantasmal / Tera), drives a big buzz reset, and anchors the
-//     shelf. Normal collector density.
+//   • major — the full expansion. OPENS A BLOCK: may introduce an era gimmick
+//     (optional — see content/gimmicks.js; a block without one is a plain
+//     themed era), drives a big buzz reset, and anchors the shelf. Normal
+//     collector density.
 //   • minor — a smaller in-between set (~40–90 cards) that RIDES a live block:
-//     inherits its theme + gimmick, chase-leaning (high collector density —
+//     inherits its theme + gimmick (if the block has one), chase-leaning
+//     (high collector density —
 //     the secondary-market drops between the big beats).
 //   • micro — a tiny special set (~15–35 cards), also riding a block: very high
 //     collector density, typically one product.
@@ -47,7 +49,7 @@ import { defaultRaritySheet } from './rarities.js'
 export const TIERS = {
   major: {
     id: 'major', name: 'Major set', symbol: '◆',
-    blurb: 'A full expansion that opens a new block — introduces a gimmick and draws a big launch wave.',
+    blurb: 'A full expansion that opens a new block — optionally introducing an era gimmick — and draws a big launch wave.',
     devCostFloor: 40_000,
     defaultLength: 120, lengthRange: [90, 250],
     discoveryMul: 1.0, collectorMul: 1.0,
@@ -130,25 +132,37 @@ export function gimmickIntensity(gimmick, intensity) {
 // Returns the block stored in state.blocks.
 export function openBlock(state, setId, themeId, blockSpec) {
   const gimmick = getGimmick(blockSpec.gimmickId) ?? null
+  // A deliberately gimmick-less block: no treatment subtype, no design-loudness
+  // creep. Distinct from "gimmick id we failed to resolve" only in that the
+  // builder stores null on purpose — either way a plain era is the safe result.
+  const plain = !gimmick
   const intensity = clamp(blockSpec.intensity ?? gimmick?.defaultIntensity ?? 50, 0, 100)
   const derived = gimmickIntensity(gimmick, intensity)
   const blockId = `block_${(state.blocks?.length ?? 0) + 1}`
   return {
     id: blockId,
-    name: blockSpec.gimmickName?.trim() || gimmick?.name || 'Block',
+    // A named era wins; otherwise a gimmick block takes the gimmick's name and
+    // a PLAIN one takes its theme's ("Dragons Block") — never a bare "Block".
+    name: blockSpec.gimmickName?.trim()
+      || gimmick?.name
+      || (getTheme(themeId)?.name ? `${getTheme(themeId).name} Block` : 'Block'),
     gimmickId: gimmick?.id ?? null,
-    gimmickName: gimmick?.name ?? 'Gimmick',
-    treatmentLabel: gimmick?.treatmentLabel ?? 'Special',
+    // The player's own era name wins if they gave one — this used to be
+    // unconditionally the gimmick's name, so a custom era name was written to
+    // `name` above and then thrown away here before any UI read it.
+    gimmickName: blockSpec.gimmickName?.trim() || gimmick?.name || null,
+    gimmickCategory: gimmick?.category ?? null,
+    treatmentLabel: gimmick?.treatmentLabel ?? null,
     intensity, // 0 subtle .. 100 maximal chase
     themeId,
     openedWeek: state.week,
     majorSetId: setId,
     setIds: [setId],
-    treatment: derived.treatment,
+    treatment: plain ? 0 : derived.treatment,
     // How much this gimmick nudges the collectors' nostalgia-erosion dial when
     // a set prints into it (a splashy gimmick like Mega reads louder than a
     // quiet one like Phantasmal). See sets.js / simulation.js's printIntensity.
-    creep: gimmick?.creep ?? 0.8,
+    creep: plain ? 0 : (gimmick.creep ?? 0.8),
   }
 }
 
@@ -166,10 +180,14 @@ export function refreshBlockWarp(block, setId) {
 // the block's treatment intensity. They live in the set's pull pool (unlike
 // promos) but seed rich. Returns an array of card records to append to the set.
 export function mintTreatmentCards(state, { block, setId, tier, themeId, intensity, sheet }) {
+  // A block opened with NO gimmick is a plain themed era — there is no chase
+  // subtype to mint. Guarded first: the count formula's 0.6 floor would
+  // otherwise still mint cards at zero treatment.
+  if (!block || !block.gimmickId) return []
   const t = getTier(tier)
-  const treatment = block?.treatment ?? gimmickIntensity(getGimmick(block?.gimmickId), intensity ?? block?.intensity ?? 50).treatment
+  const treatment = block.treatment ?? gimmickIntensity(getGimmick(block.gimmickId), intensity ?? block.intensity ?? 50).treatment
   const count = Math.max(0, Math.round(t.treatmentBase * (0.6 + treatment)))
-  if (count <= 0 || !block) return []
+  if (count <= 0) return []
   const theme = getTheme(themeId) ?? getTheme('dragons')
   const label = block.treatmentLabel ?? 'Special'
   const rng = makeRng(hashSeed(`treatment:${setId}:${block.id}:${state.week}`))
@@ -184,7 +202,7 @@ export function mintTreatmentCards(state, { block, setId, tier, themeId, intensi
 
   const cards = []
   for (let i = 0; i < count; i++) {
-    const lead = theme?.mechanics?.length ? theme.mechanics[Math.floor(rng() * theme.mechanics.length)] : label
+    const lead = theme?.motifs?.length ? theme.motifs[Math.floor(rng() * theme.motifs.length)] : label
     const name = `${lead} ${NOUNS[Math.floor(rng() * NOUNS.length)]} (${label})`
     // Treatment cards are top-tier collectibles: huge art-appeal + hype, with
     // punch scaling with the block's intensity (a louder gimmick's treatments
@@ -238,7 +256,7 @@ export function mintAnniversaryCards(state, { setId, themeId, sheet }) {
 
   const cards = []
   for (let i = 0; i < count; i++) {
-    const lead = theme?.mechanics?.length ? theme.mechanics[Math.floor(rng() * theme.mechanics.length)] : 'Anniversary'
+    const lead = theme?.motifs?.length ? theme.motifs[Math.floor(rng() * theme.motifs.length)] : 'Anniversary'
     const name = `${lead} ${ANNIVERSARY_NOUNS[Math.floor(rng() * ANNIVERSARY_NOUNS.length)]}`
     const artAppeal = clamp(80 + range(rng, -6, 6), 0, 100)
     const hype = clamp(75 + range(rng, -8, 8), 0, 100)

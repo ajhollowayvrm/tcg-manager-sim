@@ -82,7 +82,7 @@ function reducer(state, action) {
       return {
         ...state,
         sets,
-        personas: applySentimentBump(state.personas, { fairnessFloor: 0.4, fairnessAmount: 3, ambientAmount: 1 }),
+        personas: applySentimentBump(state.personas, { tasteKey: 'fairness', floor: 0.4, amount: 3, ambientAmount: 1 }),
         eventsFeed: [{ week: state.week, text: `${target.name}'s pull rates are now published — the community's watching.`, kind: 'market' }, ...state.eventsFeed].slice(0, 60),
       }
     }
@@ -122,6 +122,9 @@ function reducer(state, action) {
         sets: [...sets, result.set],
         cards: [...result.firstEditionCards, ...result.cards],
         cash: state.cash + result.cashDelta,
+        // Re-issuing a set people already own is a real trade: accessible for
+        // newcomers, but a heavy Unlimited run devalues collectors' shelves.
+        personas: applySentimentBump(state.personas, result.personaSentimentBump),
         eventsFeed: [{ week: state.week, text: result.feed, kind: 'market' }, ...state.eventsFeed].slice(0, 60),
         clock: { ...state.clock, reason: result.feed },
       }
@@ -262,6 +265,9 @@ function reducer(state, action) {
         ...state,
         merchLines: r.merchLines,
         cash: state.cash + (r.cashDelta ?? 0),
+        // Merch is no longer community-invisible: a line fronted by a beloved
+        // character delights, a shelf full of tie-ins reads as a cash grab.
+        personas: applySentimentBump(state.personas, r.personaSentimentBump),
         eventsFeed: [{ week: state.week, text: r.feed, kind: 'merch' }, ...state.eventsFeed].slice(0, 60),
       }
     }
@@ -285,10 +291,45 @@ function reducer(state, action) {
         eventsFeed: [{ week: state.week, text: r.feed, kind: 'market' }, ...state.eventsFeed].slice(0, 60),
       }
     }
-    case 'TOGGLE_PURCHASE_LIMITS':
-      return { ...state, purchaseLimitPolicy: !state.purchaseLimitPolicy }
-    case 'TOGGLE_PHANTOM_STOCK':
-      return { ...state, phantomStockPolicy: !state.phantomStockPolicy }
+    case 'TOGGLE_PURCHASE_LIMITS': {
+      // Per-customer purchase limits are a consumer-friendly stance: they cost
+      // you distributor appetite and bulk-buy cash, and until now nobody
+      // thanked you for it. Fairness-minded voices notice and approve.
+      const on = !state.purchaseLimitPolicy
+      return {
+        ...state,
+        purchaseLimitPolicy: on,
+        personas: applySentimentBump(state.personas, {
+          tasteKey: 'fairness', floor: 0.4,
+          amount: on ? 4 : -4, ambientAmount: on ? 1.5 : -1.5,
+        }),
+        eventsFeed: [{
+          week: state.week,
+          text: on
+            ? 'Per-customer purchase limits are now in force at retail — bots and bulk flippers get squeezed, and the community notices.'
+            : 'Purchase limits lifted — bulk buyers can clear a shelf again.',
+          kind: 'community',
+        }, ...state.eventsFeed].slice(0, 60),
+      }
+    }
+    case 'TOGGLE_PHANTOM_STOCK': {
+      // Showing "sold out" while stock remains deters bots — but it is a lie
+      // told to your own customers, and the risk is that it gets found out
+      // (see events.js's phantom_stock_exposed). Turning it ON is quiet; the
+      // cost arrives later, as a story.
+      const on = !state.phantomStockPolicy
+      return {
+        ...state,
+        phantomStockPolicy: on,
+        eventsFeed: [{
+          week: state.week,
+          text: on
+            ? 'Phantom stock is live — listings show "sold out" before they truly are. It deters the bots. It is also not quite true.'
+            : 'Phantom stock switched off — what the site says is in stock is what is in stock.',
+          kind: 'market',
+        }, ...state.eventsFeed].slice(0, 60),
+      }
+    }
     case 'RUN_BREAK': {
       const r = runBreak(state, action.kind, action.setId, action.nonce ?? 0)
       if (!r) return state
@@ -313,14 +354,19 @@ function reducer(state, action) {
   }
 }
 
-// Apply a small persona-wide sentiment bump (see sets.js's odds-transparency
-// trade-off): fairness-minded voices (taste.fairness >= floor) get the full
-// amount, everyone else a smaller ambient goodwill tick. `bump` is null for a
-// no-op (personas pass through unchanged).
+// Apply a small persona-wide sentiment bump. Voices who CARE about the axis in
+// question (taste[tasteKey] >= floor) get the full amount; everyone else gets a
+// smaller ambient tick. Amounts may be negative — this carries bad news too.
+//
+// `tasteKey` picks which axis decides who notices: 'fairness' for the
+// odds-transparency trade-off, 'value' for an Unlimited reprint devaluing what
+// collectors own, and so on. `bump` is null for a no-op.
 function applySentimentBump(personas, bump) {
   if (!bump) return personas
+  const key = bump.tasteKey ?? 'fairness'
+  const floor = bump.floor ?? 0.4
   return personas.map((p) => {
-    const amt = (p.taste?.fairness ?? 0) >= bump.fairnessFloor ? bump.fairnessAmount : bump.ambientAmount
+    const amt = (p.taste?.[key] ?? 0) >= floor ? bump.amount : bump.ambientAmount
     return { ...p, sentiment: clamp(p.sentiment + amt, -100, 100) }
   })
 }

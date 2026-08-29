@@ -1,9 +1,10 @@
-// Editor for a single signature card. Per-card flavor ↔ full-mechanical toggle,
-// rarity, artist commission, and either a power rating or rules text.
+// Editor for a single signature card: rarity, printing finish, artist
+// commission, standout appeal, and the card's flavor + art-direction copy.
 
 import { ARTISTS, getArtist } from '../../game/content/artists.js'
 import { getRarity, visualTier, defaultRaritySheet } from '../../game/rarities.js'
 import { TREATMENTS, getTreatment } from '../../game/characters.js'
+import { FINISHES, getFinish, cardAppeal } from '../../game/sets.js'
 import SetSymbol from '../SetSymbol.jsx'
 
 function formatCash(n) {
@@ -20,15 +21,15 @@ function artGradient(themeId) {
 }
 
 // A live trading-card preview of the card being designed: rarity-foiled frame,
-// themed art placeholder with the set symbol, name plate, type/power line, rules
-// box, and an artist/set-symbol footer. This is the brief's "real card-frame
-// styling in the card editor".
+// themed art placeholder with the set symbol, name plate, type/finish line,
+// flavor box, and an artist/set-symbol footer. This is the brief's "real
+// card-frame styling in the card editor".
 function CardFramePreview({ card, theme, sheet, artist }) {
-  const power = card.mode === 'flavor' ? card.power : null
+  const finish = getFinish(card.finish)
   const tier = visualTier(sheet, card.rarity) // common/uncommon/rare/mythic foil
   const rarityName = getRarity(sheet, card.rarity).name
   return (
-    <div className={`cardframe cardframe--${tier}`} aria-hidden="true">
+    <div className={`cardframe cardframe--${tier} cardframe--finish-${finish.id}`} aria-hidden="true">
       <div className="cardframe__titlebar">
         <span className="cardframe__name">{card.name || 'Unnamed Card'}</span>
         <span className={`cardframe__gem gem--${tier}`} title={rarityName} />
@@ -38,12 +39,10 @@ function CardFramePreview({ card, theme, sheet, artist }) {
       </div>
       <div className="cardframe__typeline">
         <span>{theme ? theme.name : 'Set'} · {rarityName}</span>
-        {power != null && <span className="cardframe__power">PWR {power}</span>}
+        {finish.id !== 'standard' && <span className="cardframe__finish">{finish.name}</span>}
       </div>
-      <div className="cardframe__text">
-        {card.mode === 'mechanical'
-          ? (card.rulesText || 'Rules text…')
-          : 'A signature card of the set.'}
+      <div className="cardframe__text cardframe__text--flavor">
+        {card.flavorText?.trim() || 'Flavor text…'}
       </div>
       <div className="cardframe__footer">
         <span className="cardframe__artist">
@@ -126,44 +125,60 @@ export default function SignatureCardEditor({ card, theme, artists, characters =
           </select>
         </label>
 
-        <div className="toggle">
-          <button
-            className={'toggle__opt' + (card.mode === 'flavor' ? ' is-active' : '')}
-            onClick={() => set({ mode: 'flavor' })}
-          >
-            Flavor
-          </button>
-          <button
-            className={'toggle__opt' + (card.mode === 'mechanical' ? ' is-active' : '')}
-            onClick={() => set({ mode: 'mechanical' })}
-          >
-            Mechanical
-          </button>
-        </div>
+        <label className="field">
+          <span>Finish</span>
+          <select value={card.finish ?? 'standard'} onChange={(e) => set({ finish: e.target.value })}>
+            {FINISHES.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.name}{f.costMul !== 1 ? ` — ×${f.costMul} art` : ''}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
-      {card.mode === 'flavor' ? (
-        <label className="field field--full">
-          <span>Overall power: {card.power}</span>
-          <input
-            type="range"
-            min="0"
-            max="100"
-            value={card.power}
-            onChange={(e) => set({ power: Number(e.target.value) })}
-          />
-        </label>
-      ) : (
-        <label className="field field--full">
-          <span>Rules text</span>
-          <textarea
-            rows="2"
-            value={card.rulesText}
-            onChange={(e) => set({ rulesText: e.target.value })}
-            placeholder="e.g. Draw two cards. Destroy target creature."
-          />
-        </label>
-      )}
+      <label className="field field--full">
+        <span>
+          Standout appeal: {card.appeal}
+          {cardAppeal(card) !== card.appeal && (
+            <span className="muted"> → {cardAppeal(card)} with finish &amp; flavor</span>
+          )}
+        </span>
+        <input
+          type="range"
+          min="0"
+          max="100"
+          value={card.appeal}
+          onChange={(e) => set({ appeal: Number(e.target.value) })}
+        />
+        <span className="field__note">
+          How much this card is meant to stand out on a shelf — the marquee pull
+          of the set, not a strength rating.
+        </span>
+      </label>
+
+      <label className="field field--full">
+        <span>Flavor text <span className="muted">(the italic line under the art)</span></span>
+        <textarea
+          rows="2"
+          value={card.flavorText ?? ''}
+          onChange={(e) => set({ flavorText: e.target.value })}
+          placeholder="e.g. It has never once been seen in daylight."
+        />
+      </label>
+
+      <label className="field field--full">
+        <span>Art direction <span className="muted">(brief for the commission)</span></span>
+        <input
+          value={card.artNotes ?? ''}
+          onChange={(e) => set({ artNotes: e.target.value })}
+          placeholder="e.g. stormy cliffside, backlit, low angle"
+        />
+        <span className="field__note">
+          A brief that leans into the set's theme reads as a more cohesive
+          commission — worth a little extra appeal.
+        </span>
+      </label>
 
       <label className="field field--full">
         <span>

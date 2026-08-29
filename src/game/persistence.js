@@ -63,7 +63,18 @@ const KEY = 'tcg-manager-sim/save'
 // and cross-media ventures (state.mediaDeals, state.mediaReputationFloor,
 // state.mediaWomMultiplier — see media.js). A v15 save predates all of these;
 // the new fields' ?./?? fallbacks would otherwise silently no-op them.
-const VERSION = 16
+// v17: the set builder went collector-first. The draft/set `powerBudget` is now
+// `designLoudness` (a presentation dial, not a strength ceiling); signature
+// cards dropped the mechanical rules-text mode for `appeal`/`finish`/
+// `flavorText`/`artNotes`; block gimmicks are OPTIONAL and the roster grew from
+// 4 to 28 (carrying `category`/`devCostMul`), so blocks can now hold a null
+// `gimmickId`/`gimmickName`/`treatmentLabel` and carry `gimmickCategory`; sets
+// carry `bloat`/`sizeScore` (set size now drives buzz, the discovery wave, dev
+// cost and chase density) and `spotlight`/`spotlightAppeal` (pre-launch
+// reveals). A v16 save has the old field names throughout and predates every
+// size/spotlight field — invalidating is far cleaner than migrating a whole
+// card catalogue.
+const VERSION = 17
 
 // True only where a real localStorage exists. Guards SSR / the headless
 // playtest harness (tools/playtest.mjs runs the sim in plain Node), and the

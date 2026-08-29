@@ -80,19 +80,50 @@ A **play / pause / fast-forward** clock running in weeks.
 A set is created in two layers:
 
 ### 1. The slider layer (the bulk of the set)
-High-level levers that generate the ~150 commons/uncommons procedurally from a power budget and theme:
-- **Power budget** — overall strength ceiling of the set. Higher = stronger cards, bigger short-term sales, more power-creep debt.
+High-level levers that generate the numbered set procedurally from a theme:
+- **Design loudness** — how hard this set's cards are pushed to outshine what came
+  before: bigger frames, splashier foils, more presentation. Loud sells now, but
+  it ages the back catalogue (it drives the nostalgia-erosion dial). *Formerly
+  "power budget" — this game is collector-first, so the dial is about how a set
+  presents itself, never about how strong its cards are.*
+- **Set length** — how many cards the set runs, within its tier's band. A real
+  headline decision: size reads as EVENT SCALE (a bigger launch wave, more buzz,
+  a richer dev budget) with a BLOAT downside past ~⅔ of the band (the chase
+  thins across more cards, the set stops being completable, and reviewers say
+  so). A tight set is the inverse — dense and completable, beloved by
+  set-collectors, but a weaker growth event. Normalized around each tier's
+  DEFAULT length, so a default-length set is exactly balance-neutral.
+  See `sizeProfile` in `sets.js`.
 - **Rarity distribution** — how chase-heavy vs. accessible the set is.
 - **Print run size** — supply. Under-print → scarcity & high secondary value but lost sales & frustrated players; over-print → bargain bins & crashed values.
-- **Theme / mechanics** — flavor identity + 1–2 set mechanics that interact with the metagame's archetype balance.
+- **Theme** — flavor identity. Carries naming *motifs* — cosmetic word-fuel for
+  generated card names, nothing the sim reads as a rule.
 - **Price point** — MSRP of sealed product.
+- **Cover character** — one roster character fronts the box art, lending the set
+  their accumulated fame. Marketing, not a card.
+- **Art director** — commission one artist across the WHOLE set (double their
+  card rate); their specialty match lifts every card, not just the ones they drew.
 
-### 2. Signature cards (the 5–10 cards that define the set)
-Hand-designed by the player, with a **per-card granularity toggle**:
-- **Flavor-only:** name, art, rarity, a single overall power rating.
-- **Full mechanical:** rules text / keywords / stats the sim parses for balance impact.
+### 2. Signature cards (the marquee cards that define the set)
+Hand-designed by the player:
+- **Standout appeal** — how much the card is meant to stand out on a shelf.
+- **Finish** — Standard / Holofoil / Full art / Textured foil / Gold etch. A
+  richer printing reads louder and costs more to commission.
+- **Flavor text** and **art direction notes** — a brief that leans into the set's
+  theme reads as a more cohesive commission and is worth a little extra appeal.
 
-The player can mix freely — make one card "the most broken thing ever printed" with full mechanical control, and another pure flavor. Signature cards are what the secondary market and personas react to most strongly.
+There is deliberately **no rules text and no mechanical mode**. Nothing here is
+designed around what a card *does* — only around how much it is wanted.
+Signature cards are what the secondary market and personas react to most strongly.
+
+### 3. Spotlight & preview
+Pick up to five of the set's cards — signature highlights, the block's chase
+cards, or chosen reprints — to reveal publicly before launch. A couple of
+reveals build real anticipation; preview most of what's worth pulling and
+there's nothing left to find in the pack (buzz peaks at ~3 reveals, then
+declines while the cost keeps climbing). Reveals resolve at release for now; a
+dedicated **Marketing tab** landing them over the weeks *before* a launch is the
+natural follow-up.
 
 ### Artist commissioning ✅
 A roster of **~30+ named artists**, each with:
@@ -166,7 +197,7 @@ The market and metagame are populated by segments that react differently to the 
 > rotting meta thins the base on its own, giving the player-base death spiral its
 > slow on-ramp ✅.
 - **Competitive players** — care about diversity & solve level.
-- **Casual / combo players** ("new toys" crowd) — want fresh mechanics & power.
+- **Casual / combo players** ("new toys" crowd) — want fresh ideas & spectacle.
 - **Collectors / investors** — track chase value, art, and scarcity.
 
 Almost no decision pleases all three. That tension is the game.
@@ -331,25 +362,83 @@ Grouped into three layers. Each assumes the v1 core loop is solid first.
 >   Collector-box (SPC) SKU flagged as carrying an exclusive promo.
 >   (`promos.js` `makePromoCard`; `packs.js` excludes promos.)
 > - **Major / minor / micro sets & block gimmicks** — every release picks a
->   **tier**. A **major** is a full expansion that OPENS A BLOCK: it introduces a
->   block **gimmick** (a Pokémon-style Mega / Ascended / Phantasmal / Tera era
->   mechanic) chosen from a roster and tuned on a **competitive↔collector nature**
->   slider plus an archetype lean. The gimmick exerts a *persistent meta-warp* that
->   bends the field toward its lean for the block's era and **decays weekly**
->   unless a new set prints into the block to refresh it; it also mints scarce
->   **treatment chase cards** (the collector engine). A **minor** (~40–90 cards)
+>   **tier**. A **major** is a full expansion that OPENS A BLOCK. It **may**
+>   introduce a block **gimmick** — an era-defining chase TREATMENT (a
+>   Pokémon-style Mega / Tera / full-art / serialized era) picked from a
+>   **28-strong roster grouped into six characters** (form change, art treatment,
+>   rarity structure, character & crossover, nostalgia, novelty & physical) and
+>   tuned on a chase-intensity slider. A gimmick is purely a collector engine: it
+>   mints scarce **treatment chase cards** and nudges the nostalgia-erosion dial.
+>   Gimmicks are **optional** — a block opened without one is a *plain themed
+>   era*: cheaper to develop, no chase subtype, a smaller launch spike, and
+>   nothing eroding what collectors already own. A **minor** (~40–90 cards)
 >   and a **micro** (~15–35) *ride* a live block: they inherit its theme + gimmick,
 >   barely refresh the format, draw a far smaller discovery wave (and hit **rider
 >   fatigue** — consecutive riders since the last major recruit less), but are
 >   cheap and chase-dense. **Blocks coexist** — a new major never retires the old,
 >   so their warps stack and power-creep accumulates, pushing the player toward the
 >   ban/pull-from-print relief levers. The playtest harness confirms the tension:
->   a *major + minor* mix grows the healthiest base, rider-spam rots the metagame
->   (lower balance), and your first set must always be a major. (`blocks.js`,
+>   a *major + minor* mix grows the healthiest base, rider-spam hits diminishing
+>   returns, and your first set must always be a major. (`blocks.js`,
 >   `content/gimmicks.js`; tier/block wiring in `sets.js`; weekly warp in
 >   `simulation.js`; `TierPicker` + `BlockEditor` in `SetBuilder`; block grouping
 >   in `SetsPanel`.) Realizes the parked "elaborate special release events" /
 >   anniversary-set depth around a real two-tier release calendar.
+> - **The wiring rule: every decision moves sales AND opinion** — a systems audit
+>   pass over every set-draft field, every reducer action, and both engines. It
+>   found the rule broken four ways and fixed them.
+>   **Three dead effects:** reviewer verdicts on a fresh set wrote `playerBase`,
+>   which `applySegmentDrift` then overwrote in the same tick (now applied to
+>   `segments.casual`, like events do); persona mood updates sat inside
+>   `if (card)`, so set-level takes were decorative; and `applyDistributors` ran
+>   *after* `resolveMarket`, leaving the ticker's sparkline describing prices the
+>   game had already overwritten (distributors now run before the market, so
+>   channel pressure is an input to pricing rather than an edit after it).
+>   **The missing loop:** `setAppeal` averaged each card's *frozen release-time*
+>   hype, so the live `card.hype` that personas, breaks, god packs and previews
+>   move all game reached singles prices and stopped — community excitement could
+>   not sell a single pack. It now reads live hype (floored at intrinsic quality
+>   so a set never decays a third time), weighted toward the cards people
+>   actually chase.
+>   **Greed made visible:** a new `setGrievances` reads the player's real
+>   business decisions — MSRP vs. the genre norm, print run vs. sell-through,
+>   manufactured scarcity (serialized caps), pack stinginess, bloat — and the
+>   community leads with whatever it objects to. This finally gives
+>   `taste.fairness` something to read: it governed a perception bias and nothing
+>   else, so the axis that should notice greed was inert. (The one line in the
+>   game about print runs fired off `punch`, a field with nothing to do with
+>   print runs.) Unlimited reprints, merch lines and both anti-scalping toggles
+>   now carry sentiment too.
+>   **Free levers priced:** chase intensity, `treatmentWeight`, secret rares,
+>   serialized caps and design loudness all cost money now — all anchored so a
+>   default-length, default-loudness set is unchanged.
+>   **Dead travel removed:** `printIntensity` used `Math.max(0, creep)`, so the
+>   bottom half of the loudness slider was a no-op *and* — creep being exactly 0
+>   at the default loudness — every gimmick's creep weight was multiplied by
+>   zero. A restrained set now actively relieves nostalgia erosion.
+>   Also: graded **population** finally prices (the point of grading);
+>   sponsorships deliver the reach they always promised; a landed media hit
+>   raises sentiment (only the flop did); and a custom era name survives
+>   `openBlock`.
+> - **Set creation, redesigned collector-first** — the builder's last competitive
+>   framing is gone. The **power budget** slider became **design loudness** (same
+>   nostalgia-erosion role, reframed as presentation rather than strength);
+>   themes' "mechanics" became naming **motifs**; and signature cards lost their
+>   *mechanical* rules-text mode entirely — with it the keyword parser that scored
+>   "draw / destroy / untap / counter" — replaced by standout appeal, a printing
+>   **finish** (holo → gold etch), flavor text and art-direction notes. Block
+>   **gimmicks became optional** (a plain themed era is a first-class, cheaper
+>   choice) and the roster grew **4 → 28** across six categories. **Set size
+>   finally matters**: `sizeProfile` normalizes a set's length against its tier's
+>   DEFAULT (so default-length sets stay exactly balance-neutral) and drives the
+>   launch wave, buzz, dev cost, chase density and completion appeal — with a
+>   bloat ramp past ~⅔ of the band that reviewers pan (`personas.js`), collectors
+>   drift away from (`segments.js`), and that can trigger a
+>   `bloated_set_backlash` event. New **spotlight reveals** let you preview up to
+>   five cards pre-launch (buzz peaks at ~3, then over-revealing spoils the rip),
+>   plus a **cover character** and a whole-set **art director**.
+>   (`sets.js` `sizeProfile`/`cardAppeal`/`loudnessOf`, `content/gimmicks.js`,
+>   `blocks.js`, `SetBuilder` reorganized identity-first.) Save **v17**.
 > - **The collector/reseller pivot** — the dashboard now reads
 >   collector/reseller-first (sets & scarcity, market & packs, community &
 >   distribution, news); the competitive-only panels (Bans, Organized Play,

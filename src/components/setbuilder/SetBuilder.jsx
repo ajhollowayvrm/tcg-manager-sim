@@ -16,16 +16,19 @@ import {
   createSignatureCard,
   fillRandomCards,
   setCost,
+  sizeProfile,
   validateDraft,
   MAX_SIGNATURE_CARDS,
   MIN_SET_LENGTH,
   MAX_SET_LENGTH,
   MAX_SECRET_CARDS,
+  MAX_SPOTLIGHT_PICKS,
   maxReprintedCards,
 } from '../../game/sets.js'
 import { THEMES, getTheme } from '../../game/content/themes.js'
-import { TIERS, TIER_IDS, getTier, canUnlockAnniversary } from '../../game/blocks.js'
-import { GIMMICKS, getGimmick } from '../../game/content/gimmicks.js'
+import { ARTISTS } from '../../game/content/artists.js'
+import { TIERS, TIER_IDS, getTier, canUnlockAnniversary, gimmickIntensity } from '../../game/blocks.js'
+import { getGimmick, gimmicksByCategory, NO_GIMMICK } from '../../game/content/gimmicks.js'
 
 function formatCash(n) {
   return '$' + n.toLocaleString('en-US')
@@ -57,6 +60,9 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
   const patch = (p) => setDraft((d) => ({ ...d, ...p }))
   const tier = getTier(draft.tier)
   const theme = getTheme(draft.themeId)
+  // How this set's size reads — drives the length slider's live readout and the
+  // same numbers the sim will apply on release (see sets.js's sizeProfile).
+  const size = sizeProfile(draft)
   // The block a rider is attached to (for inheritance display).
   const attachedBlock = blocks.find((b) => b.id === draft.attachBlockId) ?? null
 
@@ -69,7 +75,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
       return {
         ...seed,
         name: d.name,
-        powerBudget: d.powerBudget,
+        designLoudness: d.designLoudness,
         printRun: d.printRun,
         pricePoint: d.pricePoint,
         rarityChase: d.rarityChase,
@@ -83,6 +89,9 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
         leadRegionName: nextTier === 'major' ? d.leadRegionName : '',
         signatureCards: d.signatureCards,
         reprintedCards: d.reprintedCards,
+        coverCharacterId: d.coverCharacterId,
+        artDirectorId: d.artDirectorId,
+        spotlight: d.spotlight,
         prerelease: d.prerelease,
         releaseEvent: d.releaseEvent,
         // A major keeps editing its theme; a rider inherits the block's theme.
@@ -91,10 +100,10 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
     })
 
   // Anniversary is reprint-centric with no block/gimmick to configure — open
-  // straight to the reprints section and collapse the (now-hidden) block one.
+  // straight to the reprints section.
   const onTierChange = (nextTier) => {
     changeTier(nextTier)
-    if (nextTier === 'anniversary') setOpen((o) => ({ ...o, reprints: true, block: false }))
+    if (nextTier === 'anniversary') setOpen((o) => ({ ...o, reprints: true }))
   }
 
   // Resolve artists to their live drifted record so the cost summary and editor
@@ -124,7 +133,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
   const addRandom = () =>
     setDraft((d) => ({
       ...d,
-      signatureCards: fillRandomCards(d.signatureCards, d.signatureCards.length + 1, getTheme(d.themeId), d.powerBudget, `${d.name}:add`, d.rarities),
+      signatureCards: fillRandomCards(d.signatureCards, d.signatureCards.length + 1, getTheme(d.themeId), d.designLoudness, `${d.name}:add`, d.rarities),
     }))
 
   const removeCard = (idx) =>
@@ -137,23 +146,29 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
   // confirmation of what's set inside without expanding.
   const presetName = PACK_PRESETS.find((p) => p.id === draft.packFormat?.preset)?.name ?? 'custom'
   const blockSummary = tier.opensBlock
-    ? `Opens a block — ${getGimmick(draft.block?.gimmickId)?.name ?? 'gimmick'}`
+    ? (getGimmick(draft.block?.gimmickId)
+        ? `Opens a block — ${getGimmick(draft.block.gimmickId).name}`
+        : 'Opens a plain themed block')
     : attachedBlock
-      ? `Rides “${attachedBlock.name}” (${attachedBlock.gimmickName})`
+      ? `Rides “${attachedBlock.name}”${attachedBlock.gimmickName ? ` (${attachedBlock.gimmickName})` : ' (plain era)'}`
       : 'No block to ride'
   const summaries = {
     block: blockSummary,
     composition: `${draft.setLength} cards, ${draft.rarities.length} rarities${draft.secretCount ? `, ${draft.secretCount} secret` : ''}`,
     booster: `${packSize(draft.packFormat)}-card ${presetName}`,
     odds: draft.oddsPublished ? 'Published' : 'Obscured',
-    products: (draft.products?.length ?? 0)
+    products: `$${draft.pricePoint.toFixed(2)} · ` + ((draft.products?.length ?? 0)
       ? ['Boosters', ...draft.products.map((p) => SKU_TYPES[p.kind]?.name.split(' ')[0] ?? p.kind)].join(' + ')
-      : 'Boosters only',
+      : 'Boosters only'),
     prerelease: draft.prerelease.enabled ? (draft.prerelease.chasePullable ? 'on, chase-pullable' : 'on') : 'off',
     releaseEvent: draft.releaseEvent?.type === 'midnight' ? 'Midnight launch'
       : draft.releaseEvent?.type === 'themed' ? 'Themed drop' : 'Standard',
     signatures: draft.signatureCards.length ? `${draft.signatureCards.length} card${draft.signatureCards.length > 1 ? 's' : ''}` : 'none',
     reprints: (draft.reprintedCards?.length ?? 0) ? `${draft.reprintedCards.length} reprinted` : 'none',
+    look: `${loudnessLabel(draft.designLoudness)}, ${draft.rarityChase >= 60 ? 'chase-heavy' : draft.rarityChase <= 40 ? 'accessible' : 'balanced'}`,
+    spotlight: (draft.spotlight?.picks?.length ?? 0)
+      ? `${draft.spotlight.picks.length} previewed`
+      : 'no previews',
   }
 
   return (
@@ -169,34 +184,19 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
               micro rides a live one. Drives the whole set's scale & effects. */}
           <TierPicker tier={draft.tier} isFirstSet={isFirstSet} anniversaryGate={anniversaryGate} onChange={onTierChange} />
 
-          {/* Block — open (major) or attach to (rider) an era-defining gimmick.
-              Anniversary sets are freestanding — no block, no gimmick — so this
-              whole section is skipped for that tier. */}
-          {(tier.opensBlock || tier.ridesBlock) && (
-            <AccordionSection title="Block & gimmick" summary={summaries.block} open={open.block} onToggle={() => toggle('block')}>
-              <BlockEditor
-                draft={draft}
-                tier={tier}
-                blocks={blocks}
-                attachedBlock={attachedBlock}
-                onPatchBlock={(b) => patch({ block: { ...draft.block, ...b } })}
-                onAttach={(id) => {
-                  const blk = blocks.find((x) => x.id === id)
-                  patch({ attachBlockId: id, themeId: blk?.themeId ?? draft.themeId })
-                }}
-              />
-            </AccordionSection>
-          )}
 
-          {/* Identity + slider layer — open by default */}
-          <AccordionSection title="Identity & set basics" open={open.identity} onToggle={() => toggle('identity')}>
+          {/* Identity & era — what this set IS. The era is part of a set's
+              identity, so the block/gimmick editor lives here rather than in a
+              section of its own; splitting them is what made the old flow read
+              mechanics-first. Open by default. */}
+          <AccordionSection title="Identity & era" summary={summaries.block} open={open.identity} onToggle={() => toggle('identity')}>
             <label className="field field--full">
               <span>Set name</span>
               <input value={draft.name} onChange={(e) => patch({ name: e.target.value })} />
             </label>
 
             <label className="field field--full">
-              <span>Theme &amp; mechanics{tier.ridesBlock && <span className="muted"> (inherited from the block)</span>}</span>
+              <span>Theme{tier.ridesBlock && <span className="muted"> (inherited from the block)</span>}</span>
               <select
                 value={draft.themeId}
                 disabled={tier.ridesBlock}
@@ -204,7 +204,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
               >
                 {THEMES.map((t) => (
                   <option key={t.id} value={t.id}>
-                    {t.name} — {t.mechanics.join(', ')}
+                    {t.name}
                   </option>
                 ))}
               </select>
@@ -217,50 +217,89 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
               )}
             </label>
 
-            <Slider
-              label="Rarity distribution"
-              value={draft.rarityChase}
-              onChange={(v) => patch({ rarityChase: v })}
-              left="Accessible" right="Chase-heavy"
-            />
-            <span className="field__note">
-              Chase-heavy trades richer on the secondary market — a set built
-              around scarce hits pays off directly in what its cards sell for.
-            </span>
-            <Slider
-              label="Print run"
-              value={draft.printRun}
-              onChange={(v) => patch({ printRun: v })}
-              left="Under-print" right="Over-print"
-            />
-            <Slider
-              label="Pack price (MSRP)"
-              value={draft.pricePoint}
-              min={2} max={12} step={0.25}
-              onChange={(v) => patch({ pricePoint: v })}
-              format={(v) => '$' + v.toFixed(2)}
-            />
-            <Slider
-              label="Power budget"
-              value={draft.powerBudget}
-              onChange={(v) => patch({ powerBudget: v })}
-              left="Tame" right="Broken"
-            />
-            <span className="field__note">
-              High power makes older cards obsolete faster — collectors feel
-              that as their older grails losing shine, not as raw deck strength.
-            </span>
+
+            {/* Cover character — the face on the box. Marketing, not a card:
+                it lends the set the character's accumulated fame. Only offered
+                once there's a roster to pick from. */}
+            {characters.length > 0 && (
+              <label className="field field--full">
+                <span>Cover character <span className="muted">(the face on the box art)</span></span>
+                <select
+                  value={draft.coverCharacterId ?? ''}
+                  onChange={(e) => patch({ coverCharacterId: e.target.value || null })}
+                >
+                  <option value="">No cover character</option>
+                  {[...characters]
+                    .sort((a, b) => (b.fame ?? 0) - (a.fame ?? 0))
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>{c.name} — fame {Math.round(c.fame ?? 0)}</option>
+                    ))}
+                </select>
+                <span className="field__note">
+                  Putting a known face on the box lends the set that character's
+                  accumulated fame. A newcomer lends almost nothing.
+                </span>
+              </label>
+            )}
+
+            {/* Art director — one artist's look across the whole set. */}
+            <label className="field field--full">
+              <span>Art director <span className="muted">(optional — sets the look of the whole set)</span></span>
+              <select
+                value={draft.artDirectorId ?? ''}
+                onChange={(e) => patch({ artDirectorId: e.target.value || null })}
+              >
+                <option value="">No art director</option>
+                {/* Identity (name/specialty) lives in the static roster; the
+                    live record carries only the drifted cost/reach. */}
+                {ARTISTS.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name} — {formatCash((artistOf(a.id)?.cost ?? a.cost) * 2)}, {a.specialty.join('/')}
+                  </option>
+                ))}
+              </select>
+              <span className="field__note">
+                Commissioning one artist across the set costs double their card
+                rate, but their eye lifts every card in it — not just the ones
+                they personally drew. Worth most when their specialty matches
+                the set's theme.
+              </span>
+            </label>
+
+            {/* The era this set belongs to: a major OPENS a block (optionally
+                introducing a gimmick), a rider ATTACHES to a live one.
+                Anniversary sets are freestanding — no block at all. */}
+            {(tier.opensBlock || tier.ridesBlock) && (
+              <BlockEditor
+                draft={draft}
+                tier={tier}
+                blocks={blocks}
+                attachedBlock={attachedBlock}
+                onPatchBlock={(b) => patch({ block: { ...draft.block, ...b } })}
+                onAttach={(id) => {
+                  const blk = blocks.find((x) => x.id === id)
+                  patch({ attachBlockId: id, themeId: blk?.themeId ?? draft.themeId })
+                }}
+              />
+            )}
           </AccordionSection>
 
           {/* Set composition — length, secret rares, and the rarity sheet */}
           <AccordionSection title="Set composition" summary={summaries.composition} open={open.composition} onToggle={() => toggle('composition')}>
             <Slider
-              label={`Set length (cards) — ${tier.name} runs ${tier.lengthRange[0]}–${tier.lengthRange[1]}`}
+              label={`Set length (cards) — ${sizeLabel(size.s)}`}
               value={draft.setLength}
               min={tier.lengthRange[0]} max={tier.lengthRange[1]} step={1}
               onChange={(v) => patch({ setLength: v })}
               left={`${tier.lengthRange[0]}`} right={`${tier.lengthRange[1]}`}
             />
+            <span className={'field__note' + (size.bloat > 0.5 ? ' is-warn' : '')}>
+              {size.bloat > 0.5
+                ? `At ${draft.setLength} cards this is a landmark ${tier.name.toLowerCase()} — a bigger launch wave and a richer dev budget, but the chase thins out across more cards and "bloated set" talk follows.`
+                : size.s <= -0.5
+                  ? `A tight ${draft.setLength} cards — dense and completable, which set-collectors love, but a smaller growth event.`
+                  : `A balanced ${tier.name.toLowerCase()} at ${draft.setLength} cards. Bigger reads as more of an event; smaller reads as more collectible.`}
+            </span>
             <Slider
               label="Secret rares (numbered above the count)"
               value={draft.secretCount}
@@ -276,6 +315,117 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
             <RarityEditor sheet={draft.rarities} onChange={(rarities) => patch({ rarities })} />
           </AccordionSection>
 
+          {/* Look & feel — the two DESIGN dials. Paired deliberately: loudness
+              and chase distribution are both about how the set presents itself,
+              which is what keeps loudness reading as a design lever rather than
+              a balance one. */}
+          <AccordionSection title="Look & feel" summary={summaries.look} open={open.look} onToggle={() => toggle('look')}>
+            <Slider
+              label="Design loudness"
+              value={draft.designLoudness}
+              onChange={(v) => patch({ designLoudness: v })}
+              left="Restrained" right="Loud"
+            />
+            <span className="field__note">
+              How hard this set's cards are pushed to outshine what came before —
+              bigger frames, splashier foils, more presentation. Loud sells now,
+              but collectors feel their older grails losing shine.
+            </span>
+            <Slider
+              label="Rarity distribution"
+              value={draft.rarityChase}
+              onChange={(v) => patch({ rarityChase: v })}
+              left="Accessible" right="Chase-heavy"
+            />
+            <span className="field__note">
+              Chase-heavy trades richer on the secondary market — a set built
+              around scarce hits pays off directly in what its cards sell for.
+            </span>
+          </AccordionSection>
+
+          {/* Signature cards */}
+          <AccordionSection
+            title={`Signature highlights (${draft.signatureCards.length}/${MAX_SIGNATURE_CARDS})`}
+            summary={summaries.signatures}
+            open={open.signatures}
+            onToggle={() => toggle('signatures')}
+          >
+            <div className="builder__sectionhead">
+              <span className="muted">Optional marquee cards.</span>
+              <div className="builder__cardbtns">
+                <button
+                  className="btn"
+                  onClick={addRandom}
+                  disabled={draft.signatureCards.length >= MAX_SIGNATURE_CARDS}
+                >
+                  ✨ Add random
+                </button>
+                <button
+                  className="btn"
+                  onClick={addCard}
+                  disabled={draft.signatureCards.length >= MAX_SIGNATURE_CARDS}
+                >
+                  + Add card
+                </button>
+              </div>
+            </div>
+            <div className="sigcards">
+              {draft.signatureCards.map((card, i) => (
+                <SignatureCardEditor
+                  key={card.id}
+                  card={card}
+                  theme={theme}
+                  artists={artists}
+                  characters={characters}
+                  rarities={draft.rarities}
+                  onChange={(next) => setCard(i, next)}
+                  onRemove={() => removeCard(i)}
+                />
+              ))}
+            </div>
+          </AccordionSection>
+
+          {/* Spotlight reveals — which cards get shown off before launch */}
+          <AccordionSection
+            title={`Spotlight & preview (${draft.spotlight?.picks?.length ?? 0}/${MAX_SPOTLIGHT_PICKS})`}
+            summary={summaries.spotlight}
+            open={open.spotlight}
+            onToggle={() => toggle('spotlight')}
+          >
+            <span className="field__note">
+              Cards you show off publicly before the set drops. A couple of
+              reveals build real anticipation — but preview most of what's worth
+              pulling and there's nothing left to find in the pack. Two or three
+              is the sweet spot.
+            </span>
+            <SpotlightPicker
+              picks={draft.spotlight?.picks ?? []}
+              signatureCards={draft.signatureCards}
+              reprints={draft.reprintedCards ?? []}
+              liveCards={liveCards}
+              block={tier.opensBlock ? draft.block : attachedBlock}
+              tier={tier}
+              onChange={(picks) => patch({ spotlight: { ...draft.spotlight, picks } })}
+            />
+          </AccordionSection>
+
+          {/* Reprint popular cards from older sets — a fan-service / hype draw */}
+          <AccordionSection
+            title={`Reprint popular cards (${draft.reprintedCards?.length ?? 0}/${maxReprintedCards(draft.tier)})`}
+            summary={summaries.reprints}
+            open={open.reprints}
+            onToggle={() => toggle('reprints')}
+          >
+            <ReprintPicker
+              reprints={draft.reprintedCards ?? []}
+              liveCards={liveCards}
+              sets={sets}
+              rarities={draft.rarities}
+              max={maxReprintedCards(draft.tier)}
+              allowUpgrade={tier.id === 'anniversary'}
+              onChange={(reprintedCards) => patch({ reprintedCards })}
+            />
+          </AccordionSection>
           {/* Booster format — how a pack is built from the rarity sheet */}
           <AccordionSection title="Booster format" summary={summaries.booster} open={open.booster} onToggle={() => toggle('booster')}>
             <span className="field__note">
@@ -312,7 +462,20 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
           </AccordionSection>
 
           {/* Product lineup — which SKUs the set ships in beyond boosters */}
-          <AccordionSection title="Product lineup" summary={summaries.products} open={open.products} onToggle={() => toggle('products')}>
+          <AccordionSection title="Print & pricing" summary={summaries.products} open={open.products} onToggle={() => toggle('products')}>
+            <Slider
+              label="Print run"
+              value={draft.printRun}
+              onChange={(v) => patch({ printRun: v })}
+              left="Under-print" right="Over-print"
+            />
+            <Slider
+              label="Pack price (MSRP)"
+              value={draft.pricePoint}
+              min={2} max={12} step={0.25}
+              onChange={(v) => patch({ pricePoint: v })}
+              format={(v) => '$' + v.toFixed(2)}
+            />
             <span className="field__note">
               Beyond boosters, ship the set as bundles, a collector box, or tins —
               each a separate product with its own price, print run, and buyer
@@ -375,7 +538,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
                 }
               />
               Chase cards pullable from prerelease product
-              <span className="muted"> (more hype &amp; early revenue, but the meta solves sooner)</span>
+              <span className="muted"> (more hype &amp; early revenue, but the surprise is spent before launch day)</span>
             </label>
           </AccordionSection>
 
@@ -410,65 +573,6 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
             </label>
           </AccordionSection>
 
-          {/* Signature cards */}
-          <AccordionSection
-            title={`Signature highlights (${draft.signatureCards.length}/${MAX_SIGNATURE_CARDS})`}
-            summary={summaries.signatures}
-            open={open.signatures}
-            onToggle={() => toggle('signatures')}
-          >
-            <div className="builder__sectionhead">
-              <span className="muted">Optional marquee cards.</span>
-              <div className="builder__cardbtns">
-                <button
-                  className="btn"
-                  onClick={addRandom}
-                  disabled={draft.signatureCards.length >= MAX_SIGNATURE_CARDS}
-                >
-                  ✨ Add random
-                </button>
-                <button
-                  className="btn"
-                  onClick={addCard}
-                  disabled={draft.signatureCards.length >= MAX_SIGNATURE_CARDS}
-                >
-                  + Add card
-                </button>
-              </div>
-            </div>
-            <div className="sigcards">
-              {draft.signatureCards.map((card, i) => (
-                <SignatureCardEditor
-                  key={card.id}
-                  card={card}
-                  theme={theme}
-                  artists={artists}
-                  characters={characters}
-                  rarities={draft.rarities}
-                  onChange={(next) => setCard(i, next)}
-                  onRemove={() => removeCard(i)}
-                />
-              ))}
-            </div>
-          </AccordionSection>
-
-          {/* Reprint popular cards from older sets — a fan-service / hype draw */}
-          <AccordionSection
-            title={`Reprint popular cards (${draft.reprintedCards?.length ?? 0}/${maxReprintedCards(draft.tier)})`}
-            summary={summaries.reprints}
-            open={open.reprints}
-            onToggle={() => toggle('reprints')}
-          >
-            <ReprintPicker
-              reprints={draft.reprintedCards ?? []}
-              liveCards={liveCards}
-              sets={sets}
-              rarities={draft.rarities}
-              max={maxReprintedCards(draft.tier)}
-              allowUpgrade={tier.id === 'anniversary'}
-              onChange={(reprintedCards) => patch({ reprintedCards })}
-            />
-          </AccordionSection>
         </div>
 
         {/* Cost summary + release */}
@@ -478,8 +582,10 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
             <CostLine label={(draft.products?.length ?? 0) ? 'Booster print' : 'Print run'} value={cost.printCost} />
             {cost.skus > 0 && <CostLine label="Other SKUs print" value={cost.skus} />}
             <CostLine label="Art commissions" value={cost.art} />
+            {cost.artDirection > 0 && <CostLine label="Art direction" value={cost.artDirection} />}
             {cost.prerelease > 0 && <CostLine label="Prerelease" value={cost.prerelease} />}
             {cost.releaseEvent > 0 && <CostLine label="Release event" value={cost.releaseEvent} />}
+            {cost.spotlight > 0 && <CostLine label="Preview campaign" value={cost.spotlight} />}
             <CostLine label="Total" value={cost.total} total />
             <div className={'costs__cash' + (goesIntoDebt ? ' is-bad' : '')}>
               On hand: {formatCash(cash)}
@@ -570,25 +676,32 @@ function BlockEditor({ draft, tier, blocks, attachedBlock, onPatchBlock, onAttac
     return (
       <div className="builder__inner">
         <span className="field__note">
-          A {tier.id} set rides a live block — it inherits the block's theme and prints
-          its {attachedBlock?.treatmentLabel ?? 'special'} chase cards, but can't mint a new gimmick.
+          A {tier.id} set rides a live block — it inherits the block's theme
+          {attachedBlock?.gimmickId
+            ? <> and prints its {attachedBlock.treatmentLabel} chase cards</>
+            : <>, which is a plain era with no chase subtype to print</>}
+          , but can't mint a new gimmick.
         </span>
         <label className="field field--full">
           <span>Ride which block?</span>
           <select value={draft.attachBlockId ?? ''} onChange={(e) => onAttach(e.target.value)}>
             {blocks.map((b) => (
               <option key={b.id} value={b.id}>
-                {b.name} — {b.gimmickName} (opened wk {b.openedWeek})
+                {b.name} — {b.gimmickName ?? 'plain era'} (opened wk {b.openedWeek})
               </option>
             ))}
           </select>
         </label>
         {attachedBlock && (
           <div className="blockcard blockcard--read">
-            <div className="blockcard__row"><span>Gimmick</span><strong>{attachedBlock.gimmickName}</strong></div>
-            <div className="blockcard__row"><span>Intensity</span><strong>{intensityLabel(attachedBlock.intensity)}</strong></div>
-            <div className="blockcard__row"><span>Chase tier</span><strong>{attachedBlock.treatmentLabel}</strong></div>
-            {g && <span className="field__note">{g.blurb}</span>}
+            <div className="blockcard__row"><span>Gimmick</span><strong>{attachedBlock.gimmickName ?? 'None — a plain themed era'}</strong></div>
+            {attachedBlock.gimmickId && (
+              <>
+                <div className="blockcard__row"><span>Intensity</span><strong>{intensityLabel(attachedBlock.intensity)}</strong></div>
+                <div className="blockcard__row"><span>Chase tier</span><strong>{attachedBlock.treatmentLabel}</strong></div>
+              </>
+            )}
+            <span className="field__note">{(g ?? NO_GIMMICK).blurb}</span>
           </div>
         )}
       </div>
@@ -599,30 +712,37 @@ function BlockEditor({ draft, tier, blocks, attachedBlock, onPatchBlock, onAttac
   const b = draft.block ?? {}
   const g = getGimmick(b.gimmickId)
   // Picking a gimmick seeds its default intensity (the player can retune).
+  // The empty option means "plain themed era" — stored as a null id.
   const pickGimmick = (id) => {
     const gm = getGimmick(id)
-    onPatchBlock({ gimmickId: id, intensity: gm?.defaultIntensity ?? 50 })
+    onPatchBlock({ gimmickId: gm ? gm.id : null, intensity: gm?.defaultIntensity ?? 50 })
   }
   return (
     <div className="builder__inner">
       <span className="field__note">
-        A Major opens a new block and introduces its gimmick — the era-defining
-        chase mechanic every set in the block rides. Blocks coexist: opening a new
-        one doesn't retire the old.
+        A Major opens a new block. It can introduce a gimmick — the era-defining
+        chase treatment every set in the block rides — or run as a plain themed
+        era with no chase subtype at all. Blocks coexist: opening a new one
+        doesn't retire the old.
       </span>
 
       <label className="field field--full">
-        <span>Gimmick</span>
+        <span>Era gimmick <span className="muted">(optional)</span></span>
         <select value={b.gimmickId ?? ''} onChange={(e) => pickGimmick(e.target.value)}>
-          {GIMMICKS.map((gm) => (
-            <option key={gm.id} value={gm.id}>{gm.name} — {gm.treatmentLabel} chase</option>
+          <option value="">{NO_GIMMICK.name}</option>
+          {gimmicksByCategory().map(({ category, gimmicks }) => (
+            <optgroup key={category.id} label={category.name}>
+              {gimmicks.map((gm) => (
+                <option key={gm.id} value={gm.id}>{gm.name} — {gm.treatmentLabel} chase</option>
+              ))}
+            </optgroup>
           ))}
         </select>
-        {g && <span className="field__note">{g.blurb}</span>}
+        <span className="field__note">{(g ?? NO_GIMMICK).blurb}</span>
       </label>
 
       <label className="field field--full">
-        <span>Block name <span className="muted">(blank uses the gimmick name)</span></span>
+        <span>Block name <span className="muted">{g ? '(blank uses the gimmick name)' : '(name this era)'}</span></span>
         <input
           value={b.gimmickName ?? ''}
           placeholder={g?.name ?? 'Block name'}
@@ -630,18 +750,42 @@ function BlockEditor({ draft, tier, blocks, attachedBlock, onPatchBlock, onAttac
         />
       </label>
 
-      <Slider
-        label={`Chase intensity — ${intensityLabel(b.intensity ?? 50)}`}
-        value={b.intensity ?? 50}
-        onChange={(v) => onPatchBlock({ intensity: v })}
-        left="Subtle" right="Maximal chase"
-      />
-      <span className="field__note">
-        A subtle era keeps its {g?.treatmentLabel ?? 'special'} chase cards rare and
-        understated; maximal chase mints them denser and richer.
-      </span>
+      {/* Intensity only means anything when there's a chase subtype to tune. */}
+      {g && (
+        <>
+          <Slider
+            label={`Chase intensity — ${intensityLabel(b.intensity ?? g.defaultIntensity)}`}
+            value={b.intensity ?? g.defaultIntensity}
+            onChange={(v) => onPatchBlock({ intensity: v })}
+            left="Subtle" right="Maximal chase"
+          />
+          <span className="field__note">
+            A subtle era keeps its {g.treatmentLabel} chase cards rare and
+            understated; maximal chase mints them denser and richer.
+          </span>
+        </>
+      )}
     </div>
   )
+}
+
+// A short word for where the design-loudness slider sits.
+function loudnessLabel(v) {
+  if (v <= 25) return 'Restrained'
+  if (v < 45) return 'Understated'
+  if (v < 60) return 'Balanced'
+  if (v < 80) return 'Bold'
+  return 'Loud'
+}
+
+// A short word for where the set-length slider sits in its tier's band.
+// Mirrors intensityLabel below.
+function sizeLabel(s) {
+  if (s <= -0.6) return 'Tight — completable'
+  if (s <= -0.2) return 'Lean'
+  if (s < 0.2) return 'Standard for the tier'
+  if (s < 0.6) return 'Large'
+  return 'Landmark expansion — bloat risk'
 }
 
 // A short word for where the chase-intensity slider sits.
@@ -651,6 +795,89 @@ function intensityLabel(intensity) {
   if (intensity < 55) return 'Balanced'
   if (intensity < 75) return 'Rich'
   return 'Maximal chase — pure collector bait'
+}
+
+// Pick which of this set's cards get shown off publicly before launch.
+// Candidates come from the three groups that exist at design time and can be
+// resolved to real cards at release (see sets.js's resolveSpotlightIds):
+// signature highlights, the block's minted chase cards, and chosen reprints.
+// Picks are stored as { kind, ref } where `ref` is the index within its group,
+// so a pick survives renaming a card but is dropped if that card goes away.
+function SpotlightPicker({ picks, signatureCards, reprints, liveCards, block, tier, onChange }) {
+  const full = picks.length >= MAX_SPOTLIGHT_PICKS
+  const has = (kind, ref) => picks.some((p) => p.kind === kind && p.ref === ref)
+  const toggle = (kind, ref) => {
+    if (has(kind, ref)) onChange(picks.filter((p) => !(p.kind === kind && p.ref === ref)))
+    else if (!full) onChange([...picks, { kind, ref }])
+  }
+
+  // How many chase cards this block will mint, previewed with the same formula
+  // release uses (blocks.js's mintTreatmentCards). A plain era mints none.
+  const treatmentCount = block?.gimmickId
+    ? Math.max(0, Math.round(tier.treatmentBase * (0.6 + gimmickIntensity(getGimmick(block.gimmickId), block.intensity ?? getGimmick(block.gimmickId)?.defaultIntensity).treatment)))
+    : 0
+  const treatmentLabel = getGimmick(block?.gimmickId)?.treatmentLabel ?? 'Era'
+
+  const groups = [
+    {
+      kind: 'signature',
+      title: 'Signature highlights',
+      empty: 'No signature highlights designed yet.',
+      items: signatureCards.map((c, i) => ({ ref: i, label: c.name || `Signature card ${i + 1}` })),
+    },
+    {
+      kind: 'treatment',
+      // With no gimmick there's no treatment label to name the group by.
+      title: block?.gimmickId ? `${treatmentLabel} chase cards` : 'Era chase cards',
+      empty: block?.gimmickId
+        ? 'This block mints no chase cards at that intensity.'
+        : 'A plain themed era has no chase subtype to preview.',
+      items: Array.from({ length: treatmentCount }, (_, i) => ({ ref: i, label: `${treatmentLabel} chase #${i + 1}` })),
+    },
+    {
+      kind: 'reprint',
+      title: 'Reprinted favorites',
+      empty: 'No reprints chosen yet.',
+      items: (reprints ?? []).map((r, i) => ({
+        ref: i,
+        label: liveCards.find((c) => c.id === r.cardId)?.name ?? `Reprint ${i + 1}`,
+      })),
+    },
+  ]
+
+  return (
+    <div className="spotlight">
+      {groups.map((group) => (
+        <div key={group.kind} className="spotlight__group">
+          <h4 className="spotlight__title">{group.title}</h4>
+          {group.items.length === 0 ? (
+            <p className="panel__empty">{group.empty}</p>
+          ) : (
+            group.items.map((item) => (
+              <label
+                key={item.ref}
+                className={'check' + (!has(group.kind, item.ref) && full ? ' is-disabled' : '')}
+              >
+                <input
+                  type="checkbox"
+                  checked={has(group.kind, item.ref)}
+                  disabled={!has(group.kind, item.ref) && full}
+                  onChange={() => toggle(group.kind, item.ref)}
+                />
+                {item.label}
+              </label>
+            ))
+          )}
+        </div>
+      ))}
+      {full && (
+        <span className="field__note is-warn">
+          That's every reveal you can run — and at this many, fans start saying
+          the previews gave the whole set away.
+        </span>
+      )}
+    </div>
+  )
 }
 
 // Pick popular cards from older sets to reprint into this new set. Reprinting a

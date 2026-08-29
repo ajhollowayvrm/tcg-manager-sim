@@ -11,7 +11,7 @@ import { defaultRaritySheet, getRarity, pickRarity, validateRaritySheet, default
 import { defaultProducts, finalizeProducts, productPrintCost, validateProducts, DEFAULT_CHANNELS } from './products.js'
 import { makePromoCard } from './promos.js'
 import { getTier, openBlock, refreshBlockWarp, mintTreatmentCards, mintAnniversaryCards, canUnlockAnniversary } from './blocks.js'
-import { getGimmick } from './content/gimmicks.js'
+import { getGimmick, NO_GIMMICK } from './content/gimmicks.js'
 import { createCharacter, famePopBonus, getTreatment, recordAppearance } from './characters.js'
 
 export const MIN_SIGNATURE_CARDS = 0 // signature highlights are optional now
@@ -19,6 +19,31 @@ export const MAX_SIGNATURE_CARDS = 15
 export const MIN_SET_LENGTH = 1
 export const MAX_SET_LENGTH = 250
 export const MAX_SECRET_CARDS = 12
+export const MAX_SPOTLIGHT_PICKS = 5
+export const SPOTLIGHT_COST_EACH = 2_000
+
+// How a signature card is PRINTED. Purely a presentation/production choice — a
+// richer finish makes the card stand out more and costs more to commission.
+// (Distinct from characters.js's TREATMENTS, which price a character's fame.)
+export const FINISHES = [
+  { id: 'standard', name: 'Standard', appealBonus: 0, costMul: 1, blurb: 'A normal printing.' },
+  { id: 'holo', name: 'Holofoil', appealBonus: 6, costMul: 1.1, blurb: 'Foil in the art box — the classic chase look.' },
+  { id: 'fullart', name: 'Full art', appealBonus: 12, costMul: 1.35, blurb: 'The art breaks the frame and fills the card.' },
+  { id: 'textured', name: 'Textured foil', appealBonus: 16, costMul: 1.5, blurb: 'You can feel the art with your thumb.' },
+  { id: 'goldetch', name: 'Gold etch', appealBonus: 20, costMul: 1.8, blurb: 'Etched gold. Unmistakable in a binder.' },
+]
+
+export function getFinish(id) {
+  return FINISHES.find((f) => f.id === id) ?? FINISHES[0]
+}
+
+// Design loudness, formerly `powerBudget`. Reads either key so a set record
+// built before the rename (or a reprint reconstructing a draft from one) still
+// resolves mid-session. Saves themselves are handled by the persistence VERSION
+// bump, not this — see persistence.js.
+export function loudnessOf(x) {
+  return x?.designLoudness ?? x?.powerBudget ?? 50
+}
 
 // A fresh draft the player edits in the set-creation panel.
 //
@@ -40,15 +65,24 @@ export function createDraft(setNumber, tier = 'major', liveBlocks = []) {
     // Major: the block this set OPENS. Defaults seed the first gimmick; the
     // builder lets the player pick/tune. Ignored for minors/micros.
     block: {
-      gimmickId: 'mega',
+      // No gimmick by default — a plain themed era is a legitimate (and cheaper)
+      // way to open a block. The builder offers the roster as an opt-in.
+      gimmickId: null,
       gimmickName: '', // blank → falls back to the gimmick's own name
-      intensity: getGimmick('mega')?.defaultIntensity ?? 40, // 0 subtle .. 100 maximal chase
+      // null until a gimmick is picked — intensity is meaningless without one,
+      // and leaving it null lets openBlock fall back to whichever gimmick ends
+      // up selected DEFAULT intensity rather than a generic midpoint.
+      intensity: null, // 0 subtle .. 100 maximal chase
     },
     // Minor/micro: the live block this set ATTACHES to (rides). null for a major.
     attachBlockId: attach?.id ?? null,
 
     // Slider layer (the bulk of the set).
-    powerBudget: 50, // 0–100: strength ceiling
+    // 0–100: how hard this set's cards are pushed to outshine what came before —
+    // bigger frames, splashier foils, more presentation. A DESIGN dial, not a
+    // balance one: loud sells now, but it ages the back catalogue (see the
+    // nostalgia-erosion creep in releaseSet).
+    designLoudness: 50,
     rarityChase: t.ridesBlock ? 70 : 50, // riders lean chase-heavy by default
     printRun: 50, // 0–100: under-print ↔ over-print
     pricePoint: 4.5, // MSRP of a sealed pack, dollars
@@ -83,6 +117,22 @@ export function createDraft(setNumber, tier = 'major', liveBlocks = []) {
     // Each: { cardId } referencing a live card; resolved on release.
     reprintedCards: [],
 
+    // The set's FACE: one existing roster character on the box art. Purely a
+    // marketing choice — it doesn't add a card, it lends the set that
+    // character's accumulated fame. null = no cover character.
+    coverCharacterId: null,
+
+    // An art director commissioned across the WHOLE set rather than card by
+    // card. Costs double their normal commission, but their specialty match
+    // lifts every generated card instead of only the ones they drew.
+    artDirectorId: null,
+
+    // Spotlight reveals: cards shown off publicly ahead of launch. Each pick is
+    // { kind: 'signature'|'reprint'|'treatment', ref } — resolved to concrete
+    // card ids at release. A few reveals build anticipation; revealing
+    // everything spoils the rip (see releaseSet's diminishing curve).
+    spotlight: { picks: [] },
+
     // Prerelease: the one real sub-decision.
     prerelease: { enabled: false, chasePullable: false },
 
@@ -113,9 +163,12 @@ export function createSignatureCard(n, rarityId = 'rare') {
     name: `Signature Card ${n}`,
     rarity: rarityId,
     artistId: null,
-    mode: 'flavor', // 'flavor' | 'mechanical'
-    power: 50, // flavor-mode overall power rating (0–100)
-    rulesText: '', // mechanical-mode rules the sim parses (lightly, for now)
+    // 0–100: how much this card stands out on a shelf — the designer's own dial.
+    // Lifted by the printing finish and a written flavor line (see cardAppeal).
+    appeal: 50,
+    finish: 'standard', // printing finish — see FINISHES
+    flavorText: '', // the italic line under the art. Cosmetic, small appeal nudge.
+    artNotes: '', // art-direction brief for the commission. Cosmetic; may match theme.
     // Optional: this card FEATURES a character (see characters.js) instead of
     // being a one-off. `characterId` references an EXISTING roster entry.
     // `newCharacterName`/`newCharacterSpecies` request a BRAND-NEW character —
@@ -141,13 +194,13 @@ export function createSignatureCard(n, rarityId = 'rare') {
 // the rest with themed-random cards and tweak any of them afterward.
 
 // Title fragments for procedural card names, blended with the theme's own
-// mechanics so a Dragons set yields "Scorch Warden", a Cyber set "Uplink Spec".
+// motifs so a Dragons set yields "Scorch Warden", a Cyber set "Uplink Spec".
 const NAME_PREFIX = ['Elder', 'Grand', 'Feral', 'Hollow', 'Radiant', 'Dread', 'Iron', 'Wild', 'Lost', 'First', 'Crimson', 'Gilded']
 const NAME_NOUN = ['Warden', 'Herald', 'Sovereign', 'Specter', 'Champion', 'Oracle', 'Reaver', 'Sentinel', 'Avatar', 'Colossus', 'Vanguard', 'Harbinger']
 
 function randomCardName(theme, rng) {
-  // Sometimes lead with one of the theme's mechanics for flavor cohesion.
-  const lead = theme && rng() < 0.5 ? pickFrom(theme.mechanics, rng) : pickFrom(NAME_PREFIX, rng)
+  // Sometimes lead with one of the theme's motifs for flavor cohesion.
+  const lead = theme?.motifs?.length && rng() < 0.5 ? pickFrom(theme.motifs, rng) : pickFrom(NAME_PREFIX, rng)
   return `${lead} ${pickFrom(NAME_NOUN, rng)}`
 }
 
@@ -156,26 +209,27 @@ function pickFrom(pool, rng) {
 }
 
 // A themed-random signature card. Picks a rarity from the upper end of the set's
-// sheet (signatures are the chase highlights), power scattered around the budget.
-export function makeRandomCard(n, theme, powerBudget, rng, sheet = defaultRaritySheet()) {
+// sheet (signatures are the chase highlights), appeal scattered around the set's
+// design-loudness dial.
+export function makeRandomCard(n, theme, loudness, rng, sheet = defaultRaritySheet()) {
   const card = createSignatureCard(n)
   card.name = randomCardName(theme, rng)
   // Signatures lean rare: pick from the top half of the sheet by value tier.
   const ranked = [...sheet].sort((a, b) => b.valueTier - a.valueTier)
   const top = ranked.slice(0, Math.max(1, Math.ceil(ranked.length / 2)))
   card.rarity = top[Math.floor(rng() * top.length) % top.length].id
-  card.power = clamp(Math.round(powerBudget + range(rng, -18, 18)), 5, 100)
+  card.appeal = clamp(Math.round(loudness + range(rng, -18, 18)), 5, 100)
   return card
 }
 
 // Append randomly-generated signature highlights up to `target`, keeping the
 // player's hand-made ones. Caps at MAX_SIGNATURE_CARDS.
-export function fillRandomCards(existing, target, theme, powerBudget, seedKey, sheet = defaultRaritySheet()) {
+export function fillRandomCards(existing, target, theme, loudness, seedKey, sheet = defaultRaritySheet()) {
   const rng = makeRng(hashSeed(`fill:${seedKey}:${existing.length}:${target}`))
   const out = [...existing]
   const cap = Math.min(target, MAX_SIGNATURE_CARDS)
   let n = nextCardIndex(out)
-  while (out.length < cap) out.push(makeRandomCard(n++, theme, powerBudget, rng, sheet))
+  while (out.length < cap) out.push(makeRandomCard(n++, theme, loudness, rng, sheet))
   return out
 }
 
@@ -187,6 +241,45 @@ function nextCardIndex(cards) {
     if (m) max = Math.max(max, Number(m[1]))
   }
   return max + 1
+}
+
+// ---- Set size -------------------------------------------------------------
+
+// Where this set sits in its TIER'S OWN size band, normalized to -1 (tightest)
+// .. +1 (largest). Everything size-related derives from this one number so the
+// tiers stay comparable: a 35-card micro is "big for a micro" exactly the way a
+// 250-card major is "big for a major".
+//
+// The shape we're after: a bigger set is a bigger EVENT (more news, a bigger
+// discovery wave, a richer dev budget) — but past roughly two-thirds of the band
+// it starts to read as BLOAT: the chase thins out across more cards, the set
+// stops being completable, and reviewers say so. A tight set is the inverse:
+// a weaker growth event, but dense, completable, and beloved by collectors.
+export function sizeProfile(draft) {
+  const tier = getTier(draft?.tier ?? 'major')
+  const [lo, hi] = tier.lengthRange
+  const def = clamp(tier.defaultLength, lo, hi)
+  const len = clamp(Math.round(draft?.setLength ?? def), lo, hi)
+  // Normalized around the tier's DEFAULT length, not the band midpoint: -1 at
+  // the floor, 0 at the default, +1 at the ceiling. The two halves are scaled
+  // independently because the bands aren't symmetric (a major defaults to 120
+  // in a 90–250 band). This matters — anchoring at the default is what keeps a
+  // default-length set exactly balance-neutral against the pre-size-math game.
+  const s = len === def
+    ? 0
+    : len < def
+      ? -clamp((def - len) / Math.max(1, def - lo), 0, 1)
+      : clamp((len - def) / Math.max(1, hi - def), 0, 1)
+  return {
+    len,
+    s,
+    eventScale: 1 + 0.35 * s, // 0.65× .. 1.35× the discovery wave
+    sizeBuzz: 10 * s, // is this release news? -10 .. +10
+    bloat: clamp((s - 0.35) / 0.65, 0, 1), // 0 until ~68% of the band, then ramps
+    chaseDensity: 1 / (1 + 0.5 * Math.max(0, s)), // hits per card opened: 1.0 .. 0.67
+    completionAppeal: 1 - 0.12 * s, // 1.12 (tight) .. 0.88 (sprawling)
+    lengthMul: clamp(len / tier.defaultLength, 0.5, 2), // vs the tier's default
+  }
 }
 
 // ---- Cost ----------------------------------------------------------------
@@ -202,19 +295,60 @@ export function setCost(draft, artistOf = getArtist) {
   // leaner one costs a touch less. Measured relative to Classic so the default
   // pack is cost-neutral. Light: a hit-heavy pack runs ~+15-20% on the print line.
   const richness = packRichnessDelta(draft.packFormat)
-  const printCost = Math.round((20_000 + (draft.printRun / 100) * 180_000) * (1 + richness * 0.25))
-  // Development cost floors by tier: a major is a full expansion (designs a new
-  // gimmick); minors/micros are cheaper, smaller efforts. Defaults to the major
-  // floor so old call sites / tierless drafts are unchanged.
-  const dev = getTier(draft.tier ?? 'major').devCostFloor
+  const size = sizeProfile(draft)
+  // A bigger set needs more plates and sheets — a modest print-line premium on
+  // top of the run size itself.
+  const printCost = Math.round(
+    (20_000 + (draft.printRun / 100) * 180_000) * (1 + richness * 0.25) * (0.85 + 0.15 * size.lengthMul),
+  )
+  // Development scales with three things: the tier's floor, how hard THIS
+  // gimmick is to design (a die-cut era costs real money; a plain themed era is
+  // the cheapest thing you can ship), and how many cards actually have to be
+  // designed. Calibrated so a tier's DEFAULT length with a 1.0× gimmick lands
+  // exactly on the old flat floor — existing balance is preserved.
+  const gimmick = draft.block?.gimmickId ? getGimmick(draft.block.gimmickId) : null
+  const gimmickMul = gimmick?.devCostMul ?? (draft.block?.gimmickId ? 1 : NO_GIMMICK.devCostMul)
+  // Chase intensity is NOT free. It scales how many treatment cards the era
+  // mints and how rich they are (blocks.js's gimmickIntensity), so it has to
+  // scale their design cost too — otherwise cranking it to maximum is strictly
+  // dominant. Weighted by the gimmick's own treatmentWeight for the same reason.
+  const intensity = clamp(draft.block?.intensity ?? gimmick?.defaultIntensity ?? 50, 0, 100)
+  const chaseMul = gimmick ? 1 + (intensity / 100) * (gimmick.treatmentWeight ?? 1) * 0.35 : 1
+  // Louder presentation costs more to produce: bigger frames, more foil, more
+  // art direction across the whole set. Anchored at 1.0 for the default
+  // loudness of 50, so this doesn't silently reprice every existing set.
+  const loudnessMul = 0.85 + (loudnessOf(draft) / 100) * 0.3
+  // Secret rares are extra cards to design and extra plates to print. They used
+  // to be entirely free — and, being excluded from sizeProfile, couldn't even
+  // create bloat, so the dial was pure upside. Charged RELATIVE to the tier's
+  // own default, so a stock set is unchanged and only padding costs extra.
+  const tierDef = getTier(draft.tier ?? 'major')
+  const secretBase = tierDef.ridesBlock ? 3 : 2 // mirrors createDraft's seed
+  const secretMul = 1 + (clamp(draft.secretCount ?? 0, 0, MAX_SECRET_CARDS) - secretBase) * 0.02
+  const dev = Math.round(
+    tierDef.devCostFloor
+    * gimmickMul * chaseMul * loudnessMul * secretMul
+    * (0.55 + 0.45 * size.lengthMul),
+  )
   const art = draft.signatureCards.reduce((sum, c) => {
     const artist = c.artistId ? artistOf(c.artistId) : null
     if (!artist) return sum
     // Featuring an existing character costs more at a richer treatment tier —
     // that's the price of leaning on the character's accumulated pull.
     const mul = c.characterId ? getTreatment(c.treatment).costMul : 1
-    return sum + artist.cost * mul
+    // A richer printing finish costs more to produce, too.
+    return sum + artist.cost * mul * getFinish(c.finish).costMul
   }, 0)
+  // Serialized chase cards: hand-numbering a capped run is a real production
+  // line, and the scarcer the cap the more it costs per card. Previously free —
+  // a /1 was a 15× singles multiplier (market.js) that cost nothing to print.
+  const serialization = draft.signatureCards.reduce((sum, c) => {
+    if (!c.serialCap) return sum
+    return sum + Math.round(4_000 + 60_000 / Math.max(1, c.serialCap))
+  }, 0)
+  // An art director is a whole-set commission — double their card rate.
+  const director = draft.artDirectorId ? artistOf(draft.artDirectorId) : null
+  const artDirection = director ? Math.round(director.cost * 2) : 0
   const prerelease = draft.prerelease.enabled ? 15_000 : 0
   // A midnight launch pays for the event itself; a themed drop is a curated
   // presentation angle, not extra staffing — free.
@@ -222,7 +356,12 @@ export function setCost(draft, artistOf = getArtist) {
   // Each EXTRA SKU (bundle/spc/tin) costs its own print run. Boosters are already
   // covered by printCost above, so a boosters-only set's total is unchanged.
   const skus = (draft.products ?? []).reduce((sum, p) => sum + productPrintCost(p), 0)
-  return { dev, printCost, art, prerelease, releaseEvent, skus, total: dev + printCost + art + prerelease + releaseEvent + skus }
+  // Previewing cards ahead of launch buys placement — a real, if modest, spend.
+  const spotlight = Math.min((draft.spotlight?.picks?.length ?? 0), MAX_SPOTLIGHT_PICKS) * SPOTLIGHT_COST_EACH
+  return {
+    dev, printCost, art, artDirection, serialization, prerelease, releaseEvent, skus, spotlight,
+    total: dev + printCost + art + artDirection + serialization + prerelease + releaseEvent + skus + spotlight,
+  }
 }
 
 // ---- Validation ----------------------------------------------------------
@@ -249,8 +388,10 @@ export function validateDraft(draft, ctx = {}) {
       errors.push('The block this set rides no longer exists — pick another.')
     }
   }
-  if (tier.opensBlock && draft.block && !getGimmick(draft.block.gimmickId)) {
-    errors.push('Pick a gimmick for this block.')
+  // A gimmick is OPTIONAL — a block opened without one is a plain themed era.
+  // Only a non-null id that doesn't resolve is an error (stale saved draft).
+  if (tier.opensBlock && draft.block?.gimmickId && !getGimmick(draft.block.gimmickId)) {
+    errors.push('That gimmick no longer exists — pick another, or run a plain themed era.')
   }
   if (tier.id === 'anniversary') {
     const gate = canUnlockAnniversary({ franchise: ctx.franchise, setsShipped: ctx.setsShipped })
@@ -267,6 +408,9 @@ export function validateDraft(draft, ctx = {}) {
   if (draft.signatureCards.length > MAX_SIGNATURE_CARDS) {
     errors.push(`No more than ${MAX_SIGNATURE_CARDS} signature highlights.`)
   }
+  if ((draft.spotlight?.picks?.length ?? 0) > MAX_SPOTLIGHT_PICKS) {
+    errors.push(`No more than ${MAX_SPOTLIGHT_PICKS} spotlight reveals.`)
+  }
   errors.push(...validateRaritySheet(draft.rarities))
   errors.push(...validatePackFormat(draft.packFormat))
   errors.push(...validateProducts(draft.products))
@@ -282,15 +426,30 @@ export function validateDraft(draft, ctx = {}) {
 // collector weight comes from the set's sheet (valueTier). `power` is the card's
 // punch seed (signatures carry an explicit one; bulk cards get a low/random
 // one so the occasional sleeper can still pop).
+// Does the art-direction brief share a word with the theme's own tags? Cheap
+// bag-of-words check — the note is free text, so this stays forgiving.
+function artNotesMatchTheme(notes, theme) {
+  if (!notes?.trim() || !theme?.tags?.length) return false
+  const words = notes.toLowerCase().split(/[^a-z]+/).filter(Boolean)
+  return theme.tags.some((t) => words.includes(t.toLowerCase()))
+}
+
 function popFactors(card, draft, theme, sheet, rng, artistOf = getArtist, characters = []) {
-  const power = card.mode === 'flavor' ? card.power : estimatePowerFromRules(card.rulesText)
+  const standout = cardAppeal(card)
   const artist = card.artistId ? artistOf(card.artistId) : null
   const rarityTier = getRarity(sheet, card.rarity).valueTier
   const baseArt = artist ? artist.reach : 25
   // Theme tags matching the artist's specialty elevate the card.
-  const themeMatch = artist && theme.tags.some((t) => artist.specialty.includes(t)) ? 20 : 0
-  const artAppeal = clamp(baseArt + themeMatch + range(rng, -8, 8), 0, 100)
-  const hype = clamp((power + artAppeal) / 2 + range(rng, -12, 12), 0, 100)
+  // An art DIRECTOR sets the look of the whole set, so their specialty match
+  // applies to every card — not just the ones they personally illustrated.
+  const director = draft?.artDirectorId ? artistOf(draft.artDirectorId) : null
+  const directed = director && theme.tags.some((t) => director.specialty.includes(t)) ? 12 : 0
+  const themeMatch = (artist && theme.tags.some((t) => artist.specialty.includes(t)) ? 20 : 0) + directed
+  // An art-direction brief that actually leans into the set's theme reads as a
+  // more cohesive commission — the same idea as the artist specialty match.
+  const notesMatch = artNotesMatchTheme(card.artNotes, theme) ? 6 : 0
+  const artAppeal = clamp(baseArt + themeMatch + notesMatch + range(rng, -8, 8), 0, 100)
+  const hype = clamp((standout + artAppeal) / 2 + range(rng, -12, 12), 0, 100)
 
   // Featuring an existing character bolts on a baseline draw from its
   // accumulated fame — "a new Pikachu card gets built-in demand no matter how
@@ -299,21 +458,26 @@ function popFactors(card, draft, theme, sheet, rng, artistOf = getArtist, charac
   const fameBonus = character ? famePopBonus(character.fame, card.treatment) : 0
 
   return {
-    punch: clamp(power + range(rng, -10, 10), 0, 100),
+    // `punch` is how loudly this card reads next to its shelfmates — a
+    // presentation signal, not a power level. (Name kept: personas.js and
+    // events.js read it.)
+    punch: clamp(standout + range(rng, -10, 10), 0, 100),
     rarity: rarityTier, // 0–100 collector value tier from the set's sheet
     artAppeal: clamp(artAppeal + fameBonus, 0, 100),
     hype: clamp(hype + fameBonus, 0, 100),
   }
 }
 
-// Very light "parser": longer/keyword-heavier rules text reads as stronger.
-// A real balance pass comes later; this just gives mechanical mode teeth.
-function estimatePowerFromRules(text) {
-  if (!text) return 40
-  const KEYWORDS = ['draw', 'destroy', 'free', 'extra', 'double', 'search', 'discard', 'untap', 'counter', 'haste']
-  const lower = text.toLowerCase()
-  const hits = KEYWORDS.filter((k) => lower.includes(k)).length
-  return clamp(45 + hits * 9 + Math.min(text.length / 20, 15), 0, 100)
+// A signature card's STANDOUT APPEAL — how loudly it reads next to its
+// shelfmates. The designer's own dial, lifted by the printing finish and by
+// having a written flavor line (a card people quote reads louder than one they
+// don't). Replaces the old rules-text keyword parser: nothing in this game is
+// designed around what a card DOES, only around how much it's wanted.
+export function cardAppeal(card) {
+  const base = card?.appeal ?? card?.power ?? 50 // ?? power: in-session legacy records
+  const finish = getFinish(card?.finish).appealBonus
+  const flavor = card?.flavorText?.trim() ? 4 : 0
+  return clamp(base + finish + flavor, 0, 100)
 }
 
 // Build one market-ready card record from a "spec" (id/name/rarity/number + an
@@ -371,7 +535,8 @@ export function generateCards(draft, setId, week, artistOf = getArtist, characte
   sigs.slice(0, length).forEach((sig, i) => {
     specs.push({
       id: `c${i + 1}`, name: sig.name, rarity: sig.rarity, number: `${i + 1}/${length}`,
-      artistId: sig.artistId, mode: sig.mode, power: sig.power, rulesText: sig.rulesText,
+      artistId: sig.artistId,
+      appeal: sig.appeal ?? sig.power, finish: sig.finish, flavorText: sig.flavorText, artNotes: sig.artNotes,
       characterId: sig.characterId ?? null, treatment: sig.treatment ?? 'debut',
       serialCap: sig.serialCap ?? null,
       signature: true,
@@ -380,13 +545,13 @@ export function generateCards(draft, setId, week, artistOf = getArtist, characte
 
   // 2) Fill the rest of the numbered set with themed-random cards, rarity by the
   //    set's pull weights. Bulk cards get a modest random punch so a
-  //    sleeper can still spike, but they're not balanced around the power budget.
+  //    sleeper can still spike, but they don't track the loudness dial.
   for (let i = specs.length; i < length; i++) {
     const rarityId = nonSecret.length ? pickRarity(nonSecret, rng) : (sheet[0]?.id ?? 'common')
     specs.push({
       id: `c${i + 1}`, name: randomCardName(theme, rng), rarity: rarityId,
-      number: `${i + 1}/${length}`, mode: 'flavor',
-      power: clamp(Math.round(range(rng, 15, 70)), 0, 100), // bulk: low-to-mid, sleepers possible
+      number: `${i + 1}/${length}`,
+      appeal: clamp(Math.round(range(rng, 15, 70)), 0, 100), // bulk: low-to-mid, sleepers possible
     })
   }
 
@@ -398,8 +563,8 @@ export function generateCards(draft, setId, week, artistOf = getArtist, characte
     const num = length + s + 1
     specs.push({
       id: `s${s + 1}`, name: randomCardName(theme, rng), rarity: rarityId,
-      number: `${num}/${length}`, secret: true, mode: 'flavor',
-      power: clamp(Math.round(range(rng, 20, 80)), 0, 100),
+      number: `${num}/${length}`, secret: true,
+      appeal: clamp(Math.round(range(rng, 20, 80)), 0, 100),
     })
   }
 
@@ -423,7 +588,7 @@ function countRidersSinceLastMajor(sets) {
 
 // Applies a released set to the world: deducts cost, generates cards, seeds the
 // set's own buzz, and nudges the collectors' nostalgia-erosion dial by the
-// release's power budget. Returns { sets, cards, cash, printIntensity, set }
+// release's design loudness. Returns { sets, cards, cash, printIntensity, set }
 // patches for the reducer.
 export function releaseSet(state, draft) {
   const setId = `set_${state.sets.length + 1}`
@@ -432,6 +597,8 @@ export function releaseSet(state, draft) {
   const artistOf = (id) => currentArtist(state, id)
   const tier = getTier(draft.tier ?? 'major')
   const cost = setCost(draft, artistOf)
+  // How this set's SIZE reads: event scale, chase density, and bloat.
+  const size = sizeProfile(draft)
 
   // Block resolution. A MAJOR opens a fresh block (with the player's gimmick spec);
   // a MINOR/MICRO rides a live block and INHERITS its theme. Blocks coexist — a new
@@ -488,7 +655,7 @@ export function releaseSet(state, draft) {
     blockId: block?.id ?? null,
     themeId,
     theme: theme.name,
-    powerBudget: draft.powerBudget,
+    designLoudness: loudnessOf(draft),
     rarityChase: draft.rarityChase,
     printRun: draft.printRun,
     price: draft.pricePoint,
@@ -497,6 +664,11 @@ export function releaseSet(state, draft) {
     packFormat: draft.packFormat, // booster structure (slots) for ripping/display
     setLength: draft.setLength,
     secretCount: draft.secretCount,
+    // How this set's size reads to the world — persisted so the weekly
+    // reaction engines (personas/segments/events) can judge it long after
+    // release without re-deriving it from the tier band.
+    bloat: size.bloat,
+    sizeScore: size.s,
     prerelease: draft.prerelease,
     releasedWeek: state.week,
     // Sealed economy. `products` is the full SKU lineup (booster line first, then
@@ -512,12 +684,12 @@ export function releaseSet(state, draft) {
     oddsPublishedWeek: draft.oddsPublished ? state.week : null,
   }
 
-  // Design loudness: a stronger power budget nudges the collectors' nostalgia-
+  // Design loudness: a louder set nudges the collectors' nostalgia-
   // erosion dial up a little — louder modern design, missed by the folks who
   // love the old stuff (see printIntensity, read by segments.js). The block
   // gimmick's `creep` scales how loud THIS gimmick reads (Mega louder than
   // Phantasmal). Only pushes up on release; it decays on its own each week.
-  const creep = (draft.powerBudget - 50) / 5 // -10..+10
+  const creep = (loudnessOf(draft) - 50) / 5 // -10..+10
   const blockCreep = block?.creep ?? 1
 
   // Card reprints: popular cards from older sets re-issued into this one. They're
@@ -529,10 +701,23 @@ export function releaseSet(state, draft) {
     cards, state.cards, artistOf,
   )
 
-  // Nostalgia-erosion dial: only pushed UP by a high-power-budget release
-  // (scaled by the block gimmick's creep weight); it decays on its own weekly
-  // and can be relieved by pulling a hot set from print (bans.js).
-  const printIntensity = clamp((state.printIntensity ?? 40) + Math.max(0, creep) * blockCreep * 0.5, 0, 100)
+  // Nostalgia-erosion dial. A LOUD release pushes it up (scaled by the block
+  // gimmick's own creep weight — a Mega era reads louder than a Throwback one);
+  // a RESTRAINED one actively pulls it back down.
+  //
+  // The downward half matters: this used to be `Math.max(0, creep)`, which made
+  // the entire bottom half of the loudness slider a no-op AND — because creep is
+  // exactly 0 at the default loudness of 50 — multiplied every gimmick's creep
+  // weight by zero, collapsing the whole roster's character to nothing unless
+  // the player happened to push loudness past the midpoint. Letting a quiet set
+  // relieve the dial makes "restrained" a real strategy and gives each gimmick's
+  // creep value something to scale at default settings. It still decays on its
+  // own weekly and can be relieved further by pulling a set from print (bans.js).
+  //
+  // A quiet set relieves at half the rate a loud one erodes: it's easier to
+  // wear a back catalogue out than to make people love it again.
+  const creepPush = creep >= 0 ? creep * blockCreep : creep * 0.5
+  const printIntensity = clamp((state.printIntensity ?? 40) + creepPush * 0.5, 0, 100)
 
   // Set buzz lift from reprinting fan-favorite cards (carried on the set record
   // so revenue/market can read it).
@@ -559,6 +744,31 @@ export function releaseSet(state, draft) {
     ? mintAnniversaryCards(state, { setId, themeId, sheet: draft.rarities ?? defaultRaritySheet() })
     : []
 
+  // ---- Spotlight reveals --------------------------------------------------
+  // Cards shown off publicly ahead of launch. Resolve each pick to a concrete
+  // card id in this set's freshly-minted pool, so the reveal actually lands on
+  // a real card people can then chase.
+  const spotlightPicks = (draft.spotlight?.picks ?? []).slice(0, MAX_SPOTLIGHT_PICKS)
+  const spotlightIds = resolveSpotlightIds(spotlightPicks, { setId, cards, treatmentCards, reprintCards: reprintResult.reprintCards })
+  const spotlightNames = spotlightIds
+    .map((id) => [...cards, ...treatmentCards, ...reprintResult.reprintCards].find((c) => c.id === id)?.name)
+    .filter(Boolean)
+  const revealShare = spotlightIds.length / MAX_SPOTLIGHT_PICKS
+  // Diminishing returns, then an OVER-REVEAL penalty: a couple of previews
+  // build anticipation, but show the whole set and there's nothing left to find
+  // in the pack. Peaks around three reveals.
+  const spotlightBuzz = clamp(9 * Math.sqrt(revealShare) - 15 * Math.max(0, revealShare - 0.6), 0, 9)
+  set.spotlight = spotlightIds
+  // The sealed-demand side of the same lift (read by revenue.js's setAppeal),
+  // with its own gentler over-reveal taper.
+  set.spotlightAppeal = clamp(0.05 * spotlightIds.length - 0.05 * Math.max(0, spotlightIds.length - 3), 0, 0.12)
+
+  // The set's cover character (if any), resolved once for both the feed line
+  // and the launch bump below.
+  const cover = draft.coverCharacterId
+    ? characters.find((c) => c.id === draft.coverCharacterId) ?? null
+    : null
+
   const feedParts = [
     reprintResult.feed,
     promoCards.length ? `Collector box includes an exclusive promo.` : null,
@@ -566,6 +776,18 @@ export function releaseSet(state, draft) {
     treatmentCards.length ? `${treatmentCards.length} ${block.treatmentLabel} chase card${treatmentCards.length > 1 ? 's' : ''} debut — the chase pulls driving extra demand for this set's packs.` : null,
     draft.releaseEvent?.type === 'midnight' ? `A midnight launch draws a line out the door for ${draft.name} — buzz spikes, and scalper chatter with it.` : null,
     draft.releaseEvent?.type === 'themed' ? `A themed drop event gives ${draft.name} a curated spotlight — the shelf feels like an occasion.` : null,
+    cover ? `${cover.name} fronts the box art.` : null,
+    spotlightNames.length
+      ? `Previewed ahead of launch: ${spotlightNames.join(', ')}.`
+      : null,
+    spotlightIds.length >= 4
+      ? `Some fans grumble that the previews gave away most of what's worth pulling.`
+      : null,
+    size.bloat > 0.5
+      ? `At ${set.setLength} cards it's a landmark ${tier.name.toLowerCase()} — though "that's a lot of cardboard" is already the discourse.`
+      : size.s <= -0.5
+        ? `A tight ${set.setLength}-card ${tier.name.toLowerCase()} — completable, and collectors notice.`
+        : null,
     draft.oddsPublished
       ? `Pull rates published — the community's watching.`
       : `Pull rates kept under wraps for this one.`,
@@ -582,7 +804,10 @@ export function releaseSet(state, draft) {
   // release-pressure engine (see simulation.js's weekly decay). Seeded from the
   // set's own average hype; always starts high, decays over the following
   // weeks until the next drop.
-  set.buzz = clamp(40 + avgHype * 0.6, 10, 100)
+  // Set SIZE reads as event scale, with a bloat penalty at the top of the band:
+  // a landmark expansion is news, and a sprawling one is news people complain
+  // about. Net peaks in the upper-middle of the band — both extremes cost you.
+  set.buzz = clamp(40 + avgHype * 0.6 + size.sizeBuzz - 10 * size.bloat, 10, 100)
 
   // Special release event: a midnight launch trades cash + a scalper-heat bump
   // (real lines draw flippers) for a bigger immediate buzz spike; a themed drop
@@ -597,6 +822,20 @@ export function releaseSet(state, draft) {
     releaseEventScalperBump = range(eventRng, 2, 5) // a line out the door draws flippers
   } else if (releaseEventType === 'themed') {
     set.buzz = clamp(set.buzz + range(eventRng, 4, 8), 0, 100)
+  }
+
+  // Previews stoke the launch on top of the event itself.
+  set.buzz = clamp(set.buzz + spotlightBuzz, 10, 100)
+
+  // Cover character: putting a known face on the box lends the set that
+  // character's accumulated fame. Costs nothing (they're already yours) — the
+  // real decision is WHICH face, and a fresh no-name lends nothing.
+  if (cover) {
+    set.coverCharacterId = cover.id
+    set.coverCharacterName = cover.name
+    // Same shape as famePopBonus but at set scale: a marquee face is worth a
+    // real launch bump, an unknown one is worth almost nothing.
+    set.buzz = clamp(set.buzz + clamp((cover.fame ?? 0) * 0.12, 0, 10), 10, 100)
   }
 
   // A launch wave. Early sets (when you have few players) need to be a real
@@ -623,7 +862,12 @@ export function releaseSet(state, draft) {
     const sinceMajor = countRidersSinceLastMajor(state.sets)
     fatigue = clamp(1 / (1 + sinceMajor * 0.6), 0.18, 1) // 1st rider ~1×, 5th ~0.25×
   }
-  const fullWave = Math.round((3500 + (avgHype / 100) * 13000) * moodMul * tier.discoveryMul * fatigue)
+  // ...and with SIZE: a big set is a bigger launch event (more to talk about,
+  // more shelf presence), a tight one a smaller one. Neutral at the tier's
+  // default length, so this doesn't quietly move the existing balance.
+  const fullWave = Math.round(
+    (3500 + (avgHype / 100) * 13000) * moodMul * tier.discoveryMul * fatigue * size.eventScale,
+  )
 
   // Regional staggered release (majors only): a lead region drops first as a
   // hype/preview engine — a smaller immediate wave — with the wider "rest of
@@ -648,8 +892,14 @@ export function releaseSet(state, draft) {
   // Treatment cards lift the set's buzz (gorgeous chase product sells packs) — the
   // collector pop the tier multiplier amplifies. Carried on the set so revenue can
   // read it (alongside the reprint buzz).
-  set.treatmentBuzz = clamp(treatmentCards.length * 0.04 * (block?.treatment ?? 0) * tier.collectorMul, 0, 0.3)
-  set.collectorMul = tier.collectorMul // riders pop harder on the secondary market
+  // A sprawling set spreads the same chase across more cards, so each pack
+  // opened feels thinner; a tight one concentrates it.
+  set.treatmentBuzz = clamp(
+    treatmentCards.length * 0.04 * (block?.treatment ?? 0) * tier.collectorMul * size.chaseDensity, 0, 0.3,
+  )
+  // Riders pop harder on the secondary market — and a completable set pops
+  // harder still, because people actually chase the whole thing.
+  set.collectorMul = tier.collectorMul * size.completionAppeal
 
   // A major is real news — it gives every other in-print set a small
   // newsworthiness bump (a "the whole catalog is buzzing again" beat). Minors
@@ -663,13 +913,19 @@ export function releaseSet(state, draft) {
   // minted cards' live market hype, not the discovery-wave/buzz sizing above
   // (which already settled off the unhyped popFactors numbers).
   const hypeMul = draft.oddsPublished ? 0.94 : 1.06
-  const hypedNewCards = [...cards, ...treatmentCards, ...anniversaryCards].map((c) => ({ ...c, hype: clamp((c.hype ?? 0) * hypeMul, 0, 3) }))
+  // A previewed card arrives already wanted — people have been looking at it
+  // for weeks before they could buy it.
+  const spotlitSet = new Set(spotlightIds)
+  const hypedNewCards = [...cards, ...treatmentCards, ...anniversaryCards].map((c) => ({
+    ...c,
+    hype: clamp((c.hype ?? 0) * hypeMul * (spotlitSet.has(c.id) ? 1.25 : 1), 0, 3),
+  }))
   // Odds transparency also nudges community trust: publishing wins over
   // fairness-minded voices most, with a small ambient goodwill bump for
   // everyone; obscuring carries no bump (its cost is the backlash-event risk
   // instead — see events.js's odds_transparency_backlash).
   const personaSentimentBump = draft.oddsPublished
-    ? { fairnessFloor: 0.4, fairnessAmount: 3, ambientAmount: 1 }
+    ? { tasteKey: 'fairness', floor: 0.4, amount: 3, ambientAmount: 1 }
     : null
 
   return {
@@ -691,6 +947,30 @@ export function releaseSet(state, draft) {
     personaSentimentBump, // odds-transparency goodwill bump, or null
     scalperHeatDelta: releaseEventScalperBump || null, // only non-null for a midnight launch
   }
+}
+
+// Resolve spotlight picks to concrete card ids in the freshly-minted pool.
+// A pick is { kind, ref }:
+//   signature — ref is the index into the draft's signatureCards (they take the
+//               set's first collector numbers, so `c${ref+1}`)
+//   treatment — ref is the index into the block's minted treatment cards
+//   reprint   — ref is the index into the resolved reprint instances
+// Picks that don't resolve (a signature removed after being spotlit, a
+// treatment slot the block didn't end up minting) are silently dropped — the
+// player shouldn't pay for, or benefit from, a reveal that has no card.
+// Deduped so the same card can't be counted twice toward the reveal curve.
+function resolveSpotlightIds(picks, { setId, cards, treatmentCards, reprintCards }) {
+  const out = []
+  for (const pick of picks ?? []) {
+    const i = Number(pick?.ref)
+    if (!Number.isInteger(i) || i < 0) continue
+    let id = null
+    if (pick.kind === 'signature') id = cards.find((c) => c.id === `${setId}_c${i + 1}`)?.id ?? null
+    else if (pick.kind === 'treatment') id = treatmentCards[i]?.id ?? null
+    else if (pick.kind === 'reprint') id = reprintCards[i]?.id ?? null
+    if (id && !out.includes(id)) out.push(id)
+  }
+  return out
 }
 
 // Resolve card reprints on a draft: re-issue chosen old cards into the new set.
@@ -840,7 +1120,7 @@ export function reprintAsUnlimited(state, originalSetId, printRun = 55) {
   const draft = {
     name: `${original.name} (Unlimited)`,
     themeId: original.themeId,
-    powerBudget: original.powerBudget,
+    designLoudness: loudnessOf(original),
     rarityChase: original.rarityChase,
     printRun,
     pricePoint: original.price,
@@ -865,7 +1145,7 @@ export function reprintAsUnlimited(state, originalSetId, printRun = 55) {
     name: draft.name,
     themeId: original.themeId,
     theme: original.theme,
-    powerBudget: original.powerBudget,
+    designLoudness: loudnessOf(original),
     rarityChase: original.rarityChase,
     printRun,
     price: original.price,
@@ -897,12 +1177,30 @@ export function reprintAsUnlimited(state, originalSetId, printRun = 55) {
 
   const feed = `${original.name} reprinted as an Unlimited run (${printRunUnits(printRun).toLocaleString('en-US')} units). Fresh supply to sell — and the original printing is now a first-edition premium.`
 
+  // The community has an opinion about this. Re-issuing a set people already
+  // bought is a genuine trade: it makes the game accessible again (newcomers
+  // and casuals can finally get in), but a HEAVY Unlimited run reads as
+  // devaluing what collectors already own. Value-minded voices feel it most.
+  //
+  // Scaled by how big the reprint run is: a modest re-issue is welcomed, a
+  // flood is resented.
+  const flood = clamp((printRun - 45) / 55, 0, 1)
+  const reprintSentimentBump = {
+    tasteKey: 'value',
+    floor: 0.4,
+    // Collectors: welcome at a light run, resentful at a flood.
+    amount: Math.round((2.5 - flood * 8) * 10) / 10,
+    // Everyone else mostly just sees more product on shelves.
+    ambientAmount: Math.round((1.5 - flood * 2) * 10) / 10,
+  }
+
   return {
     set: reprintSetRecord,
     cards: reprintCards,
     firstEditionCards,
     cashDelta: -cost,
     feed,
+    personaSentimentBump: reprintSentimentBump,
   }
 }
 
