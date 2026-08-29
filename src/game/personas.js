@@ -21,6 +21,7 @@
 import { makeRng, hashSeed, range } from './rng.js'
 import { clamp } from './simulation.js'
 import { packRichnessDelta } from './rarities.js'
+import { getTheme } from './content/themes.js'
 
 const FEED_MAX = 60 // cap the feedback feed length
 
@@ -332,6 +333,7 @@ function takeFor(persona, card, perceived, set, rng, displayName, grievances) {
 export function reactPersonas(state) {
   const rng = makeRng(hashSeed(`personas:${state.week}`))
   const latestSet = state.sets.length ? state.sets[state.sets.length - 1] : null
+  const latestTheme = latestSet?.themeId ? getTheme(latestSet.themeId) : null
   const setFresh = latestSet && state.week - latestSet.releasedWeek <= 4
   const setCards = latestSet ? state.cards.filter((c) => c.setId === latestSet.id) : []
 
@@ -425,7 +427,19 @@ export function reactPersonas(state) {
     // to move their mood, or the whole set-level reaction path is decorative.
     const moodByStance = { pull: -6, alarm: -6, warn: -2.5, pan: -1.5, neutral: 0.5, hype: 4, love: 4 }
     const mood = moodByStance[take.stance] ?? 0
-    sentimentById.set(persona.id, clamp(persona.sentiment + mood, -100, 100))
+
+    // Affinity: a set in a theme this voice loves lands warmer, one they're not
+    // into lands colder. Soft flavor weight (see content/personas.js) — small
+    // next to `mood`, and only kicks in for the ~10 personas that carry an
+    // affinity list.
+    let affinityShift = 0
+    if (latestTheme && persona.affinity?.length) {
+      const liked = persona.affinity.includes(latestTheme.id) ||
+        latestTheme.tags.some((tag) => persona.affinity.includes(tag))
+      affinityShift = liked ? 2 : -1
+    }
+
+    sentimentById.set(persona.id, clamp(persona.sentiment + mood + affinityShift, -100, 100))
 
     // A reviewer's verdict on a fresh set sways the casual base's willingness to
     // buy. Casuals specifically — collectors care about scarcity and legacy, not

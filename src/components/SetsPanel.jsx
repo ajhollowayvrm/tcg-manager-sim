@@ -5,11 +5,20 @@
 // decision legible: a set near 100% sold out was under-printed (lost sales), one
 // stuck low has unsold stock (over-printed → bargain bins).
 
+import { useState } from 'react'
 import SetSymbol from './SetSymbol.jsx'
 import { reprintCost } from '../game/sets.js'
 import { getTier } from '../game/blocks.js'
 
-const REPRINT_RUN = 55 // matches the reducer's default reprint print run
+const REPRINT_RUN_DEFAULT = 55 // matches the reducer's own default when no run size is chosen
+
+// Where reprintAsUnlimited's flood curve (sets.js) flips from welcomed to
+// resented, so the control can label itself honestly.
+function reprintRunWord(printRun) {
+  if (printRun <= 45) return 'light — welcomed'
+  if (printRun <= 70) return 'standard'
+  return 'heavy — resented'
+}
 
 // Below the clock's hard-stop pause threshold (see clock.js's CONTROVERSY_PAUSE
 // = 70) — a forewarning so a set carrying a heating-up card is legible on this
@@ -121,6 +130,7 @@ function SetRow({ set, state, lastPerSet, onReprint, onPull, canPull, onAdjustWa
     (c) => c.setId === set.id && !c.banned && !c.rotated && (c.controversy ?? 0) >= HEAT_TAG_THRESHOLD,
   )
   const buzzPct = Math.round(((set.reprintBuzz ?? 0) + (set.treatmentBuzz ?? 0)) * 100)
+  const [printRun, setPrintRun] = useState(REPRINT_RUN_DEFAULT)
 
   return (
     <li className={'sets__row' + (set.rotated && !set.outOfPrint ? ' sets__row--rotated' : '') + (set.outOfPrint ? ' sets__row--oop' : '')}>
@@ -203,16 +213,28 @@ function SetRow({ set, state, lastPerSet, onReprint, onPull, canPull, onAdjustWa
             printing has ended (pulled out of print, or sold out) and not already
             reprinted / not a reprint itself. */}
         {onReprint && !set.reprintOf && !set.reprinted && (set.outOfPrint || soldOut) && (() => {
-          const cost = reprintCost(REPRINT_RUN)
+          const cost = reprintCost(printRun)
           const onCredit = (state.cash ?? 0) < cost
           return (
-            <button
-              className={'btn btn--ghost sets__reprint' + (set.outOfPrint ? ' sets__reprint--hot' : '')}
-              onClick={() => onReprint(set.id)}
-              title={`Reprint as an Unlimited run (~$${cost.toLocaleString('en-US')})${onCredit ? ' — on credit (into debt)' : ''} — fresh supply to sell; the original becomes a first-edition premium`}
-            >
-              ⟳ Reprint
-            </button>
+            <span className="sets__reprintctl">
+              <input
+                type="range"
+                className="sets__reprintrun"
+                min={0}
+                max={100}
+                step={5}
+                value={printRun}
+                onChange={(e) => setPrintRun(Number(e.target.value))}
+                title={`Reprint run size: ${reprintRunWord(printRun)} — a light run is welcomed, a heavy flood is resented`}
+              />
+              <button
+                className={'btn btn--ghost sets__reprint' + (set.outOfPrint ? ' sets__reprint--hot' : '')}
+                onClick={() => onReprint(set.id, printRun)}
+                title={`Reprint as an Unlimited run (~$${cost.toLocaleString('en-US')}, ${reprintRunWord(printRun)})${onCredit ? ' — on credit (into debt)' : ''} — fresh supply to sell; the original becomes a first-edition premium`}
+              >
+                ⟳ Reprint
+              </button>
+            </span>
           )
         })()}
       </div>

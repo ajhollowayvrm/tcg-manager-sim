@@ -1112,6 +1112,8 @@ button.tag--oddsobscured:hover { border-color: var(--accent-2); color: var(--tex
    left border a gold accent. */
 .sets__row--oop { border-left: 2px solid var(--pop); }
 .sets__pull { font-size: 0.7rem; padding: 3px 8px; white-space: nowrap; }
+.sets__reprintctl { display: flex; align-items: center; gap: 6px; }
+.sets__reprintrun { width: 60px; accent-color: var(--accent); }
 .sets__reprint { font-size: 0.7rem; padding: 3px 8px; white-space: nowrap; }
 .sets__reprint--hot { color: var(--pop); }
 .sets__reprint--hot:hover { background: var(--pop); color: #2b2406; }

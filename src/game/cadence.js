@@ -41,9 +41,10 @@ export function applyCadencePressure(next) {
   // Grumble in the feed at the threshold and periodically after.
   if (lateBy === 1 || lateBy % 4 === 0) {
     const gameName = next.config?.gameName || 'the game'
+    const companyName = next.config?.companyName || 'the studio'
     next.eventsFeed = [
       { week: next.week, kind: 'community', tone: 'bad',
-        text: `It's been ${sinceRelease} weeks since the last ${gameName} set — fans pledged ${c.weeks}. The community is getting restless.` },
+        text: `It's been ${sinceRelease} weeks since the last ${gameName} set — fans pledged ${c.weeks}. Is ${companyName} still committed to this game?` },
       ...next.eventsFeed,
     ].slice(0, 60)
   }

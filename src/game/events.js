@@ -334,7 +334,7 @@ export const EVENTS = [
       const winner = rng() < 0.5 ? a : b
       const loser = winner === a ? b : a
       return {
-        text: `${a.name} and ${b.name} are publicly feuding over ${s.config?.gameName || 'your game'}. Drama is engagement — and ${winner.name} is winning the room.`,
+        text: `${a.name} and ${b.name} are publicly feuding over ${s.config?.gameName || 'your game'}, ${s.config?.companyName || 'the studio'}'s flagship. Drama is engagement — and ${winner.name} is winning the room.`,
         effects: {
           casualDelta: Math.round(range(rng, -120, 300)),
           reachShift: { [winner.id]: range(rng, 3, 7), [loser.id]: -range(rng, 2, 5) },
