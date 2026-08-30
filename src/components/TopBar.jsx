@@ -5,6 +5,7 @@ import { communitySentiment } from '../game/simulation.js'
 import { SCALPER_THRESHOLD } from '../game/distributors.js'
 import { RIVAL_HOT_THRESHOLD } from '../game/rival.js'
 import { getRival } from '../game/content/rivals.js'
+import { getConcept } from '../game/content/concepts.js'
 
 function formatCash(n) {
   return '$' + n.toLocaleString('en-US')
@@ -19,7 +20,7 @@ const DEBT_RUIN = -3_000_000
 const CASH_WARN = 50_000      // cash dipping low (still survivable)
 const PLAYERS_WARN = 2_000    // a thin base (recoverable)
 
-export default function TopBar({ game, onDesignSet }) {
+export default function TopBar({ game, onDesignSet, onOpenSettings }) {
   const { state, advanceWeek, reset } = game
   const { week, cash, playerBase, clock, lastRevenue, gameOver } = state
   const rev = lastRevenue?.total ?? 0
@@ -29,10 +30,11 @@ export default function TopBar({ game, onDesignSet }) {
   const heat = Math.round(state.scalperHeat ?? 0)
   const rivalStrength = Math.round(state.rival?.strength ?? 0)
   const rivalName = getRival(state.rival?.id)?.name ?? 'A rival'
+  const concept = getConcept(state.config?.conceptId)
 
   return (
     <header className="topbar">
-      <div className="topbar__brand" title={state.config?.companyName || ''}>
+      <div className="topbar__brand" title={`${state.config?.companyName || ''} — ${concept.name} (${concept.resembles})`}>
         {state.config?.gameName || 'TCG Manager'}
         <span className="topbar__week">Week {week}</span>
       </div>
@@ -106,6 +108,7 @@ export default function TopBar({ game, onDesignSet }) {
         <div className="topbar__time">
           <button className="btn btn--design" onClick={onDesignSet}>+ Design a Set</button>
           <button className="btn btn--advance" onClick={advanceWeek}>Advance Week ▶</button>
+          <button className="btn btn--ghost btn--settings" title="Settings" onClick={onOpenSettings}>⚙</button>
         </div>
       )}
 

@@ -26,6 +26,7 @@ import {
   maxReprintedCards,
 } from '../../game/sets.js'
 import { THEMES, getTheme } from '../../game/content/themes.js'
+import { getConcept } from '../../game/content/concepts.js'
 import { ARTISTS } from '../../game/content/artists.js'
 import { TIERS, TIER_IDS, getTier, canUnlockAnniversary, gimmickIntensity } from '../../game/blocks.js'
 import { getGimmick, gimmicksByCategory, NO_GIMMICK } from '../../game/content/gimmicks.js'
@@ -44,12 +45,16 @@ function nextId(cards) {
   return max + 1
 }
 
-export default function SetBuilder({ setNumber, cash, artists, characters = [], liveCards = [], sets = [], blocks = [], franchise, onRelease, onClose }) {
+export default function SetBuilder({ setNumber, cash, artists, characters = [], liveCards = [], sets = [], blocks = [], franchise, conceptId, onRelease, onClose }) {
   // The first set you ever ship MUST be a major (it opens your first block); once
   // a block is live you can ship riders. Seed the tier accordingly.
   const isFirstSet = blocks.length === 0
   const [draft, setDraft] = useState(() => createDraft(setNumber, 'major', blocks))
   const anniversaryGate = canUnlockAnniversary({ franchise, setsShipped: sets.length })
+  // The founding concept's naming style (creature vs. character) — flavor
+  // only, see content/concepts.js. Feeds the auto-fill preview below so it
+  // matches what release will actually generate.
+  const nameStyle = getConcept(conceptId).nameStyle
 
   // Accordion: sections toggle independently (multi-open). Identity is open by
   // default; everything else starts collapsed so the modal opens short and
@@ -94,8 +99,9 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
         spotlight: d.spotlight,
         prerelease: d.prerelease,
         releaseEvent: d.releaseEvent,
-        // A major keeps editing its theme; a rider inherits the block's theme.
-        themeId: getTier(nextTier).ridesBlock ? seed.themeId : d.themeId,
+        // Theme is a per-set flavor pick, independent of tier — switching tier
+        // shouldn't reset it out from under the player.
+        themeId: d.themeId,
       }
     })
 
@@ -133,7 +139,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
   const addRandom = () =>
     setDraft((d) => ({
       ...d,
-      signatureCards: fillRandomCards(d.signatureCards, d.signatureCards.length + 1, getTheme(d.themeId), d.designLoudness, `${d.name}:add`, d.rarities),
+      signatureCards: fillRandomCards(d.signatureCards, d.signatureCards.length + 1, getTheme(d.themeId), d.designLoudness, `${d.name}:add`, d.rarities, nameStyle),
     }))
 
   const removeCard = (idx) =>
@@ -157,6 +163,9 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
     composition: `${draft.setLength} cards, ${draft.rarities.length} rarities${draft.secretCount ? `, ${draft.secretCount} secret` : ''}`,
     booster: `${packSize(draft.packFormat)}-card ${presetName}`,
     odds: draft.oddsPublished ? 'Published' : 'Obscured',
+    godPack: !(draft.godPack?.enabled ?? true)
+      ? 'off'
+      : (draft.godPack?.rarityIds?.length ? `${draft.godPack.rarityIds.length} rarity combo` : 'auto: top tier'),
     products: `$${draft.pricePoint.toFixed(2)} · ` + ((draft.products?.length ?? 0)
       ? ['Boosters', ...draft.products.map((p) => SKU_TYPES[p.kind]?.name.split(' ')[0] ?? p.kind)].join(' + ')
       : 'Boosters only'),
@@ -196,10 +205,9 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
             </label>
 
             <label className="field field--full">
-              <span>Theme{tier.ridesBlock && <span className="muted"> (inherited from the block)</span>}</span>
+              <span>Theme</span>
               <select
                 value={draft.themeId}
-                disabled={tier.ridesBlock}
                 onChange={(e) => patch({ themeId: e.target.value })}
               >
                 {THEMES.map((t) => (
@@ -210,9 +218,9 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
               </select>
               {theme && (
                 <span className="field__note">
-                  {tier.ridesBlock
-                    ? <>Inherited from the block you ride.</>
-                    : <>Flavors this set's card names and art direction.</>}
+                  Flavors this set's card names and art direction — can differ
+                  from the block's other sets, the way Jungle and Fossil
+                  differed from Base Set.
                 </span>
               )}
             </label>
@@ -461,6 +469,55 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
             <PackOddsPanel sheet={draft.rarities} format={draft.packFormat} />
           </AccordionSection>
 
+          {/* God pack — the real-hobby legend where every card in a pack
+              hits. Still a vanishingly rare roll (see packs.js's
+              GOD_PACK_CHANCE); this only decides whether this set can roll
+              one at all, and what it's built from when it does. */}
+          <AccordionSection title="God pack" summary={summaries.godPack} open={open.godPack} onToggle={() => toggle('godPack')}>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={draft.godPack?.enabled ?? true}
+                onChange={(e) => patch({ godPack: { ...draft.godPack, enabled: e.target.checked } })}
+              />
+              This set can roll a god pack
+            </label>
+            <span className="field__note">
+              A vanishingly rare pack where every card is a hit — the story
+              players tell for years. Off means this set never rolls one.
+            </span>
+            {(draft.godPack?.enabled ?? true) && (
+              <>
+                <span className="field__note">
+                  What's in it: pick which rarities a god pack draws from.
+                  None picked = auto (this set's single highest rarity, the
+                  classic behavior). Pick several for a real combination.
+                </span>
+                <div className="rared__finishgrid">
+                  {draft.rarities.map((r) => {
+                    const picked = draft.godPack?.rarityIds ?? []
+                    const on = picked.includes(r.id)
+                    return (
+                      <button
+                        key={r.id}
+                        type="button"
+                        className={'btn btn--chip' + (on ? ' is-active' : '')}
+                        onClick={() => patch({
+                          godPack: {
+                            ...draft.godPack,
+                            rarityIds: on ? picked.filter((id) => id !== r.id) : [...picked, r.id],
+                          },
+                        })}
+                      >
+                        {r.name}
+                      </button>
+                    )
+                  })}
+                </div>
+              </>
+            )}
+          </AccordionSection>
+
           {/* Product lineup — which SKUs the set ships in beyond boosters */}
           <AccordionSection title="Print & pricing" summary={summaries.products} open={open.products} onToggle={() => toggle('products')}>
             <Slider
@@ -583,6 +640,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
             {cost.skus > 0 && <CostLine label="Other SKUs print" value={cost.skus} />}
             <CostLine label="Art commissions" value={cost.art} />
             {cost.artDirection > 0 && <CostLine label="Art direction" value={cost.artDirection} />}
+            {cost.serialization > 0 && <CostLine label="Serialization" value={cost.serialization} />}
             {cost.prerelease > 0 && <CostLine label="Prerelease" value={cost.prerelease} />}
             {cost.releaseEvent > 0 && <CostLine label="Release event" value={cost.releaseEvent} />}
             {cost.spotlight > 0 && <CostLine label="Preview campaign" value={cost.spotlight} />}
@@ -665,7 +723,7 @@ function TierPicker({ tier, isFirstSet, anniversaryGate, onChange }) {
 
 // Block & gimmick editor. For a MAJOR: pick a gimmick from the roster, name the
 // block, and tune its chase intensity. For a MINOR/MICRO: pick which live block
-// to ride (auto-inherits its theme + gimmick, shown read-only).
+// to ride (auto-inherits its gimmick, shown read-only — theme stays its own).
 function BlockEditor({ draft, tier, blocks, attachedBlock, onPatchBlock, onAttach }) {
   // ---- Rider: attach to a live block ----
   if (tier.ridesBlock) {
@@ -676,11 +734,13 @@ function BlockEditor({ draft, tier, blocks, attachedBlock, onPatchBlock, onAttac
     return (
       <div className="builder__inner">
         <span className="field__note">
-          A {tier.id} set rides a live block — it inherits the block's theme
+          A {tier.id} set rides a live block — it shares the block's gimmick
           {attachedBlock?.gimmickId
             ? <> and prints its {attachedBlock.treatmentLabel} chase cards</>
             : <>, which is a plain era with no chase subtype to print</>}
-          , but can't mint a new gimmick.
+          , but can't mint a new one of its own. Its theme is a separate,
+          independent pick — the way Jungle and Fossil both rode the Base Set
+          era with different flavors.
         </span>
         <label className="field field--full">
           <span>Ride which block?</span>

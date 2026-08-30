@@ -13,10 +13,67 @@
 // Cards reference their rarity by id; helpers resolve the id against the set's
 // sheet (falling back to the default sheet for safety).
 
+// Ids for player-created rarities. The counter alone is NOT enough: it resets
+// to 0 on every page load, so a custom `rar_1` saved in one session collided
+// with a fresh `rar_1` created in the next. Timestamp + counter keeps ids
+// unique across reloads and within a single tight loop.
 let _uid = 0
 function rid(base) {
   _uid += 1
-  return `${base}_${_uid}`
+  return `${base}_${Date.now().toString(36)}${_uid.toString(36)}`
+}
+
+// ---- Finishes ---------------------------------------------------------
+// How a card is PRINTED — a presentation/production choice, not a rules one.
+// A single card (a hand-designed signature) can carry its own finish; a whole
+// RARITY can also carry one or more (see rarity.finishes below) — every card
+// printed at that rarity gets it automatically, stacked with anything the
+// card's own finish already adds. (Distinct from characters.js's TREATMENTS,
+// which price a character's fame, not a printing style.)
+export const FINISHES = [
+  { id: 'standard', name: 'Standard', appealBonus: 0, costMul: 1, blurb: 'A normal printing.' },
+  { id: 'holo', name: 'Holofoil', appealBonus: 6, costMul: 1.1, blurb: 'Foil in the art box — the classic chase look.' },
+  { id: 'reverseholo', name: 'Reverse Holo', appealBonus: 4, costMul: 1.05, blurb: 'Foil everywhere EXCEPT the art box. A quiet, common-tier chase.' },
+  { id: 'fullart', name: 'Full Art', appealBonus: 12, costMul: 1.35, blurb: 'The art breaks the frame and fills the card.' },
+  { id: 'extendedart', name: 'Extended Art', appealBonus: 9, costMul: 1.24, blurb: 'The illustration stretches past the text box, short of a true full art.' },
+  { id: 'altart', name: 'Alternate Art', appealBonus: 13, costMul: 1.38, blurb: 'A second, rarer illustration of a card people already own.' },
+  { id: 'textured', name: 'Textured Foil', appealBonus: 16, costMul: 1.5, blurb: 'You can feel the art with your thumb.' },
+  { id: 'goldetch', name: 'Gold Etch', appealBonus: 20, costMul: 1.8, blurb: 'Etched gold. Unmistakable in a binder.' },
+  { id: 'etchedfoil', name: 'Etched Foil', appealBonus: 10, costMul: 1.28, blurb: 'A fine etched-line foil pattern, quieter than gold etch.' },
+  { id: 'rainbow', name: 'Rainbow Foil', appealBonus: 14, costMul: 1.4, blurb: 'Every color at once. Loud, and everyone knows what it means in a binder.' },
+  { id: 'prism', name: 'Prism Rare', appealBonus: 10, costMul: 1.25, blurb: 'A faceted foil pattern that throws light in every direction.' },
+  { id: 'cosmos', name: 'Cosmos Holo', appealBonus: 8, costMul: 1.2, blurb: 'A starfield foil texture across the whole card face.' },
+  { id: 'galaxy', name: 'Galaxy Foil', appealBonus: 9, costMul: 1.22, blurb: 'Swirling nebula-pattern foil — a step up from cosmos.' },
+  { id: 'kaleidoscope', name: 'Kaleidoscope Foil', appealBonus: 12, costMul: 1.32, blurb: 'A shifting geometric foil pattern, different from every angle.' },
+  { id: 'crackedice', name: 'Cracked Ice Foil', appealBonus: 7, costMul: 1.18, blurb: 'A shattered-glass foil texture over the full card.' },
+  { id: 'checkerboard', name: 'Checkerboard Foil', appealBonus: 6, costMul: 1.12, blurb: 'A classic alternating foil/non-foil checker texture.' },
+  { id: 'shadowless', name: 'Shadowless', appealBonus: 7, costMul: 1.15, blurb: 'An early-print quirk collectors specifically hunt for.' },
+  { id: 'firstedition', name: '1st Edition Stamp', appealBonus: 11, costMul: 1.3, blurb: 'A stamped mark of the very first print run.' },
+  { id: 'goldstar', name: 'Gold Star', appealBonus: 18, costMul: 1.7, blurb: 'A rare gold-starred variant. One of the biggest grails there is.' },
+  { id: 'silverfoil', name: 'Silver Foil', appealBonus: 5, costMul: 1.1, blurb: 'A cooler, quieter cousin of standard holo.' },
+  { id: 'staplefoil', name: 'Staple Foil', appealBonus: 8, costMul: 1.2, blurb: 'The name and stat line foiled, the art left alone.' },
+  { id: 'diecut', name: 'Die-Cut Shape', appealBonus: 15, costMul: 1.6, blurb: 'Cut to the shape of the art. Expensive, unmistakable on a shelf.' },
+]
+
+export function getFinish(id) {
+  return FINISHES.find((f) => f.id === id) ?? FINISHES[0]
+}
+
+// The combined effect of stacking several finishes on one card (a signature's
+// own pick plus its rarity's blanket finishes, or several finishes assigned
+// to one rarity at once). Diminishing returns on appeal — ranked strongest
+// first, each extra one contributing less — so ten stacked treatments don't
+// dwarf one well-chosen one; cost compounds multiplicatively (each treatment
+// really is its own extra production step).
+export function combinedFinishEffect(ids = []) {
+  const finishes = [...new Set(ids)]
+    .map(getFinish)
+    .filter((f) => f.id !== 'standard')
+  if (!finishes.length) return { appealBonus: 0, costMul: 1 }
+  const ranked = [...finishes].sort((a, b) => b.appealBonus - a.appealBonus)
+  const appealBonus = Math.round(ranked.reduce((sum, f, i) => sum + f.appealBonus * 0.6 ** i, 0))
+  const costMul = finishes.reduce((mul, f) => mul * f.costMul, 1)
+  return { appealBonus, costMul }
 }
 
 // The default sheet a new set starts from. The player edits a copy of this.
@@ -26,26 +83,26 @@ function rid(base) {
 // Rare is the top gold grail (the only tier numbered above the set count).
 export function defaultRaritySheet() {
   return [
-    { id: 'common', name: 'Common', pullWeight: 100, valueTier: 5, secret: false },
-    { id: 'uncommon', name: 'Uncommon', pullWeight: 50, valueTier: 15, secret: false },
-    { id: 'rare', name: 'Rare', pullWeight: 20, valueTier: 32, secret: false },
-    { id: 'dbl', name: 'Double Rare', pullWeight: 6, valueTier: 50, secret: false },
-    { id: 'ace', name: 'Ace Spec', pullWeight: 1.2, valueTier: 62, secret: false },
-    { id: 'ir', name: 'Illustration Rare', pullWeight: 0.6, valueTier: 74, secret: false },
-    { id: 'sir', name: 'Special Illustration Rare', pullWeight: 0.18, valueTier: 88, secret: false },
-    { id: 'hyper', name: 'Hyper Rare', pullWeight: 0.05, valueTier: 97, secret: true },
+    { id: 'common', name: 'Common', pullWeight: 100, valueTier: 5, secret: false, finishes: [] },
+    { id: 'uncommon', name: 'Uncommon', pullWeight: 50, valueTier: 15, secret: false, finishes: [] },
+    { id: 'rare', name: 'Rare', pullWeight: 20, valueTier: 32, secret: false, finishes: [] },
+    { id: 'dbl', name: 'Double Rare', pullWeight: 6, valueTier: 50, secret: false, finishes: ['holo'] },
+    { id: 'ace', name: 'Ace Spec', pullWeight: 1.2, valueTier: 62, secret: false, finishes: ['holo'] },
+    { id: 'ir', name: 'Illustration Rare', pullWeight: 0.6, valueTier: 74, secret: false, finishes: ['fullart'] },
+    { id: 'sir', name: 'Special Illustration Rare', pullWeight: 0.18, valueTier: 88, secret: false, finishes: ['fullart', 'rainbow'] },
+    { id: 'hyper', name: 'Hyper Rare', pullWeight: 0.05, valueTier: 97, secret: true, finishes: ['goldetch'] },
   ]
 }
 
 // A blank custom rarity for the editor's "add rarity" button.
 export function makeRarity(name = 'New Rarity') {
-  return { id: rid('rar'), name, pullWeight: 10, valueTier: 50, secret: false }
+  return { id: rid('rar'), name, pullWeight: 10, valueTier: 50, secret: false, finishes: [] }
 }
 
 // Resolve a rarity id against a sheet; fall back to a neutral mid rarity so a
 // missing/renamed id never crashes pricing or display.
 export function getRarity(sheet, id) {
-  return (sheet ?? []).find((r) => r.id === id) ?? { id, name: id, pullWeight: 10, valueTier: 40, secret: false }
+  return (sheet ?? []).find((r) => r.id === id) ?? { id, name: id, pullWeight: 10, valueTier: 40, secret: false, finishes: [] }
 }
 
 // Pick a rarity id from a sheet weighted by pullWeight (a pack pull, or assigning

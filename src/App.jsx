@@ -12,6 +12,7 @@ import DistributorsPanel from './components/DistributorsPanel.jsx'
 import AmbitionPanel from './components/AmbitionPanel.jsx'
 import Onboarding from './components/Onboarding.jsx'
 import SetBuilder from './components/setbuilder/SetBuilder.jsx'
+import SettingsPanel from './components/SettingsPanel.jsx'
 
 // Mobile tabs group the panels into sections. Desktop ignores this and shows
 // the full two-column dashboard; the tab bar only appears on mobile. There is
@@ -29,6 +30,7 @@ const TABS = [
 export default function App() {
   const game = useGame()
   const [building, setBuilding] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [tab, setTab] = useState('sets')
 
   // First run: gate everything behind onboarding until the player launches.
@@ -44,7 +46,7 @@ export default function App() {
     packs: <PackRipper state={game.state} onRip={game.rip} onRunBreak={game.runBreak} />,
     feedback: <FeedbackFeed state={game.state} />,
     personas: <PersonasPanel state={game.state} onComp={game.comp} onSponsor={game.sponsor} onDropSponsor={game.unsponsor} onInvitePrerelease={game.invitePrerelease} onSponsorTournament={game.sponsorTournament} />,
-    cast: <CastPanel state={game.state} />,
+    cast: <CastPanel state={game.state} onAddCharacter={game.addCharacter} />,
     distributors: <DistributorsPanel
       state={game.state}
       onSign={game.signDist} onCultivate={game.cultivateDist} onDrop={game.dropDist}
@@ -62,7 +64,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <TopBar game={game} onDesignSet={() => setBuilding(true)} />
+      <TopBar game={game} onDesignSet={() => setBuilding(true)} onOpenSettings={() => setSettingsOpen(true)} />
 
       {/* Desktop: the rich two-column dashboard. Hidden on mobile via CSS. */}
       <main className="dashboard dashboard--desktop">
@@ -105,6 +107,13 @@ export default function App() {
         ))}
       </nav>
 
+      {settingsOpen && (
+        <SettingsPanel
+          onReset={() => { game.reset(); setSettingsOpen(false) }}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
+
       {building && (
         <SetBuilder
           setNumber={game.state.sets.length + 1}
@@ -115,6 +124,7 @@ export default function App() {
           sets={game.state.sets}
           blocks={game.state.blocks ?? []}
           franchise={game.state.franchise}
+          conceptId={game.state.config?.conceptId}
           onRelease={game.release}
           onClose={() => setBuilding(false)}
         />

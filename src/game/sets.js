@@ -4,10 +4,16 @@
 import { makeRng, hashSeed, range } from './rng.js'
 import { getArtist } from './content/artists.js'
 import { getTheme } from './content/themes.js'
+import { getConcept, CREATURE_NAME_PREFIX, CREATURE_NAME_NOUN, CHARACTER_FIRST_NAMES, CHARACTER_SURNAMES } from './content/concepts.js'
 import { clamp, communitySentiment } from './simulation.js'
 import { printRunUnits } from './revenue.js'
 import { currentArtist } from './artists.js'
-import { defaultRaritySheet, getRarity, pickRarity, validateRaritySheet, defaultPackFormat, validatePackFormat, packRichnessDelta } from './rarities.js'
+import { defaultRaritySheet, getRarity, pickRarity, validateRaritySheet, defaultPackFormat, validatePackFormat, packRichnessDelta, FINISHES, getFinish, combinedFinishEffect } from './rarities.js'
+
+// Re-exported for existing call sites (SignatureCardEditor.jsx etc.) — the
+// finish system now lives in rarities.js since a whole RARITY can carry
+// finishes too, not just a hand-designed signature card. See combinedFinishEffect.
+export { FINISHES, getFinish }
 import { defaultProducts, finalizeProducts, productPrintCost, validateProducts, DEFAULT_CHANNELS } from './products.js'
 import { makePromoCard } from './promos.js'
 import { getTier, openBlock, refreshBlockWarp, mintTreatmentCards, mintAnniversaryCards, canUnlockAnniversary } from './blocks.js'
@@ -21,21 +27,6 @@ export const MAX_SET_LENGTH = 250
 export const MAX_SECRET_CARDS = 12
 export const MAX_SPOTLIGHT_PICKS = 5
 export const SPOTLIGHT_COST_EACH = 2_000
-
-// How a signature card is PRINTED. Purely a presentation/production choice — a
-// richer finish makes the card stand out more and costs more to commission.
-// (Distinct from characters.js's TREATMENTS, which price a character's fame.)
-export const FINISHES = [
-  { id: 'standard', name: 'Standard', appealBonus: 0, costMul: 1, blurb: 'A normal printing.' },
-  { id: 'holo', name: 'Holofoil', appealBonus: 6, costMul: 1.1, blurb: 'Foil in the art box — the classic chase look.' },
-  { id: 'fullart', name: 'Full art', appealBonus: 12, costMul: 1.35, blurb: 'The art breaks the frame and fills the card.' },
-  { id: 'textured', name: 'Textured foil', appealBonus: 16, costMul: 1.5, blurb: 'You can feel the art with your thumb.' },
-  { id: 'goldetch', name: 'Gold etch', appealBonus: 20, costMul: 1.8, blurb: 'Etched gold. Unmistakable in a binder.' },
-]
-
-export function getFinish(id) {
-  return FINISHES.find((f) => f.id === id) ?? FINISHES[0]
-}
 
 // Design loudness, formerly `powerBudget`. Reads either key so a set record
 // built before the rename (or a reprint reconstructing a draft from one) still
@@ -53,9 +44,13 @@ export function loudnessOf(x) {
 // and inherit theme — defaults keep the bare signature working for tests.
 export function createDraft(setNumber, tier = 'major', liveBlocks = []) {
   const t = getTier(tier)
-  // A rider inherits its block's theme; a major defaults to dragons.
+  // Theme is a per-SET flavor motif, not locked to the block or the company —
+  // Pokémon's Base Set era shipped Jungle, Fossil, and Team Rocket back to
+  // back, each its own motif riding the same era. So this is only a starting
+  // SUGGESTION (the most recent block's theme, or dragons for a fresh
+  // company) — the player can always change it; nothing enforces it later.
   const attach = t.ridesBlock ? (liveBlocks[liveBlocks.length - 1] ?? null) : null
-  const themeId = attach?.themeId ?? 'dragons'
+  const themeId = attach?.themeId ?? liveBlocks[liveBlocks.length - 1]?.themeId ?? 'dragons'
   return {
     name: `${t.name === 'Major set' ? 'Set' : t.name.replace(' set', '')} ${setNumber}`,
     themeId,
@@ -146,6 +141,16 @@ export function createDraft(setNumber, tier = 'major', liveBlocks = []) {
     // the historical default — publishing trades a little hype/mystique for
     // trust (see releaseSet).
     oddsPublished: false,
+
+    // God packs: the real-hobby legend where every card in a pack hits (see
+    // packs.js's GOD_PACK_CHANCE — still a vanishingly rare roll, this is
+    // just what fills one when it happens). `enabled` on by default (matches
+    // the sim's original always-on behavior). `rarityIds` picks WHICH
+    // rarities a god pack of this set guarantees — empty means "auto: this
+    // set's single highest-value rarity," the original fixed behavior;
+    // picking several lets a god pack draw from any of them (a real
+    // combination, not just the very top tier).
+    godPack: { enabled: true, rarityIds: [] },
   }
 }
 
@@ -195,13 +200,22 @@ export function createSignatureCard(n, rarityId = 'rare') {
 
 // Title fragments for procedural card names, blended with the theme's own
 // motifs so a Dragons set yields "Scorch Warden", a Cyber set "Uplink Spec".
-const NAME_PREFIX = ['Elder', 'Grand', 'Feral', 'Hollow', 'Radiant', 'Dread', 'Iron', 'Wild', 'Lost', 'First', 'Crimson', 'Gilded']
-const NAME_NOUN = ['Warden', 'Herald', 'Sovereign', 'Specter', 'Champion', 'Oracle', 'Reaver', 'Sentinel', 'Avatar', 'Colossus', 'Vanguard', 'Harbinger']
-
-function randomCardName(theme, rng) {
+// Which pool this draws from is the founding concept's `nameStyle` (see
+// content/concepts.js) — 'creature' (the default) or 'character'.
+function randomCardName(theme, rng, nameStyle = 'creature') {
+  if (nameStyle === 'character') {
+    const first = pickFrom(CHARACTER_FIRST_NAMES, rng)
+    const last = pickFrom(CHARACTER_SURNAMES, rng)
+    // Sometimes fold in a theme motif as a nickname, so the set's flavor still
+    // shows even when the naming style itself is character-first.
+    if (theme?.motifs?.length && rng() < 0.4) {
+      return `${first} "${pickFrom(theme.motifs, rng)}" ${last}`
+    }
+    return `${first} ${last}`
+  }
   // Sometimes lead with one of the theme's motifs for flavor cohesion.
-  const lead = theme?.motifs?.length && rng() < 0.5 ? pickFrom(theme.motifs, rng) : pickFrom(NAME_PREFIX, rng)
-  return `${lead} ${pickFrom(NAME_NOUN, rng)}`
+  const lead = theme?.motifs?.length && rng() < 0.5 ? pickFrom(theme.motifs, rng) : pickFrom(CREATURE_NAME_PREFIX, rng)
+  return `${lead} ${pickFrom(CREATURE_NAME_NOUN, rng)}`
 }
 
 function pickFrom(pool, rng) {
@@ -211,9 +225,9 @@ function pickFrom(pool, rng) {
 // A themed-random signature card. Picks a rarity from the upper end of the set's
 // sheet (signatures are the chase highlights), appeal scattered around the set's
 // design-loudness dial.
-export function makeRandomCard(n, theme, loudness, rng, sheet = defaultRaritySheet()) {
+export function makeRandomCard(n, theme, loudness, rng, sheet = defaultRaritySheet(), nameStyle = 'creature') {
   const card = createSignatureCard(n)
-  card.name = randomCardName(theme, rng)
+  card.name = randomCardName(theme, rng, nameStyle)
   // Signatures lean rare: pick from the top half of the sheet by value tier.
   const ranked = [...sheet].sort((a, b) => b.valueTier - a.valueTier)
   const top = ranked.slice(0, Math.max(1, Math.ceil(ranked.length / 2)))
@@ -224,12 +238,12 @@ export function makeRandomCard(n, theme, loudness, rng, sheet = defaultRarityShe
 
 // Append randomly-generated signature highlights up to `target`, keeping the
 // player's hand-made ones. Caps at MAX_SIGNATURE_CARDS.
-export function fillRandomCards(existing, target, theme, loudness, seedKey, sheet = defaultRaritySheet()) {
+export function fillRandomCards(existing, target, theme, loudness, seedKey, sheet = defaultRaritySheet(), nameStyle = 'creature') {
   const rng = makeRng(hashSeed(`fill:${seedKey}:${existing.length}:${target}`))
   const out = [...existing]
   const cap = Math.min(target, MAX_SIGNATURE_CARDS)
   let n = nextCardIndex(out)
-  while (out.length < cap) out.push(makeRandomCard(n++, theme, loudness, rng, sheet))
+  while (out.length < cap) out.push(makeRandomCard(n++, theme, loudness, rng, sheet, nameStyle))
   return out
 }
 
@@ -296,10 +310,23 @@ export function setCost(draft, artistOf = getArtist) {
   // pack is cost-neutral. Light: a hit-heavy pack runs ~+15-20% on the print line.
   const richness = packRichnessDelta(draft.packFormat)
   const size = sizeProfile(draft)
+  // Rarity-wide finishes (holo/gold-etch/etc. assigned to a whole rarity, not
+  // just a hand-designed signature — see rarity.finishes) are a real
+  // production cost: every card printed at that rarity needs the extra foil
+  // stamp/etch step. Weighted by each rarity's SHARE of the sheet's pull
+  // weight, so a finish on a common (most of the print run) costs far more
+  // than the same finish on a rare secret (a sliver of it).
+  const sheet = draft.rarities ?? defaultRaritySheet()
+  const totalPullWeight = sheet.reduce((s, r) => s + Math.max(0, r.pullWeight), 0) || 1
+  const finishCostMul = 1 + sheet.reduce((sum, r) => {
+    if (!r.finishes?.length) return sum
+    const share = Math.max(0, r.pullWeight) / totalPullWeight
+    return sum + (combinedFinishEffect(r.finishes).costMul - 1) * share
+  }, 0)
   // A bigger set needs more plates and sheets — a modest print-line premium on
   // top of the run size itself.
   const printCost = Math.round(
-    (20_000 + (draft.printRun / 100) * 180_000) * (1 + richness * 0.25) * (0.85 + 0.15 * size.lengthMul),
+    (20_000 + (draft.printRun / 100) * 180_000) * (1 + richness * 0.25) * (0.85 + 0.15 * size.lengthMul) * finishCostMul,
   )
   // Development scales with three things: the tier's floor, how hard THIS
   // gimmick is to design (a die-cut era costs real money; a plain themed era is
@@ -435,7 +462,7 @@ function artNotesMatchTheme(notes, theme) {
 }
 
 function popFactors(card, draft, theme, sheet, rng, artistOf = getArtist, characters = []) {
-  const standout = cardAppeal(card)
+  const standout = cardAppeal(card, sheet)
   const artist = card.artistId ? artistOf(card.artistId) : null
   const rarityTier = getRarity(sheet, card.rarity).valueTier
   const baseArt = artist ? artist.reach : 25
@@ -443,8 +470,11 @@ function popFactors(card, draft, theme, sheet, rng, artistOf = getArtist, charac
   // An art DIRECTOR sets the look of the whole set, so their specialty match
   // applies to every card — not just the ones they personally illustrated.
   const director = draft?.artDirectorId ? artistOf(draft.artDirectorId) : null
-  const directed = director && theme.tags.some((t) => director.specialty.includes(t)) ? 12 : 0
-  const themeMatch = (artist && theme.tags.some((t) => artist.specialty.includes(t)) ? 20 : 0) + directed
+  // Belt and braces: the two call paths into here now fall back to a known
+  // theme, but this must never be the thing that crashes card generation.
+  const tags = theme?.tags ?? []
+  const directed = director && tags.some((t) => director.specialty.includes(t)) ? 12 : 0
+  const themeMatch = (artist && tags.some((t) => artist.specialty.includes(t)) ? 20 : 0) + directed
   // An art-direction brief that actually leans into the set's theme reads as a
   // more cohesive commission — the same idea as the artist specialty match.
   const notesMatch = artNotesMatchTheme(card.artNotes, theme) ? 6 : 0
@@ -468,16 +498,20 @@ function popFactors(card, draft, theme, sheet, rng, artistOf = getArtist, charac
   }
 }
 
-// A signature card's STANDOUT APPEAL — how loudly it reads next to its
-// shelfmates. The designer's own dial, lifted by the printing finish and by
-// having a written flavor line (a card people quote reads louder than one they
-// don't). Replaces the old rules-text keyword parser: nothing in this game is
-// designed around what a card DOES, only around how much it's wanted.
-export function cardAppeal(card) {
+// A card's STANDOUT APPEAL — how loudly it reads next to its shelfmates. The
+// designer's own dial, lifted by the card's own printing finish (signature
+// cards only), by whatever finishes its RARITY carries as a blanket
+// production choice (every card at that rarity, signature or bulk — see
+// rarity.finishes/combinedFinishEffect in rarities.js), and by having a
+// written flavor line. `sheet` is optional so old call sites without rarity
+// context still resolve (just without the rarity-finish lift).
+export function cardAppeal(card, sheet) {
   const base = card?.appeal ?? card?.power ?? 50 // ?? power: in-session legacy records
-  const finish = getFinish(card?.finish).appealBonus
+  const ownFinish = getFinish(card?.finish).appealBonus
+  const rarityFinishIds = sheet ? (getRarity(sheet, card?.rarity)?.finishes ?? []) : []
+  const rarityFinish = combinedFinishEffect(rarityFinishIds).appealBonus
   const flavor = card?.flavorText?.trim() ? 4 : 0
-  return clamp(base + finish + flavor, 0, 100)
+  return clamp(base + ownFinish + rarityFinish + flavor, 0, 100)
 }
 
 // Build one market-ready card record from a "spec" (id/name/rarity/number + an
@@ -517,8 +551,11 @@ function buildCard(spec, draft, theme, sheet, rng, artistOf, characters = []) {
 // numbered above the count. Signature highlights are slotted in as the top cards
 // (keeping their designed name/rarity/art/power); the rest are themed-random, so
 // any of them — even a humble common — can later become a market darling.
-export function generateCards(draft, setId, week, artistOf = getArtist, characters = []) {
-  const theme = getTheme(draft.themeId)
+export function generateCards(draft, setId, week, artistOf = getArtist, characters = [], nameStyle = 'creature') {
+  // getTheme returns null for an id it doesn't know (a stale save, a renamed
+  // theme). popFactors reads theme.tags unguarded, so fall back the same way
+  // blocks.js's mintTreatmentCards already does rather than crash generation.
+  const theme = getTheme(draft.themeId) ?? getTheme('dragons')
   const sheet = draft.rarities ?? defaultRaritySheet()
   const rng = makeRng(hashSeed(`${draft.name}:${setId}:${week}`))
   draft = { ...draft, _setId: setId } // buildCard reads _setId
@@ -549,7 +586,7 @@ export function generateCards(draft, setId, week, artistOf = getArtist, characte
   for (let i = specs.length; i < length; i++) {
     const rarityId = nonSecret.length ? pickRarity(nonSecret, rng) : (sheet[0]?.id ?? 'common')
     specs.push({
-      id: `c${i + 1}`, name: randomCardName(theme, rng), rarity: rarityId,
+      id: `c${i + 1}`, name: randomCardName(theme, rng, nameStyle), rarity: rarityId,
       number: `${i + 1}/${length}`,
       appeal: clamp(Math.round(range(rng, 15, 70)), 0, 100), // bulk: low-to-mid, sleepers possible
     })
@@ -562,7 +599,7 @@ export function generateCards(draft, setId, week, artistOf = getArtist, characte
       : (nonSecret[nonSecret.length - 1]?.id ?? 'rare')
     const num = length + s + 1
     specs.push({
-      id: `s${s + 1}`, name: randomCardName(theme, rng), rarity: rarityId,
+      id: `s${s + 1}`, name: randomCardName(theme, rng, nameStyle), rarity: rarityId,
       number: `${num}/${length}`, secret: true,
       appeal: clamp(Math.round(range(rng, 20, 80)), 0, 100),
     })
@@ -601,10 +638,11 @@ export function releaseSet(state, draft) {
   const size = sizeProfile(draft)
 
   // Block resolution. A MAJOR opens a fresh block (with the player's gimmick spec);
-  // a MINOR/MICRO rides a live block and INHERITS its theme. Blocks coexist — a new
-  // major never retires the old ones (their warps stack). `block` is the block this
-  // set belongs to (new or attached); `blocksPatch` is the full state.blocks array
-  // after opening/refreshing.
+  // a MINOR/MICRO rides a live block but keeps its own theme (a Jungle set and a
+  // Fossil set can both ride the same Base-era block with different flavor).
+  // Blocks coexist — a new major never retires the old ones (their warps
+  // stack). `block` is the block this set belongs to (new or attached);
+  // `blocksPatch` is the full state.blocks array after opening/refreshing.
   const blocks = state.blocks ?? []
   let block = null
   let blocksPatch = blocks
@@ -618,11 +656,12 @@ export function releaseSet(state, draft) {
       blocksPatch = blocks.map((b) => (b.id === block.id ? block : b))
     }
   }
-  // A rider inherits the block's theme (the draft is seeded with it, but enforce
-  // here so a stale draft can't ship the wrong theme into a block).
-  const themeId = (tier.ridesBlock && block?.themeId) ? block.themeId : draft.themeId
+  // The set's own theme — a per-set flavor pick, independent of the block it
+  // rides (the block's `themeId` is only that block's OPENING set's theme;
+  // every rider is free to pick its own, same as Jungle/Fossil/Team Rocket).
+  const themeId = draft.themeId
   draft = { ...draft, themeId }
-  const theme = getTheme(themeId)
+  const theme = getTheme(themeId) ?? getTheme('dragons')
 
   // Characters: mint any BRAND-NEW characters a signature card requested, before
   // generating cards, so the character exists (with a stable id) in time both for
@@ -636,7 +675,8 @@ export function releaseSet(state, draft) {
   })
   draft = { ...draft, signatureCards: resolvedSigs }
 
-  const cards = generateCards(draft, setId, state.week, artistOf, characters)
+  const nameStyle = getConcept(state.config?.conceptId).nameStyle
+  const cards = generateCards(draft, setId, state.week, artistOf, characters, nameStyle)
 
   // Every signature card that features a character (new or existing) records a
   // new appearance — bumps fame, files the debut set on a first printing. Feeds
@@ -682,6 +722,11 @@ export function releaseSet(state, draft) {
     // rarities.js's computePackOdds) are published to the community.
     oddsPublished: !!draft.oddsPublished,
     oddsPublishedWeek: draft.oddsPublished ? state.week : null,
+    // What a god pack of THIS set contains, if it ever hits — see packs.js's
+    // drawGodPack. Falls back to the pre-feature default (on, auto top-tier)
+    // via the same shape createDraft seeds, so this is never missing on a
+    // freshly-released set.
+    godPack: draft.godPack ?? { enabled: true, rarityIds: [] },
   }
 
   // Design loudness: a louder set nudges the collectors' nostalgia-
@@ -1132,7 +1177,8 @@ export function reprintAsUnlimited(state, originalSetId, printRun = 55) {
     prerelease: { enabled: false, chasePullable: false },
   }
   const artistOf = (id) => currentArtist(state, id)
-  const reprintCards = generateCards(draft, newSetId, state.week, artistOf, state.characters ?? []).map((c) => ({
+  const nameStyle = getConcept(state.config?.conceptId).nameStyle
+  const reprintCards = generateCards(draft, newSetId, state.week, artistOf, state.characters ?? [], nameStyle).map((c) => ({
     ...c,
     // Reprints carry more supply → priced below the originals from the start.
     singlePrice: Math.round(c.singlePrice * 0.6 * 100) / 100,

@@ -24,7 +24,15 @@ export default function PackRipper({ state, onRip, onRunBreak }) {
   const set = state.sets.find((s) => s.id === setId)
   const rip = state.lastRip && state.lastRip.setId === setId ? state.lastRip : null
   const cardById = new Map(state.cards.map((c) => [c.id, c]))
-  const pulls = rip ? rip.pullIds.map((id) => cardById.get(id)).filter(Boolean) : []
+  // Pair each pulled id with its serial number BEFORE dropping unresolvable
+  // ids. `serials` is a parallel array indexed against `pullIds`, so filtering
+  // first and then reading `serials[i]` shifted every serial after a dropped
+  // card onto the wrong pull.
+  const pulls = rip
+    ? rip.pullIds
+        .map((id, i) => ({ card: cardById.get(id), serial: rip.serials?.[i] ?? null }))
+        .filter((p) => p.card)
+    : []
 
   return (
     <div className="panel">
@@ -51,10 +59,9 @@ export default function PackRipper({ state, onRip, onRunBreak }) {
           )}
           {pulls.length > 0 ? (
             <div className={'rip__pulls' + (rip?.isGodPack ? ' rip__pulls--god' : '')}>
-              {pulls.map((c, i) => {
+              {pulls.map(({ card: c, serial: serialNumber }, i) => {
                 const tier = visualTier(set?.rarities, c.rarity)
                 const isBest = c.id === rip.bestId
-                const serialNumber = rip.serials?.[i]
                 return (
                   <div key={`${c.id}-${i}`} className={`pull pull--${tier}${isBest ? ' pull--best' : ''}`}>
                     <div className="pull__sym"><SetSymbol themeId={set?.themeId} tier={tier} size={20} /></div>

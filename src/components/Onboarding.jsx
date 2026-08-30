@@ -1,9 +1,13 @@
-// First-run screen. Name your company & game, pledge a release cadence the
-// community will hold you to, then start. Every TCG here is collectible-first
-// (Pokémon-like) — there's no genre picker.
+// First-run screen. Name your company & game, pick what your cards actually
+// depict, pledge a release cadence the community will hold you to, then
+// start. Every TCG here is collectible-first (Pokémon-like) economically —
+// there's no economy genre picker (see the removed archetype picker in git
+// history) — but the concept pick below IS real: it's flavor/identity only
+// (see content/concepts.js), shaping generated card names for the whole run.
 
 import { useState } from 'react'
 import { MIN_CADENCE, MAX_CADENCE, DEFAULT_CADENCE_WEEKS, defaultConfig } from '../game/config.js'
+import { CONCEPTS } from '../game/content/concepts.js'
 
 export default function Onboarding({ onStart }) {
   const [cfg, setCfg] = useState(() => defaultConfig())
@@ -27,6 +31,23 @@ export default function Onboarding({ onStart }) {
             <span>Flagship game</span>
             <input value={cfg.gameName} onChange={(e) => set({ gameName: e.target.value })} placeholder="e.g. Mythwardens" />
           </label>
+        </div>
+
+        <div className="field field--full">
+          <span>What are your cards? <span className="muted">(flavor only — shapes generated card names)</span></span>
+          <div className="onboard__concepts">
+            {CONCEPTS.map((c) => (
+              <button
+                key={c.id}
+                className={'onboard__concept' + (cfg.conceptId === c.id ? ' is-active' : '')}
+                onClick={() => set({ conceptId: c.id })}
+              >
+                <span className="onboard__conceptname">{c.name}</span>
+                <span className="onboard__conceptlike">{c.resembles}</span>
+                <span className="onboard__conceptblurb">{c.blurb}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="field field--full">

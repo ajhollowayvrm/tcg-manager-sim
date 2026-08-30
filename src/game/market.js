@@ -10,6 +10,10 @@ import { COLLECTOR_MARKET_TILT } from './config.js'
 
 const PRICE_HISTORY_LEN = 26 // ~half a year of weekly points kept per card
 
+// The widest promo run promos.js can mint (prestige 0 → 5000 * 1 + 150). Used
+// to normalize a promo's supply into a 0..1 scarcity term below.
+const PROMO_SUPPLY_MAX = 5150
+
 // ---- Fair value ----------------------------------------------------------
 
 // A card's fair value is a pure COLLECTOR economy — rarity tier + art + the
@@ -148,7 +152,14 @@ export function resolveMarket(state) {
     if (card.promo) {
       const prev = card.singlePrice
       const spike = rng() < 0.05 ? range(rng, 0.08, 0.3) : 0
-      const drift = range(rng, -0.01, 0.03) + spike
+      // Promo SUPPLY finally prices. `promoSupply` (promos.js) is the whole
+      // point of a promo — a championship run is a few hundred copies, a league
+      // run a few thousand — and it was written on the card record and read
+      // nowhere, so every promo drifted identically. A scarce run appreciates;
+      // a mass-issued one bleeds. Anchored on promos.js's own output band
+      // (~150 copies at prestige 1, ~5,150 at prestige 0).
+      const scarcity = clamp((PROMO_SUPPLY_MAX - (card.promoSupply ?? 2000)) / PROMO_SUPPLY_MAX, 0, 1)
+      const drift = range(rng, -0.02 + scarcity * 0.02, 0.01 + scarcity * 0.035) + spike
       const next = Math.round(Math.max(1, prev * (1 + drift)) * 100) / 100
       card.singlePrice = next
       card.priceHistory = [...card.priceHistory, next].slice(-PRICE_HISTORY_LEN)

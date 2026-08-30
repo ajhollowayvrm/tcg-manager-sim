@@ -55,10 +55,14 @@ export function getCharacter(state, id) {
   return (state.characters ?? []).find((c) => c.id === id) ?? null
 }
 
+// Same reload-collision hazard as rarities.js's rid(), and worse here: cards
+// reference a character by id (card.characterId), so a fresh `char_1` colliding
+// with a saved one after a reload would silently re-point old cards at the new
+// character. Timestamp + counter keeps ids unique across sessions.
 let _uid = 0
 function characterId() {
   _uid += 1
-  return `char_${_uid}`
+  return `char_${Date.now().toString(36)}${_uid.toString(36)}`
 }
 
 // Mint a brand-new character. `species` is free-text flavor (a species/archetype

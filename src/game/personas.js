@@ -25,6 +25,11 @@ import { getTheme } from './content/themes.js'
 
 const FEED_MAX = 60 // cap the feedback feed length
 
+// What counts as an expensive single when a collector sizes one up. Shared
+// threshold with events.js's market_correction, which treats the same number as
+// the line above which a card is "pricey".
+const PRICEY_SINGLE = 60
+
 // How suspicious a card's splashiness reads. A card draws scrutiny when it is
 // an OUTLIER — far punchier than the other cards it shares the catalog with —
 // not merely because the whole set shouts (a uniformly splashy set just resets
@@ -244,7 +249,14 @@ function takeFor(persona, card, perceived, set, rng, displayName, grievances) {
     ]) }
   }
   if (t === 'collector') {
-    if (perceived > 20 || card.popFactors.value > 70) return { stance: 'hype', text: pick(rng, [
+    // A collector hypes a card they READ as hot, or one that is already
+    // demonstrably expensive. The second half used to test
+    // `card.popFactors.value`, a field that does not exist — popFactors carries
+    // {punch, rarity, artAppeal, hype} — so it was always undefined and the
+    // whole clause was dead. `singlePrice` is the real "this is valuable"
+    // signal, and 60 is the same threshold events.js's market_correction uses
+    // to decide a single counts as pricey.
+    if (perceived > 20 || (card.singlePrice ?? 0) >= PRICEY_SINGLE) return { stance: 'hype', text: pick(rng, [
       `${c} is the chase of ${s}. Buy now, thank me later.`,
       `Calling it: ${c} is the card people regret not grabbing.`,
       `${c} is moving. Get in before it runs.`,

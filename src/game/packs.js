@@ -53,11 +53,15 @@ export function ripPack(state, setId, nonce = 0) {
   // of colliding (seeded from the card's live serialIssued count).
   const issuedThisRip = new Map()
 
-  // God pack: a vanishingly rare roll where every position in the pack hits
-  // the set's highest available rarity tier instead of the normal per-slot
-  // odds — the real-hobby "every card in the box is a hit" legend.
-  if (rng() < GOD_PACK_CHANCE) {
-    const godPulls = drawGodPack(setCards, sheet, packSize(set.packFormat) || LEGACY_PACK_SIZE, issuedThisRip, rng)
+  // God pack: a vanishingly rare roll where every position in the pack hits —
+  // the real-hobby "every card in the box is a hit" legend. `set.godPack`
+  // (authored in the set builder — see sets.js's createDraft) says whether
+  // this set can roll one at all, and which rarities it draws from when it
+  // does; a set from before the feature existed defaults to the original
+  // fixed behavior (always on, auto top rarity tier).
+  const godPack = set.godPack ?? { enabled: true, rarityIds: [] }
+  if (godPack.enabled && rng() < GOD_PACK_CHANCE) {
+    const godPulls = drawGodPack(setCards, sheet, packSize(set.packFormat) || LEGACY_PACK_SIZE, issuedThisRip, rng, godPack.rarityIds)
     const bestPull = godPulls.reduce((a, b) => (b.singlePrice > (a?.singlePrice ?? -1) ? b : a), null)
     return { pulls: godPulls, bestPull, isGodPack: true }
   }
@@ -104,17 +108,29 @@ export function ripPack(state, setId, nonce = 0) {
   return { pulls, bestPull }
 }
 
-// Fill every position of a god pack from the set's highest available rarity
-// tier (by the sheet's valueTier), still honoring serial caps so a god pack
-// can't mint more copies of a numbered chase card than its cap allows.
-// `issuedThisRip` is shared with the caller so a serialized card pulled here
-// is correctly reflected if (implausibly) the god-pack roll ever coexists
-// with other draws — it never does today, but keeps the bookkeeping honest.
-function drawGodPack(setCards, sheet, count, issuedThisRip, rng) {
-  const tierOf = new Map(sheet.map((r) => [r.id, r.valueTier ?? 0]))
-  const topTier = setCards.reduce((max, c) => Math.max(max, tierOf.get(c.rarity) ?? 0), 0)
-  const topPool = setCards.filter((c) => (tierOf.get(c.rarity) ?? 0) >= topTier)
-  const pool = topPool.length ? topPool : setCards
+// Fill every position of a god pack. `restrictRarityIds` (from the set's
+// authored godPack.rarityIds) draws only from those rarities when given and
+// non-empty — a real player-picked combination, not just the top tier.
+// Empty (or a restriction that happens to match zero live cards) falls back
+// to the original behavior: the set's single highest-value rarity tier (by
+// the sheet's valueTier). Still honors serial caps so a god pack can't mint
+// more copies of a numbered chase card than its cap allows. `issuedThisRip`
+// is shared with the caller so a serialized card pulled here is correctly
+// reflected if (implausibly) the god-pack roll ever coexists with other
+// draws — it never does today, but keeps the bookkeeping honest.
+function drawGodPack(setCards, sheet, count, issuedThisRip, rng, restrictRarityIds = []) {
+  let pool = null
+  if (restrictRarityIds?.length) {
+    const ids = new Set(restrictRarityIds)
+    const restricted = setCards.filter((c) => ids.has(c.rarity))
+    if (restricted.length) pool = restricted
+  }
+  if (!pool) {
+    const tierOf = new Map(sheet.map((r) => [r.id, r.valueTier ?? 0]))
+    const topTier = setCards.reduce((max, c) => Math.max(max, tierOf.get(c.rarity) ?? 0), 0)
+    const topPool = setCards.filter((c) => (tierOf.get(c.rarity) ?? 0) >= topTier)
+    pool = topPool.length ? topPool : setCards
+  }
 
   const pulls = []
   for (let i = 0; i < count; i++) {

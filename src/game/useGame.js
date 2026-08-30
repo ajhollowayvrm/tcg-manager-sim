@@ -12,6 +12,7 @@ import { signGradingPartner, dropGradingPartner, cultivateGradingPartner } from 
 import { launchMerchLine, refreshMerchLine, retireMerchLine } from './merch.js'
 import { pitchMediaDeal } from './media.js'
 import { runBreak } from './breaks.js'
+import { createCharacter } from './characters.js'
 import { loadState, saveState, clearSave } from './persistence.js'
 
 // Reducer-driven game state. Time is MANUAL: the player clicks "Advance Week",
@@ -107,7 +108,7 @@ function reducer(state, action) {
         segments: result.segments,
         playerBase: result.playerBase,
         personas: result.personas,
-        eventsFeed: [{ week: state.week, text: result.feed }, ...state.eventsFeed],
+        eventsFeed: [{ week: state.week, text: result.feed }, ...state.eventsFeed].slice(0, 60),
         clock: { ...state.clock, reason: `Pulled ${result.pulledName} from print` },
       }
     }
@@ -349,6 +350,14 @@ function reducer(state, action) {
     case 'RESET':
       clearSave() // don't let the finished run resurrect on the next reload
       return createInitialState()
+    case 'ADD_CHARACTER': {
+      // Pre-builds your cast ahead of a card, the same record a signature
+      // card's "new character" request would mint at release (see sets.js's
+      // releaseSet) — just created directly, with no card attached yet, so a
+      // fresh company can staff a roster before its first release.
+      if (!action.name?.trim()) return state
+      return { ...state, characters: [...(state.characters ?? []), createCharacter(action.name, action.species)] }
+    }
     default:
       return state
   }
@@ -418,6 +427,7 @@ export function useGame() {
   const toggleOddsPublished = useCallback((setId) => dispatch({ type: 'TOGGLE_ODDS_PUBLISHED', setId }), [])
   const adjustWave = useCallback((setId, direction) => dispatch({ type: 'ADJUST_PENDING_WAVE', setId, direction }), [])
   const reset = useCallback(() => dispatch({ type: 'RESET' }), [])
+  const addCharacter = useCallback((name, species) => dispatch({ type: 'ADD_CHARACTER', name, species }), [])
   // A nonce so consecutive rips of the same set in the same week differ.
   const ripNonce = useRef(0)
   const rip = useCallback((setId) => dispatch({ type: 'RIP_PACK', setId, nonce: ripNonce.current++ }), [])
@@ -443,5 +453,5 @@ export function useGame() {
   const retireMerch = useCallback((kind) => dispatch({ type: 'RETIRE_MERCH_LINE', kind }), [])
   const pitchMedia = useCallback((dealId) => dispatch({ type: 'PITCH_MEDIA_DEAL', dealId }), [])
 
-  return { state, advanceWeek: advanceWeekAction, release, pull, reprint, adjustWave, reset, rip, startGame, comp, sponsor, unsponsor, invitePrerelease: invitePrereleaseAction, sponsorTournament: sponsorTournamentAction, signDist, dropDist, cultivateDist, upgradeSupplyChain: upgradeSupplyChainAction, signGrading, dropGrading, cultivateGrading, runBreak: runBreakAction, togglePurchaseLimits, togglePhantomStock, toggleOddsPublished, launchMerch, refreshMerch, retireMerch, pitchMedia }
+  return { state, advanceWeek: advanceWeekAction, release, pull, reprint, adjustWave, reset, addCharacter, rip, startGame, comp, sponsor, unsponsor, invitePrerelease: invitePrereleaseAction, sponsorTournament: sponsorTournamentAction, signDist, dropDist, cultivateDist, upgradeSupplyChain: upgradeSupplyChainAction, signGrading, dropGrading, cultivateGrading, runBreak: runBreakAction, togglePurchaseLimits, togglePhantomStock, toggleOddsPublished, launchMerch, refreshMerch, retireMerch, pitchMedia }
 }

@@ -140,8 +140,8 @@ export default function SignatureCardEditor({ card, theme, artists, characters =
       <label className="field field--full">
         <span>
           Standout appeal: {card.appeal}
-          {cardAppeal(card) !== card.appeal && (
-            <span className="muted"> → {cardAppeal(card)} with finish &amp; flavor</span>
+          {cardAppeal(card, rarities) !== card.appeal && (
+            <span className="muted"> → {cardAppeal(card, rarities)} with finish &amp; flavor</span>
           )}
         </span>
         <input

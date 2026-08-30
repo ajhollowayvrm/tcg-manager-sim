@@ -407,7 +407,12 @@ export function rollEvent(state) {
 // Apply an event's effects to the next-state in place.
 export function applyEventEffects(next, effects) {
   if (effects.cards) next.cards = effects.cards
-  if (typeof effects.cash === 'number') next.cash = Math.max(0, next.cash + effects.cash)
+  // NOT clamped at zero. Cash is a LOAN below zero (see simulation.js's
+  // DEBT_INTEREST_PER_WEEK / DEBT_RUIN), so a Math.max(0, …) here silently
+  // ERASED the player's whole debt every time a costed event fired: at
+  // -$500,000, a -$12,000 supply-chain snag left them at $0. That turned the
+  // one event with a cash cost into a free bailout and voided the debt spiral.
+  if (typeof effects.cash === 'number') next.cash += effects.cash
 
   const seg = next.segments
   if (effects.casualDelta) seg.casual = Math.max(0, seg.casual + effects.casualDelta)

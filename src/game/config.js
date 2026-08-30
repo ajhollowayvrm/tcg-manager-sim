@@ -1,7 +1,10 @@
 // Onboarding config — the identity the player sets before a run. Every TCG in
-// this sim is a collectible-first, Pokémon-like game (art, chase rarities, and
-// nostalgia drive the base) — there's no genre choice, just a name and a
-// release-cadence pledge.
+// this sim is a collectible-first game (art, chase rarities, and nostalgia
+// drive the base) — there's no ECONOMY genre choice (see the removed
+// archetype picker), just a name, a release-cadence pledge, and — flavor
+// only — what your cards actually depict (see content/concepts.js).
+
+import { DEFAULT_CONCEPT_ID } from './content/concepts.js'
 
 // Starting segment lean: the casual/collector split new players discover into
 // as the base grows from zero (see initialState.js/segments.js).
@@ -34,6 +37,7 @@ export function defaultConfig() {
   return {
     companyName: '',
     gameName: '',
+    conceptId: DEFAULT_CONCEPT_ID,
     cadenceWeeks: DEFAULT_CADENCE_WEEKS,
     started: false,
   }

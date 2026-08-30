@@ -3,9 +3,13 @@
 // though they drift every week and feed straight into set design: fame gates
 // icon-treatment eligibility (see characters.js's famePopBonus/TREATMENTS) and
 // an artist's live cost/reach changes what a new signature card actually costs
-// (see artists.js's currentArtist). Read-only — no actions live here, this is
-// purely the "how's my cast doing" check the set builder can't show mid-run.
+// (see artists.js's currentArtist). Mostly a read-only "how's my cast doing"
+// check the set builder can't show mid-run — but characters can also be
+// created here directly (no card required), so a fresh company can staff a
+// roster before its first release instead of only minting one mid-signature-
+// card in the builder.
 
+import { useState } from 'react'
 import { getArtist } from '../game/content/artists.js'
 
 const CHAR_TRAJ_LABEL = { rising: 'Rising', established: 'Established', icon: 'Icon', fading: 'Fading' }
@@ -37,37 +41,34 @@ function CastRow({ name, sub, pct, pctTitle, trajectory, label }) {
   )
 }
 
-export default function CastPanel({ state }) {
+export default function CastPanel({ state, onAddCharacter }) {
   const characters = [...(state.characters ?? [])].sort((a, b) => b.fame - a.fame).slice(0, MAX_ROWS)
   const artists = [...(state.artists ?? [])]
     .map((a) => ({ ...a, name: getArtist(a.id)?.name ?? a.id }))
     .sort((a, b) => b.reach - a.reach)
     .slice(0, MAX_ROWS)
 
-  if (!characters.length && !artists.length) return null
-
   return (
     <div className="panel">
       <h2 className="panel__title">Cast &amp; Artists</h2>
 
+      <h3 className="panel__subtitle">Characters, by fame</h3>
       {characters.length > 0 && (
-        <>
-          <h3 className="panel__subtitle">Characters, by fame</h3>
-          <ul className="roster">
-            {characters.map((c) => (
-              <CastRow
-                key={c.id}
-                name={c.name}
-                sub={c.species}
-                pct={c.fame}
-                pctTitle={`Fame ${Math.round(c.fame)}`}
-                trajectory={c.trajectory}
-                label={CHAR_TRAJ_LABEL[c.trajectory] ?? c.trajectory}
-              />
-            ))}
-          </ul>
-        </>
+        <ul className="roster">
+          {characters.map((c) => (
+            <CastRow
+              key={c.id}
+              name={c.name}
+              sub={c.species}
+              pct={c.fame}
+              pctTitle={`Fame ${Math.round(c.fame)}`}
+              trajectory={c.trajectory}
+              label={CHAR_TRAJ_LABEL[c.trajectory] ?? c.trajectory}
+            />
+          ))}
+        </ul>
       )}
+      {onAddCharacter && <NewCharacterForm onAdd={onAddCharacter} />}
 
       {artists.length > 0 && (
         <>
@@ -87,5 +88,39 @@ export default function CastPanel({ state }) {
         </>
       )}
     </div>
+  )
+}
+
+// Mint a character with no card attached yet — the same record a signature
+// card's "new character" request creates at release (see characters.js's
+// createCharacter), just available before you've released anything at all.
+function NewCharacterForm({ onAdd }) {
+  const [name, setName] = useState('')
+  const [species, setSpecies] = useState('')
+
+  const submit = (e) => {
+    e.preventDefault()
+    if (!name.trim()) return
+    onAdd(name, species)
+    setName('')
+    setSpecies('')
+  }
+
+  return (
+    <form className="roster__addform" onSubmit={submit}>
+      <input
+        className="roster__addinput"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="New character name"
+      />
+      <input
+        className="roster__addinput"
+        value={species}
+        onChange={(e) => setSpecies(e.target.value)}
+        placeholder="Species/archetype (optional)"
+      />
+      <button className="btn btn--ghost" type="submit" disabled={!name.trim()}>+ Add</button>
+    </form>
   )
 }
