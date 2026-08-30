@@ -6,7 +6,7 @@ import { seedArtists } from './artists.js'
 import { seedCharacters } from './characters.js'
 import { seedRival } from './rival.js'
 import { makeRng, hashSeed } from './rng.js'
-import { defaultConfig, STARTING_SEGMENT_LEAN, STARTING_CASH } from './config.js'
+import { defaultConfig, STARTING_SEGMENT_LEAN, STARTING_CASH, PRINT_INTENSITY_NEUTRAL } from './config.js'
 
 // Normalize the starting seed segment numbers into fractions that sum to 1 —
 // the LEAN that new players distribute into as the base grows from zero.
@@ -45,11 +45,13 @@ export function createInitialState(config) {
     segments,
     segmentLean: normalizeLean(STARTING_SEGMENT_LEAN),
 
-    // Nostalgia-erosion dial (0–100): loud modern card design mildly bleeds the
-    // collectors segment past a mid floor. Pushed up by a high-power-budget
-    // release, cools slowly on its own each week, relieved faster by pulling a
-    // hot set from print. See segments.js / simulation.js / bans.js.
-    printIntensity: 35,
+    // Nostalgia-erosion dial (0–100). Starts at NEUTRAL: with no product on the
+    // shelf there is nothing eroding and nothing to be nostalgic about yet.
+    // Each release declares the level it sustains (sets.js's `printLevel`) and
+    // the dial relaxes toward the buzz-weighted mean of the in-print catalogue
+    // (simulation.js). Collectors read the deviation from neutral in BOTH
+    // directions — restraint pleases them, loud design bleeds them.
+    printIntensity: PRINT_INTENSITY_NEUTRAL,
 
     sets: [],
     cards: [],
@@ -78,6 +80,17 @@ export function createInitialState(config) {
     // Grading-partner deals — third-party authentication services that
     // ambiently certify high-value singles each week. See grading.js.
     gradingPartners: [],
+    // Weeks in which a live box break ran. Breaks saturate: too many in a short
+    // window and the audience stops believing it's a moment. See breaks.js.
+    breakHistory: [],
+    // Community-goodwill programme, 0..1 — the voluntary money sink and the
+    // main way to buy back a soured community. Costs up to $0.55/player/week
+    // and its effect is damped by whatever the community is actually angry
+    // about, so it repairs goodwill but never buys permission. See overhead.js.
+    goodwillSpend: 0,
+    // Last week's recurring-cost breakdown ({ staff, lines, catalogue, studio,
+    // warehouse, blocks, goodwill, total }) — see overhead.js.
+    lastOverhead: null,
     // Anti-scalping policy toggles (see distributors.js/revenue.js) — free
     // standing stances, off by default, each a real revenue/reach tradeoff.
     purchaseLimitPolicy: false,

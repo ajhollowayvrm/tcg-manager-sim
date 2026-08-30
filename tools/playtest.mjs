@@ -97,7 +97,24 @@ const THEMES = ['dragons', 'undead', 'cyber', 'nature', 'arcane'] // real theme 
 // `minorEvery` (optional): drop a smaller rider set every N weeks BETWEEN majors,
 // cycling minor→micro. This is how we model the major/minor cadence: majors are
 // the format beats, riders are the in-between collector drops.
-function makeStrategy({ name, cadence, knobs, rotateEvery, ignoreCash = false, minorEvery = null }) {
+// `maxLiveSets` (optional): prune the shelf down to this many in-print sets,
+// oldest first. This is the discipline the recurring costs in overhead.js exist
+// to demand — line cost scales as liveSets ** 1.30, so a curated shelf is
+// dramatically cheaper to run than a sprawling one. `goodwill` (optional, 0..1)
+// sets the standing community-goodwill commitment (overhead.js sink D).
+// How deep into debt a sensible strategy will go to get a set out. The real
+// game does NOT block a release on affordability — cash goes negative as a loan
+// (see SetBuilder's "this set puts you into debt" notice), so a harness that
+// required `cash > cost * 1.15` was strictly more cautious than a player can be,
+// and modelled studios that sat paralysed with a shelf going cold rather than
+// borrowing to ship. This models a prudent borrower, not a reckless one.
+const CREDIT_FLOOR = -250_000
+
+function canFund(state, draft) {
+  return state.cash - setCost(draft).total > CREDIT_FLOOR
+}
+
+function makeStrategy({ name, cadence, knobs, rotateEvery, ignoreCash = false, minorEvery = null, maxLiveSets = null, goodwill = 0 }) {
   return {
     name,
     // What this studio PLEDGES at onboarding, which is what cadence.js judges it
@@ -109,6 +126,10 @@ function makeStrategy({ name, cadence, knobs, rotateEvery, ignoreCash = false, m
     // Called each week BEFORE advanceWeek. Returns the (possibly) acted-on state.
     act(state, ctx) {
       let s = state
+      // Set the standing goodwill commitment once, on the first week.
+      if (goodwill > 0 && (s.goodwillSpend ?? 0) !== goodwill) {
+        s = act(s, { type: 'SET_GOODWILL', level: goodwill })
+      }
       // Release on cadence if we can afford it (real setCost on the actual draft,
       // with a thin safety buffer so a strategy doesn't bankrupt itself printing).
       // The MAJOR beat tracks weeks since the last MAJOR (riders don't reset it);
@@ -120,7 +141,7 @@ function makeStrategy({ name, cadence, knobs, rotateEvery, ignoreCash = false, m
       const isMajorDue = s.sets.length === 0 || weeksSinceMajor >= cadence
       if (isMajorDue) {
         const draft = buildDraft(s.sets.length + 1, knobs, ctx.salt, 'major')
-        if (ignoreCash || s.cash > setCost(draft).total * 1.15) {
+        if (ignoreCash || canFund(s, draft)) {
           s = applyRelease(s, draft)
           ctx.releases++
         }
@@ -128,10 +149,25 @@ function makeStrategy({ name, cadence, knobs, rotateEvery, ignoreCash = false, m
         // Between majors: a rider riding the newest block. Alternate minor/micro.
         const tier = (ctx.riders % 2 === 0) ? 'minor' : 'micro'
         const draft = buildDraft(s.sets.length + 1, knobs, ctx.salt, tier, s.blocks)
-        if (ignoreCash || s.cash > setCost(draft).total * 1.15) {
+        if (ignoreCash || canFund(s, draft)) {
           s = applyRelease(s, draft)
           ctx.releases++
           ctx.riders++
+        }
+      }
+      // Shelf discipline: prune down to a target in-print count, oldest first.
+      // Line cost scales as liveSets ** 1.30 (overhead.js), so this is the
+      // difference between a shelf that pays for itself and one that does not.
+      if (maxLiveSets) {
+        let guard = 0
+        for (;;) {
+          const inPrint = s.sets.filter((x) => !x.rotated && !x.outOfPrint)
+            .sort((a, b) => a.releasedWeek - b.releasedWeek)
+          if (inPrint.length <= maxLiveSets || inPrint.length < 2 || guard++ > 40) break
+          const before = s.sets.filter((x) => x.outOfPrint).length
+          s = applyPull(s, inPrint[0].id)
+          if (s.sets.filter((x) => x.outOfPrint).length === before) break // refused; stop looping
+          ctx.pulls++
         }
       }
       // Periodically pull the oldest in-print set to relieve design loudness
@@ -231,6 +267,64 @@ const STRATEGIES = [
   makeStrategy({ name: 'Plain eras (no gimmick)', cadence: 12, rotateEvery: 78,
     knobs: { designLoudness: 55, printRun: 55, pricePoint: 4.5, chaseAppeal: 70,
       namePool: NAME_POOL, themes: THEMES } }),
+
+  // ---- Shelf-discipline strategies ----------------------------------------
+  // These exist to test the recurring costs in overhead.js. Line cost scales as
+  // liveSets ** 1.30, so keeping a curated shelf is the central late-game
+  // decision. 'Target cadence' is the reference play the whole rebalance is
+  // tuned around: it MUST survive 3/3 and should rank at or near the top.
+  makeStrategy({ name: 'Target cadence (prune 6)', cadence: 14, rotateEvery: null, maxLiveSets: 6,
+    knobs: { designLoudness: 50, printRun: 50, pricePoint: 4.5, chaseAppeal: 70,
+      namePool: NAME_POOL, themes: THEMES, gimmicks: ['mega'] } }),
+  // Same pruning discipline, rider-spam release rhythm. Separates "riders are
+  // bad" from "an enormous shelf is bad" — this should still lose to the
+  // reference play once rider fatigue bites revenue.
+  makeStrategy({ name: 'Rider spam + prune', cadence: 24, minorEvery: 4, rotateEvery: null, maxLiveSets: 6,
+    knobs: { designLoudness: 55, printRun: 55, pricePoint: 4.5, chaseAppeal: 75,
+      namePool: NAME_POOL, themes: THEMES, gimmicks: ['phantasmal', 'tera'] } }),
+  // Bounds the cadence target from above and below. Both should be clearly
+  // worse than the 14-week reference.
+  makeStrategy({ name: 'Slow cadence (24wk)', cadence: 24, rotateEvery: null, maxLiveSets: 6,
+    knobs: { designLoudness: 50, printRun: 50, pricePoint: 4.5, chaseAppeal: 70,
+      namePool: NAME_POOL, themes: THEMES, gimmicks: ['mega'] } }),
+  makeStrategy({ name: 'Fast cadence (8wk)', cadence: 8, rotateEvery: null, maxLiveSets: 6,
+    knobs: { designLoudness: 50, printRun: 50, pricePoint: 4.5, chaseAppeal: 70,
+      namePool: NAME_POOL, themes: THEMES, gimmicks: ['mega'] } }),
+  // The goodwill programme (overhead.js sink D) as a real choice: this studio
+  // spends a third to a half of gross income on the community. It should show
+  // the best sentiment and reputation and far less cash than the reference —
+  // proving the sink is a trade, not a tax.
+  // Half-commitment. A FULL 1.0 commitment reliably bankrupts a studio around
+  // week 230 (102% of gross income), which is the correct shape for a maximal
+  // spend but tells you nothing about whether the sink is playable. 0.5 is the
+  // real question: is buying community goodwill a trade worth making?
+  makeStrategy({ name: 'Goodwill spender', cadence: 14, rotateEvery: null, maxLiveSets: 6, goodwill: 0.5,
+    knobs: { designLoudness: 50, printRun: 50, pricePoint: 4.5, chaseAppeal: 70,
+      namePool: NAME_POOL, themes: THEMES, gimmicks: ['mega'] } }),
+  // A deliberately bad opening: go dark for ten weeks early, then recover. The
+  // old quadratic cadence cliff killed this outright; it must now survive.
+  {
+    name: 'Early stumble',
+    pledge: 14,
+    act(state, ctx) {
+      let s = state
+      // Deliberately skip the week-20..34 window, then release on a 14wk beat.
+      const stalled = s.week >= 20 && s.week <= 34
+      const lastSet = s.sets[s.sets.length - 1]
+      const since = lastSet ? s.week - lastSet.releasedWeek : Infinity
+      if (!stalled && (s.sets.length === 0 || since >= 14)) {
+        const draft = buildDraft(s.sets.length + 1, {
+          designLoudness: 50, printRun: 50, pricePoint: 4.5, chaseAppeal: 70,
+          namePool: NAME_POOL, themes: THEMES, gimmicks: ['mega'],
+        }, ctx.salt, 'major', s.blocks)
+        if (canFund(s, draft)) { s = applyRelease(s, draft); ctx.releases++ }
+      }
+      const inPrint = s.sets.filter((x) => !x.rotated && !x.outOfPrint)
+        .sort((a, b) => a.releasedWeek - b.releasedWeek)
+      if (inPrint.length > 6) { s = applyPull(s, inPrint[0].id); ctx.pulls++ }
+      return s
+    },
+  },
 ]
 
 // ---- Run a single game ----------------------------------------------------
@@ -251,6 +345,10 @@ function playOne(strategy, salt, trace = false, horizon = DEFAULT_HORIZON) {
   let bigMoves = 0, weeksWithMover = 0
   let minCash = Infinity, minPlayers = Infinity // closest anyone came to losing
   let minSentiment = Infinity
+  // Lifetime money flow, so `spend%` can show what fraction of gross income the
+  // recurring sinks actually take. Before overhead.js this was about 8%.
+  let grossRevenue = 0, totalOverhead = 0
+  const netTail = [] // trailing weekly net cash flow, for the end-of-run trend
 
   for (let i = 0; i < horizon; i++) {
     if (state.gameOver) break
@@ -263,6 +361,12 @@ function playOne(strategy, salt, trace = false, horizon = DEFAULT_HORIZON) {
       bigMoves += state.movers.filter((m) => Math.abs(m.pct) >= 0.25).length
     }
     const sentiment = communitySentiment(state.personas) ?? 0
+    const income = (state.lastRevenue?.total ?? 0) + (state.lastMerchRevenue?.total ?? 0)
+    const outgoing = (state.lastOverhead?.total ?? 0) + (state.lastUpkeep ?? 0) + (state.lastDebtInterest ?? 0)
+    grossRevenue += income
+    totalOverhead += state.lastOverhead?.total ?? 0
+    netTail.push(income - outgoing)
+    if (netTail.length > 13) netTail.shift()
     if (state.cash < minCash) minCash = state.cash
     if (state.playerBase < minPlayers) minPlayers = state.playerBase
     if (sentiment < minSentiment) minSentiment = sentiment
@@ -295,6 +399,14 @@ function playOne(strategy, salt, trace = false, horizon = DEFAULT_HORIZON) {
     minSentiment: minSentiment === Infinity ? 0 : minSentiment,
     reputation: state.franchise?.reputation ?? 0,
     printIntensity: state.printIntensity ?? 0,
+    overhead: state.lastOverhead?.total ?? 0,
+    // What share of lifetime gross income the recurring sinks took. Before
+    // overhead.js existed this was ~8% and cash grew without bound.
+    spendShare: grossRevenue > 0 ? totalOverhead / grossRevenue : 0,
+    // Trailing 13-week mean net cash flow at the end of the run. A strategy
+    // that never prunes its shelf should finish NEGATIVE here even if its bank
+    // balance is still large — that is the late-game pressure working.
+    netWeekly: netTail.length ? netTail.reduce((a, b) => a + b, 0) / netTail.length : 0,
     avgBuzz: avgBuzz(state.sets),
     releases: ctx.releases,
     riders: ctx.riders, // minor/micro releases (subset of releases)
@@ -363,6 +475,9 @@ function summarize(opts) {
       minSentiment: avg((r) => r.minSentiment),
       reputation: avg((r) => r.reputation),
       printIntensity: avg((r) => r.printIntensity),
+      overhead: avg((r) => r.overhead),
+      spendShare: avg((r) => r.spendShare),
+      netWeekly: avg((r) => r.netWeekly),
       avgBuzz: avg((r) => r.avgBuzz),
       releases: avg((r) => r.releases),
       riders: avg((r) => r.riders),
@@ -385,9 +500,9 @@ function summarize(opts) {
 
   console.log(`Headless playtest — horizon ${horizon} weeks (~${(horizon / 52).toFixed(0)}y), ${salts.length} set-name salt(s) each\n`)
   const H = [
-    ['strategy', 23], ['survive', 9], ['deaths', 14], ['cash', 9], ['minCash', 9],
-    ['players', 9], ['sent', 7], ['minSent', 9], ['rep', 6], ['pInt', 6], ['buzz', 6],
-    ['rel', 5], ['rid', 5], ['live', 6], ['cards', 7], ['cad', 6], ['mvr%', 7], ['outcome', 10],
+    ['strategy', 23], ['survive', 9], ['deaths', 14], ['cash', 9], ['ovhd', 8],
+    ['spend%', 8], ['netWk', 9], ['players', 9], ['sent', 7], ['rep', 6], ['pInt', 6],
+    ['rel', 5], ['live', 6], ['cad', 6], ['outcome', 10],
   ]
   console.log(H.map(([h, w]) => h.padEnd(w)).join(''))
   console.log('-'.repeat(H.reduce((s, [, w]) => s + w, 0)))
@@ -398,27 +513,26 @@ function summarize(opts) {
       `${r.survived}/${r.of}`,
       r.deaths.length ? r.deaths.join(',') : '—',
       fmt(r.cash),
-      fmt(r.minCash),
+      fmt(r.overhead),
+      (r.spendShare * 100).toFixed(0) + '%',
+      fmt(r.netWeekly),
       fmt(r.players),
       r.sentiment.toFixed(0),
-      r.minSentiment.toFixed(0),
       r.reputation.toFixed(0),
       r.printIntensity.toFixed(0),
-      r.avgBuzz.toFixed(0),
       r.releases.toFixed(0),
-      r.riders.toFixed(0),
       r.liveSets.toFixed(0),
-      fmt(r.cards),
       r.cadence.toFixed(0),
-      (r.moverRate * 100).toFixed(0),
       r.kinds,
     ]
     console.log(cells.map((c, i) => String(c).padEnd(H[i][1])).join(''))
   }
 
   console.log('\nColumns: deaths = the WEEKS failing runs ended (not a mean — averaging 33 and 313 describes no run).')
-  console.log('  sent/minSent = reach-weighted community sentiment, final and worst. rep = franchise reputation.')
-  console.log('  live = sets still in print (vs rel = lifetime releases). cad = weeks per release. mvr% = weeks with a market mover.')
+  console.log('  ovhd = last week\'s recurring costs. spend% = lifetime sinks / lifetime gross income (was ~8%).')
+  console.log('  netWk = trailing 13wk mean net cash flow; a shelf you never prune should end NEGATIVE here.')
+  console.log('  sent = reach-weighted community sentiment. rep = franchise reputation. pInt = nostalgia erosion (40 = neutral).')
+  console.log('  live = sets still in print (vs rel = lifetime releases). cad = weeks per release.')
   console.log('\nRelease cadence target (brief): a set every few months ≈ every 12–20 weeks.')
   console.log('Survival read: a skilled strategy should survive; greed/idle should fail.')
   console.log('Curve read: failures should SPREAD across the horizon, not cluster in one narrow band.')

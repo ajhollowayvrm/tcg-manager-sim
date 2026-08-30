@@ -21,6 +21,7 @@
 import { makeRng, hashSeed, range } from './rng.js'
 import { clamp } from './simulation.js'
 import { catalogBuzz } from './segments.js'
+import { PRINT_INTENSITY_NEUTRAL, PRINT_INTENSITY_SPAN } from './config.js'
 import { RIVALS, getRival } from './content/rivals.js'
 
 export const RIVAL_HOT_THRESHOLD = 65 // meter reads "danger" above this
@@ -70,12 +71,15 @@ export function applyRival(next) {
     const casualLoss = Math.round((next.segments?.casual ?? 0) * bite)
     if (next.segments) next.segments.casual = Math.max(0, next.segments.casual - casualLoss)
 
-    // Only nibbles collectors once your own design has run loud (printIntensity
-    // past 60) — the "power level" tie-in via the dial that's actually live.
-    const printIntensity = next.printIntensity ?? 0
+    // Only nibbles collectors once your own design has run loud — the "power
+    // level" tie-in via the dial that's actually live. Read as a deviation
+    // above NEUTRAL rather than against a hard-coded 60: the dial used to sit
+    // pinned at 0 in every default run, so this branch never once fired.
+    const printIntensity = next.printIntensity ?? PRINT_INTENSITY_NEUTRAL
+    const loud = clamp((printIntensity - PRINT_INTENSITY_NEUTRAL) / PRINT_INTENSITY_SPAN, 0, 1)
     let collectorsLoss = 0
-    if (printIntensity > 60 && next.segments) {
-      const collectorsBite = bite * clamp((printIntensity - 60) / 40, 0, 1) * 0.35
+    if (loud > 0 && next.segments) {
+      const collectorsBite = bite * loud * 0.35
       collectorsLoss = Math.round(next.segments.collectors * collectorsBite)
       next.segments.collectors = Math.max(0, next.segments.collectors - collectorsLoss)
     }

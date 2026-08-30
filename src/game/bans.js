@@ -54,25 +54,48 @@ export function pullFromPrint(state, setId) {
     }
   })
 
-  // A small relief on design-loudness — pulling a hot set eases nostalgia
-  // erosion a touch.
-  const printIntensity = clamp((state.printIntensity ?? 40) - range(rng, 3, 8), 0, 100)
+  // Erosion relief is no longer handed out here. It used to be a flat random
+  // `-range(rng, 3, 8)` gift, which existed only to compensate for a dial that
+  // did not work. Pulling a set now relieves nostalgia erosion STRUCTURALLY
+  // and permanently: the set's `printLevel` leaves the buzz-weighted shelf mean
+  // that simulation.js relaxes `printIntensity` toward (segments.js's
+  // shelfPrintLevel). Pull a LOUD set and the relief is large; pull a quiet one
+  // and there was nothing to relieve.
+  const printIntensity = state.printIntensity
 
-  // Goodwill: collectors are HAPPY (scarcity boosts their holdings).
+  // How CYNICAL this pull looks. Yanking a set that is still fresh and still
+  // widely available locks people out of something they wanted to buy; retiring
+  // a sold-out, cold set is just housekeeping and nobody minds.
+  const soldThrough = target.supply > 0 ? clamp((target.sold ?? 0) / target.supply, 0, 1) : 1
+  const cynicism = clamp((1 - soldThrough) * ((target.buzz ?? 50) / 100), 0, 1)
+
+  // Goodwill: collectors are HAPPY (scarcity boosts their holdings)…
   const collectorDelta = Math.round(state.segments.collectors * range(rng, 0.03, 0.07))
+  // …but the people who had not bought it yet are now locked out, and some
+  // leave. This lever used to have no downside at all: every persona's delta
+  // was non-negative (the non-collector term was `(fairness + fun) * 3`, and
+  // both tastes are in [0,1]), every segment only grew, and the singles only
+  // appreciated. The brief says pulling a set should cost goodwill.
+  const casualLoss = Math.round(state.segments.casual * range(rng, 0.005, 0.02) * cynicism)
   const segments = {
-    casual: state.segments.casual,
+    casual: Math.max(0, state.segments.casual - casualLoss),
     collectors: Math.max(0, state.segments.collectors + collectorDelta),
   }
   const playerBase = Math.max(0, segments.casual + segments.collectors)
 
   const personas = state.personas.map((p) => {
-    // Collectors cheer the scarcity; fairness/fun lovers like a fresh catalog.
-    const d = p.type === 'collector' ? range(rng, 6, 12) : (p.taste.fairness + p.taste.fun) * 3
-    return { ...p, sentiment: clamp(p.sentiment + d, -100, 100) }
+    // Collectors cheer the scarcity whatever the circumstances…
+    const collectorJoy = p.type === 'collector' ? range(rng, 4, 9) : 0
+    // …while fairness-minded voices call a cynical pull manufactured scarcity,
+    // and the fun-first crowd just wanted to open the packs.
+    const fairnessAnger = (p.taste?.fairness ?? 0) * cynicism * -14
+    const accessLoss = (p.taste?.fun ?? 0) * cynicism * -6
+    return { ...p, sentiment: clamp(p.sentiment + collectorJoy + fairnessAnger + accessLoss, -100, 100) }
   })
 
-  const feed = `${target.name} is pulled from publication. Out of print — its singles spike on scarcity and collectors are thrilled. (A prime candidate to reprint later.)`
+  const feed = cynicism > 0.4
+    ? `${target.name} is pulled from publication while it was still selling. Collectors are thrilled; everyone who hadn't bought one yet is not.`
+    : `${target.name} is pulled from publication. Out of print — its singles spike on scarcity and collectors are thrilled. (A prime candidate to reprint later.)`
 
   return { sets, cards, printIntensity, segments, playerBase, personas, feed, pulledName: target.name }
 }

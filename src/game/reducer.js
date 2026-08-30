@@ -354,9 +354,21 @@ export function reducer(state, action) {
         segments: r.segments,
         playerBase: r.playerBase,
         personas: r.personas,
+        // Saturation tracking: repeated breaks in a short window read as
+        // astroturf and flop more often (see breaks.js).
+        breakHistory: r.breakHistory,
         cash: state.cash + r.cashDelta,
         eventsFeed: [{ week: state.week, text: r.feed, kind: 'community' }, ...state.eventsFeed].slice(0, 60),
       }
+    }
+    case 'SET_GOODWILL': {
+      // The community-goodwill programme (overhead.js sink D): a standing
+      // weekly commitment, 0..1, not a one-off purchase. This is where surplus
+      // cash is meant to go, and the main lever for digging a soured community
+      // back out — damped by whatever they are actually angry about.
+      const level = clamp(Number(action.level) || 0, 0, 1)
+      if (level === (state.goodwillSpend ?? 0)) return state
+      return { ...state, goodwillSpend: level }
     }
     case 'START_GAME':
       // Begin a run from the onboarding config (name/cadence applied).

@@ -6,6 +6,7 @@ import { getArtist } from './content/artists.js'
 import { getTheme } from './content/themes.js'
 import { getConcept, CREATURE_NAME_PREFIX, CREATURE_NAME_NOUN, CHARACTER_FIRST_NAMES, CHARACTER_SURNAMES } from './content/concepts.js'
 import { clamp, communitySentiment } from './simulation.js'
+import { PRINT_INTENSITY_NEUTRAL } from './config.js'
 import { printRunUnits } from './revenue.js'
 import { currentArtist } from './artists.js'
 import { defaultRaritySheet, getRarity, pickRarity, validateRaritySheet, defaultPackFormat, validatePackFormat, packRichnessDelta, FINISHES, getFinish, combinedFinishEffect } from './rarities.js'
@@ -27,6 +28,21 @@ export const MAX_SET_LENGTH = 250
 export const MAX_SECRET_CARDS = 12
 export const MAX_SPOTLIGHT_PICKS = 5
 export const SPOTLIGHT_COST_EACH = 2_000
+
+// Nostalgia-erosion levelling (see the block in releaseSet and config.js's
+// PRINT_INTENSITY_NEUTRAL). A set declares the erosion level it sustains;
+// releasing pulls the live dial partway toward it.
+const LOUDNESS_NEUTRAL = 50 // the design-loudness slider's balance-neutral point
+const LOUDNESS_TO_LEVEL = 0.8 // ±40 erosion points across the full slider
+const GIMMICK_LEVEL_WEIGHT = 12 // how much a splashy era raises the resting level
+const RELEASE_PULL = 0.45 // how far toward its own level a fresh drop drags the dial
+
+// A collector-box exclusive promo: a short run of an unpullable card, plus its
+// own commission. Previously free — see setCost.
+const EXCLUSIVE_PROMO_COST = 55_000
+
+// Spacing at which a rider set stops reading as part of a treadmill.
+const RIDER_SPACING_WEEKS = 12
 
 // Design loudness, formerly `powerBudget`. Reads either key so a set record
 // built before the rename (or a reprint reconstructing a draft from one) still
@@ -385,9 +401,15 @@ export function setCost(draft, artistOf = getArtist) {
   const skus = (draft.products ?? []).reduce((sum, p) => sum + productPrintCost(p), 0)
   // Previewing cards ahead of launch buys placement — a real, if modest, spend.
   const spotlight = Math.min((draft.spotlight?.picks?.length ?? 0), MAX_SPOTLIGHT_PICKS) * SPOTLIGHT_COST_EACH
+  // An SPC exclusive promo is its own short print run and its own commission.
+  // It used to be FREE: neither setCost nor productPrintCost read the flag, so
+  // ticking one checkbox minted a scarce, high-value, unpullable grail for
+  // nothing. (It also draws a `gated` grievance now — see personas.js.)
+  const exclusivePromo = (draft.products ?? []).some((p) => p.kind === 'spc' && p.exclusivePromo)
+    ? EXCLUSIVE_PROMO_COST : 0
   return {
-    dev, printCost, art, artDirection, serialization, prerelease, releaseEvent, skus, spotlight,
-    total: dev + printCost + art + artDirection + serialization + prerelease + releaseEvent + skus + spotlight,
+    dev, printCost, art, artDirection, serialization, prerelease, releaseEvent, skus, spotlight, exclusivePromo,
+    total: dev + printCost + art + artDirection + serialization + prerelease + releaseEvent + skus + spotlight + exclusivePromo,
   }
 }
 
@@ -729,13 +751,24 @@ export function releaseSet(state, draft) {
     godPack: draft.godPack ?? { enabled: true, rarityIds: [] },
   }
 
-  // Design loudness: a louder set nudges the collectors' nostalgia-
-  // erosion dial up a little — louder modern design, missed by the folks who
-  // love the old stuff (see printIntensity, read by segments.js). The block
-  // gimmick's `creep` scales how loud THIS gimmick reads (Mega louder than
-  // Phantasmal). Only pushes up on release; it decays on its own each week.
-  const creep = (loudnessOf(draft) - 50) / 5 // -10..+10
-  const blockCreep = block?.creep ?? 1
+  // Design loudness → the nostalgia-erosion level THIS set sustains while it
+  // is on the shelf (see printIntensity, read by segments.js and rival.js).
+  //
+  // This replaced a delta-push, `creep = (loudnessOf(draft) - 50) / 5`, which
+  // is exactly 0 at the default loudness of 50 — so a default release moved the
+  // dial by nothing AND multiplied every gimmick's creep weight by zero. The
+  // set now declares a LEVEL, the release pulls the live dial partway toward
+  // it, and simulation.js relaxes toward the buzz-weighted mean of every
+  // in-print set's level. A default-loudness plain era lands exactly on neutral,
+  // so a stock set is still precisely balance-neutral — but now because it
+  // HOLDS the dial where it is, rather than because its effect is zero.
+  const setLevel = clamp(
+    PRINT_INTENSITY_NEUTRAL
+      + (loudnessOf(draft) - LOUDNESS_NEUTRAL) * LOUDNESS_TO_LEVEL // ±40 across the slider
+      + (block?.creep ?? 0) * GIMMICK_LEVEL_WEIGHT, // a Mega era rests higher than a plain one
+    0, 100,
+  )
+  set.printLevel = setLevel
 
   // Card reprints: popular cards from older sets re-issued into this one. They're
   // added as fresh instances in the new set (carrying the original's identity and
@@ -746,23 +779,11 @@ export function releaseSet(state, draft) {
     cards, state.cards, artistOf,
   )
 
-  // Nostalgia-erosion dial. A LOUD release pushes it up (scaled by the block
-  // gimmick's own creep weight — a Mega era reads louder than a Throwback one);
-  // a RESTRAINED one actively pulls it back down.
-  //
-  // The downward half matters: this used to be `Math.max(0, creep)`, which made
-  // the entire bottom half of the loudness slider a no-op AND — because creep is
-  // exactly 0 at the default loudness of 50 — multiplied every gimmick's creep
-  // weight by zero, collapsing the whole roster's character to nothing unless
-  // the player happened to push loudness past the midpoint. Letting a quiet set
-  // relieve the dial makes "restrained" a real strategy and gives each gimmick's
-  // creep value something to scale at default settings. It still decays on its
-  // own weekly and can be relieved further by pulling a set from print (bans.js).
-  //
-  // A quiet set relieves at half the rate a loud one erodes: it's easier to
-  // wear a back catalogue out than to make people love it again.
-  const creepPush = creep >= 0 ? creep * blockCreep : creep * 0.5
-  const printIntensity = clamp((state.printIntensity ?? 40) + creepPush * 0.5, 0, 100)
+  // A release pulls the live dial partway toward the level this set sustains —
+  // a new drop dominates the room immediately, then simulation.js's weekly
+  // relaxation carries the rest of the way as the shelf settles around it.
+  const prevIntensity = state.printIntensity ?? PRINT_INTENSITY_NEUTRAL
+  const printIntensity = clamp(prevIntensity + (setLevel - prevIntensity) * RELEASE_PULL, 0, 100)
 
   // Set buzz lift from reprinting fan-favorite cards (carried on the set record
   // so revenue/market can read it).
@@ -902,11 +923,25 @@ export function releaseSet(state, draft) {
   // riders hits diminishing returns — a NEW MAJOR re-opens the funnel. This is the
   // teeth behind "minors can't substitute for majors": they reset the pledge, but
   // they can't keep growing the base on their own.
+  // Fatigue also has to read SPACING, not just count. A rider four weeks after
+  // the last drop is a treadmill; the same rider twelve weeks later is a
+  // legitimate in-between release, and the old count-only formula could not
+  // tell them apart — which is why shipping a cheap rider every four weeks was
+  // the single most profitable strategy in the game.
   let fatigue = 1
   if (tier.ridesBlock) {
     const sinceMajor = countRidersSinceLastMajor(state.sets)
-    fatigue = clamp(1 / (1 + sinceMajor * 0.6), 0.18, 1) // 1st rider ~1×, 5th ~0.25×
+    const lastSet = state.sets[state.sets.length - 1]
+    const weeksSince = lastSet ? state.week - lastSet.releasedWeek : RIDER_SPACING_WEEKS
+    const spacing = clamp(weeksSince / RIDER_SPACING_WEEKS, 0, 1) // 0 = same week, 1 = 12+ weeks apart
+    fatigue = clamp(1 / (1 + sinceMajor * 0.85 * (1 - spacing * 0.7)), 0.12, 1)
   }
+  // Persist it: fatigue used to apply ONLY to the discovery wave, so a
+  // rider-spam studio recruited badly but still sold packs at full price for
+  // the life of every set. It now damps the set's buzz and — via revenue.js's
+  // setAppeal — its ongoing pack demand too.
+  set.riderFatigue = fatigue
+  set.buzz = clamp(set.buzz * (0.55 + 0.45 * fatigue), 10, 100)
   // ...and with SIZE: a big set is a bigger launch event (more to talk about,
   // more shelf presence), a tight one a smaller one. Neutral at the tier's
   // default length, so this doesn't quietly move the existing balance.

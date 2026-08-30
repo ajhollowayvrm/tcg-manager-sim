@@ -21,15 +21,22 @@ import { applyGrading } from './grading.js'
 import { applyRival } from './rival.js'
 import { resolveMerchRevenue } from './merch.js'
 import { advanceMediaDeals } from './media.js'
+import { shelfPrintLevel } from './segments.js'
+import { applyOverhead } from './overhead.js'
 
 // Buzz half-life: how fast a set's own release-buzz fades between drops (tuned
 // so a set stays fresh-feeling for a few months, then needs a new release to
 // reignite it — see sets.js's set.buzz seeding).
 const BUZZ_DECAY_PER_WEEK = 0.965
-// Nostalgia-erosion dial: a slow natural cooldown each week (design fatigue
-// eases between drops), separate from the relief a pulled-from-print set gives
-// (see bans.js's pullFromPrint).
-const PRINT_INTENSITY_DECAY_PER_WEEK = 0.25
+// Nostalgia-erosion dial: how fast it RELAXES toward the level the current
+// shelf sustains (segments.js's shelfPrintLevel), ~4%/week.
+//
+// This replaced a flat 0.25/week decay toward zero. The flat version gave the
+// dial exactly one fixed point — 0 — so in any run at default loudness it slid
+// there by about week 140 and both consumers went permanently inert. Relaxing
+// toward a shelf-derived level gives it a real equilibrium that the player's
+// design choices actually set.
+const PRINT_INTENSITY_RELAX = 0.04
 // Community sentiment loss: sentiment runs -100..100. Only a TOTAL revolt (the
 // floor) ends the run — short of that, bad sentiment is a recoverable pressure
 // that craters your sales, not an instant death.
@@ -47,10 +54,16 @@ const ABANDONED_PLAYERS = 500 // …AND under this many players, there's no reco
 const DEBT_RUIN = -3_000_000
 
 // Weekly interest charged on negative cash (a loan). Compounds, so a short dip is
-// cheap but chronic deep debt snowballs toward the bankruptcy floor. Tuned so a
-// brief loan is survivable but sustained deep debt (a reckless overspender) gets
-// dragged under before sales can dig out.
-const DEBT_INTEREST_PER_WEEK = 0.06 // ~6%/wk: -$2M debt → -$120k/wk and compounding
+// cheap but chronic deep debt snowballs toward the bankruptcy floor.
+//
+// Cut from 6%/week when recurring costs (overhead.js) arrived. At 6% a single
+// bad quarter was unrecoverable: any studio that dipped a few thousand into the
+// red compounded to the -$3M ruin floor within about 40 weeks no matter what it
+// did afterwards, which made every cost in the game effectively instant-death
+// rather than a pressure to manage. 2%/week is still punishing — roughly 180%
+// annualised — but a dip you trade your way out of is now genuinely survivable,
+// which is the whole premise of "cash can go negative".
+const DEBT_INTEREST_PER_WEEK = 0.02
 
 // Reach-weighted average persona sentiment (-100..100). Loud voices count more,
 // matching how the rest of the sim weights reach. Null if there are no personas.
@@ -78,10 +91,15 @@ export function advanceWeek(state) {
     s.rotated ? s : { ...s, buzz: clamp((s.buzz ?? 50) * BUZZ_DECAY_PER_WEEK, 0, 100) },
   )
 
-  // Nostalgia-erosion dial cools slowly on its own each week (design fatigue
-  // eases between drops); a release pushes it up (sets.js), pulling a hot set
-  // from print relieves it faster (bans.js).
-  next.printIntensity = clamp((next.printIntensity ?? 40) - PRINT_INTENSITY_DECAY_PER_WEEK, 0, 100)
+  // Nostalgia-erosion dial relaxes toward whatever the CURRENT shelf sustains.
+  // A loud catalogue holds it high; a restrained one pulls it low; pulling a
+  // loud set from print drops it out of the mean for good (see bans.js, which
+  // no longer needs to hand out an arbitrary relief bonus of its own).
+  {
+    const rest = shelfPrintLevel(next.sets)
+    const now = next.printIntensity ?? rest
+    next.printIntensity = clamp(rest + (now - rest) * (1 - PRINT_INTENSITY_RELAX), 0, 100)
+  }
 
   // Artist careers drift: rising stars get pricier/more famous (and can
   // graduate or blow up), fading names decline. Commissioning a cheap rising
@@ -109,6 +127,14 @@ export function advanceWeek(state) {
   // (before applyDistributors reads/decays heat below) so both sources compound
   // into the one gauge.
   next.scalperHeat = clamp((next.scalperHeat ?? 0) + (rev.channelHeatDelta ?? 0), 0, 100)
+
+  // Recurring costs — studio overhead, warehousing, era upkeep, and the
+  // voluntary community-goodwill programme (see overhead.js). Charged AFTER
+  // this week's income has landed and BEFORE the debt-interest check below, so
+  // a week the studio cannot cover pushes it into a loan that begins accruing
+  // in the same tick. These are what make money finite: revenue plateaus with
+  // the player base, while three of the four sinks scale with what you own.
+  applyOverhead(next)
 
   // Debt interest. Negative cash is a LOAN — survivable, but not free. It accrues
   // compounding weekly interest, so a brief dip is cheap while chronic deep debt

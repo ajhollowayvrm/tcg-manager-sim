@@ -641,6 +641,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
             <CostLine label="Art commissions" value={cost.art} />
             {cost.artDirection > 0 && <CostLine label="Art direction" value={cost.artDirection} />}
             {cost.serialization > 0 && <CostLine label="Serialization" value={cost.serialization} />}
+            {cost.exclusivePromo > 0 && <CostLine label="Exclusive promo" value={cost.exclusivePromo} />}
             {cost.prerelease > 0 && <CostLine label="Prerelease" value={cost.prerelease} />}
             {cost.releaseEvent > 0 && <CostLine label="Release event" value={cost.releaseEvent} />}
             {cost.spotlight > 0 && <CostLine label="Preview campaign" value={cost.spotlight} />}

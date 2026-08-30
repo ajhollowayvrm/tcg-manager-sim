@@ -105,7 +105,13 @@ function setAppeal(set, cards) {
   // Cards previewed before launch arrive already wanted — a modest sealed-demand
   // lift on top of the rest (see sets.js's spotlight curve).
   const spotlightAppeal = set.spotlightAppeal ?? 0
-  return clamp((avgHype / 100) * (1 + richness * 0.12 + reprintBuzz + treatmentBuzz + spotlightAppeal), 0.1, 1.5)
+  // Rider fatigue (sets.js): the Nth consecutive rider since the last major
+  // sells worse for its WHOLE LIFE, not just its launch week. Fatigue used to
+  // scale only the discovery wave, so a studio shipping a cheap rider every
+  // four weeks recruited badly but still moved packs at full appeal — which is
+  // how rider spam became the highest-earning strategy in the game.
+  const fatigue = set.riderFatigue ?? 1
+  return clamp((avgHype / 100) * (1 + richness * 0.12 + reprintBuzz + treatmentBuzz + spotlightAppeal) * fatigue, 0.1, 1.5)
 }
 
 // Weekly demand for ONE product SKU of a set, before its supply cap. Returns a

@@ -129,7 +129,12 @@ export function setGrievances(set, cards = []) {
   // term in segments.js, and events.js's bloated_set_backlash. Adding a fourth
   // here triple-counted it and turned a landmark-size set from a trade-off into
   // a death sentence.
-  const all = { gouging, overprint, scarcity, stingy }
+  // Gating: a chase card obtainable ONLY inside a $90 collector box is the
+  // purest pay-to-own move in the game, and until now it drew no reaction at
+  // all — the flag was free to set and invisible to everyone.
+  const gated = (set.products ?? []).some((p) => p.kind === 'spc' && p.exclusivePromo) ? 0.45 : 0
+
+  const all = { gouging, overprint, scarcity, stingy, gated }
   let worst = null
   let score = 0
   for (const [k, v] of Object.entries(all)) {
@@ -160,6 +165,11 @@ const GRIEVANCE_LINES = {
     (s) => `${s} packs are thin. You feel robbed opening them.`,
     (s) => `Cracking ${s} is miserable. There's nothing IN these packs.`,
     (s) => `${s} has the stingiest pack I've opened in a while.`,
+  ],
+  gated: [
+    (s) => `The best card in ${s} is locked inside the expensive box. That's the whole design.`,
+    (s) => `You cannot pull the ${s} exclusive. You can only buy the box. Think about that.`,
+    (s) => `${s}'s chase card is paywalled behind a collector box. Grim.`,
   ],
   // Kept for the reviewer's own bloat branch, which reads set.bloat directly.
   bloat: [

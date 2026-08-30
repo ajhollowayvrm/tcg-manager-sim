@@ -16,6 +16,29 @@
 //                counterfeit/grading scandal breaks trust.
 
 import { clamp, communitySentiment } from './simulation.js'
+import { PRINT_INTENSITY_NEUTRAL, PRINT_INTENSITY_SPAN } from './config.js'
+
+// The nostalgia-erosion level the CURRENT shelf sustains — a buzz-weighted mean
+// of every in-print set's own `printLevel` (see sets.js's releaseSet). This is
+// what simulation.js relaxes `printIntensity` toward each week, replacing a flat
+// decay that could only ever end at zero.
+//
+// Buzz-weighting means a fresh drop dominates the room, and the payoff beyond
+// the dial itself is that pulling a loud set from print now relieves erosion
+// STRUCTURALLY — its level leaves the mean permanently — instead of via the
+// arbitrary random gift bans.js used to hand out.
+export function shelfPrintLevel(sets) {
+  const live = (sets ?? []).filter((s) => !s.rotated)
+  if (!live.length) return 0 // an empty shelf erodes nothing
+  let weight = 0
+  let sum = 0
+  for (const s of live) {
+    const w = 0.3 + (s.buzz ?? 50) / 100
+    sum += (s.printLevel ?? PRINT_INTENSITY_NEUTRAL) * w
+    weight += w
+  }
+  return weight > 0 ? sum / weight : PRINT_INTENSITY_NEUTRAL
+}
 
 // Max fraction of a segment that can drift in a single week from health
 // pressure. Deliberately small so this reads as a current, not a cliff —
@@ -65,7 +88,12 @@ function segmentHealth(next) {
   const collectors =
     (reputation - 15) / 85 // franchise legacy pull
     + (activeGrading ? 0.15 : 0) // certification trust
-    - Math.max(0, printIntensity - 50) / 60 // nostalgia erosion past a mid floor
+    // Nostalgia erosion, read as a TWO-SIDED deviation from neutral. This was
+    // `Math.max(0, printIntensity - 50) / 60`, which is one-sided: loud design
+    // hurt, but restraint earned exactly nothing, so the whole slider was pure
+    // downside with no upside to aim at. A quiet catalogue now genuinely
+    // pleases the people who love what they already own.
+    - (printIntensity - PRINT_INTENSITY_NEUTRAL) / PRINT_INTENSITY_SPAN
     - liveAvgBloat(next.sets) * 0.15 // sprawling, uncompletable sets wear on set-collectors
 
   return { casual: clamp(casual, -1, 1), collectors: clamp(collectors, -1, 1) }
