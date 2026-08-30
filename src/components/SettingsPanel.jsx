@@ -14,12 +14,22 @@ export default function SettingsPanel({ state, saveError, onExport, onImport, on
   const modalRef = useModal(onClose)
 
   const download = () => {
-    const blob = new Blob([onExport()], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
+    const text = onExport()
+    const name = `${(state?.config?.companyName || 'studio').replace(/\W+/g, '-').toLowerCase()}-wk${state?.week ?? 0}.json`
+
+    // Inside the iOS shell, `a.download` is INERT — WKWebView ignores it, so the
+    // button would look like it worked and produce nothing. Shell.swift exposes
+    // a `saveFile` bridge that writes the text to a temp file and hands it to
+    // the iOS share sheet instead. See ios/README.md.
+    if (window.__TCG_MANAGER_NATIVE__ && window.webkit?.messageHandlers?.saveFile) {
+      window.webkit.messageHandlers.saveFile.postMessage({ name, text })
+      return
+    }
+
+    const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }))
     const a = document.createElement('a')
-    const stamp = `wk${state?.week ?? 0}`
     a.href = url
-    a.download = `${(state?.config?.companyName || 'studio').replace(/\W+/g, '-').toLowerCase()}-${stamp}.json`
+    a.download = name
     document.body.appendChild(a)
     a.click()
     a.remove()
