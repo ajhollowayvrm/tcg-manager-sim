@@ -88,6 +88,35 @@ function buildDraft(setNumber, knobs, nameSalt, tier = 'major', blocks = []) {
   return d
 }
 
+// A RECURRING CAST. Until this existed, no strategy in the harness ever minted a
+// character, so the whole of characters.js — fame drift, trajectories, the
+// archetype bias, the theme-cohesion bonus and the icon treatment gate — ran
+// unmeasured across every 312-week sweep. A cast-led studio is also a real way to
+// play: build one face, print it every set, and ride its fame.
+//
+// The first release mints the character (a debut). Every release after it brings
+// the same character back, at the richest treatment their trajectory has earned,
+// and puts them on the box. `knobs.cast` is { name, archetypeId }.
+function attachCast(state, draft, knobs) {
+  if (!knobs.cast || !draft.signatureCards?.length) return draft
+  const existing = (state.characters ?? []).find((c) => c.name === knobs.cast.name)
+  const sigs = [...draft.signatureCards]
+
+  if (!existing) {
+    sigs[0] = { ...sigs[0], newCharacterName: knobs.cast.name, newCharacterArchetype: knobs.cast.archetypeId }
+    return { ...draft, signatureCards: sigs }
+  }
+
+  // The icon treatment is gated on the character having actually graduated, so
+  // this asks for it only once it is legal — the same rule the set builder's
+  // picker enforces for a player.
+  const treatment = existing.trajectory === 'icon' ? 'icon'
+    : existing.trajectory === 'established' ? 'premium'
+    : 'standard'
+  sigs[0] = { ...sigs[0], characterId: existing.id, treatment }
+  return { ...draft, signatureCards: sigs, coverCharacterId: existing.id }
+}
+
 // ---- Strategies -----------------------------------------------------------
 // Each decides what to do at the start of a week given the live state.
 
@@ -140,7 +169,7 @@ function makeStrategy({ name, cadence, knobs, rotateEvery, ignoreCash = false, m
       const weeksSinceMajor = lastMajor ? s.week - lastMajor.releasedWeek : Infinity
       const isMajorDue = s.sets.length === 0 || weeksSinceMajor >= cadence
       if (isMajorDue) {
-        const draft = buildDraft(s.sets.length + 1, knobs, ctx.salt, 'major')
+        const draft = attachCast(s, buildDraft(s.sets.length + 1, knobs, ctx.salt, 'major'), knobs)
         if (ignoreCash || canFund(s, draft)) {
           s = applyRelease(s, draft)
           ctx.releases++
@@ -148,7 +177,7 @@ function makeStrategy({ name, cadence, knobs, rotateEvery, ignoreCash = false, m
       } else if (minorEvery && s.blocks?.length && weeksSinceAny >= minorEvery) {
         // Between majors: a rider riding the newest block. Alternate minor/micro.
         const tier = (ctx.riders % 2 === 0) ? 'minor' : 'micro'
-        const draft = buildDraft(s.sets.length + 1, knobs, ctx.salt, tier, s.blocks)
+        const draft = attachCast(s, buildDraft(s.sets.length + 1, knobs, ctx.salt, tier, s.blocks), knobs)
         if (ignoreCash || canFund(s, draft)) {
           s = applyRelease(s, draft)
           ctx.releases++
@@ -301,6 +330,27 @@ const STRATEGIES = [
   makeStrategy({ name: 'Goodwill spender', cadence: 14, rotateEvery: null, maxLiveSets: 6, goodwill: 0.5,
     knobs: { designLoudness: 50, printRun: 50, pricePoint: 4.5, chaseAppeal: 70,
       namePool: NAME_POOL, themes: THEMES, gimmicks: ['mega'] } }),
+  // ---- Cast-led studios ---------------------------------------------------
+  // Build ONE face and print it in every set — the Charizard play. These are the
+  // only strategies that exercise characters.js at all: fame drift, trajectory
+  // graduation, the archetype's drift bias, the theme-cohesion bonus and the
+  // icon-treatment gate. They should survive comfortably (a famous face is a real
+  // advantage) without running away with the table.
+  makeStrategy({ name: 'Cast-led (mascot)', cadence: 14, minorEvery: 7, rotateEvery: null, maxLiveSets: 6,
+    knobs: { designLoudness: 52, printRun: 50, pricePoint: 4.5, chaseAppeal: 72,
+      namePool: NAME_POOL, themes: THEMES, gimmicks: ['mega'],
+      cast: { name: 'Pipwick', archetypeId: 'mascot' } } }),
+  // The same play with an archetype pointed AT its own themes, so the cohesion
+  // bonus fires on every release. Measured against a no-cast control on the same
+  // cadence knobs (~53.4M), the cast system is worth roughly +2% to +4% of end
+  // cash — a real edge, not a runaway one. Note this on-theme villain scores
+  // slightly BELOW the off-theme mascot: the mascot's faster fame climb outruns
+  // a steady +10 art/hype, so "always match the theme" is not the dominant play.
+  makeStrategy({ name: 'Cast-led (villain, on-theme)', cadence: 14, minorEvery: 7, rotateEvery: null, maxLiveSets: 6,
+    knobs: { designLoudness: 52, printRun: 50, pricePoint: 4.5, chaseAppeal: 72,
+      namePool: NAME_POOL, themes: ['undead'], gimmicks: ['mega'],
+      cast: { name: 'Vaskir', archetypeId: 'villain' } } }),
+
   // A deliberately bad opening: go dark for ten weeks early, then recover. The
   // old quadratic cadence cliff killed this outright; it must now survive.
   {

@@ -4,6 +4,7 @@
 import { ARTISTS, getArtist } from '../../game/content/artists.js'
 import { getRarity, visualTier, defaultRaritySheet } from '../../game/rarities.js'
 import { TREATMENTS, getTreatment } from '../../game/characters.js'
+import { getArchetype, archetypeMatchesTheme, archetypesByCategory } from '../../game/content/archetypes.js'
 import { FINISHES, getFinish, cardAppeal } from '../../game/sets.js'
 import SetSymbol from '../SetSymbol.jsx'
 
@@ -212,7 +213,7 @@ export default function SignatureCardEditor({ card, theme, artists, characters =
         </select>
       </label>
 
-      <CharacterPicker card={card} characters={characters} set={set} />
+      <CharacterPicker card={card} characters={characters} set={set} theme={theme} />
         </div>
       </div>
     </div>
@@ -222,9 +223,14 @@ export default function SignatureCardEditor({ card, theme, artists, characters =
 // Feature a character on this card instead of a one-off: mint a brand-new one
 // (a debut appearance, no fame to draw on yet) or pull in an existing roster
 // entry (its fame bumps the card's appeal, scaled by the chosen treatment).
-function CharacterPicker({ card, characters, set }) {
+function CharacterPicker({ card, characters, set, theme }) {
   const mode = card.characterId ? 'existing' : card.newCharacterName ? 'new' : 'none'
   const selected = card.characterId ? characters.find((c) => c.id === card.characterId) : null
+  const newArchetype = getArchetype(card.newCharacterArchetype)
+  const newMatch = theme && archetypeMatchesTheme(newArchetype.id, theme.tags)
+  // Whether the character already on this card suits the set's theme. Same ★ cue
+  // the artist picker uses for a specialty match, and the same underlying idea.
+  const selectedMatch = selected && theme && archetypeMatchesTheme(selected.archetypeId, theme.tags)
   // An icon treatment is reserved for characters that have actually graduated —
   // it's a reward for a character blowing up, not a day-one purchase option.
   const treatmentOptions = TREATMENTS.filter((t) => !t.requiresIcon || selected?.trajectory === 'icon')
@@ -237,18 +243,22 @@ function CharacterPicker({ card, characters, set }) {
       </span>
       <div className="toggle toggle--counter">
         <button className={'toggle__opt' + (mode === 'none' ? ' is-active' : '')}
-          onClick={() => set({ characterId: null, newCharacterName: '', newCharacterSpecies: '', treatment: 'debut' })}>
+          onClick={() => set({ characterId: null, newCharacterName: '', newCharacterArchetype: 'unaligned', newCharacterSpecies: '', newCharacterHook: '', treatment: 'debut' })}>
           One-off
         </button>
         <button className={'toggle__opt' + (mode === 'new' ? ' is-active' : '')}
-          onClick={() => set({ characterId: null, newCharacterName: card.name || '', treatment: 'debut' })}>
+          onClick={() => set({ characterId: null, newCharacterName: card.name || '', newCharacterArchetype: card.newCharacterArchetype ?? 'unaligned', treatment: 'debut' })}>
           New character
         </button>
         <button className={'toggle__opt' + (mode === 'existing' ? ' is-active' : '')}
           disabled={characters.length === 0}
           title={characters.length === 0 ? 'No characters yet — create one first.' : undefined}
           onClick={() => set({
-            newCharacterName: '', newCharacterSpecies: '',
+            // The archetype is KEPT, matching the "New character" branch above:
+            // glancing at the existing roster and coming back must not silently
+            // reset the player's pick to Unaligned, which would quietly drop both
+            // the theme-cohesion bonus and the fame-drift bias.
+            newCharacterName: '', newCharacterSpecies: '', newCharacterHook: '',
             characterId: characters[0]?.id ?? null, treatment: 'debut',
           })}>
           Existing character
@@ -263,13 +273,42 @@ function CharacterPicker({ card, characters, set }) {
             onChange={(e) => set({ newCharacterName: e.target.value })}
             placeholder="Character name"
           />
+          {/* The archetype replaced the old free-text species field as the
+              character's identity, because unlike that field it is READ: it
+              earns the theme-cohesion bonus below and biases how this
+              character's fame drifts for the rest of the run. */}
+          <select
+            className="counter__target"
+            value={newArchetype.id}
+            onChange={(e) => set({ newCharacterArchetype: e.target.value })}
+          >
+            {archetypesByCategory().map(({ category, archetypes }) => (
+              <optgroup key={category.id} label={category.name}>
+                {archetypes.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}{theme && archetypeMatchesTheme(a.id, theme.tags) ? ' ★' : ''}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+          <span className="field__note">{newArchetype.blurb}</span>
           <input
             className="counter__target"
             value={card.newCharacterSpecies}
             onChange={(e) => set({ newCharacterSpecies: e.target.value })}
-            placeholder="Species / archetype (flavor only, e.g. 'dragon')"
+            placeholder="Epithet (optional, e.g. 'the Ashen')"
+          />
+          <input
+            className="counter__target"
+            value={card.newCharacterHook ?? ''}
+            onChange={(e) => set({ newCharacterHook: e.target.value })}
+            placeholder="Hook (optional, e.g. 'Never raises their voice.')"
           />
           <span className="field__note">
+            {newMatch
+              ? `A ${newArchetype.name.toLowerCase()} suits this set's theme — an on-theme face reads as a coherent printing and lifts the card's appeal. `
+              : ''}
             Debuts on release with a small starting fame — future cards can bring
             {' '}{card.newCharacterName || 'this character'} back as an existing character.
           </span>
@@ -285,7 +324,8 @@ function CharacterPicker({ card, characters, set }) {
           >
             {characters.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.name} · fame {Math.round(c.fame)} {CHAR_TREND[c.trajectory]?.icon ?? ''} {CHAR_TREND[c.trajectory]?.label ?? c.trajectory}
+                {c.name} · {getArchetype(c.archetypeId).name} · fame {Math.round(c.fame)} {CHAR_TREND[c.trajectory]?.icon ?? ''} {CHAR_TREND[c.trajectory]?.label ?? c.trajectory}
+                {theme && archetypeMatchesTheme(c.archetypeId, theme.tags) ? ' ★' : ''}
               </option>
             ))}
           </select>
@@ -293,6 +333,7 @@ function CharacterPicker({ card, characters, set }) {
             <span className={'trend ' + (CHAR_TREND[selected.trajectory]?.cls ?? '')}>
               {CHAR_TREND[selected.trajectory]?.icon} {selected.name} is {CHAR_TREND[selected.trajectory]?.label ?? selected.trajectory}
               {selected.trajectory === 'icon' && ' — icon treatment unlocked'}
+              {selectedMatch && ` ★ on-theme for a ${theme.name} set`}
             </span>
           )}
           <select

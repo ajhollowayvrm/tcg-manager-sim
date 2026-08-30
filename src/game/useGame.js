@@ -73,7 +73,10 @@ export function useGame() {
   const toggleOddsPublished = useCallback((setId) => dispatch({ type: 'TOGGLE_ODDS_PUBLISHED', setId }), [])
   const adjustWave = useCallback((setId, direction) => dispatch({ type: 'ADJUST_PENDING_WAVE', setId, direction }), [])
   const reset = useCallback(() => dispatch({ type: 'RESET' }), [])
-  const addCharacter = useCallback((name, species) => dispatch({ type: 'ADD_CHARACTER', name, species }), [])
+  // `identity` carries the archetype, traits, hook, pronouns and species epithet
+  // — see createCharacter in characters.js.
+  const addCharacter = useCallback((name, identity) => dispatch({ type: 'ADD_CHARACTER', name, identity }), [])
+  const updateCharacter = useCallback((id, patch) => dispatch({ type: 'UPDATE_CHARACTER', id, patch }), [])
   // A nonce so consecutive rips of the same set in the same week differ.
   const ripNonce = useRef(0)
   const rip = useCallback((setId) => dispatch({ type: 'RIP_PACK', setId, nonce: ripNonce.current++ }), [])
@@ -110,5 +113,5 @@ export function useGame() {
     return true
   }, [])
 
-  return { state, advanceWeek: advanceWeekAction, release, pull, reprint, adjustWave, reset, addCharacter, rip, startGame, comp, sponsor, unsponsor, invitePrerelease: invitePrereleaseAction, sponsorTournament: sponsorTournamentAction, signDist, dropDist, cultivateDist, upgradeSupplyChain: upgradeSupplyChainAction, signGrading, dropGrading, cultivateGrading, runBreak: runBreakAction, togglePurchaseLimits, togglePhantomStock, toggleOddsPublished, launchMerch, refreshMerch, retireMerch, pitchMedia, setGoodwill, retire, booting, saveError, exportRun, importRun }
+  return { state, advanceWeek: advanceWeekAction, release, pull, reprint, adjustWave, reset, addCharacter, updateCharacter, rip, startGame, comp, sponsor, unsponsor, invitePrerelease: invitePrereleaseAction, sponsorTournament: sponsorTournamentAction, signDist, dropDist, cultivateDist, upgradeSupplyChain: upgradeSupplyChainAction, signGrading, dropGrading, cultivateGrading, runBreak: runBreakAction, togglePurchaseLimits, togglePhantomStock, toggleOddsPublished, launchMerch, refreshMerch, retireMerch, pitchMedia, setGoodwill, retire, booting, saveError, exportRun, importRun }
 }

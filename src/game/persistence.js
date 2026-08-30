@@ -4,6 +4,8 @@
 // change and JSON.parse back on load. There is no manual save button: the run
 // is always saved, and reloading the tab resumes exactly where you left off.
 
+import { normalizeCharacter } from './characters.js'
+
 const KEY = 'tcg-manager-sim/save'
 
 // Bump when the state shape changes incompatibly. A loaded save whose version
@@ -87,6 +89,16 @@ const KEY = 'tcg-manager-sim/save'
 // and v17. This version also moves the run save from localStorage to
 // IndexedDB; a v17 localStorage blob is discarded rather than migrated,
 // because its numbers are stale under the new rules anyway.
+//
+// v18 HOLDS through the character-identity change (archetypes, traits, a hook,
+// pronouns, story beats and a fame history on every character; see
+// content/archetypes.js). Every one of those fields is ADDITIVE, and hydrate()
+// below fills them through normalizeCharacter, so a v18 save loads and keeps
+// playing. Its characters land on the 'unaligned' archetype, whose multipliers
+// are all 1 and whose tag list is empty — their fame behaves exactly as it did.
+// This breaks the habit set by v14 and v17, which bumped for hygiene alone. The
+// habit is not worth a run in progress: a bump does not migrate a save, it
+// DISCARDS it (see loadState below), and nothing here reads a stale number.
 const VERSION = 18
 
 // ---- Where the run save lives ----------------------------------------------
@@ -237,6 +249,21 @@ export function hydrate(state) {
   return {
     ...state,
     cards: state.cards.map((c) => ({ ...CARD_DEFAULTS, ...c })),
+    // Characters gained an IDENTITY after they first entered the save at v8 —
+    // an archetype, traits, a hook, pronouns, story beats and a fame history.
+    // That change is purely ADDITIVE, so it deliberately does NOT bump VERSION
+    // (see the note under v18 below): losing a run in progress would cost the
+    // player far more than the tidier schema is worth. normalizeCharacter fills
+    // the new fields instead, and an older character lands on the 'unaligned'
+    // archetype, whose multipliers are all 1 — so its fame behaves exactly as it
+    // did before. This is the character-shaped twin of the CARD_DEFAULTS restore
+    // on the line above.
+    // filter(Boolean) is load-bearing: normalizeCharacter returns null for a
+    // falsy record, and importSave validates only the version and the presence
+    // of a state object. Without the filter, one null inside an imported
+    // `characters` array survives into state and throws in driftCharacters on
+    // the very next tick — wedging every following week, not just one.
+    characters: (state.characters ?? []).map(normalizeCharacter).filter(Boolean),
   }
 }
 

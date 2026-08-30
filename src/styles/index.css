@@ -1507,3 +1507,56 @@ button.tag--oddsobscured:hover { border-color: var(--accent-2); color: var(--tex
 .ledger__setname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ledger__setunits { color: var(--text-dim); font-variant-numeric: tabular-nums; }
 .ledger__setrev { font-variant-numeric: tabular-nums; color: var(--good); }
+
+/* ---- Character sheet (CharacterDetail) ---- */
+/* The one view where a member of the cast is a person rather than a row. Reuses
+   .modal, .roster, .roster__chip, .field and .builder__section; everything below
+   is only what those could not already express. */
+
+.charsheet__epithet { color: var(--text-dim); font-weight: 400; }
+
+.charsheet__identity { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.charsheet__archetype {
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+  border-radius: 99px; padding: 3px 12px; font-size: 0.78rem; font-weight: 700;
+  letter-spacing: 0.03em; text-transform: uppercase;
+}
+.charsheet__pronouns { color: var(--text-dim); font-size: 0.8rem; }
+.charsheet__fame { font-variant-numeric: tabular-nums; color: var(--pop); font-weight: 700; font-size: 0.85rem; }
+
+.charsheet__traits { display: flex; flex-wrap: wrap; gap: 4px; }
+
+/* The hook is the line that makes a character memorable, so it gets the weight
+   of a pull quote rather than sitting in the notes with everything else. */
+.charsheet__hook {
+  margin: 2px 0; padding-left: 10px; border-left: 2px solid var(--accent);
+  color: var(--text); font-style: italic; font-size: 0.92rem;
+}
+
+.charsheet__beats { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.charsheet__beat {
+  display: grid; grid-template-columns: 52px 18px 1fr; align-items: baseline; gap: 8px;
+  background: var(--surface-2); border-radius: 6px; padding: 5px 8px; font-size: 0.85rem;
+}
+.charsheet__beatweek { color: var(--text-dim); font-variant-numeric: tabular-nums; font-size: 0.78rem; }
+.charsheet__beaticon { font-weight: 700; text-align: center; }
+
+.charsheet__editor { display: flex; flex-direction: column; gap: 8px; }
+
+/* A locked archetype: still readable, visibly not a control. */
+.charsheet__locked {
+  margin: 0; padding: 6px 9px; background: var(--surface-2);
+  border: 1px dashed var(--border); border-radius: 6px;
+  color: var(--text-dim); font-size: 0.85rem; font-weight: 600;
+}
+
+/* The trait picker holds every trait in the table, so it scrolls rather than
+   pushing the rest of the form off the sheet. */
+.charsheet__traitpicker { max-height: 132px; overflow-y: auto; }
+
+/* The creation form grows from one input into a full identity form once a name
+   is typed, so a run with no cast is not dominated by an empty form. Column
+   layout, so the shared `.roster__addinput` must stop growing to fill the cross
+   axis — its `flex: 1 1 120px` was sizing the NAME box to the form's height. */
+.charsheet__addform { flex-direction: column; align-items: stretch; gap: 8px; }
+.charsheet__addform .roster__addinput { flex: 0 0 auto; }

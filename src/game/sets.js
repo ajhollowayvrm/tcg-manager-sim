@@ -20,6 +20,7 @@ import { makePromoCard } from './promos.js'
 import { getTier, openBlock, refreshBlockWarp, mintTreatmentCards, mintAnniversaryCards, canUnlockAnniversary } from './blocks.js'
 import { getGimmick, NO_GIMMICK } from './content/gimmicks.js'
 import { createCharacter, famePopBonus, getTreatment, recordAppearance } from './characters.js'
+import { archetypeMatchesTheme } from './content/archetypes.js'
 
 export const MIN_SIGNATURE_CARDS = 0 // signature highlights are optional now
 // Raised from 15. A major runs up to 250 cards, so a cap of fifteen marquee
@@ -195,14 +196,20 @@ export function createSignatureCard(n, rarityId = 'rare') {
     artNotes: '', // art-direction brief for the commission. Cosmetic; may match theme.
     // Optional: this card FEATURES a character (see characters.js) instead of
     // being a one-off. `characterId` references an EXISTING roster entry.
-    // `newCharacterName`/`newCharacterSpecies` request a BRAND-NEW character —
-    // minted (and given a stable id) at release time, when this card becomes its
-    // debut appearance. Only one of the two paths is ever active on a card.
+    // The `newCharacter*` fields request a BRAND-NEW character — minted (and
+    // given a stable id) at release time, when this card becomes its debut
+    // appearance. Only one of the two paths is ever active on a card.
+    // `newCharacterArchetype` is the one with mechanical weight: it earns the
+    // theme-cohesion bonus in popFactors and biases the character's fame drift
+    // for the rest of the run (see content/archetypes.js). The species field is
+    // now just an optional epithet.
     // `treatment` is the printing tier (debut/standard/premium/icon) — it scales
     // both the art commission cost and the fame bonus the card gets.
     characterId: null,
     newCharacterName: '',
+    newCharacterArchetype: 'unaligned',
     newCharacterSpecies: '',
+    newCharacterHook: '',
     treatment: 'debut',
     // Optional: a hard-capped total copy count (10/25/50/99/1) independent of
     // the set's print run — a true serialized chase card. Once this many
@@ -511,6 +518,11 @@ function popFactors(card, draft, theme, sheet, rng, artistOf = getArtist, charac
   // it's designed" — scaled up by a richer treatment tier.
   const character = card.characterId ? characters.find((c) => c.id === card.characterId) : null
   const fameBonus = character ? famePopBonus(character.fame, card.treatment) : 0
+  // A character whose ARCHETYPE matches the set's theme reads as a coherent
+  // printing — a frost guardian in a Frostbound set, not a beach episode. The
+  // same idea as the artist specialty match above, and deliberately smaller than
+  // it (+10 against +20): who is on the card matters less than who drew it.
+  const archetypeMatch = character && archetypeMatchesTheme(character.archetypeId, tags) ? 10 : 0
 
   return {
     // `punch` is how loudly this card reads next to its shelfmates — a
@@ -518,8 +530,8 @@ function popFactors(card, draft, theme, sheet, rng, artistOf = getArtist, charac
     // events.js read it.)
     punch: clamp(standout + range(rng, -10, 10), 0, 100),
     rarity: rarityTier, // 0–100 collector value tier from the set's sheet
-    artAppeal: clamp(artAppeal + fameBonus, 0, 100),
-    hype: clamp(hype + fameBonus, 0, 100),
+    artAppeal: clamp(artAppeal + fameBonus + archetypeMatch, 0, 100),
+    hype: clamp(hype + fameBonus + archetypeMatch, 0, 100),
   }
 }
 
@@ -694,7 +706,11 @@ export function releaseSet(state, draft) {
   let characters = state.characters ?? []
   const resolvedSigs = (draft.signatureCards ?? []).map((sig) => {
     if (sig.characterId || !sig.newCharacterName?.trim()) return sig
-    const created = createCharacter(sig.newCharacterName, sig.newCharacterSpecies)
+    const created = createCharacter(sig.newCharacterName, {
+      archetypeId: sig.newCharacterArchetype,
+      species: sig.newCharacterSpecies,
+      hook: sig.newCharacterHook,
+    })
     characters = [...characters, created]
     return { ...sig, characterId: created.id, treatment: 'debut' }
   })
@@ -710,6 +726,7 @@ export function releaseSet(state, draft) {
     if (!card.characterId) continue
     characters = recordAppearance(characters, card.characterId, {
       cardId: card.id, setId, treatment: card.treatment, popFactors: card.popFactors,
+      week: state.week, setName: draft.name,
     })
   }
 
@@ -903,8 +920,13 @@ export function releaseSet(state, draft) {
     set.coverCharacterId = cover.id
     set.coverCharacterName = cover.name
     // Same shape as famePopBonus but at set scale: a marquee face is worth a
-    // real launch bump, an unknown one is worth almost nothing.
-    set.buzz = clamp(set.buzz + clamp((cover.fame ?? 0) * 0.12, 0, 10), 10, 100)
+    // real launch bump, an unknown one is worth almost nothing. A face whose
+    // archetype suits the theme sells the box a little harder still.
+    const onTheme = archetypeMatchesTheme(cover.archetypeId, theme?.tags) ? 1.15 : 1
+    // The multiplier sits OUTSIDE the per-face cap, so the theme match still pays
+    // at the top of the fame range instead of being clamped away exactly where a
+    // marquee cover matters most.
+    set.buzz = clamp(set.buzz + clamp((cover.fame ?? 0) * 0.12, 0, 10) * onTheme, 10, 100)
   }
 
   // A launch wave. Early sets (when you have few players) need to be a real

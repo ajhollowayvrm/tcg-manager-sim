@@ -22,6 +22,8 @@ import { makeRng, hashSeed, range } from './rng.js'
 import { clamp } from './simulation.js'
 import { packRichnessDelta } from './rarities.js'
 import { getTheme } from './content/themes.js'
+import { getArchetype } from './content/archetypes.js'
+import { traitNames } from './content/traits.js'
 
 const FEED_MAX = 60 // cap the feedback feed length
 
@@ -29,6 +31,18 @@ const FEED_MAX = 60 // cap the feedback feed length
 // threshold with events.js's market_correction, which treats the same number as
 // the line above which a card is "pricey".
 const PRICEY_SINGLE = 60
+
+// The fame at which the community knows a character by name. Below it they talk
+// about the printing ("Emberwing Charflare is the chase"); at or above it they
+// talk about the CHARACTER ("Charflare is the chase"), and the character-chatter
+// pools open up. This was already the gate for the display-name substitution;
+// naming it makes the two uses share one number.
+const CHARACTER_KNOWN_FAME = 50
+
+// A character famous enough to be discussed with no new card to discuss. Set well
+// above the "known" line: a mid-tier character is only news when they print, but
+// an icon is a permanent topic. See castChatter below.
+const CAST_CHATTER_FAME = 78
 
 // How suspicious a card's splashiness reads. A card draws scrutiny when it is
 // an OUTLIER — far punchier than the other cards it shares the catalog with —
@@ -179,6 +193,169 @@ const GRIEVANCE_LINES = {
   ],
 }
 
+// ---- Character chatter ----------------------------------------------------
+//
+// The community does not talk about a famous character the way it talks about a
+// card. It talks about them the way a real fandom does — by their temperament,
+// their era, and how tired everyone is of seeing them. These pools are what turns
+// a fame number into a cast people get attached to.
+//
+// Keyed by the ARCHETYPE'S VOICE (see content/archetypes.js) and then by the
+// stance the normal take already decided. Nothing here changes a stance, a
+// probability or an effect: this layer only swaps the TEXT the item carries. That
+// is deliberate — the reaction engine is load-bearing for balance, and rewording
+// an item cannot move a number.
+//
+// Every line receives { name, set, trait }. `trait` is always a real word: a
+// character's own trait when they have one, and the voice's house adjective when
+// they do not, so no line ever has to guard against a blank.
+const VOICE_FALLBACK_TRAIT = {
+  warm: 'good-natured', brash: 'cocky', menace: 'ruthless',
+  cold: 'clinical', reverent: 'ancient', wry: 'slippery', plain: 'quiet',
+}
+
+const CHARACTER_LINES = {
+  warm: {
+    hype: [
+      ({ name, set }) => `${name} is the reason to open ${set}. I don't make the rules.`,
+      ({ name, trait }) => `A new ${name} card and they're still as ${trait} as the day they debuted. Bought three.`,
+      ({ name }) => `${name} could be printed on a napkin and I would sleeve it.`,
+    ],
+    love: [
+      ({ name }) => `I have been collecting ${name} since the beginning and this is the best they have ever looked.`,
+      ({ name, trait }) => `Nobody draws ${name} ${trait} enough. This artist did.`,
+    ],
+    pan: [
+      ({ name }) => `They are overexposing ${name}. Third printing this year and it shows.`,
+      ({ name, set }) => `${name} deserved better than what ${set} did with them.`,
+    ],
+    neutral: [
+      ({ name, set }) => `${name} shows up again in ${set}. At this point they're furniture.`,
+      ({ name }) => `Another ${name} card. Fine. Nice. Sure.`,
+    ],
+  },
+  brash: {
+    hype: [
+      ({ name, set }) => `${name} runs ${set}. Everyone else is playing for second.`,
+      ({ name, trait }) => `Say what you like about ${name} being ${trait} — the card is a monster.`,
+    ],
+    pan: [
+      ({ name }) => `${name} has been coasting on one good printing for years.`,
+      ({ name, trait }) => `${name} is ${trait} and this card is not good enough to justify it.`,
+    ],
+    neutral: [
+      ({ name, set }) => `${name} is in ${set}. Of course they are.`,
+    ],
+  },
+  menace: {
+    hype: [
+      ({ name, set }) => `${name} is the only interesting thing in ${set} and it isn't close.`,
+      ({ name, trait }) => `${name} is still the most ${trait} thing in this game. Long may it continue.`,
+      ({ name }) => `Every time they print ${name} the whole set gets meaner. Good.`,
+    ],
+    pan: [
+      ({ name }) => `${name} works because they're rare. This is the fourth one.`,
+      ({ name }) => `They've softened ${name}. That's the one thing you cannot do to ${name}.`,
+    ],
+    warn: [
+      ({ name }) => `Careful with ${name} right now — that price is fear, not value.`,
+    ],
+    neutral: [
+      ({ name, set }) => `${name} turns up in ${set} and behaves themselves. Disappointing, frankly.`,
+    ],
+  },
+  cold: {
+    hype: [
+      ({ name }) => `${name} is the most efficiently designed card in the set. I mean that as praise.`,
+      ({ name, trait }) => `${name} remains ${trait}. The card understands this.`,
+    ],
+    pan: [
+      ({ name }) => `${name} has no story and this printing does not give them one.`,
+    ],
+    neutral: [
+      ({ name }) => `${name} is present. That is the entire observation.`,
+    ],
+  },
+  reverent: {
+    hype: [
+      ({ name, set }) => `They printed ${name} in ${set}. I did not think we would see them again.`,
+      ({ name, trait }) => `${name} is ${trait} and the art finally sells it. Grail.`,
+    ],
+    love: [
+      ({ name }) => `${name} does not get printed often. When they do, you buy it.`,
+    ],
+    pan: [
+      ({ name }) => `${name} is supposed to be an event. This was a Tuesday.`,
+    ],
+    neutral: [
+      ({ name }) => `${name} appears again. The mystique erodes a little each time.`,
+    ],
+  },
+  wry: {
+    hype: [
+      ({ name, trait }) => `${name} is ${trait} and somehow the most valuable card in the set. Love that for them.`,
+      ({ name, set }) => `${name} stole ${set} out from under the actual chase card.`,
+    ],
+    pan: [
+      ({ name }) => `${name} is a running joke at this point, and not the funny kind.`,
+    ],
+    neutral: [
+      ({ name }) => `${name} again. They get around.`,
+    ],
+  },
+  // The UNALIGNED voice, and the one that matters most for reach: every
+  // character in a save that predates archetypes normalises onto 'unaligned'
+  // (see normalizeCharacter), so without this pool the whole cast-chatter
+  // feature would be invisible on every run already in progress — which is
+  // precisely the run the save VERSION was held at 18 to protect.
+  //
+  // These lines lean on nothing but the character's own name and trait, because
+  // an unaligned character has no archetype for the room to react to.
+  plain: {
+    hype: [
+      ({ name, set }) => `${name} is the card everyone actually wants out of ${set}.`,
+      ({ name, trait }) => `Say what you like, ${name} being ${trait} sells cards.`,
+      ({ name }) => `${name} is having a moment and I am not going to pretend otherwise.`,
+    ],
+    love: [
+      ({ name }) => `${name} has quietly become the character I collect. No idea when that happened.`,
+    ],
+    pan: [
+      ({ name }) => `${name} is in everything now and it is starting to show.`,
+      ({ name, set }) => `${name} didn't need to be in ${set}. They were anyway.`,
+    ],
+    warn: [
+      ({ name }) => `${name} is priced on hype right now. Careful.`,
+    ],
+    neutral: [
+      ({ name, set }) => `${name} turns up in ${set}. No complaints, no fireworks.`,
+      ({ name }) => `Another ${name} printing. They are just part of the furniture now.`,
+    ],
+  },
+}
+
+// Swap a take's TEXT for a character line, when the take is about a card that
+// features a character the community actually knows by name.
+//
+// Uses its OWN rng, derived per character and week, rather than the shared weekly
+// persona stream. Drawing from the shared stream here would shift every
+// subsequent random draw in the reaction loop, which would silently move the
+// balance table for a change that is meant to be pure flavor.
+// `source` separates the two callers' RNG streams. Without it the in-loop take
+// and the standing cast line share every seed input (week, character, persona,
+// stance), so a week where the same persona hit the same stance for the same
+// character printed the SAME SENTENCE twice in one feed.
+function dressWithCharacter(take, character, set, week, personaId, source = 'take') {
+  if (!character) return take
+  const voice = getArchetype(character.archetypeId).voice
+  const pool = CHARACTER_LINES[voice]?.[take.stance]
+  if (!pool?.length) return take // no line for this voice and stance — keep the card take
+  const rng = makeRng(hashSeed(`castline:${source}:${week}:${character.id}:${personaId}:${take.stance}`))
+  const names = traitNames(character.traits)
+  const trait = names.length ? pick(rng, names) : (VOICE_FALLBACK_TRAIT[voice] ?? 'quiet')
+  return { ...take, text: pick(rng, pool)({ name: character.name, set: set?.name ?? 'the set', trait }) }
+}
+
 // ---- Take generation ------------------------------------------------------
 
 // Pick one line from a pool, deterministically off the week's RNG.
@@ -215,7 +392,9 @@ function takeFor(persona, card, perceived, set, rng, displayName, grievances) {
       // A loud grievance from a fairness-minded voice is a call to action;
       // otherwise it's a pan.
       const stance = grievances.score > 0.75 && fairness >= 0.4 ? 'alarm' : 'pan'
-      return { stance, text: pick(rng, GRIEVANCE_LINES[grievances.worst])(s, set) }
+      // Flagged so the character-chatter layer leaves it alone. A grievance is
+      // about what the PLAYER did to the room, not about who is on the card.
+      return { stance, text: pick(rng, GRIEVANCE_LINES[grievances.worst])(s, set), grievance: true }
     }
   }
 
@@ -397,8 +576,17 @@ export function reactPersonas(state) {
     // THEM rather than the specific printing — "Charflare is the chase of Set
     // 2" instead of "Emberwing Charflare is...".
     const character = card?.characterId ? state.characters?.find((ch) => ch.id === card.characterId) : null
-    const displayName = character && character.fame >= 50 ? character.name : undefined
-    const take = takeFor(persona, card, perceived, latestSet, rng, displayName, grievances)
+    const known = character && character.fame >= CHARACTER_KNOWN_FAME ? character : null
+    const displayName = known ? known.name : undefined
+    const base = takeFor(persona, card, perceived, latestSet, rng, displayName, grievances)
+    // A known character does not just lend their NAME to a card take — the
+    // community talks about them in their own right, in the voice their archetype
+    // earns. Falls back to the card take whenever that voice has nothing to say
+    // about this stance. A grievance take is left alone: when the player has
+    // gouged the room, the room is not talking about the cast.
+    const take = base.grievance
+      ? base
+      : dressWithCharacter(base, known, latestSet, state.week, persona.id)
 
     // Reach drift: the community slowly learns who to listen to. A take that
     // tracks reality (perceived close to truth) earns reach; a loud, confidently
@@ -472,10 +660,54 @@ export function reactPersonas(state) {
     }
   }
 
+  // A truly famous character is a standing topic, not just a release-week one.
+  // At most one such line per week, so the cast never crowds out the feed.
+  const cast = castChatter(state)
+  if (cast) feedItems.push(cast)
+
   // Newest first; keep the feed bounded.
   const merged = [...feedItems.reverse(), ...state.feedbackFeed].slice(0, FEED_MAX)
 
   return { feedItems: merged, cardEffects, casualDelta, sentimentById, reachById }
+}
+
+// One line a week about a character famous enough to be discussed with nothing
+// new to discuss — the thing that makes a cast feel like it exists between
+// releases rather than only on release week.
+//
+// Carries NO effects at all: it never touches a card, a sentiment or a reach.
+// The reaction loop's effects are all guarded on a focus card, and this item has
+// none, so the balance table cannot move because of it. It runs on its own
+// derived rng for the same reason dressWithCharacter does.
+function castChatter(state) {
+  const famous = (state.characters ?? []).filter((c) => c.fame >= CAST_CHATTER_FAME)
+  if (!famous.length || !state.personas?.length) return null
+
+  const rng = makeRng(hashSeed(`castchatter:${state.week}`))
+  // Not every week. A standing topic that reappears weekly stops being one.
+  if (rng() > 0.3) return null
+
+  const character = pick(rng, famous)
+  const persona = pick(rng, state.personas)
+  const latestSet = state.sets.length ? state.sets[state.sets.length - 1] : null
+  // Between releases the room is warm on a character it loves and bored of one
+  // it has seen too much of. Trajectory is the honest read on which it is.
+  const stance = character.trajectory === 'fading' ? 'pan'
+    : character.trajectory === 'icon' ? 'hype'
+    : 'neutral'
+  const dressed = dressWithCharacter({ stance, text: null }, character, latestSet, state.week, persona.id, 'cast')
+  if (!dressed.text) return null // this voice has no line for that stance
+
+  return {
+    week: state.week,
+    personaId: persona.id,
+    persona: persona.name,
+    type: persona.type,
+    reach: persona.reach,
+    stance,
+    cardId: null,
+    text: dressed.text,
+  }
 }
 
 // Apply the persona pass to the next-state in place (called from advanceWeek).

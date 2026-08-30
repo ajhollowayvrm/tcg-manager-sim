@@ -31,6 +31,7 @@ import { getConcept } from '../../game/content/concepts.js'
 import { ARTISTS } from '../../game/content/artists.js'
 import { TIERS, TIER_IDS, getTier, canUnlockAnniversary, gimmickIntensity } from '../../game/blocks.js'
 import { getGimmick, gimmicksByCategory, NO_GIMMICK } from '../../game/content/gimmicks.js'
+import { getArchetype, archetypeMatchesTheme } from '../../game/content/archetypes.js'
 
 function formatCash(n) {
   return '$' + n.toLocaleString('en-US')
@@ -242,12 +243,17 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
                   {[...characters]
                     .sort((a, b) => (b.fame ?? 0) - (a.fame ?? 0))
                     .map((c) => (
-                      <option key={c.id} value={c.id}>{c.name} — fame {Math.round(c.fame ?? 0)}</option>
+                      <option key={c.id} value={c.id}>
+                        {c.name} · {getArchetype(c.archetypeId).name} — fame {Math.round(c.fame ?? 0)}
+                        {theme && archetypeMatchesTheme(c.archetypeId, theme.tags) ? ' ★' : ''}
+                      </option>
                     ))}
                 </select>
                 <span className="field__note">
                   Putting a known face on the box lends the set that character's
-                  accumulated fame. A newcomer lends almost nothing.
+                  accumulated fame. A newcomer lends almost nothing. A ★ marks a
+                  face whose archetype suits this set's theme — it sells the box a
+                  little harder.
                 </span>
               </label>
             )}

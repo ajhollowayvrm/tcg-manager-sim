@@ -26,7 +26,7 @@ import { signGradingPartner, dropGradingPartner, cultivateGradingPartner } from 
 import { launchMerchLine, refreshMerchLine, retireMerchLine } from './merch.js'
 import { pitchMediaDeal } from './media.js'
 import { runBreak } from './breaks.js'
-import { createCharacter } from './characters.js'
+import { createCharacter, normalizeCharacter } from './characters.js'
 import { scoreRun, unlockedPerks } from './legacy.js'
 import { clearSave, loadPrestige, bankPrestige, recordHallOfFame } from './persistence.js'
 
@@ -430,7 +430,45 @@ export function reducer(state, action) {
       // releaseSet) — just created directly, with no card attached yet, so a
       // fresh company can staff a roster before its first release.
       if (!action.name?.trim()) return state
-      return { ...state, characters: [...(state.characters ?? []), createCharacter(action.name, action.species)] }
+      return {
+        ...state,
+        characters: [...(state.characters ?? []), createCharacter(action.name, action.identity)],
+      }
+    }
+    case 'UPDATE_CHARACTER': {
+      // A character is the player's own IP, so its identity is not a one-shot
+      // taken at creation — the detail view can revise the hook, the traits, the
+      // pronouns and the name later, the way a real cast gets rewritten between
+      // eras. Fame, trajectory, appearances and beats are EARNED and are never
+      // editable here.
+      //
+      // THE ARCHETYPE LOCKS ON DEBUT, and that is a balance rule, not flavor. It
+      // is the one identity field the sim reads: it decides the theme-cohesion
+      // bonus in sets.js's popFactors and the cover buzz, and it biases fame
+      // drift every week in characters.js. Left freely editable it was a free,
+      // repeatable exploit — set Guardian to collect a frost set's bonus, flip to
+      // Villain so fame barely decays and controversy FEEDS it, flip again for
+      // the next set's theme, all at no cost in cash, weeks or reputation.
+      //
+      // Before a character is printed they are still a sketch, so the archetype
+      // is free to change. Once they have a debut set they are established in the
+      // world, and the choice is locked — which is also the honest reading: you
+      // cannot quietly retcon what a character IS after the cards are out.
+      const { id, patch } = action
+      if (!id || !patch) return state
+      const allowed = ['name', 'traits', 'hook', 'pronouns', 'species']
+      return {
+        ...state,
+        characters: (state.characters ?? []).map((c) => {
+          if (c.id !== id) return c
+          const next = { ...c }
+          for (const k of allowed) if (k in patch) next[k] = patch[k]
+          if ('archetypeId' in patch && !c.debutSetId) next.archetypeId = patch.archetypeId
+          // Run it through the same normaliser a loaded save uses, so an unknown
+          // archetype or an over-long trait list can never reach the record.
+          return normalizeCharacter({ ...next, name: next.name?.trim() || c.name })
+        }),
+      }
     }
     default:
       return state

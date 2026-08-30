@@ -36,6 +36,14 @@ asks you to.
   Comp them, sponsor them, invite them to a prerelease. Run a standing
   community-goodwill programme to buy back a soured room — but not permission
   to gouge it.
+- **The cast.** Characters you invent and print again and again. Each one picks
+  an archetype from twelve — mascot, villain, legendary, trickster and the rest —
+  which decides both what a set they suit looks like and how their fame behaves:
+  a mascot climbs fastest and bruises easiest, a villain grows on the heat that
+  would sink one. Give them traits and a hook, and the community starts naming
+  them in the feed. Fame drifts weekly off how their live cards do, and the
+  turning points — a debut, a breakout, an icon era, a fall from grace — are
+  recorded as a story you can read back.
 - **Distribution.** Bulk-buyer deals for cash now at the price of a market flood
   and rising scalper heat; grading partners; supply-chain capacity; purchase
   limits and phantom stock as anti-scalping stances.
@@ -126,7 +134,7 @@ src/
     merch.js            # merchandise lines
     media.js            # cross-media ventures
     franchise.js        # franchise reputation + legacy multiplier
-    characters.js       # persistent cast + fame drift
+    characters.js       # persistent cast: identity, fame drift, story beats
     artists.js          # artist careers (cost/reach drift)
     cadence.js          # release-pledge pressure, both directions
     rival.js            # ambient competing TCG
@@ -136,12 +144,14 @@ src/
     promos.js           # unpullable promo cards
     clock.js            # weekly "what changed" attention note
     content/            # static rosters: artists (44), personas (52), themes,
-                        # gimmicks (28), distributors, grading, merch, media,
-                        # rivals, concepts, milestones
+                        # gimmicks (28), archetypes (12), traits (27),
+                        # distributors, grading, merch, media, rivals,
+                        # concepts, milestones
   components/           # TopBar, SetsPanel, MarketTicker, CardBrowser,
                         # LedgerPanel, HistoryPanel, Chart, PackRipper,
-                        # PersonasPanel, CastPanel, DistributorsPanel,
-                        # AmbitionPanel, RetrospectivePanel, feeds, useModal
+                        # PersonasPanel, CastPanel, CharacterDetail,
+                        # DistributorsPanel, AmbitionPanel,
+                        # RetrospectivePanel, feeds, useModal
     setbuilder/         # SetBuilder (accordion), RarityEditor, PackFormatEditor,
                         # ProductLineupEditor, SignatureCardEditor
   styles/index.css      # vivid crimson / noir dashboard skin

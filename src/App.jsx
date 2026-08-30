@@ -76,7 +76,7 @@ export default function App() {
     packs: <PackRipper state={game.state} onRip={game.rip} onRunBreak={game.runBreak} />,
     feedback: <FeedbackFeed state={game.state} />,
     personas: <PersonasPanel state={game.state} onComp={game.comp} onSponsor={game.sponsor} onDropSponsor={game.unsponsor} onInvitePrerelease={game.invitePrerelease} onSponsorTournament={game.sponsorTournament} />,
-    cast: <CastPanel state={game.state} onAddCharacter={game.addCharacter} />,
+    cast: <CastPanel state={game.state} onAddCharacter={game.addCharacter} onUpdateCharacter={game.updateCharacter} />,
     distributors: <DistributorsPanel
       state={game.state}
       onSign={game.signDist} onCultivate={game.cultivateDist} onDrop={game.dropDist}
