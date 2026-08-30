@@ -5,6 +5,7 @@
 // so a slot can only reference rarities the set actually has.
 
 import { PACK_PRESETS, buildPreset, makePackSlot, packSize } from '../../game/rarities.js'
+import NumberField from './NumberField.jsx'
 
 export default function PackFormatEditor({ format, sheet, onChange }) {
   const slots = format?.slots ?? []
@@ -43,12 +44,12 @@ export default function PackFormatEditor({ format, sheet, onChange }) {
       <div className="packfmt__slots">
         {slots.map((slot, i) => (
           <div key={slot.id ?? `slot-${i}`} className="packfmt__slot">
-            <input
+            <NumberField
               className="packfmt__count"
-              type="number" min="0" max="30" step="1"
+              max={30}
               value={slot.count}
               aria-label="Slot card count"
-              onChange={(e) => updateSlot(i, { count: Math.max(0, Math.round(Number(e.target.value))) })}
+              onCommit={(n) => updateSlot(i, { count: Math.round(n) })}
             />
             <span className="packfmt__times">×</span>
             <div className="packfmt__rarities">

@@ -9,6 +9,7 @@
 
 import { useState } from 'react'
 import { makeRarity, FINISHES } from '../../game/rarities.js'
+import NumberField from './NumberField.jsx'
 
 export default function RarityEditor({ sheet, onChange }) {
   const [expanded, setExpanded] = useState(null) // rarity id whose finish grid is open
@@ -43,21 +44,20 @@ export default function RarityEditor({ sheet, onChange }) {
                 onChange={(e) => update(r.id, { name: e.target.value })}
                 placeholder="Rarity name"
               />
-              <input
+              <NumberField
                 className="rared__num rared__num--pull"
-                type="number" min="0" step="0.1"
                 value={r.pullWeight}
                 aria-label="Pull weight"
                 placeholder="Pull"
-                onChange={(e) => update(r.id, { pullWeight: numOr(e.target.value, r.pullWeight, 0, Infinity) })}
+                onCommit={(n) => update(r.id, { pullWeight: n })}
               />
-              <input
+              <NumberField
                 className="rared__num rared__num--value"
-                type="number" min="0" max="100"
+                max={100}
                 value={r.valueTier}
                 aria-label="Value tier"
                 placeholder="Value"
-                onChange={(e) => update(r.id, { valueTier: numOr(e.target.value, r.valueTier, 0, 100) })}
+                onCommit={(n) => update(r.id, { valueTier: n })}
               />
               <input
                 className="rared__secret"
@@ -107,15 +107,4 @@ export default function RarityEditor({ sheet, onChange }) {
       <button className="btn rared__add" onClick={add}>+ Add rarity</button>
     </div>
   )
-}
-
-// Number('') is 0, so clearing one of these fields used to silently write a
-// pull weight of zero — making the rarity permanently unpullable with no
-// warning and no way to tell it had happened. An empty field now keeps the
-// previous value until the player types a real one.
-function numOr(raw, fallback, lo, hi) {
-  if (raw === '' || raw == null) return fallback
-  const n = Number(raw)
-  if (!Number.isFinite(n)) return fallback
-  return Math.min(hi, Math.max(lo, n))
 }
