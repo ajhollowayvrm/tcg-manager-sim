@@ -32,6 +32,23 @@ const ESTABLISHED_TRICKLE_PER_CHAR = 0.02
 const GROWTH_TAPER_REFERENCE = 260
 const MIN_TAPER = 0.08
 
+// Base weekly growth from a perfectly healthy studio, before the taper.
+//
+// Raised from 0.35, which capped a flawless run near 18 points a year and left
+// reputation topping out around 45-60 over a full six-year run. That is badly
+// out of scale with what reads it: the gate ladder in content/mediaDeals.js runs
+// to 78, blocks.js gates anniversary sets, and FOUR value curves are calibrated
+// against ranges a 45 never approaches — market.js's legacyMultiplier
+// (reputation/100), merch.js's reputationPull (capped at rep 264), revenue.js's
+// reputationMul (binding at rep 140) and segments.js's collector health. Half
+// the collector economy this stat exists to drive — the Base Set Charizard
+// effect the module header is entirely about — was simply unreachable.
+//
+// The gates are staged sensibly against GROWTH_TAPER_REFERENCE; it was the
+// growth rate that was never tuned to match, so this raises growth rather than
+// cheapening the ladder.
+const BASE_GROWTH = 0.9
+
 // Only a genuinely soured community erodes reputation, and slowly.
 const EROSION_SENTIMENT_FLOOR = -40
 const EROSION_RATE = 0.004
@@ -64,7 +81,7 @@ export function updateFranchiseReputation(next) {
   // own — see erosion below for that).
   const healthTerm = (cadenceEwma / 100) * clamp((sentimentEwma + 100) / 200, 0, 1)
   const taper = clamp(1 - f.reputation / GROWTH_TAPER_REFERENCE, MIN_TAPER, 1)
-  const growth = (healthTerm * 0.35 + castTrickle) * taper
+  const growth = (healthTerm * BASE_GROWTH + castTrickle) * taper
 
   const erosion = sentimentEwma < EROSION_SENTIMENT_FLOOR
     ? (Math.abs(sentimentEwma) - Math.abs(EROSION_SENTIMENT_FLOOR)) * EROSION_RATE

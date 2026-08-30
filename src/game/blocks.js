@@ -96,7 +96,13 @@ export function getTier(id) {
 // celebrate. Gated on BOTH a minimum franchise reputation AND a minimum
 // number of sets shipped (reputation alone could theoretically be bought via
 // other levers; shipping history can't be).
-export const ANNIVERSARY_REPUTATION_GATE = 40
+// Raised from 40 when franchise reputation growth was re-tuned (franchise.js's
+// BASE_GROWTH). At the old growth rate 40 arrived around week 290 of a 312-week
+// run, so the tier was effectively unreachable; at the new rate it arrives
+// around week 90, which is far too early for a tier whose entire premise is
+// having a history worth celebrating. 55 lands it mid-run, with
+// ANNIVERSARY_MIN_SETS_SHIPPED as the secondary gate.
+export const ANNIVERSARY_REPUTATION_GATE = 55
 export const ANNIVERSARY_MIN_SETS_SHIPPED = 6
 
 export function canUnlockAnniversary({ franchise, setsShipped } = {}) {

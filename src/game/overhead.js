@@ -40,11 +40,12 @@ const RETIRED_CARD_DISCOUNT = 0.25 // an out-of-print card still costs you somet
 // better people, more lawyers.
 //
 // TUNING NOTE: this divisor is calibrated against the reputation range a run
-// actually reaches (~55-60 by week 312 today). Franchise reputation growth is
-// scheduled to be raised in a later pass so the upper media deals become
-// reachable; when that lands, this MUST be re-tuned upward or every late-run
-// cost silently inflates by the same factor.
-const PRESTIGE_REFERENCE = 120
+// actually reaches, and MUST be re-tuned whenever franchise.js's BASE_GROWTH
+// changes or every late-run cost silently inflates by the same factor. It was
+// 120 while reputation topped out near 60; raising growth so the upper media
+// deals became reachable took reputation to ~117 by week 312, which nearly
+// doubled the multiplier on its own.
+const PRESTIGE_REFERENCE = 160
 
 // ---- Sink B: warehousing (the behaviour sink) ------------------------------
 
