@@ -132,11 +132,13 @@ This app has no remote card art (every card renders as CSS/SVG — see `SetSymbo
 the poke-vendor lineage this shell has **no image-caching scheme handler** — there's nothing to
 cache.
 
-The haptics and file-save bridges are wired into the *shell*, but nothing in the React app calls
-them yet — there's no `navigator.vibrate` call site and no save-export feature today. They're
-ready for the natural fits (haptic feedback on a pack rip in `PackRipper.jsx`; a save-backup
-export) if either gets built later; call `window.webkit.messageHandlers.haptics.postMessage(kind)`
-or `.saveFile.postMessage({name, text})` guarded by `window.__TCG_MANAGER_NATIVE__`.
+The **`saveFile` bridge is live**: `SettingsPanel.jsx` routes the save-backup export through it,
+because `a.download` is inert inside a WKWebView. It is guarded by `window.__TCG_MANAGER_NATIVE__`,
+so the browser build still uses a normal download.
+
+The **`haptics` bridge is not called yet** — there is no `navigator.vibrate` call site in the app.
+The natural fit is a pack rip in `PackRipper.jsx`. Call
+`window.webkit.messageHandlers.haptics.postMessage(kind)` behind the same guard.
 
 `ios:sim` is also the lean version of the pattern: the poke-vendor/Sideline lineage runs a full
 per-screen tap-target/press-feedback audit against a `window.__PV__`-style test seam. This app
