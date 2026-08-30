@@ -35,6 +35,12 @@ export default function App() {
   const [tab, setTab] = useState('sets')
   const [retireConfirm, setRetireConfirm] = useState(false)
 
+  // The run save lives in IndexedDB, so boot is asynchronous. Hold the screen
+  // rather than flashing onboarding at a returning player for a frame.
+  if (game.booting) {
+    return <div className="boot" role="status">Loading your studio…</div>
+  }
+
   // First run: gate everything behind onboarding until the player launches.
   if (!game.state.config?.started) {
     return <Onboarding onStart={game.startGame} />
@@ -70,6 +76,15 @@ export default function App() {
   return (
     <div className="app">
       <TopBar game={game} onDesignSet={() => setBuilding(true)} onOpenSettings={() => setSettingsOpen(true)} />
+
+      {/* A failed autosave used to be entirely silent, which is how a long run
+          could stop saving without the player ever finding out. */}
+      {game.saveError && (
+        <div className="savewarn" role="alert">
+          ⚠ {game.saveError}
+          <button className="btn btn--ghost" onClick={() => setSettingsOpen(true)}>Open settings</button>
+        </div>
+      )}
 
       {/* Desktop: the rich two-column dashboard. Hidden on mobile via CSS. */}
       <main className="dashboard dashboard--desktop">
@@ -119,6 +134,10 @@ export default function App() {
 
       {settingsOpen && (
         <SettingsPanel
+          state={game.state}
+          saveError={game.saveError}
+          onExport={game.exportRun}
+          onImport={game.importRun}
           onReset={() => { game.reset(); setSettingsOpen(false) }}
           onClose={() => setSettingsOpen(false)}
         />

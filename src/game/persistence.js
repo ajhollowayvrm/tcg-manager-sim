@@ -74,7 +74,171 @@ const KEY = 'tcg-manager-sim/save'
 // reveals). A v16 save has the old field names throughout and predates every
 // size/spotlight field — invalidating is far cleaner than migrating a whole
 // card catalogue.
-const VERSION = 17
+// v18: the audit remediation pass. New persisted fields — state.goodwillSpend
+// and state.lastOverhead (recurring costs, overhead.js), state.breakHistory
+// (break saturation), state.legacy / state.retirement / state.prestige (the
+// legacy score and cross-run prestige), gameOver.kind, set.printLevel and
+// set.riderFatigue. Beyond the new fields, three stats changed MEANING under
+// the same names: printIntensity now relaxes toward a shelf-derived resting
+// level instead of decaying to zero, cadence unrest drives toward a floor
+// instead of integrating without bound, and franchise.reputation grows ~2.6x
+// faster. A v17 save's values for all three were produced under different
+// rules and would read as nonsense, so invalidating is correct — as with v14
+// and v17. This version also moves the run save from localStorage to
+// IndexedDB; a v17 localStorage blob is discarded rather than migrated,
+// because its numbers are stale under the new rules anyway.
+const VERSION = 18
+
+// ---- Where the run save lives ----------------------------------------------
+//
+// IndexedDB, not localStorage. A measured week-312 run serialized to 4.07 MB
+// against a ~5 MB localStorage quota, and `saveState` swallowed the resulting
+// QuotaExceededError — so a long run silently stopped saving and the player
+// lost it on the next reload with no warning at all. IndexedDB's quota is
+// orders of magnitude larger. The state is also SHRUNK on the way out (see
+// serialize below), which takes the same run to well under 1 MB, so the two
+// fixes together leave a very large margin.
+//
+// The cost is that IndexedDB is asynchronous, so the app now boots through a
+// loading state (see useGame.js's HYDRATE action) instead of initialising the
+// reducer synchronously.
+const DB_NAME = 'tcg-manager-sim'
+const DB_STORE = 'runs'
+const DB_KEY = 'current'
+
+function hasIndexedDb() {
+  try {
+    return typeof indexedDB !== 'undefined' && indexedDB !== null
+  } catch {
+    return false
+  }
+}
+
+function openDb() {
+  return new Promise((resolve, reject) => {
+    if (!hasIndexedDb()) return reject(new Error('no indexedDB'))
+    const req = indexedDB.open(DB_NAME, 1)
+    req.onupgradeneeded = () => {
+      const db = req.result
+      if (!db.objectStoreNames.contains(DB_STORE)) db.createObjectStore(DB_STORE)
+    }
+    req.onsuccess = () => resolve(req.result)
+    req.onerror = () => reject(req.error ?? new Error('indexedDB open failed'))
+  })
+}
+
+function dbGet(key) {
+  return openDb().then((db) => new Promise((resolve, reject) => {
+    const tx = db.transaction(DB_STORE, 'readonly')
+    const req = tx.objectStore(DB_STORE).get(key)
+    req.onsuccess = () => resolve(req.result ?? null)
+    req.onerror = () => reject(req.error)
+  }))
+}
+
+function dbPut(key, value) {
+  return openDb().then((db) => new Promise((resolve, reject) => {
+    const tx = db.transaction(DB_STORE, 'readwrite')
+    tx.objectStore(DB_STORE).put(value, key)
+    tx.oncomplete = () => resolve(true)
+    tx.onerror = () => reject(tx.error)
+    tx.onabort = () => reject(tx.error)
+  }))
+}
+
+function dbDelete(key) {
+  return openDb().then((db) => new Promise((resolve, reject) => {
+    const tx = db.transaction(DB_STORE, 'readwrite')
+    tx.objectStore(DB_STORE).delete(key)
+    tx.oncomplete = () => resolve(true)
+    tx.onerror = () => reject(tx.error)
+  })).catch(() => false)
+}
+
+// ---- Shrinking the state ----------------------------------------------------
+//
+// The card catalogue is essentially the whole save: a week-312 run holds ~6,000
+// cards, each carrying 26 full-precision price points. Three cheap measures cut
+// that by roughly 4-5x with no visible loss.
+
+// Measured on a week-200 run: cards are 92% of the whole save, and a single
+// card serializes to ~650 bytes. Where those bytes go, and what each measure
+// below reclaims:
+//   priceHistory  154B — 26 full-precision floats
+//   popFactors     96B — four unrounded floats
+//   hype/momentum  37B — two more
+//   ~200B          — the KEY NAMES of ten optional fields sitting at their
+//                    default value on almost every card
+const HOT_HISTORY = 26 // a fresh card keeps its full sparkline
+const COLD_HISTORY = 8 // an old one keeps just enough to draw a trend
+const HOT_AGE_WEEKS = 52 // how recent a set has to be for its cards to stay hot
+
+const round = (n, dp) => (typeof n === 'number' ? Math.round(n * 10 ** dp) / 10 ** dp : n)
+
+// Fields advanceWeek recomputes from scratch every tick. Persisting them costs
+// space and buys nothing — they are stale the instant the next week resolves.
+const DERIVED_KEYS = ['movers', 'scalperState', 'lastRip']
+
+// Optional card fields and the value they hold on the overwhelming majority of
+// cards. Dropped on write and restored on read, so this is lossless — it just
+// stops paying for `"characterId":null` six thousand times.
+const CARD_DEFAULTS = {
+  secret: false, signature: false, promo: false, treatment: null,
+  banned: false, rotated: false, outOfPrint: false,
+  firstEdition: false, reprint: false,
+  graded: false, gradedPopulation: 0,
+  artistId: null, characterId: null,
+  serialCap: null, serialIssued: 0,
+  momentum: 0, controversy: 0, legacyValue: 0,
+}
+
+export function serialize(state) {
+  const setAge = new Map(
+    (state.sets ?? []).map((s) => [s.id, (state.week ?? 0) - (s.releasedWeek ?? 0)]),
+  )
+  const out = { ...state }
+  for (const k of DERIVED_KEYS) delete out[k]
+
+  out.cards = (state.cards ?? []).map((c) => {
+    // Age, not print status, decides how much history to keep: a catalogue that
+    // is never pruned has every set "live", so keying off `rotated` trimmed
+    // almost nothing on exactly the runs that needed it most.
+    const age = setAge.get(c.setId) ?? Infinity
+    const keep = age <= HOT_AGE_WEEKS ? HOT_HISTORY : COLD_HISTORY
+    const card = {
+      ...c,
+      singlePrice: round(c.singlePrice, 2),
+      sealedPrice: round(c.sealedPrice, 2),
+      hype: round(c.hype, 3),
+      momentum: round(c.momentum, 3),
+      priceHistory: (c.priceHistory ?? []).slice(-keep).map((p) => round(p, 2)),
+    }
+    if (c.popFactors) {
+      const f = c.popFactors
+      card.popFactors = {
+        punch: round(f.punch, 1), rarity: round(f.rarity, 1),
+        artAppeal: round(f.artAppeal, 1), hype: round(f.hype, 1),
+      }
+    }
+    for (const [k, def] of Object.entries(CARD_DEFAULTS)) {
+      if (card[k] === def || card[k] === undefined) delete card[k]
+    }
+    return card
+  })
+  return out
+}
+
+// Restore what serialize dropped. Every omitted field is read with a
+// `?? default` somewhere, so this is belt-and-braces rather than strictly
+// required — but a card record that changes shape depending on whether it came
+// from a save is exactly the kind of thing that bites six months later.
+export function hydrate(state) {
+  if (!state?.cards) return state
+  return {
+    ...state,
+    cards: state.cards.map((c) => ({ ...CARD_DEFAULTS, ...c })),
+  }
+}
 
 // True only where a real localStorage exists. Guards SSR / the headless
 // playtest harness (tools/playtest.mjs runs the sim in plain Node), and the
@@ -90,34 +254,89 @@ function hasStorage() {
 // Read the saved run, or null if there's nothing valid to resume. Any parse
 // error, version mismatch, or storage fault falls through to null so a corrupt
 // save can never wedge startup — the caller just begins a new game.
-export function loadState() {
-  if (!hasStorage()) return null
-  let raw
-  try {
-    raw = localStorage.getItem(KEY)
-  } catch {
-    return null
+//
+// ASYNC, because the run save now lives in IndexedDB. Also sweeps up any old
+// localStorage blob it finds: pre-v18 saves are stale under the rebalanced
+// rules and are discarded rather than migrated, but the key is removed so it
+// stops occupying quota forever.
+export async function loadState() {
+  if (hasStorage()) {
+    try { localStorage.removeItem(KEY) } catch { /* ignore */ }
   }
-  if (!raw) return null
+  if (!hasIndexedDb()) return null
   try {
-    const parsed = JSON.parse(raw)
+    const parsed = await dbGet(DB_KEY)
     if (!parsed || parsed.version !== VERSION || !parsed.state) return null
-    return parsed.state
+    return hydrate(parsed.state)
   } catch {
-    // Corrupt blob — clear it so we don't keep trying to parse garbage.
-    clearSave()
     return null
   }
 }
 
-// Persist the current state. Wrapped in the version envelope. Swallows quota /
-// access errors: a failed autosave should never break the running game.
+// ---- Save failure reporting -------------------------------------------------
+//
+// A failed autosave used to be entirely silent — `catch {}` — which is how a
+// long run could stop saving without the player ever finding out. Listeners get
+// told, and SettingsPanel surfaces it.
+let saveFailure = null
+const saveListeners = new Set()
+
+export function onSaveStatus(fn) {
+  saveListeners.add(fn)
+  fn(saveFailure)
+  return () => saveListeners.delete(fn)
+}
+
+function reportSaveStatus(failure) {
+  if (saveFailure === failure) return
+  saveFailure = failure
+  for (const fn of saveListeners) {
+    try { fn(failure) } catch { /* a listener must not break saving */ }
+  }
+}
+
+// Persist the current state. Writes are QUEUED: IndexedDB is async and the
+// caller (a debounced React effect) is not, so a burst of saves collapses into
+// one in-flight write plus at most one pending follow-up.
+let writing = false
+let queued = null
+
 export function saveState(state) {
-  if (!hasStorage()) return
+  if (!hasIndexedDb() || !state) return
+  queued = state
+  if (writing) return
+  flushQueue()
+}
+
+function flushQueue() {
+  const state = queued
+  queued = null
+  if (!state) { writing = false; return }
+  writing = true
+  dbPut(DB_KEY, { version: VERSION, state: serialize(state) })
+    .then(() => reportSaveStatus(null))
+    .catch((err) => reportSaveStatus(err?.name === 'QuotaExceededError'
+      ? 'Your browser is out of storage — this run is no longer being saved. Export it from Settings.'
+      : 'This run could not be saved. Export it from Settings to be safe.'))
+    .finally(() => { writing = false; if (queued) flushQueue() })
+}
+
+// ---- Export / import --------------------------------------------------------
+//
+// The manual escape hatch, and the fallback whenever a write fails.
+
+export function exportSave(state) {
+  return JSON.stringify({ version: VERSION, exportedAt: new Date().toISOString(), state: serialize(state) })
+}
+
+// Returns the state, or null if the blob isn't a save this build can read.
+export function importSave(text) {
   try {
-    localStorage.setItem(KEY, JSON.stringify({ version: VERSION, state }))
+    const parsed = JSON.parse(text)
+    if (!parsed || parsed.version !== VERSION || !parsed.state) return null
+    return hydrate(parsed.state)
   } catch {
-    // Quota exceeded or storage disabled mid-session — nothing actionable to do.
+    return null
   }
 }
 
@@ -127,12 +346,11 @@ export function saveState(state) {
 // This deliberately touches ONLY the run key. Prestige and the hall of fame are
 // account-level records that must outlive any single run — see below.
 export function clearSave() {
-  if (!hasStorage()) return
-  try {
-    localStorage.removeItem(KEY)
-  } catch {
-    /* ignore */
+  queued = null
+  if (hasStorage()) {
+    try { localStorage.removeItem(KEY) } catch { /* ignore */ }
   }
+  if (hasIndexedDb()) dbDelete(DB_KEY)
 }
 
 // ---- Prestige & hall of fame (account-level, outlives every run) -----------

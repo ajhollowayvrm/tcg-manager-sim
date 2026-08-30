@@ -1341,3 +1341,44 @@ button.tag--oddsobscured:hover { border-color: var(--accent-2); color: var(--tex
     transition: none !important;
   }
 }
+
+/* ---- Boot, save warnings & settings rows -------------------------------- */
+
+.boot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  color: var(--text-dim);
+  font-size: 0.95rem;
+}
+
+.savewarn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0 var(--gap) var(--gap);
+  padding: 10px 14px;
+  background: #2b0606;
+  border: 1px solid var(--bad);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.settings__error {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  background: #2b0606;
+  border: 1px solid var(--bad);
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+.settings__row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}

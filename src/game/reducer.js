@@ -380,6 +380,10 @@ export function reducer(state, action) {
       if (level === (state.goodwillSpend ?? 0)) return state
       return { ...state, goodwillSpend: level }
     }
+    case 'HYDRATE':
+      // The saved run finished loading from IndexedDB (or an import landed).
+      // Boot is asynchronous now — see persistence.js and useGame.js.
+      return action.state ?? state
     case 'RETIRE_STUDIO': {
       // A voluntary EXIT, never a win condition. It reuses the existing
       // `gameOver` field, so advanceWeek's `if (!next.gameOver)` guard and this

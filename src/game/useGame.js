@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useReducer, useRef } from 'react'
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { createInitialState } from './initialState.js'
 import { reducer } from './reducer.js'
-import { loadState, saveState, loadPrestige } from './persistence.js'
+import { loadState, saveState, loadPrestige, onSaveStatus, exportSave, importSave } from './persistence.js'
 import { unlockedPerks } from './legacy.js'
 
 // The React binding over the game reducer. Every state transition lives in
@@ -12,39 +12,58 @@ import { unlockedPerks } from './legacy.js'
 // Time is MANUAL: the player clicks "Advance Week", which dispatches a single
 // 'TICK' to run one simulation week. There's no auto-timer.
 
-// Lazy reducer init: resume a saved run if one exists, otherwise a fresh state.
-// loadState() returns null in the harness / first visit / on any corrupt blob,
-// so this is always safe.
-function initState() {
-  const saved = loadState()
-  if (saved) return saved
-  // A brand-new run still carries the player's career: banked legacy from
-  // previous retirements unlocks perks (see legacy.js's PRESTIGE_PERKS).
+// A fresh run, carrying whatever the player's career has already unlocked.
+// Prestige lives in localStorage and loads synchronously (see persistence.js),
+// so this stays cheap; only the RUN save is asynchronous.
+function freshState() {
   const p = loadPrestige()
   return createInitialState({ prestige: { ...p, perks: unlockedPerks(p.banked) } })
 }
 
 export function useGame() {
-  const [state, dispatch] = useReducer(reducer, undefined, initState)
+  // Boot is ASYNCHRONOUS now: the run save lives in IndexedDB (a week-312 run
+  // serialized to 4.07 MB against localStorage's ~5 MB quota, and the failure
+  // was silent). We start on a fresh state, then HYDRATE if a save comes back.
+  // `booting` lets App render a loading state instead of flashing onboarding at
+  // a returning player.
+  const [state, dispatch] = useReducer(reducer, undefined, freshState)
+  const [booting, setBooting] = useState(true)
+  const [saveError, setSaveError] = useState(null)
   const stateRef = useRef(state)
   stateRef.current = state
+
+  useEffect(() => {
+    let cancelled = false
+    loadState()
+      .then((saved) => { if (!cancelled && saved) dispatch({ type: 'HYDRATE', state: saved }) })
+      .catch(() => { /* a corrupt save must never wedge startup */ })
+      .finally(() => { if (!cancelled) setBooting(false) })
+    return () => { cancelled = true }
+  }, [])
+
+  // A failed autosave used to be entirely silent. Now it surfaces.
+  useEffect(() => onSaveStatus(setSaveError), [])
 
   // Autosave: persist on every state change, debounced so a burst of actions in
   // one week doesn't hammer localStorage. The trailing write always lands, so the
   // latest state is never lost; on unmount we flush immediately so a reload right
   // after an action is safe.
   useEffect(() => {
+    // Never write while booting: the reducer starts on a FRESH state, so an
+    // autosave firing before HYDRATE lands would overwrite the real save with
+    // an empty run.
+    if (booting) return
     const id = setTimeout(() => saveState(stateRef.current), 400)
     return () => clearTimeout(id)
-  }, [state])
+  }, [state, booting])
 
   useEffect(() => {
     // Flush the freshest state when the tab is hidden/closed — covers the case
     // where the user navigates away inside the debounce window.
-    const flush = () => saveState(stateRef.current)
+    const flush = () => { if (!booting) saveState(stateRef.current) }
     window.addEventListener('pagehide', flush)
     return () => window.removeEventListener('pagehide', flush)
-  }, [])
+  }, [booting])
 
   // Manual time: advance one week per click. No timer, no play/pause/speed.
   const advanceWeekAction = useCallback(() => dispatch({ type: 'TICK' }), [])
@@ -81,6 +100,15 @@ export function useGame() {
   const pitchMedia = useCallback((dealId) => dispatch({ type: 'PITCH_MEDIA_DEAL', dealId }), [])
   const setGoodwill = useCallback((level) => dispatch({ type: 'SET_GOODWILL', level }), [])
   const retire = useCallback(() => dispatch({ type: 'RETIRE_STUDIO' }), [])
+  // Manual export/import — the escape hatch, and the fallback whenever a write
+  // fails. Import replaces the live run wholesale.
+  const exportRun = useCallback(() => exportSave(stateRef.current), [])
+  const importRun = useCallback((text) => {
+    const loaded = importSave(text)
+    if (!loaded) return false
+    dispatch({ type: 'HYDRATE', state: loaded })
+    return true
+  }, [])
 
-  return { state, advanceWeek: advanceWeekAction, release, pull, reprint, adjustWave, reset, addCharacter, rip, startGame, comp, sponsor, unsponsor, invitePrerelease: invitePrereleaseAction, sponsorTournament: sponsorTournamentAction, signDist, dropDist, cultivateDist, upgradeSupplyChain: upgradeSupplyChainAction, signGrading, dropGrading, cultivateGrading, runBreak: runBreakAction, togglePurchaseLimits, togglePhantomStock, toggleOddsPublished, launchMerch, refreshMerch, retireMerch, pitchMedia, setGoodwill, retire }
+  return { state, advanceWeek: advanceWeekAction, release, pull, reprint, adjustWave, reset, addCharacter, rip, startGame, comp, sponsor, unsponsor, invitePrerelease: invitePrereleaseAction, sponsorTournament: sponsorTournamentAction, signDist, dropDist, cultivateDist, upgradeSupplyChain: upgradeSupplyChainAction, signGrading, dropGrading, cultivateGrading, runBreak: runBreakAction, togglePurchaseLimits, togglePhantomStock, toggleOddsPublished, launchMerch, refreshMerch, retireMerch, pitchMedia, setGoodwill, retire, booting, saveError, exportRun, importRun }
 }
