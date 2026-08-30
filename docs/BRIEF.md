@@ -328,7 +328,8 @@ Grouped into three layers. Each assumes the v1 core loop is solid first.
 >   live card (a silver bullet that nerfs it and bleeds its ban pressure — defuse
 >   by design instead of banning) or a whole archetype (broad tech that pushes
 >   the metashare off a runaway play style). (`sets.js` `applyCounters`,
->   `archetypes.js` `shiftAway`.)
+>   `archetypes.js` `shiftAway` — BOTH now deleted; counter cards went with the
+>   competitive engine in the pivot, see persistence.js v12.)
 > - **Distributors & scalper culture** — sign bulk-buyer clients (a Pokébank-style
 >   "card bank," big-box, LGS co-op, flippers, importers) who buy huge volume at
 >   a wholesale discount for cash now, then flood the resale channel. Heavy
