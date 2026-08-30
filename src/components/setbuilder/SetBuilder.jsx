@@ -2,6 +2,7 @@
 // signature card editor, prerelease toggle, a live cost summary, and Release.
 
 import { useState } from 'react'
+import { useModal } from '../useModal.js'
 import Slider from './Slider.jsx'
 import SignatureCardEditor from './SignatureCardEditor.jsx'
 import RarityEditor from './RarityEditor.jsx'
@@ -59,6 +60,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
   // Accordion: sections toggle independently (multi-open). Identity is open by
   // default; everything else starts collapsed so the modal opens short and
   // scannable. Each collapsed header shows a one-line summary of its contents.
+  const modalRef = useModal(onClose)
   const [open, setOpen] = useState({ identity: true })
   const toggle = (id) => setOpen((o) => ({ ...o, [id]: !o[id] }))
 
@@ -181,10 +183,10 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
   }
 
   return (
-    <div className="modal" role="dialog" aria-modal="true">
-      <div className="modal__sheet">
+    <div className="modal" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal__sheet" ref={modalRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="builder-title">
         <header className="modal__head">
-          <h2>Design a {tier.name}</h2>
+          <h2 id="builder-title">Design a {tier.name}</h2>
           <button className="btn btn--ghost" onClick={onClose}>✕</button>
         </header>
 

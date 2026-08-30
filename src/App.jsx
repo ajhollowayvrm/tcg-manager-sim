@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useGame } from './game/useGame.js'
 import TopBar from './components/TopBar.jsx'
 import MarketTicker from './components/MarketTicker.jsx'
@@ -10,6 +10,9 @@ import SetsPanel from './components/SetsPanel.jsx'
 import PackRipper from './components/PackRipper.jsx'
 import DistributorsPanel from './components/DistributorsPanel.jsx'
 import AmbitionPanel from './components/AmbitionPanel.jsx'
+import CardBrowser from './components/CardBrowser.jsx'
+import LedgerPanel from './components/LedgerPanel.jsx'
+import HistoryPanel from './components/HistoryPanel.jsx'
 import Onboarding from './components/Onboarding.jsx'
 import SetBuilder from './components/setbuilder/SetBuilder.jsx'
 import SettingsPanel from './components/SettingsPanel.jsx'
@@ -21,9 +24,13 @@ import RetrospectivePanel from './components/RetrospectivePanel.jsx'
 // collector/reseller-first: sets & scarcity, market & packs, community &
 // distribution, news. Organized play and manually banning a card are gone
 // entirely; pull-from-print and promo SKUs are the collector-era replacements.
+// Five tabs, not four: the money panels (profit-and-loss, trends,
+// distribution, ambition) were previously crammed into `community` alongside
+// the persona roster, and the card browser had nowhere to live at all.
 const TABS = [
   { id: 'sets', label: 'Sets', icon: '📦' },
   { id: 'market', label: 'Market', icon: '📈' },
+  { id: 'studio', label: 'Studio', icon: '📊' },
   { id: 'community', label: 'Community', icon: '💬' },
   { id: 'events', label: 'News', icon: '📰' },
 ]
@@ -34,6 +41,18 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [tab, setTab] = useState('sets')
   const [retireConfirm, setRetireConfirm] = useState(false)
+  const tabRefs = useRef([])
+
+  // Arrow-key navigation between tabs, per the ARIA tabs pattern: the tablist
+  // is one tab stop and the arrows move within it.
+  const onTabKey = (e, i) => {
+    const delta = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0
+    if (!delta) return
+    e.preventDefault()
+    const next = (i + delta + TABS.length) % TABS.length
+    setTab(TABS[next].id)
+    tabRefs.current[next]?.focus()
+  }
 
   // The run save lives in IndexedDB, so boot is asynchronous. Hold the screen
   // rather than flashing onboarding at a returning player for a frame.
@@ -51,6 +70,9 @@ export default function App() {
   const panels = {
     sets: <SetsPanel state={game.state} onReprint={game.reprint} onPull={game.pull} onAdjustWave={game.adjustWave} onToggleOdds={game.toggleOddsPublished} />,
     market: <MarketTicker state={game.state} />,
+    browser: <CardBrowser state={game.state} />,
+    ledger: <LedgerPanel state={game.state} />,
+    history: <HistoryPanel state={game.state} />,
     packs: <PackRipper state={game.state} onRip={game.rip} onRunBreak={game.runBreak} />,
     feedback: <FeedbackFeed state={game.state} />,
     personas: <PersonasPanel state={game.state} onComp={game.comp} onSponsor={game.sponsor} onDropSponsor={game.unsponsor} onInvitePrerelease={game.invitePrerelease} onSponsorTournament={game.sponsorTournament} />,
@@ -91,9 +113,12 @@ export default function App() {
         <section className="col col--main">
           {panels.sets}
           {panels.market}
+          {panels.browser}
           {panels.packs}
         </section>
         <aside className="col col--side">
+          {panels.ledger}
+          {panels.history}
           {panels.feedback}
           {panels.personas}
           {panels.cast}
@@ -105,21 +130,37 @@ export default function App() {
 
       {/* Mobile: one tab's panels at a time, with a bottom tab bar. Hidden on
           desktop via CSS. */}
-      <main className="dashboard--mobile">
+      <main
+        className="dashboard--mobile"
+        id={`tabpanel-${tab}`}
+        role="tabpanel"
+        aria-labelledby={`tab-${tab}`}
+        tabIndex={0}
+      >
         {tab === 'sets' && <div className="col">{panels.sets}</div>}
-        {tab === 'market' && <div className="col">{panels.market}{panels.packs}</div>}
-        {tab === 'community' && <div className="col">{panels.feedback}{panels.personas}{panels.cast}{panels.distributors}{panels.ambition}</div>}
+        {tab === 'market' && <div className="col">{panels.market}{panels.browser}{panels.packs}</div>}
+        {tab === 'studio' && <div className="col">{panels.ledger}{panels.history}{panels.distributors}{panels.ambition}</div>}
+        {tab === 'community' && <div className="col">{panels.feedback}{panels.personas}{panels.cast}</div>}
         {tab === 'events' && <div className="col">{panels.events}</div>}
       </main>
 
-      <nav className="tabbar" role="tablist" aria-label="Sections">
-        {TABS.map((t) => (
+      {/* Real tab semantics. These were `role="tab"` buttons with no tabpanel,
+          no aria-controls, no ids and no keyboard navigation — the roles
+          promised a widget the markup never delivered. */}
+      <nav className="tabbar" role="tablist" aria-label="Dashboard sections">
+        {TABS.map((t, i) => (
           <button
             key={t.id}
+            id={`tab-${t.id}`}
+            ref={(el) => { tabRefs.current[i] = el }}
             role="tab"
+            type="button"
             aria-selected={tab === t.id}
+            aria-controls={`tabpanel-${t.id}`}
+            tabIndex={tab === t.id ? 0 : -1}
             className={'tabbar__btn' + (tab === t.id ? ' is-active' : '')}
             onClick={() => setTab(t.id)}
+            onKeyDown={(e) => onTabKey(e, i)}
           >
             <span className="tabbar__icon" aria-hidden="true">{t.icon}</span>
             <span className="tabbar__label">{t.label}</span>

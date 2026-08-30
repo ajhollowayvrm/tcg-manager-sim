@@ -49,7 +49,7 @@ export default function RarityEditor({ sheet, onChange }) {
                 value={r.pullWeight}
                 aria-label="Pull weight"
                 placeholder="Pull"
-                onChange={(e) => update(r.id, { pullWeight: Math.max(0, Number(e.target.value)) })}
+                onChange={(e) => update(r.id, { pullWeight: numOr(e.target.value, r.pullWeight, 0, Infinity) })}
               />
               <input
                 className="rared__num rared__num--value"
@@ -57,7 +57,7 @@ export default function RarityEditor({ sheet, onChange }) {
                 value={r.valueTier}
                 aria-label="Value tier"
                 placeholder="Value"
-                onChange={(e) => update(r.id, { valueTier: Math.min(100, Math.max(0, Number(e.target.value))) })}
+                onChange={(e) => update(r.id, { valueTier: numOr(e.target.value, r.valueTier, 0, 100) })}
               />
               <input
                 className="rared__secret"
@@ -107,4 +107,15 @@ export default function RarityEditor({ sheet, onChange }) {
       <button className="btn rared__add" onClick={add}>+ Add rarity</button>
     </div>
   )
+}
+
+// Number('') is 0, so clearing one of these fields used to silently write a
+// pull weight of zero — making the rarity permanently unpullable with no
+// warning and no way to tell it had happened. An empty field now keeps the
+// previous value until the player types a real one.
+function numOr(raw, fallback, lo, hi) {
+  if (raw === '' || raw == null) return fallback
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return fallback
+  return Math.min(hi, Math.max(lo, n))
 }

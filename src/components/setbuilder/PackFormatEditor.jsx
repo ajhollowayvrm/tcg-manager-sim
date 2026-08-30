@@ -42,7 +42,7 @@ export default function PackFormatEditor({ format, sheet, onChange }) {
 
       <div className="packfmt__slots">
         {slots.map((slot, i) => (
-          <div key={i} className="packfmt__slot">
+          <div key={slot.id ?? `slot-${i}`} className="packfmt__slot">
             <input
               className="packfmt__count"
               type="number" min="0" max="30" step="1"

@@ -22,7 +22,10 @@ import { getGimmick, NO_GIMMICK } from './content/gimmicks.js'
 import { createCharacter, famePopBonus, getTreatment, recordAppearance } from './characters.js'
 
 export const MIN_SIGNATURE_CARDS = 0 // signature highlights are optional now
-export const MAX_SIGNATURE_CARDS = 15
+// Raised from 15. A major runs up to 250 cards, so a cap of fifteen marquee
+// cards meant the player could hand-design at most 6% of a landmark set and the
+// rest was procedural filler.
+export const MAX_SIGNATURE_CARDS = 30
 export const MIN_SET_LENGTH = 1
 export const MAX_SET_LENGTH = 250
 export const MAX_SECRET_CARDS = 12

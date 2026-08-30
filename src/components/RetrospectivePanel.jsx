@@ -47,8 +47,8 @@ export default function RetrospectivePanel({ state, onReset }) {
   const nextPerk = PRESTIGE_PERKS.find((p) => bankedAfter < p.at)
 
   return (
-    <div className="modal" role="dialog" aria-modal="true" aria-labelledby="retro-title">
-      <div className="modal__sheet">
+    <div className="modal">
+      <div className="modal__sheet" role="dialog" aria-modal="true" aria-labelledby="retro-title">
         <header className="modal__head">
           <h2 id="retro-title">{retired ? 'The studio closes its doors' : 'The studio folds'}</h2>
         </header>

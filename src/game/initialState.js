@@ -142,6 +142,12 @@ export function createInitialState(config) {
     legacy: freshLegacy(),
     retirement: null,
 
+    // Weekly profit-and-loss entries and a rolling stat series — pure UI
+    // bookkeeping written by simulation.js's recordLedger. Nothing in the sim
+    // reads either. See LedgerPanel and HistoryPanel.
+    ledger: [],
+    history: [],
+
     feedbackFeed: [], // qualitative chatter — sometimes lies
     eventsFeed: [], // news/curveballs
     movers: [], // notable market movers from the latest week (for the ticker)

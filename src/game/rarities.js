@@ -154,9 +154,9 @@ export const PACK_PRESETS = [
     build: () => ({
       preset: 'classic',
       slots: [
-        { count: 7, rarityIds: [D.common], escalate: false },
-        { count: 2, rarityIds: [D.uncommon], escalate: false },
-        { count: 1, rarityIds: [D.rare, D.dbl, D.ace, D.ir, D.sir, D.hyper], escalate: true },
+        { id: rid('slot'), count: 7, rarityIds: [D.common], escalate: false },
+        { id: rid('slot'), count: 2, rarityIds: [D.uncommon], escalate: false },
+        { id: rid('slot'), count: 1, rarityIds: [D.rare, D.dbl, D.ace, D.ir, D.sir, D.hyper], escalate: true },
       ],
     }),
   },
@@ -165,9 +165,9 @@ export const PACK_PRESETS = [
     build: () => ({
       preset: 'premium',
       slots: [
-        { count: 5, rarityIds: [D.common], escalate: false },
-        { count: 3, rarityIds: [D.uncommon], escalate: false },
-        { count: 2, rarityIds: [D.dbl, D.ace, D.ir, D.sir, D.hyper], escalate: true },
+        { id: rid('slot'), count: 5, rarityIds: [D.common], escalate: false },
+        { id: rid('slot'), count: 3, rarityIds: [D.uncommon], escalate: false },
+        { id: rid('slot'), count: 2, rarityIds: [D.dbl, D.ace, D.ir, D.sir, D.hyper], escalate: true },
       ],
     }),
   },
@@ -176,9 +176,9 @@ export const PACK_PRESETS = [
     build: () => ({
       preset: 'jumbo',
       slots: [
-        { count: 10, rarityIds: [D.common], escalate: false },
-        { count: 4, rarityIds: [D.uncommon], escalate: false },
-        { count: 1, rarityIds: [D.ir, D.sir, D.hyper], escalate: true },
+        { id: rid('slot'), count: 10, rarityIds: [D.common], escalate: false },
+        { id: rid('slot'), count: 4, rarityIds: [D.uncommon], escalate: false },
+        { id: rid('slot'), count: 1, rarityIds: [D.ir, D.sir, D.hyper], escalate: true },
       ],
     }),
   },
@@ -199,7 +199,18 @@ export function buildPreset(id) {
 // no-op until the set actually has one, at which point it's the dedicated
 // alt-art/foil chase slot for that character.
 export function makePackSlot() {
-  return { count: 1, rarityIds: [], escalate: false, iconOnly: false }
+  return { id: rid('slot'), count: 1, rarityIds: [], escalate: false, iconOnly: false }
+}
+
+// Slots authored before they carried ids (presets, older drafts) get one
+// assigned on the way into the editor. React needs a stable key per row:
+// keying by array index meant removing a middle slot shifted every later slot
+// while React reused the DOM nodes by position, so focus and caret state landed
+// on the wrong row.
+export function withSlotIds(format) {
+  if (!format?.slots?.length) return format
+  if (format.slots.every((s) => s.id)) return format
+  return { ...format, slots: format.slots.map((s) => (s.id ? s : { ...s, id: rid('slot') })) }
 }
 
 // Total cards in a pack = sum of slot counts. Safe on a missing/empty format.

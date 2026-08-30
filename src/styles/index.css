@@ -1382,3 +1382,128 @@ button.tag--oddsobscured:hover { border-color: var(--accent-2); color: var(--tex
   flex-wrap: wrap;
   margin-top: 8px;
 }
+
+/* ---- Chart (Chart.jsx) --------------------------------------------------- */
+
+.chart { margin-bottom: 10px; }
+
+.chart__svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.chart__grid { stroke: var(--border); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.chart__zero { stroke: var(--text-dim); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+.chart__cursor { stroke: var(--text-dim); stroke-width: 1; vector-effect: non-scaling-stroke; }
+
+.chart__axis {
+  fill: var(--text-dim);
+  font-size: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 4px;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+}
+
+.chart__key { display: inline-flex; align-items: center; gap: 5px; }
+.chart__key strong { color: var(--text); font-variant-numeric: tabular-nums; }
+.chart__dot { width: 8px; height: 3px; border-radius: 99px; }
+.chart__at { margin-left: auto; font-variant-numeric: tabular-nums; }
+
+/* ---- Card browser (CardBrowser.jsx) -------------------------------------- */
+
+.browser__count {
+  margin: 0 0 8px;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.browser__list { max-height: 460px; overflow-y: auto; }
+
+.browser__row { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto; }
+
+.browser__meta {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.browser__pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.browser__pageno {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 440px) {
+  .browser__row { grid-template-columns: minmax(0, 1fr) auto; }
+  .browser__meta { display: none; }
+}
+
+/* ---- Profit & loss (LedgerPanel.jsx) ------------------------------------- */
+
+.ledger__spans { margin-bottom: 10px; }
+.ledger__costs { margin-top: 10px; }
+
+.ledger__net {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: var(--surface-2);
+  border-radius: 6px;
+  border-left: 3px solid var(--good);
+  font-size: 0.85rem;
+}
+
+.ledger__net strong {
+  font-size: 1.1rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--good);
+}
+
+.ledger__net.is-bad { border-left-color: var(--bad); }
+.ledger__net.is-bad strong { color: var(--bad); }
+
+.ledger__sets {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ledger__set {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: baseline;
+  padding: 5px 8px;
+  background: var(--surface-2);
+  border-radius: 6px;
+  font-size: 0.76rem;
+}
+
+.ledger__setname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ledger__setunits { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.ledger__setrev { font-variant-numeric: tabular-nums; color: var(--good); }

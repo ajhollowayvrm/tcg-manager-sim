@@ -269,6 +269,16 @@ export function advanceWeek(state) {
   // loss check below so a run's final week is still recorded.
   updateLegacy(next)
 
+  // A structured weekly ledger and a rolling stat series. Both are pure
+  // bookkeeping for the UI — nothing in the sim reads them.
+  //
+  // The money numbers were previously scattered across lastRevenue,
+  // lastMerchRevenue, lastUpkeep, lastDebtInterest and lastOverhead, and only
+  // the first ever reached the screen, so the player could see gross revenue
+  // and nothing else. Consolidating them is what makes a profit-and-loss view
+  // possible at all. Both arrays are capped like the feeds.
+  recordLedger(next)
+
   // Clock attention: classify the week just resolved so the clock can auto-slow
   // or pause on interesting moments and fast-forward through quiet ones. The
   // directive is read by the reducer in useGame; game-over below overrides it.
@@ -312,4 +322,54 @@ export function advanceWeek(state) {
 
 export function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value))
+}
+
+// How many weeks of ledger detail and stat history to keep. The ledger is the
+// P&L panel's data and only the recent past is interesting; the history series
+// drives the trend charts and is one small row per week.
+const LEDGER_WEEKS = 60
+const HISTORY_WEEKS = 520 // a decade, at ~9 numbers a week
+
+function recordLedger(next) {
+  const sealed = next.lastRevenue?.total ?? 0
+  const merch = next.lastMerchRevenue?.total ?? 0
+  const oh = next.lastOverhead ?? {}
+  const upkeep = next.lastUpkeep ?? 0
+  const interest = next.lastDebtInterest ?? 0
+
+  const income = { sealed, merch, total: sealed + merch }
+  const costs = {
+    studio: oh.studio ?? 0,
+    warehouse: oh.warehouse ?? 0,
+    blocks: oh.blocks ?? 0,
+    goodwill: oh.goodwill ?? 0,
+    sponsorships: upkeep,
+    interest,
+    total: (oh.total ?? 0) + upkeep + interest,
+  }
+  const entry = {
+    week: next.week,
+    income,
+    costs,
+    net: income.total - costs.total,
+    cash: next.cash,
+    units: next.lastRevenue?.units ?? 0,
+    perSet: next.lastRevenue?.perSet ?? [],
+  }
+  next.ledger = [entry, ...(next.ledger ?? [])].slice(0, LEDGER_WEEKS)
+
+  next.history = [
+    ...(next.history ?? []),
+    {
+      w: next.week,
+      cash: Math.round(next.cash),
+      casual: Math.round(next.segments?.casual ?? 0),
+      collectors: Math.round(next.segments?.collectors ?? 0),
+      sentiment: Math.round(communitySentiment(next.personas) ?? 0),
+      reputation: Math.round((next.franchise?.reputation ?? 0) * 10) / 10,
+      heat: Math.round(next.scalperHeat ?? 0),
+      net: Math.round(entry.net),
+      live: (next.sets ?? []).filter((s) => !s.rotated && !s.outOfPrint).length,
+    },
+  ].slice(-HISTORY_WEEKS)
 }

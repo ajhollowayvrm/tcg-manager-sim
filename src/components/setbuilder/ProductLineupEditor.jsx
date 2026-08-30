@@ -29,6 +29,13 @@ function ChannelSplitEditor({ channels, onChange }) {
     for (const x of others) {
       next[x] = othersTotal > 0 ? (c[x] / othersTotal) * remaining : remaining / others.length
     }
+    // Renormalise. Repeated nudges accumulate float drift, so without this the
+    // four shares stop summing to 1 and the displayed percentages visibly fail
+    // to add up to 100.
+    const sum = Object.values(next).reduce((a, b) => a + b, 0)
+    if (sum > 0) {
+      for (const k of Object.keys(next)) next[k] = next[k] / sum
+    }
     onChange(next)
   }
   return (

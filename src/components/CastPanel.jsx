@@ -32,7 +32,7 @@ function CastRow({ name, sub, pct, pctTitle, trajectory, label }) {
         </div>
         <div className="roster__meta">
           <span className="roster__reach" title={pctTitle}>
-            <span className="bar"><span className="bar__fill" style={{ width: `${pct}%` }} /></span>
+            <span className="bar"><span className="bar__fill" style={{ width: `${Math.max(0, Math.min(100, pct ?? 0))}%` }} /></span>
           </span>
           <span className={`roster__mood ${trajClass(trajectory)}`}>{label ?? trajectory}</span>
         </div>

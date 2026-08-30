@@ -4,12 +4,14 @@
 // identically on web and in the app.
 
 import { useRef, useState } from 'react'
+import { useModal } from './useModal.js'
 import { clearPrestige } from '../game/persistence.js'
 
 export default function SettingsPanel({ state, saveError, onExport, onImport, onReset, onClose }) {
   const [confirming, setConfirming] = useState(null) // 'run' | 'career' | null
   const [importNote, setImportNote] = useState(null)
   const fileRef = useRef(null)
+  const modalRef = useModal(onClose)
 
   const download = () => {
     const blob = new Blob([onExport()], { type: 'application/json' })
@@ -38,8 +40,8 @@ export default function SettingsPanel({ state, saveError, onExport, onImport, on
   }
 
   return (
-    <div className="modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-      <div className="modal__sheet">
+    <div className="modal" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal__sheet" ref={modalRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="settings-title">
         <header className="modal__head">
           <h2 id="settings-title">Settings</h2>
           <button className="btn btn--ghost" onClick={onClose} aria-label="Close settings">✕</button>
