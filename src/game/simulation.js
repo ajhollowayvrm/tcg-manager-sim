@@ -251,12 +251,16 @@ export function advanceWeek(state) {
   //     floor). Unrecoverable regardless of cash.
   if (!next.gameOver) {
     const sentiment = communitySentiment(next.personas)
+    // `kind` is the STRUCTURED cause, for anything that needs to branch on how a
+    // run ended. tools/playtest.mjs used to classify by substring-matching
+    // `reason`, falling through to "survived" for anything it didn't recognise —
+    // so a newly-worded ruin would have been silently misreported as a survival.
     if (next.cash < DEBT_RUIN) {
-      next.gameOver = { reason: 'Insolvent — debt spiralled past saving; the interest alone is unpayable. The studio folds.' }
+      next.gameOver = { kind: 'debt', reason: 'Insolvent — debt spiralled past saving; the interest alone is unpayable. The studio folds.' }
     } else if (next.cash < DEBT_FLOOR && next.playerBase < ABANDONED_PLAYERS) {
-      next.gameOver = { reason: 'Insolvent — buried in debt with no players left to sell to. The studio folds.' }
+      next.gameOver = { kind: 'abandoned', reason: 'Insolvent — buried in debt with no players left to sell to. The studio folds.' }
     } else if (sentiment != null && sentiment <= SENTIMENT_COLLAPSE) {
-      next.gameOver = { reason: 'The community revolted — sentiment toward your game hit rock bottom.' }
+      next.gameOver = { kind: 'revolt', reason: 'The community revolted — sentiment toward your game hit rock bottom.' }
     }
     if (next.gameOver) {
       next.eventsFeed = [{ week: next.week, text: `GAME OVER: ${next.gameOver.reason}` }, ...next.eventsFeed]

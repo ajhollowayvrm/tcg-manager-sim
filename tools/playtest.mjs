@@ -12,42 +12,27 @@
 // reseeding — so each strategy below also perturbs its set names for entropy.
 
 import { createInitialState } from '../src/game/initialState.js'
-import { advanceWeek } from '../src/game/simulation.js'
-import { createDraft, createSignatureCard, releaseSet, setCost } from '../src/game/sets.js'
-import { pullFromPrint } from '../src/game/bans.js'
-import { resetCadence } from '../src/game/cadence.js'
+import { communitySentiment } from '../src/game/simulation.js'
+import { reducer } from '../src/game/reducer.js'
+import { createDraft, createSignatureCard, setCost } from '../src/game/sets.js'
 import { getTier } from '../src/game/blocks.js'
-import { distributeNewPlayers } from '../src/game/segments.js'
 
-const HORIZON = 312 // ~6 years of weeks — a long run, per the brief's "year 6"
+const DEFAULT_HORIZON = 312 // ~6 years of weeks — a long run, per the brief's "year 6"
 
-// ---- Reducer mirror (headless) -------------------------------------------
-// Mirrors the transitions in useGame.js so a strategy can act on the state.
+// ---- Driving the REAL reducer ---------------------------------------------
+// This file used to re-implement RELEASE_SET, PULL_FROM_PRINT and TICK by hand.
+// That mirror drifted: it dropped `characters`, `pendingWaves`, `scalperHeat`
+// and the odds-transparency sentiment bump, so any strategy touching
+// regionalStagger, releaseEvent, oddsPublished or a character-attached
+// signature card would have been measured against a different game than the one
+// that ships. The reducer now lives in src/game/reducer.js and we call it
+// directly — there is exactly one definition of what an action does.
 
-function applyRelease(state, draft) {
-  const { set, existingSets, cards, cashDelta, printIntensity, softenedCards, newPlayers, blocks } = releaseSet(state, draft)
-  // Mirror the reducer: a release brings a discovery wave of new players.
-  const segments = { ...state.segments }
-  distributeNewPlayers(segments, state.segmentLean, newPlayers ?? 0)
-  return {
-    ...state,
-    cash: state.cash + cashDelta,
-    sets: [...(existingSets ?? state.sets), set],
-    // A card reprint may have softened existing originals (softenedCards).
-    cards: [...(softenedCards ?? state.cards), ...cards],
-    blocks: blocks ?? state.blocks, // major opens / rider refreshes a block
-    segments,
-    playerBase: segments.casual + segments.collectors,
-    printIntensity,
-    // Mirror the reducer: shipping a set resets the cadence pledge clock.
-    cadence: state.cadence ? resetCadence(state.cadence, state.week) : state.cadence,
-  }
-}
-function applyPull(state, setId) {
-  const r = pullFromPrint(state, setId)
-  if (!r) return state
-  return { ...state, sets: r.sets, cards: r.cards, printIntensity: r.printIntensity, segments: r.segments, playerBase: r.playerBase, personas: r.personas }
-}
+const act = (state, action) => reducer(state, action)
+
+const applyRelease = (state, draft) => act(state, { type: 'RELEASE_SET', draft })
+const applyPull = (state, setId) => act(state, { type: 'PULL_FROM_PRINT', setId })
+const applyTick = (state) => act(state, { type: 'TICK' })
 
 // ---- Draft builder --------------------------------------------------------
 // Build a releasable draft (>=5 signature cards) from a strategy's knobs.
@@ -115,6 +100,12 @@ const THEMES = ['dragons', 'undead', 'cyber', 'nature', 'arcane'] // real theme 
 function makeStrategy({ name, cadence, knobs, rotateEvery, ignoreCash = false, minorEvery = null }) {
   return {
     name,
+    // What this studio PLEDGES at onboarding, which is what cadence.js judges it
+    // against. A strategy is now held to its own promise rather than to the
+    // 14-week default every harness run silently inherited. Clamped to the
+    // onboarding slider's real bounds (config.js MIN_CADENCE/MAX_CADENCE), so a
+    // never-releasing strategy pledges the slowest rhythm a player could pick.
+    pledge: Math.max(6, Math.min(26, Number.isFinite(cadence) ? cadence : 26)),
     // Called each week BEFORE advanceWeek. Returns the (possibly) acted-on state.
     act(state, ctx) {
       let s = state
@@ -244,33 +235,50 @@ const STRATEGIES = [
 
 // ---- Run a single game ----------------------------------------------------
 
-function playOne(strategy, salt, trace = false) {
-  let state = createInitialState()
+function playOne(strategy, salt, trace = false, horizon = DEFAULT_HORIZON) {
+  // Start from a REAL config, the way START_GAME does. The harness used to call
+  // a bare createInitialState(), which left every strategy pledged to the
+  // default 14-week cadence — so a studio on a deliberate 24-week rhythm was
+  // being judged against a promise it never made.
+  let state = createInitialState({
+    companyName: 'Harness Studio',
+    gameName: strategy.name,
+    cadenceWeeks: strategy.pledge,
+    started: true,
+  })
   const ctx = { salt, releases: 0, pulls: 0, riders: 0 }
   const samples = [] // periodic snapshots for trajectory stats
   let bigMoves = 0, weeksWithMover = 0
   let minCash = Infinity, minPlayers = Infinity // closest anyone came to losing
+  let minSentiment = Infinity
 
-  for (let i = 0; i < HORIZON; i++) {
+  for (let i = 0; i < horizon; i++) {
     if (state.gameOver) break
     state = strategy.act(state, ctx)
     if (state.gameOver) break
-    state = advanceWeek(state)
+    state = applyTick(state)
 
     if (state.movers?.length) {
       weeksWithMover++
       bigMoves += state.movers.filter((m) => Math.abs(m.pct) >= 0.25).length
     }
+    const sentiment = communitySentiment(state.personas) ?? 0
     if (state.cash < minCash) minCash = state.cash
     if (state.playerBase < minPlayers) minPlayers = state.playerBase
+    if (sentiment < minSentiment) minSentiment = sentiment
     if (i % 26 === 0) {
-      samples.push({ week: state.week, cash: state.cash, players: state.playerBase, printIntensity: state.printIntensity })
+      samples.push({
+        week: state.week, cash: state.cash, players: state.playerBase,
+        printIntensity: state.printIntensity, sentiment,
+        reputation: state.franchise?.reputation ?? 0, liveSets: liveSetCount(state),
+      })
     }
     if (trace) {
       console.log(
         `w${String(state.week).padStart(3)} cash=${fmt(state.cash).padStart(9)} ppl=${fmt(state.playerBase).padStart(7)} ` +
+        `sent=${sentiment.toFixed(0).padStart(4)} rep=${(state.franchise?.reputation ?? 0).toFixed(0).padStart(3)} ` +
         `buzz=${avgBuzz(state.sets).toFixed(0).padStart(3)} pInt=${(state.printIntensity ?? 0).toFixed(0).padStart(3)} ` +
-        `sets=${state.sets.length} movers=${state.movers?.length ?? 0}`,
+        `live=${String(liveSetCount(state)).padStart(2)} sets=${state.sets.length} movers=${state.movers?.length ?? 0}`,
       )
     }
   }
@@ -278,15 +286,22 @@ function playOne(strategy, salt, trace = false) {
   return {
     survived: !state.gameOver,
     endWeek: state.week,
+    // Structured cause, not a substring match — see simulation.js's gameOver.kind.
+    kind: state.gameOver?.kind ?? 'survived',
     reason: state.gameOver?.reason ?? 'survived horizon',
     cash: state.cash,
     players: state.playerBase,
+    sentiment: communitySentiment(state.personas) ?? 0,
+    minSentiment: minSentiment === Infinity ? 0 : minSentiment,
+    reputation: state.franchise?.reputation ?? 0,
     printIntensity: state.printIntensity ?? 0,
     avgBuzz: avgBuzz(state.sets),
     releases: ctx.releases,
     riders: ctx.riders, // minor/micro releases (subset of releases)
     blocks: state.blocks?.length ?? 0,
+    liveSets: liveSetCount(state),
     treatmentCards: state.cards.filter((c) => c.treatment).length,
+    cards: state.cards.length,
     pulls: ctx.pulls,
     moverRate: weeksWithMover / Math.max(1, state.week - 1),
     bigMoves,
@@ -294,6 +309,12 @@ function playOne(strategy, salt, trace = false) {
     minPlayers,
     samples,
   }
+}
+
+// Sets still being printed — distinct from `releases` (lifetime count). This is
+// the number the recurring-cost work will price, so it needs its own column.
+function liveSetCount(state) {
+  return (state.sets ?? []).filter((s) => !s.rotated && !s.outOfPrint).length
 }
 
 // ---- Sweep & report -------------------------------------------------------
@@ -310,55 +331,139 @@ function avgBuzz(sets) {
   return live.reduce((s, x) => s + (x.buzz ?? 0), 0) / live.length
 }
 
-function summarize() {
-  console.log(`Headless playtest — horizon ${HORIZON} weeks (~${(HORIZON / 52).toFixed(0)}y), 3 set-name salts each\n`)
-  console.log(
-    'strategy'.padEnd(22) + 'survive'.padEnd(9) + 'endWk'.padEnd(7) +
-    'cash'.padEnd(8) + 'minCash'.padEnd(9) + 'players'.padEnd(9) + 'minPpl'.padEnd(8) +
-    'pInt'.padEnd(6) + 'buzz'.padEnd(6) +
-    'rel'.padEnd(5) + 'rid'.padEnd(5) + 'blk'.padEnd(5) + 'pull'.padEnd(6) + 'reason',
-  )
-  console.log('-'.repeat(125))
-
-  for (const strat of STRATEGIES) {
-    const runs = [0, 1, 2].map((salt) => playOne(strat, salt))
-    const avg = (f) => runs.reduce((s, r) => s + f(r), 0) / runs.length
-    const survived = runs.filter((r) => r.survived).length
-    const cadence = avg((r) => (r.releases > 1 ? (r.endWeek - 1) / r.releases : 0))
-    const reasons = [...new Set(runs.map((r) => short(r.reason)))].join(' / ')
-
-    console.log(
-      strat.name.padEnd(22) +
-      `${survived}/3`.padEnd(9) +
-      avg((r) => r.endWeek).toFixed(0).padEnd(7) +
-      fmt(avg((r) => r.cash)).padEnd(8) +
-      fmt(avg((r) => r.minCash)).padEnd(9) +
-      fmt(avg((r) => r.players)).padEnd(9) +
-      fmt(avg((r) => r.minPlayers)).padEnd(8) +
-      avg((r) => r.printIntensity).toFixed(0).padEnd(6) +
-      avg((r) => r.avgBuzz).toFixed(0).padEnd(6) +
-      avg((r) => r.releases).toFixed(0).padEnd(5) +
-      avg((r) => r.riders).toFixed(0).padEnd(5) +
-      avg((r) => r.blocks).toFixed(0).padEnd(5) +
-      avg((r) => r.pulls).toFixed(0).padEnd(6) +
-      reasons,
-    )
+function summarize(opts) {
+  const { horizon, salts, only } = opts
+  const chosen = only
+    ? STRATEGIES.filter((s) => s.name.toLowerCase().includes(only.toLowerCase()))
+    : STRATEGIES
+  if (!chosen.length) {
+    console.error(`No strategy matches "${only}". Available:\n  ${STRATEGIES.map((s) => s.name).join('\n  ')}`)
+    process.exitCode = 1
+    return
   }
 
+  const rows = []
+  for (const strat of chosen) {
+    const runs = salts.map((salt) => playOne(strat, salt, false, horizon))
+    const avg = (f) => runs.reduce((s, r) => s + f(r), 0) / runs.length
+    rows.push({
+      name: strat.name,
+      survived: runs.filter((r) => r.survived).length,
+      of: runs.length,
+      // A MEAN end-week hides the shape entirely: averaging 33 and 313 says
+      // "173", which describes no run that happened. Show the actual weeks the
+      // failures landed on instead.
+      deaths: runs.filter((r) => !r.survived).map((r) => r.endWeek).sort((a, b) => a - b),
+      endWeek: avg((r) => r.endWeek),
+      cash: avg((r) => r.cash),
+      minCash: avg((r) => r.minCash),
+      players: avg((r) => r.players),
+      minPlayers: avg((r) => r.minPlayers),
+      sentiment: avg((r) => r.sentiment),
+      minSentiment: avg((r) => r.minSentiment),
+      reputation: avg((r) => r.reputation),
+      printIntensity: avg((r) => r.printIntensity),
+      avgBuzz: avg((r) => r.avgBuzz),
+      releases: avg((r) => r.releases),
+      riders: avg((r) => r.riders),
+      liveSets: avg((r) => r.liveSets),
+      cards: avg((r) => r.cards),
+      pulls: avg((r) => r.pulls),
+      moverRate: avg((r) => r.moverRate),
+      bigMoves: avg((r) => r.bigMoves),
+      treatmentCards: avg((r) => r.treatmentCards),
+      // Weeks per release — the number the brief's 12–20 week target is about.
+      cadence: avg((r) => (r.releases > 0 ? (r.endWeek - 1) / r.releases : 0)),
+      kinds: [...new Set(runs.map((r) => r.kind))].join('/'),
+    })
+  }
+
+  if (opts.json) {
+    console.log(JSON.stringify({ horizon, salts, rows }, null, 2))
+    return
+  }
+
+  console.log(`Headless playtest — horizon ${horizon} weeks (~${(horizon / 52).toFixed(0)}y), ${salts.length} set-name salt(s) each\n`)
+  const H = [
+    ['strategy', 23], ['survive', 9], ['deaths', 14], ['cash', 9], ['minCash', 9],
+    ['players', 9], ['sent', 7], ['minSent', 9], ['rep', 6], ['pInt', 6], ['buzz', 6],
+    ['rel', 5], ['rid', 5], ['live', 6], ['cards', 7], ['cad', 6], ['mvr%', 7], ['outcome', 10],
+  ]
+  console.log(H.map(([h, w]) => h.padEnd(w)).join(''))
+  console.log('-'.repeat(H.reduce((s, [, w]) => s + w, 0)))
+
+  for (const r of rows) {
+    const cells = [
+      r.name,
+      `${r.survived}/${r.of}`,
+      r.deaths.length ? r.deaths.join(',') : '—',
+      fmt(r.cash),
+      fmt(r.minCash),
+      fmt(r.players),
+      r.sentiment.toFixed(0),
+      r.minSentiment.toFixed(0),
+      r.reputation.toFixed(0),
+      r.printIntensity.toFixed(0),
+      r.avgBuzz.toFixed(0),
+      r.releases.toFixed(0),
+      r.riders.toFixed(0),
+      r.liveSets.toFixed(0),
+      fmt(r.cards),
+      r.cadence.toFixed(0),
+      (r.moverRate * 100).toFixed(0),
+      r.kinds,
+    ]
+    console.log(cells.map((c, i) => String(c).padEnd(H[i][1])).join(''))
+  }
+
+  console.log('\nColumns: deaths = the WEEKS failing runs ended (not a mean — averaging 33 and 313 describes no run).')
+  console.log('  sent/minSent = reach-weighted community sentiment, final and worst. rep = franchise reputation.')
+  console.log('  live = sets still in print (vs rel = lifetime releases). cad = weeks per release. mvr% = weeks with a market mover.')
   console.log('\nRelease cadence target (brief): a set every few months ≈ every 12–20 weeks.')
   console.log('Survival read: a skilled strategy should survive; greed/idle should fail.')
+  console.log('Curve read: failures should SPREAD across the horizon, not cluster in one narrow band.')
 }
 
-function short(reason) {
-  if (reason.includes('Insolvent') || reason.includes('debt')) return 'debt'
-  if (reason.includes('revolted')) return 'sentiment'
-  return 'survived'
+// ---- CLI ------------------------------------------------------------------
+
+function parseArgs(argv) {
+  const get = (name, fallback) => {
+    const hit = argv.find((a) => a.startsWith(`--${name}=`))
+    return hit ? hit.slice(name.length + 3) : fallback
+  }
+  const fast = argv.includes('--fast')
+  return {
+    horizon: Number(get('horizon', fast ? 208 : DEFAULT_HORIZON)),
+    salts: get('salt', null) !== null
+      ? [Number(get('salt'))]
+      : (fast ? [0] : [0, 1, 2]),
+    only: get('strategy', null),
+    json: argv.includes('--json'),
+    trace: argv.includes('--trace'),
+    help: argv.includes('--help') || argv.includes('-h'),
+  }
 }
 
-if (process.argv.includes('--trace')) {
-  const strat = STRATEGIES.find((s) => s.name === 'Balanced')
-  console.log(`Trace — ${strat.name}\n`)
-  playOne(strat, 0, true)
+const USAGE = `Headless playtest harness.
+
+  node tools/playtest.mjs                      full sweep, 312 weeks, 3 salts
+  node tools/playtest.mjs --fast               1 salt, 208 weeks (quick iteration)
+  node tools/playtest.mjs --strategy=Balanced  only strategies matching a substring
+  node tools/playtest.mjs --horizon=520         run longer
+  node tools/playtest.mjs --salt=2              a single salt
+  node tools/playtest.mjs --json                machine-readable output
+  node tools/playtest.mjs --trace               week-by-week for one strategy
+                                               (pair with --strategy=)
+`
+
+const opts = parseArgs(process.argv.slice(2))
+if (opts.help) {
+  console.log(USAGE)
+} else if (opts.trace) {
+  const strat = STRATEGIES.find((s) => !opts.only || s.name.toLowerCase().includes(opts.only.toLowerCase()))
+    ?? STRATEGIES.find((s) => s.name === 'Balanced')
+  console.log(`Trace — ${strat.name} (pledge ${strat.pledge}wk, salt ${opts.salts[0]})\n`)
+  playOne(strat, opts.salts[0], true, opts.horizon)
 } else {
-  summarize()
+  summarize(opts)
 }
