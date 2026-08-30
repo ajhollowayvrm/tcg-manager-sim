@@ -27,7 +27,17 @@ import { launchMerchLine, refreshMerchLine, retireMerchLine } from './merch.js'
 import { pitchMediaDeal } from './media.js'
 import { runBreak } from './breaks.js'
 import { createCharacter } from './characters.js'
-import { clearSave } from './persistence.js'
+import { scoreRun, unlockedPerks } from './legacy.js'
+import { clearSave, loadPrestige, bankPrestige, recordHallOfFame } from './persistence.js'
+
+// The account-level prestige record, resolved into the perks it unlocks. Reads
+// localStorage, which no-ops in the harness (persistence.js self-guards), so a
+// headless sweep always starts from a clean slate — otherwise every result
+// would shift with whatever the developer's browser happened to have banked.
+function currentPrestige() {
+  const p = loadPrestige()
+  return { ...p, perks: unlockedPerks(p.banked) }
+}
 
 // Time is MANUAL: the player clicks "Advance Week", which dispatches a single
 // 'TICK' to run one simulation week. There's no auto-timer — each week is a
@@ -370,12 +380,46 @@ export function reducer(state, action) {
       if (level === (state.goodwillSpend ?? 0)) return state
       return { ...state, goodwillSpend: level }
     }
+    case 'RETIRE_STUDIO': {
+      // A voluntary EXIT, never a win condition. It reuses the existing
+      // `gameOver` field, so advanceWeek's `if (!next.gameOver)` guard and this
+      // reducer's own TICK guard already stop the sim — no new stop machinery
+      // exists, and therefore nothing new can trigger one by accident. It is
+      // dispatched from exactly one place: a button the player presses. Nothing
+      // in the sim ever proposes it, deliberately — the moment the game
+      // suggests retiring, the run has a ceiling and stops being open-ended.
+      if (state.gameOver) return state
+      const score = scoreRun(state)
+      const company = state.config?.companyName || 'the studio'
+      bankPrestige(score.total)
+      recordHallOfFame({
+        company, game: state.config?.gameName || 'their game',
+        weeks: state.week, total: score.total, grade: score.grade,
+        endedBy: 'retired', at: Date.now(),
+      })
+      return {
+        ...state,
+        retirement: { week: state.week, ...score },
+        gameOver: {
+          kind: 'retired',
+          reason: `You retired ${company} after ${state.week} weeks — ${score.grade}.`,
+        },
+        eventsFeed: [{
+          week: state.week, kind: 'legacy', tone: 'good',
+          text: `After ${(state.week / 52).toFixed(1)} years, ${company} closes its doors on its own terms. Final legacy: ${score.total.toLocaleString()} points — ${score.grade}.`,
+        }, ...state.eventsFeed].slice(0, 60),
+        clock: { ...state.clock, reason: 'Studio retired — see the retrospective.' },
+      }
+    }
     case 'START_GAME':
-      // Begin a run from the onboarding config (name/cadence applied).
-      return createInitialState({ ...action.config, started: true })
+      // Begin a run from the onboarding config (name/cadence applied), with
+      // whatever the player's career has already unlocked.
+      return createInitialState({ ...action.config, started: true, prestige: currentPrestige() })
     case 'RESET':
-      clearSave() // don't let the finished run resurrect on the next reload
-      return createInitialState()
+      // Wipes the RUN only. Banked prestige and the hall of fame live under
+      // their own keys and survive this deliberately — see persistence.js.
+      clearSave()
+      return createInitialState({ prestige: currentPrestige() })
     case 'ADD_CHARACTER': {
       // Pre-builds your cast ahead of a card, the same record a signature
       // card's "new character" request would mint at release (see sets.js's

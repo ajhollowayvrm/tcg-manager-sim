@@ -13,6 +13,7 @@ import AmbitionPanel from './components/AmbitionPanel.jsx'
 import Onboarding from './components/Onboarding.jsx'
 import SetBuilder from './components/setbuilder/SetBuilder.jsx'
 import SettingsPanel from './components/SettingsPanel.jsx'
+import RetrospectivePanel from './components/RetrospectivePanel.jsx'
 
 // Mobile tabs group the panels into sections. Desktop ignores this and shows
 // the full two-column dashboard; the tab bar only appears on mobile. There is
@@ -32,6 +33,7 @@ export default function App() {
   const [building, setBuilding] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [tab, setTab] = useState('sets')
+  const [retireConfirm, setRetireConfirm] = useState(false)
 
   // First run: gate everything behind onboarding until the player launches.
   if (!game.state.config?.started) {
@@ -58,6 +60,9 @@ export default function App() {
       state={game.state}
       onLaunchMerch={game.launchMerch} onRefreshMerch={game.refreshMerch} onRetireMerch={game.retireMerch}
       onPitchMedia={game.pitchMedia}
+      onSetGoodwill={game.setGoodwill}
+      onRetire={game.retire}
+      retireConfirm={retireConfirm} onRetireConfirm={setRetireConfirm}
     />,
     events: <EventsFeed state={game.state} />,
   }
@@ -107,6 +112,11 @@ export default function App() {
         ))}
       </nav>
 
+      {/* The run is over — retirement or ruin. Both share one retrospective. */}
+      {game.state.gameOver && game.state.retirement && (
+        <RetrospectivePanel state={game.state} onReset={game.reset} />
+      )}
+
       {settingsOpen && (
         <SettingsPanel
           onReset={() => { game.reset(); setSettingsOpen(false) }}
@@ -124,6 +134,7 @@ export default function App() {
           sets={game.state.sets}
           blocks={game.state.blocks ?? []}
           franchise={game.state.franchise}
+          perks={game.state.prestige?.perks ?? []}
           conceptId={game.state.config?.conceptId}
           onRelease={game.release}
           onClose={() => setBuilding(false)}

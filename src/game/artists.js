@@ -20,14 +20,26 @@ const COST_MIN = 1_500
 const COST_MAX = 30_000
 
 // Build the initial per-artist career state from the static roster.
-export function seedArtists() {
-  return ARTISTS.map((a) => ({
+// `perks` carries the prestige unlocks from previous runs (see legacy.js).
+// 'seed_artist' promotes the highest-reach rising star straight to established,
+// so a returning player starts with one name already at the top of their game.
+export function seedArtists(perks = []) {
+  const seeded = ARTISTS.map((a) => ({
     id: a.id,
     cost: a.cost,
     reach: a.reach,
     trajectory: a.trajectory,
     weeksInTrajectory: 0,
   }))
+  if (!perks.includes('seed_artist')) return seeded
+  const star = seeded
+    .filter((a) => a.trajectory === 'rising')
+    .reduce((best, a) => (!best || a.reach > best.reach ? a : best), null)
+  if (star) {
+    star.trajectory = 'established'
+    star.reach = clamp(star.reach + 12, 0, 100)
+  }
+  return seeded
 }
 
 // The artist as the player sees them RIGHT NOW: static identity (name,

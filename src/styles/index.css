@@ -1216,3 +1216,128 @@ button.tag--oddsobscured:hover { border-color: var(--accent-2); color: var(--tex
 .event--good { border-left-color: var(--good); }
 .event--bad { border-left-color: var(--bad); }
 .event--neutral { border-left-color: var(--silver); }
+
+/* ---- Retrospective, milestones & prestige (RetrospectivePanel.jsx) ------- */
+
+.retro__reason {
+  margin: 0 0 14px;
+  color: var(--text-dim);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.retro__score {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 18px 12px;
+  margin-bottom: 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.retro__total {
+  font-size: 2.6rem;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--pop);
+}
+
+.retro__grade {
+  font-size: 0.9rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.retro__milestones,
+.retro__perks {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.retro__ms,
+.retro__perk {
+  display: grid;
+  grid-template-columns: 20px minmax(0, auto) 1fr auto;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--surface-2);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  opacity: 0.45;
+}
+
+.retro__ms.is-earned,
+.retro__perk.is-earned {
+  opacity: 1;
+  border-left: 3px solid var(--pop);
+  padding-left: 5px;
+}
+
+.retro__msmark { text-align: center; }
+
+.retro__msname {
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.retro__msblurb {
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.retro__mspts {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.72rem;
+}
+
+.retire { margin-top: 12px; }
+
+.retire__btn { width: 100%; }
+
+/* ---- Accessibility ------------------------------------------------------- */
+
+/* There were NO focus styles anywhere in this file — the only `outline` was
+   decorative. Keyboard users had no way to tell where they were. */
+:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* The reduced-motion block further up covers only .ticker__row and .chip.
+   These are the rest: the pull reveal, the god-pack glow, and every bar that
+   animates its width. */
+@media (prefers-reduced-motion: reduce) {
+  .pull,
+  .godpack,
+  .movers .chip {
+    animation: none !important;
+  }
+  .bar__fill,
+  .meter__fill,
+  .dial__fill,
+  .sets__fill,
+  .scalp__fill,
+  .segmix__seg {
+    transition: none !important;
+  }
+}

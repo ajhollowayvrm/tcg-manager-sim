@@ -105,10 +105,13 @@ export function getTier(id) {
 export const ANNIVERSARY_REPUTATION_GATE = 55
 export const ANNIVERSARY_MIN_SETS_SHIPPED = 6
 
-export function canUnlockAnniversary({ franchise, setsShipped } = {}) {
+export function canUnlockAnniversary({ franchise, setsShipped, perks } = {}) {
   const reputation = franchise?.reputation ?? 0
   setsShipped = setsShipped ?? 0
-  if (reputation < ANNIVERSARY_REPUTATION_GATE) {
+  // Prestige perk: a returning player has a history worth celebrating already
+  // (see legacy.js's PRESTIGE_PERKS). The shipped-sets gate still applies.
+  const repWaived = (perks ?? []).includes('anniversary_early')
+  if (!repWaived && reputation < ANNIVERSARY_REPUTATION_GATE) {
     return { ok: false, reason: `Needs ${ANNIVERSARY_REPUTATION_GATE} franchise reputation (currently ${Math.round(reputation)}).` }
   }
   if (setsShipped < ANNIVERSARY_MIN_SETS_SHIPPED) {

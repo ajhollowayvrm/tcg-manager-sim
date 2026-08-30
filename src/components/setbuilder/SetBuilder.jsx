@@ -45,12 +45,12 @@ function nextId(cards) {
   return max + 1
 }
 
-export default function SetBuilder({ setNumber, cash, artists, characters = [], liveCards = [], sets = [], blocks = [], franchise, conceptId, onRelease, onClose }) {
+export default function SetBuilder({ setNumber, cash, artists, characters = [], liveCards = [], sets = [], blocks = [], franchise, perks = [], conceptId, onRelease, onClose }) {
   // The first set you ever ship MUST be a major (it opens your first block); once
   // a block is live you can ship riders. Seed the tier accordingly.
   const isFirstSet = blocks.length === 0
   const [draft, setDraft] = useState(() => createDraft(setNumber, 'major', blocks))
-  const anniversaryGate = canUnlockAnniversary({ franchise, setsShipped: sets.length })
+  const anniversaryGate = canUnlockAnniversary({ franchise, setsShipped: sets.length, perks })
   // The founding concept's naming style (creature vs. character) — flavor
   // only, see content/concepts.js. Feeds the auto-fill preview below so it
   // matches what release will actually generate.
@@ -116,7 +116,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
   // reflect current prices, not the static seed.
   const artistOf = (id) => artists?.find((a) => a.id === id) ?? null
   const cost = setCost(draft, (id) => artistOf(id) ?? undefined)
-  const errors = validateDraft(draft, { blocks, isFirstSet, franchise, setsShipped: sets.length })
+  const errors = validateDraft(draft, { blocks, isFirstSet, franchise, setsShipped: sets.length, perks })
   // Cash can go negative (a loan), so affordability NO LONGER blocks release —
   // it only flags that you'll dip into debt. The only release gate is validity.
   const goesIntoDebt = cash - cost.total < 0

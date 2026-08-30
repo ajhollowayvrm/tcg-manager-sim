@@ -93,7 +93,10 @@ export function weeklyOverhead(state) {
   const lines = LINE_COST * Math.pow(liveSets.length, LINE_EXPONENT)
   const catalogue = CATALOGUE_PER_CARD * (liveCards + RETIRED_CARD_DISCOUNT * retiredCards)
   const prestigeMul = 1 + (state.franchise?.reputation ?? 0) / PRESTIGE_REFERENCE
-  const studio = Math.round((staff + lines + catalogue) * prestigeMul)
+  // Prestige perk: a veteran operation runs leaner (see legacy.js's
+  // PRESTIGE_PERKS) — a career-long reward, not a per-run one.
+  const veteranMul = (state.prestige?.perks ?? []).includes('veteran_staff') ? 0.85 : 1
+  const studio = Math.round((staff + lines + catalogue) * prestigeMul * veteranMul)
 
   // Warehousing on every unsold unit across every SKU of every live set. This
   // is what finally gives over-printing an ONGOING cost — until now its only

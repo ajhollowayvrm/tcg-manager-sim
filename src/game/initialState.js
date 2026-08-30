@@ -6,6 +6,7 @@ import { seedArtists } from './artists.js'
 import { seedCharacters } from './characters.js'
 import { seedRival } from './rival.js'
 import { makeRng, hashSeed } from './rng.js'
+import { freshLegacy } from './legacy.js'
 import { defaultConfig, STARTING_SEGMENT_LEAN, STARTING_CASH, PRINT_INTENSITY_NEUTRAL } from './config.js'
 
 // Normalize the starting seed segment numbers into fractions that sum to 1 —
@@ -20,14 +21,23 @@ function normalizeLean(seg) {
 }
 
 // `config` is the onboarding result (or undefined for a bare new game).
+//
+// `config.prestige` carries the account-level record ({ banked, runs, perks })
+// from persistence.js. It is passed IN rather than read from storage here on
+// purpose: the playtest harness must be able to run with prestige disabled, or
+// every sweep result silently shifts with whatever the developer's own browser
+// happens to have banked.
 export function createInitialState(config) {
   const cfg = { ...defaultConfig(), ...(config ?? {}) }
+  const prestige = cfg.prestige ?? { banked: 0, runs: 0, perks: [] }
+  const perks = prestige.perks ?? []
   // You start with NO players — nobody knows your game yet. The starting
   // segment numbers are kept only as the LEAN (the ratio new players discover
   // into); the base itself grows from zero via word-of-mouth + releases.
   const segments = { casual: 0, collectors: 0 }
   const playerBase = 0
-  const cash = STARTING_CASH
+  // Prestige perk: patient backers. See legacy.js's PRESTIGE_PERKS.
+  const cash = STARTING_CASH + (perks.includes('cash_floor') ? 250_000 : 0)
 
   return {
     week: 1,
@@ -61,7 +71,7 @@ export function createInitialState(config) {
     blocks: [],
     // Per-artist career state (cost/reach/trajectory) that drifts each week —
     // see artists.js. Identity (name/specialty) stays in the static roster.
-    artists: seedArtists(),
+    artists: seedArtists(perks),
     // Persistent character roster (recurring cast a signature card can feature) —
     // fame drifts each week off how their live cards are doing. See characters.js.
     // Empty until the player creates their first character in the set builder.
@@ -122,6 +132,15 @@ export function createInitialState(config) {
     // Scheduled "wide release" waves from a staggered regional launch — see
     // sets.js/useGame.js RELEASE_SET and simulation.js's weekly check.
     pendingWaves: [],
+
+    // Account-level prestige carried in from previous runs (see legacy.js's
+    // PRESTIGE_PERKS and persistence.js). Read-only during a run.
+    prestige,
+    // Legacy: peaks, lifetime totals, streaks and earned milestones. A pure
+    // OBSERVER of the sim — see legacy.js. `retirement` holds the scored
+    // retrospective once a run ends, by retirement or by ruin.
+    legacy: freshLegacy(),
+    retirement: null,
 
     feedbackFeed: [], // qualitative chatter — sometimes lies
     eventsFeed: [], // news/curveballs

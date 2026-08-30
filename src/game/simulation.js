@@ -23,6 +23,7 @@ import { resolveMerchRevenue } from './merch.js'
 import { advanceMediaDeals } from './media.js'
 import { shelfPrintLevel } from './segments.js'
 import { applyOverhead } from './overhead.js'
+import { updateLegacy, scoreRun } from './legacy.js'
 
 // Buzz half-life: how fast a set's own release-buzz fades between drops (tuned
 // so a set stays fresh-feeling for a few months, then needs a new release to
@@ -261,6 +262,13 @@ export function advanceWeek(state) {
   // last among the "living systems" ticks.
   updateFranchiseReputation(next)
 
+  // Legacy tracking: a PURE OBSERVER. Records peaks, counts lifetime totals,
+  // advances streaks and awards milestones. It reads this week's fully-settled
+  // numbers and writes nothing but next.legacy — it must never influence the
+  // sim, or the score becomes a hidden difficulty modifier. Runs before the
+  // loss check below so a run's final week is still recorded.
+  updateLegacy(next)
+
   // Clock attention: classify the week just resolved so the clock can auto-slow
   // or pause on interesting moments and fast-forward through quiet ones. The
   // directive is read by the reducer in useGame; game-over below overrides it.
@@ -289,6 +297,11 @@ export function advanceWeek(state) {
       next.gameOver = { kind: 'revolt', reason: 'The community revolted — sentiment toward your game hit rock bottom.' }
     }
     if (next.gameOver) {
+      // Both endings — ruin here, voluntary retirement in the reducer — share
+      // one scored retrospective. A ruined run keeps its score with a haircut
+      // (see scoreRun): the studio folded, which is part of the story rather
+      // than an erasure of it.
+      next.retirement = { week: next.week, ...scoreRun(next) }
       next.eventsFeed = [{ week: next.week, text: `GAME OVER: ${next.gameOver.reason}` }, ...next.eventsFeed]
       next.clock = { ...next.clock, reason: next.gameOver.reason, autoEvent: null }
     }

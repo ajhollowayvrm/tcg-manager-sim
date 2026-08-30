@@ -7,7 +7,10 @@
 // a footnote under scalper-heat management.
 
 import { MERCH_TYPES } from '../game/content/merch.js'
+import { RetireControl } from './RetrospectivePanel.jsx'
 import { MEDIA_DEALS } from '../game/content/mediaDeals.js'
+import { MILESTONES } from '../game/content/milestones.js'
+import { scoreRun } from '../game/legacy.js'
 
 function fmtCash(n) {
   return '$' + Math.round(n).toLocaleString('en-US')
@@ -17,7 +20,7 @@ const KIND_LABEL = { game: 'Games', anime: 'Anime', film: 'Film' }
 const STAGE_LABEL = { pitched: 'Pitched — awaiting greenlight', greenlit: 'In production' }
 const OUTCOME_LABEL = { hit: '🎉 Hit', flop: '💥 Flop', fell_through: 'Fell through' }
 
-export default function AmbitionPanel({ state, onLaunchMerch, onRefreshMerch, onRetireMerch, onPitchMedia }) {
+export default function AmbitionPanel({ state, onLaunchMerch, onRefreshMerch, onRetireMerch, onPitchMedia, onSetGoodwill, onRetire, retireConfirm, onRetireConfirm }) {
   const reputation = state.franchise?.reputation ?? 0
   const merchLines = state.merchLines ?? []
   const mediaDeals = state.mediaDeals ?? []
@@ -113,6 +116,36 @@ export default function AmbitionPanel({ state, onLaunchMerch, onRefreshMerch, on
         </div>
       ))}
 
+      {/* The community-goodwill programme — the voluntary money sink and the
+          main way to buy a soured community back (see overhead.js sink D). */}
+      {onSetGoodwill && <GoodwillControl state={state} onSetGoodwill={onSetGoodwill} />}
+
+      {/* Legacy: a live score and the voluntary exit. Never a win condition —
+          nothing here proposes retiring, it is simply always available. */}
+      <h3 className="panel__subtitle">Legacy</h3>
+      <div className="costs">
+        <div className="costs__line">
+          <span>Milestones earned</span>
+          <span>{(state.legacy?.earned?.length ?? 0)}/{MILESTONES.length}</span>
+        </div>
+        <div className="costs__line">
+          <span>Legacy this run</span><span>{Math.round(scoreRun(state).total).toLocaleString()}</span>
+        </div>
+        {(state.prestige?.banked ?? 0) > 0 && (
+          <div className="costs__line">
+            <span>Banked from past studios</span><span>{Math.round(state.prestige.banked).toLocaleString()}</span>
+          </div>
+        )}
+      </div>
+      {onRetire && (
+        <RetireControl
+          state={state}
+          onRetire={onRetire}
+          confirming={retireConfirm}
+          onConfirming={onRetireConfirm}
+        />
+      )}
+
       {resolvedHistory.length > 0 && (
         <>
           <h3 className="panel__subtitle">Recent outcomes</h3>
@@ -126,5 +159,35 @@ export default function AmbitionPanel({ state, onLaunchMerch, onRefreshMerch, on
         </>
       )}
     </div>
+  )
+}
+
+// The standing weekly commitment to the community, 0-100%. Costs real money
+// every week (up to $0.55 per player) and its effect is damped by whatever the
+// community is actually angry about — you can repair goodwill, but you cannot
+// buy permission to gouge. See overhead.js and personas.js.
+function GoodwillControl({ state, onSetGoodwill }) {
+  const level = Math.round((state.goodwillSpend ?? 0) * 100)
+  const weekly = state.lastOverhead?.goodwill ?? 0
+  return (
+    <>
+      <h3 className="panel__subtitle">Community programme</h3>
+      <label className="field field--full">
+        <span>
+          Weekly commitment — <strong>{level}%</strong>
+          {weekly > 0 && <span className="muted"> ({fmtCash(weekly)}/wk)</span>}
+        </span>
+        <input
+          type="range" min={0} max={100} step={5}
+          value={level}
+          onChange={(e) => onSetGoodwill(Number(e.target.value) / 100)}
+        />
+        <span className="field__note">
+          Organised play support, community grants, replacement product, showing
+          up. Costs up to $0.55 per player per week and warms the room over time
+          — but a studio the community is angry at cannot simply buy its way out.
+        </span>
+      </label>
+    </>
   )
 }

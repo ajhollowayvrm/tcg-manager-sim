@@ -443,7 +443,7 @@ export function validateDraft(draft, ctx = {}) {
     errors.push('That gimmick no longer exists — pick another, or run a plain themed era.')
   }
   if (tier.id === 'anniversary') {
-    const gate = canUnlockAnniversary({ franchise: ctx.franchise, setsShipped: ctx.setsShipped })
+    const gate = canUnlockAnniversary({ franchise: ctx.franchise, setsShipped: ctx.setsShipped, perks: ctx.perks })
     if (!gate.ok) errors.push(`Anniversary set locked — ${gate.reason}`)
   }
 

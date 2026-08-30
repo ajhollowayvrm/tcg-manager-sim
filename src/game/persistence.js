@@ -123,6 +123,9 @@ export function saveState(state) {
 
 // Drop the save. Called when the player starts a new game / resets, so the old
 // run can't resurrect on the next reload.
+//
+// This deliberately touches ONLY the run key. Prestige and the hall of fame are
+// account-level records that must outlive any single run — see below.
 export function clearSave() {
   if (!hasStorage()) return
   try {
@@ -130,4 +133,76 @@ export function clearSave() {
   } catch {
     /* ignore */
   }
+}
+
+// ---- Prestige & hall of fame (account-level, outlives every run) -----------
+//
+// Stored under their OWN keys with their own version, for three reasons:
+// clearSave() must not wipe them when a player resets a run; they must survive
+// every future bump of the run save's VERSION; and "wipe my run" and "wipe my
+// whole history" should be genuinely different actions. They are also tiny and
+// must load synchronously, before createInitialState applies unlocked perks.
+
+const PRESTIGE_KEY = 'tcg-manager-sim/prestige'
+const HOF_KEY = 'tcg-manager-sim/hall-of-fame'
+const ACCOUNT_VERSION = 1
+const HOF_MAX = 20
+
+function readJson(key, fallback) {
+  if (!hasStorage()) return fallback
+  try {
+    const raw = localStorage.getItem(key)
+    if (!raw) return fallback
+    const parsed = JSON.parse(raw)
+    if (!parsed || parsed.version !== ACCOUNT_VERSION) return fallback
+    return parsed.data ?? fallback
+  } catch {
+    return fallback
+  }
+}
+
+function writeJson(key, data) {
+  if (!hasStorage()) return
+  try {
+    localStorage.setItem(key, JSON.stringify({ version: ACCOUNT_VERSION, data }))
+  } catch {
+    /* quota or storage disabled — nothing actionable */
+  }
+}
+
+// Banked legacy points across every run the player has retired.
+export function loadPrestige() {
+  const p = readJson(PRESTIGE_KEY, null)
+  return { banked: Number(p?.banked) || 0, runs: Number(p?.runs) || 0 }
+}
+
+export function bankPrestige(points) {
+  const cur = loadPrestige()
+  const next = { banked: cur.banked + Math.max(0, Math.round(points || 0)), runs: cur.runs + 1 }
+  writeJson(PRESTIGE_KEY, next)
+  return next
+}
+
+// Explicit, separate from clearSave() — wiping a run must never wipe a career.
+export function clearPrestige() {
+  if (!hasStorage()) return
+  try {
+    localStorage.removeItem(PRESTIGE_KEY)
+    localStorage.removeItem(HOF_KEY)
+  } catch {
+    /* ignore */
+  }
+}
+
+export function loadHallOfFame() {
+  const rows = readJson(HOF_KEY, [])
+  return Array.isArray(rows) ? rows : []
+}
+
+export function recordHallOfFame(entry) {
+  const rows = [...loadHallOfFame(), entry]
+    .sort((a, b) => (b.total ?? 0) - (a.total ?? 0))
+    .slice(0, HOF_MAX)
+  writeJson(HOF_KEY, rows)
+  return rows
 }

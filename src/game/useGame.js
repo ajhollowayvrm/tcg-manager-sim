@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useReducer, useRef } from 'react'
 import { createInitialState } from './initialState.js'
 import { reducer } from './reducer.js'
-import { loadState, saveState } from './persistence.js'
+import { loadState, saveState, loadPrestige } from './persistence.js'
+import { unlockedPerks } from './legacy.js'
 
 // The React binding over the game reducer. Every state transition lives in
 // reducer.js so the headless playtest harness can drive the real game rather
@@ -15,7 +16,12 @@ import { loadState, saveState } from './persistence.js'
 // loadState() returns null in the harness / first visit / on any corrupt blob,
 // so this is always safe.
 function initState() {
-  return loadState() ?? createInitialState()
+  const saved = loadState()
+  if (saved) return saved
+  // A brand-new run still carries the player's career: banked legacy from
+  // previous retirements unlocks perks (see legacy.js's PRESTIGE_PERKS).
+  const p = loadPrestige()
+  return createInitialState({ prestige: { ...p, perks: unlockedPerks(p.banked) } })
 }
 
 export function useGame() {
@@ -74,6 +80,7 @@ export function useGame() {
   const retireMerch = useCallback((kind) => dispatch({ type: 'RETIRE_MERCH_LINE', kind }), [])
   const pitchMedia = useCallback((dealId) => dispatch({ type: 'PITCH_MEDIA_DEAL', dealId }), [])
   const setGoodwill = useCallback((level) => dispatch({ type: 'SET_GOODWILL', level }), [])
+  const retire = useCallback(() => dispatch({ type: 'RETIRE_STUDIO' }), [])
 
-  return { state, advanceWeek: advanceWeekAction, release, pull, reprint, adjustWave, reset, addCharacter, rip, startGame, comp, sponsor, unsponsor, invitePrerelease: invitePrereleaseAction, sponsorTournament: sponsorTournamentAction, signDist, dropDist, cultivateDist, upgradeSupplyChain: upgradeSupplyChainAction, signGrading, dropGrading, cultivateGrading, runBreak: runBreakAction, togglePurchaseLimits, togglePhantomStock, toggleOddsPublished, launchMerch, refreshMerch, retireMerch, pitchMedia, setGoodwill }
+  return { state, advanceWeek: advanceWeekAction, release, pull, reprint, adjustWave, reset, addCharacter, rip, startGame, comp, sponsor, unsponsor, invitePrerelease: invitePrereleaseAction, sponsorTournament: sponsorTournamentAction, signDist, dropDist, cultivateDist, upgradeSupplyChain: upgradeSupplyChainAction, signGrading, dropGrading, cultivateGrading, runBreak: runBreakAction, togglePurchaseLimits, togglePhantomStock, toggleOddsPublished, launchMerch, refreshMerch, retireMerch, pitchMedia, setGoodwill, retire }
 }
