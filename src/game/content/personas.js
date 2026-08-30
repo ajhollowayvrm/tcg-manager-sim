@@ -1,4 +1,4 @@
-// The community personas — ~18 named, specific, quirky voices that put faces on
+// The community personas — 52 named, specific, quirky voices that put faces on
 // the community. See docs/BRIEF.md "Community personas".
 //
 // The signal-vs-noise mechanic lives in two fields that the brief insists are
@@ -21,7 +21,7 @@
 //   they love lands warmer, one they dislike colder. (Soft flavor weight.)
 // sentiment — mutable mood toward the game, -100..100 (seeded near neutral)
 //
-// Roster is 50+ for a sprawling scene — see docs/COMMUNITY_PLAN.md. The
+// Roster is 52 for a sprawling scene — see docs/COMMUNITY_PLAN.md. The
 // Community panel filters/groups so a list this long stays scannable.
 
 export const PERSONAS = [
@@ -97,7 +97,7 @@ export const PERSONAS = [
     taste: { power: 0.75, value: 0.1, art: 0, fairness: 0.3, fun: 0.7 },
     blurb: 'Lives for a weird price pattern. Overrates jank signals, but occasionally finds the real deal.' },
 
-  // ---- Expansion roster (50+ total). New archetypes + affinity flavor. ----
+  // ---- Expansion roster (52 total). New archetypes + affinity flavor. ----
 
   // Lapsed veterans — high credibility, low current reach, nostalgia + design-loudness radar.
   { id: 'p19', name: 'Old Guard Odell', type: 'reviewer', reach: 29, credibility: 91,

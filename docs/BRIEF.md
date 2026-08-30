@@ -166,8 +166,12 @@ The reward system. The fun is **watching cards pop or flop**, with enough varian
 
 ## Metagame health (four interacting dials) ✅
 
-> **Archetype Balance update:** this dial is now backed by a real **distribution**
-> over the four play styles (`archetypes.js`), not a lone scalar. Releases tilt
+> **Removed.** The whole four-dial metagame — `archetypes.js` included — was
+> deleted in the collector/reseller pivot (see persistence.js v13). Nothing in
+> the shipped game reads diversity, power level, archetype balance or solve
+> level; the collector-side dials that replaced them are `printIntensity`
+> (nostalgia erosion) and each set's own `buzz`. The section below is kept as
+> the original spec, not as a description of the code. Historically: Releases tilt
 > the field toward the set's theme lean (scaled by power budget), solving
 > concentrates it toward the dominant deck, and bans/rotations flatten it. The
 > 0–100 "balance" is derived from how even the split is, and player segments now
@@ -360,7 +364,8 @@ Grouped into three layers. Each assumes the v1 core loop is solid first.
 >   prerelease events); that funded-program action is retired as of the
 >   collector/reseller pivot below. The one remaining mint path is a
 >   Collector-box (SPC) SKU flagged as carrying an exclusive promo.
->   (`promos.js` `makePromoCard`; `packs.js` excludes promos.)
+>   (`promos.js` `makePromoCard`; `packs.js` excludes promos. `organizedplay.js`
+>   was deleted with the pivot.)
 > - **Major / minor / micro sets & block gimmicks** — every release picks a
 >   **tier**. A **major** is a full expansion that OPENS A BLOCK. It **may**
 >   introduce a block **gimmick** — an era-defining chase TREATMENT (a
@@ -558,6 +563,83 @@ Grouped into three layers. Each assumes the v1 core loop is solid first.
 ### C. Business expansion & cultural impact (the long-run ambition layer) ✅
 
 *(Both items shipped — see "Shipped since v1" above. These give a long, win-condition-less run something to build toward and insulate a mature brand against metagame churn: merchandise as the stability/diversification revenue lever, cross-media ventures as the big-bet endgame-ambition layer.)*
+
+---
+
+## Audit remediation pass ✅
+
+A full audit of the shipped game, a 312-week harness sweep and a measured
+six-year trace found that the v1 loop worked but the run had no arc: the game
+could not be lost after week 36, and cash grew without bound. Seven commits
+addressed it. The spec text above is unchanged; this records what the code now
+does differently.
+
+**Eight correctness bugs.** `applyEventEffects` clamped cash at zero, so every
+costed event erased the player's whole debt. A collector take read
+`popFactors.value`, a field that does not exist. The set-builder cost summary
+omitted serialization. `PULL_FROM_PRINT` was the only reducer case that never
+truncated the events feed. `PackRipper` read serial numbers from a parallel
+array after filtering. `popFactors` read `theme.tags` unguarded. Rarity and
+character ids used module counters that reset on reload. `promoSupply` was
+written and never read.
+
+**The harness drives the real reducer.** `reducer` moved out of `useGame.js`
+into `reducer.js`; `tools/playtest.mjs` had re-implemented three transitions by
+hand and that mirror had drifted, silently dropping `characters`,
+`pendingWaves`, `scalperHeat` and the odds-transparency sentiment bump.
+
+**Recurring costs** (`overhead.js`) — the money sink the economy never had.
+Studio overhead scaling superlinearly with the number of sets in print,
+warehousing on unsold stock, per-block era upkeep, and a voluntary
+community-goodwill programme. Revenue is bounded (word of mouth is additive,
+segment drift is capped) while these are not, so an unpruned catalogue
+eventually outruns any income it can generate. Pruning the shelf is now the
+central late-game decision.
+
+**The cadence cliff is gone.** Unrest subtracted `1.5 × lateBy` from all 52
+personas every week with nothing bounding it, so cumulative loss crossed the
+−100 revolt floor at about 11 weeks late on a fixed schedule. That single
+quadratic was not *a* difficulty in this game, it was the only one. Unrest now
+drives sentiment toward a floor. A young studio also gets 8 weeks of grace
+rather than 3.
+
+**`printIntensity` is alive.** `creep = (loudness − 50) / 5` is exactly 0 at the
+default and a flat weekly decay gave the dial one fixed point: zero. Sets now
+declare a `printLevel`, the dial relaxes toward the buzz-weighted mean of the
+in-print shelf, and its consumers read the two-sided deviation from neutral — so
+restraint is a reward, not merely the absence of a penalty.
+
+**The release treadmill is priced.** Cadence only ever punished being late, and
+any release reset the clock, so shipping the cheapest set as fast as possible
+was optimal. Rider fatigue now reads spacing as well as count and damps a set's
+revenue for its whole life.
+
+**Franchise reputation** reaches 96–123 rather than 45–60, which finally puts
+the upper `content/mediaDeals.js` gates and the anniversary tier in reach. The
+gate ladder was always staged sensibly; the growth rate had never been tuned to
+match it.
+
+**Legacy, retirement and prestige** (`legacy.js`, `content/milestones.js`) — a
+scored retrospective, 25 milestones, a voluntary exit, and banked legacy that
+unlocks perks in future runs. This does NOT introduce a win condition:
+retirement is dispatched only by a button, nothing in the sim proposes it, and
+it reuses the existing `gameOver` field rather than adding stop machinery.
+
+**Persistence** moved to IndexedDB, with a 46% smaller serialized state,
+export/import, and a visible warning on failure. A week-312 run had reached
+4.07 MB against localStorage's ~5 MB quota and the quota error was swallowed, so
+long runs stopped saving silently.
+
+**The dashboard** gained a card browser (the ticker showed 12 of several
+thousand cards), a profit-and-loss view (only gross revenue ever reached the
+screen), trend charts, and real keyboard support — Escape, focus traps, focus
+styles, and tab semantics that match the roles the markup already claimed.
+
+Measured across 312 weeks × 3 salts: failures spread from week 34 to week 291
+(previously all four landed in weeks 33–36), lifetime recurring spend runs
+27–97% of gross income (previously ~8%), end cash runs $2M–$49M (previously
+$10M–$165M), and a shelf that is never pruned finishes on a negative weekly net
+while a disciplined one stays positive.
 
 ---
 

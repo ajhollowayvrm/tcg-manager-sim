@@ -19,7 +19,7 @@
 // Fields:
 //   category        — grouping for the builder's picker (see GIMMICK_CATEGORIES)
 //   defaultIntensity— where the intensity slider starts for this gimmick
-//   treatmentWeight — how many/how rich the chase cards it mints are (0.4–1.6)
+//   treatmentWeight — how many/how rich the chase cards it mints are (0.8–1.5)
 //   creep           — how much printing into this block nudges the collectors'
 //                     nostalgia-erosion dial. A splashy form-change era reads
 //                     louder than a quiet nostalgia one. Purely a design-

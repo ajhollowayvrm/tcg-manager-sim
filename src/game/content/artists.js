@@ -1,4 +1,4 @@
-// The artist roster — ~30 named, quirky artists for commissioning.
+// The artist roster — 44 named, quirky artists for commissioning.
 // Each elevates certain themes; reputation/reach boosts a card's collectibility
 // ceiling and market appeal. Trajectory hints whether they're a cheap rising
 // star or an expensive established name (used later for price drift over a run).

@@ -2,82 +2,81 @@
 
 A browser-based management sim where you run a trading card game company. You don't play the
 card game — you *publish* it. Design sets, release them on your own schedule, watch the secondary
-market and the competitive metagame react, manage a living community of named personalities, and
-try not to power-creep or over-print your way into bankruptcy.
+market react, manage a living community of named personalities, and try not to over-print,
+over-extend or over-charge your way into bankruptcy.
 
 Think *Game Dev Tycoon*, but you're The Pokémon Company and the product is cardboard.
 
 ## Status
 
-**v1 core loop is built and playable.** Design a set, release it, and the world
-reacts week by week: the secondary market resolves singles & sealed prices with
-momentum and burstable hype bubbles, 50+ named community personas chatter through
-a signal-vs-noise feedback feed, an events feed throws curveballs, and you wield
-bans against the metagame — all funded by a sealed-product economy. You **start
-from nothing** (0 players, 0 satisfaction) and grow a base via releases and
-word-of-mouth; cash/players/satisfaction are recoverable pressures (cash can go
-negative as a loan), and only a debt spiral, being broke-and-abandoned, or a
-total −100 revolt ends a run. Format decay drives the whole thing. On top of the
-core loop you also **author the booster format**
-(slot-by-slot pack structure), **design counter cards** to answer a card or a
-runaway archetype instead of banning, **sign distributors** for bulk-buy cash
-that can tip the game into a price-spiking scalper market, **pull a set from
-publication** (stop printing it → its singles spike on scarcity, collectors
-cheer, the format refreshes), and **reprint** — re-issue a whole set as an
-Unlimited run (the original becomes a 1st-edition premium) or reprint a beloved
-card into a new set as a fan-service draw. Each set ships a **product lineup**
-you choose — boosters plus optional bundles, a collector box (SPC), and tins,
-each its own price/margin/audience — and you fund **organized play**
-(tournaments, leagues, prereleases) to grow the competitive scene and mint
-**unpullable promo cards** that become scarce grails. See
-[`docs/BRIEF.md`](docs/BRIEF.md) for the spec, annotated with per-section build
-status (✅ done / ⏳ remaining) and the v2 roadmap.
+**Playable, and it can be lost.** You start from nothing — 0 players, 0
+satisfaction — and grow a base by shipping sets and word of mouth. Design a set,
+release it, and the world reacts week by week: the secondary market resolves
+singles and sealed prices with momentum and burstable hype bubbles, 52 named
+community personas chatter through a signal-versus-noise feedback feed, and an
+events feed throws curveballs.
 
-### Known v1 gaps (remaining work)
+The run is an open-ended survival sim with **no win condition**. You can retire
+the studio voluntarily to bank its legacy toward future runs, but nothing ever
+asks you to.
 
-- **Artist trajectory** — artists have a `trajectory` field but don't yet rise or
-  blow up dynamically over a run; commissioning is otherwise complete.
+### What you actually manage
 
-After that, the brief calls for a frontend-polish pass and the open tuning
-notes (decay rate, market variance, feedback-noise ratio).
+- **Sets.** Four tiers — major (opens a block, optionally with an era gimmick
+  drawn from a 28-strong roster), minor and micro (ride a live block), and
+  anniversary (freestanding, reprint-centric, gated on a real history). Length,
+  design loudness, rarity sheet, booster format, print run, MSRP, product SKUs,
+  channel mix, spotlight reveals, cover character, art director.
+- **The shelf.** Recurring costs scale steeply with how much you keep in print,
+  so pruning is the central late-game decision. Pull a set from publication and
+  its singles spike on scarcity — but yanking one that was still selling reads
+  as manufactured scarcity and costs you goodwill.
+- **The community.** 52 personas whose reach and credibility are deliberately
+  anti-correlated, so the loudest voices are systematically the least reliable.
+  Comp them, sponsor them, invite them to a prerelease. Run a standing
+  community-goodwill programme to buy back a soured room — but not permission
+  to gouge it.
+- **Distribution.** Bulk-buyer deals for cash now at the price of a market flood
+  and rising scalper heat; grading partners; supply-chain capacity; purchase
+  limits and phantom stock as anti-scalping stances.
+- **Ambition.** Merchandise lines, cross-media ventures from a mobile spinoff up
+  to a theatrical blockbuster, and a persistent cast whose fame compounds.
+- **A rival.** An ambient competitor that grows when your shelf goes quiet.
 
-_Recently completed: **a systems-wiring audit** — every player decision now moves
-both sales and community opinion. It fixed three dead effects (reviewer verdicts
-were overwritten within the same tick; set-level persona takes never moved
-sentiment; distributors rewrote prices after the market had already published
-them), closed the missing opinion→sales loop (pack demand read each card's frozen
-release-time hype, so live community excitement could never sell a pack), made
-greed visible (MSRP, print run, manufactured scarcity, stingy packs, Unlimited
-reprints and merch all draw community reactions now, via a new `setGrievances`
-that finally gives the inert `taste.fairness` axis something to read), priced the
-levers that were free (chase intensity, secret rares, serialized caps, design
-loudness), and removed the dead travel in the loudness slider — `Math.max(0, creep)`
-meant its bottom half did nothing and every gimmick's creep weight was multiplied
-by zero at default settings; **a collector-first set-creation redesign** — the power-budget
-slider is now **design loudness**, theme "mechanics" are naming **motifs**, and
-signature cards dropped rules text entirely for standout appeal, a printing
-**finish**, flavor text and art notes; block **gimmicks are optional** (a plain
-themed era is a cheaper, first-class choice) and the roster grew **4 → 28** across
-six categories; **set size matters** — length drives the launch wave, buzz, dev
-cost and chase density, with a bloat penalty on oversized sets that reviewers pan
-and collectors drift away from; and you can now **spotlight** up to five cards
-before launch, pick a **cover character**, and hire a whole-set **art director**
-(`sets.js` `sizeProfile`, `content/gimmicks.js`, `SetBuilder`); a grow-from-nothing start — 0 players / 0 satisfaction,
-additive word-of-mouth + release discovery waves (`segments.js` / `sets.js`), and
-a forgiving recoverable-pressure loss model (negative cash = a loan with weekly
-interest; only a debt spiral / broke-and-abandoned / −100 revolt ends a run —
-`simulation.js`); product SKUs — per-set booster/bundle/SPC/tin lineup
-(`products.js`); promo cards + organized play — unpullable prize cards via
-tournaments/leagues/prereleases and an SPC exclusive promo (`organizedplay.js`);
-pull-from-publication (replaced rotate — `bans.js` `pullFromPrint`) and reprints
-— set-level Unlimited re-issues + first-edition premiums and card-level
-fan-service reprints (`sets.js` `reprintSet` /
-`applyCardReprints`); booster formats (authored pack slots — `rarities.js` /
-`packs.js`), counter cards (`sets.js` `applyCounters`), and distributors +
-scalper culture (`distributors.js`); a manual click-to-advance clock with the
-three health meters (cash / players / satisfaction) surfaced in the
-header (`TopBar.jsx`); silent autosave to localStorage (`game/persistence.js`);
-and segment drift (`segments.js`)._
+### Recent work — an audit remediation pass
+
+A full audit found the game could not be lost after week 36: 14 of 18 harness
+strategies survived 312 weeks, all four failures landed in a nine-week band, and
+end cash ran to $165M with nothing to spend it on. Seven commits addressed it.
+
+- **Eight correctness bugs.** The worst erased the player's entire debt whenever
+  a costed event fired.
+- **The harness drives the real reducer.** It used to re-implement three
+  transitions by hand, and that mirror had drifted.
+- **Recurring costs** (`overhead.js`) — studio overhead scaling superlinearly
+  with the shelf, warehousing on unsold stock, era upkeep, and a voluntary
+  community programme. Lifetime spend went from ~8% of gross income to 27-97%.
+- **The cadence cliff is gone.** Unrest used to integrate without bound and
+  crossed the revolt floor on a fixed ~11-week schedule; it now drives toward a
+  floor. Going dark cripples a studio; it no longer guarantees its death.
+- **`printIntensity` is alive.** It had exactly one fixed point — zero — and sat
+  there from about week 140 in every run, with both consumers reading nothing.
+- **The release treadmill is priced**, so rider spam went from top earner to
+  dead by week 88.
+- **Franchise reputation** reaches 96-123 instead of 45-60, which finally puts
+  the upper media deals and the anniversary tier in reach.
+- **A legacy score, voluntary retirement and cross-run prestige.**
+- **Persistence** moved to IndexedDB with a 46% smaller save, export/import, and
+  visible failures — a long run used to stop saving silently.
+- **The dashboard** gained a card browser (the ticker showed 12 of several
+  thousand cards), a profit-and-loss view, trend charts, and real keyboard
+  support.
+
+Measured across 312 weeks and 3 salts: failures now spread from week 34 to week
+291, end cash runs $2M-$49M, and a shelf you never prune ends on a negative
+weekly net while a disciplined one stays positive.
+
+Run `npm run playtest` to see the current table.
 
 ## Tech
 
@@ -90,9 +89,10 @@ and segment drift (`segments.js`)._
 
 ```bash
 npm install
-npm run dev      # start the dev server
-npm run build    # production build
-npm run preview  # preview the build
+npm run dev       # start the dev server
+npm run build     # production build
+npm run preview   # preview the build
+npm run playtest  # headless balance sweep (--fast, --strategy=, --trace, --help)
 ```
 
 ## Structure
@@ -100,28 +100,49 @@ npm run preview  # preview the build
 ```
 src/
   main.jsx              # entry
-  App.jsx               # dashboard layout
+  App.jsx               # dashboard layout + mobile tabs
   game/
     initialState.js     # GameState shape (see BRIEF.md)
+    reducer.js          # every player action; imported by useGame AND the harness
+    useGame.js          # React binding: the hook, autosave, action callbacks
     simulation.js       # advanceWeek() — the one tick entry point
-    useGame.js          # reducer + clock hook (+ autosave wiring)
-    persistence.js      # localStorage autosave: load/save/clear the run
+    persistence.js      # IndexedDB run save + localStorage prestige/hall of fame
     rng.js              # seeded RNG (deterministic weekly resolution)
-    sets.js             # set draft, cost, card generation, release + counters
-    rarities.js         # rarity sheet + booster pack formats (slots/presets)
-    packs.js            # pack ripping from the authored booster format (promos excluded)
-    products.js         # product SKUs — booster/bundle/SPC/tin per-set lineup
-    organizedplay.js    # tournaments/leagues + unpullable promo cards
-    market.js           # secondary market: singles & sealed (+ promo) price resolution
+    config.js           # tuning constants: cadence, treadmill, erosion neutral
+    sets.js             # set draft, cost, card generation, release
+    blocks.js           # tiers (major/minor/micro/anniversary) + era blocks
+    rarities.js         # rarity sheet, finishes + booster pack formats
+    packs.js            # pack ripping, god packs (promos excluded)
+    products.js         # product SKUs + channel mix
+    market.js           # secondary market: singles & sealed price resolution
     revenue.js          # weekly per-SKU sealed sales + supply caps
-    personas.js         # persona reaction engine (signal vs noise)
+    overhead.js         # recurring costs — the money sinks
+    legacy.js           # run score, milestones, retirement, prestige perks
+    personas.js         # persona reaction engine (signal vs noise) + grievances
     relationships.js    # persona comp/sponsor management layer
     distributors.js     # bulk-buyer deals + scalper-culture heat
+    grading.js          # third-party grading partners
+    breaks.js           # sponsored live box breaks
+    merch.js            # merchandise lines
+    media.js            # cross-media ventures
+    franchise.js        # franchise reputation + legacy multiplier
+    characters.js       # persistent cast + fame drift
+    artists.js          # artist careers (cost/reach drift)
+    cadence.js          # release-pledge pressure, both directions
+    rival.js            # ambient competing TCG
+    segments.js         # player-segment drift + word of mouth
     events.js           # events catalogue + weekly roll
-    bans.js             # ban + pull-from-print logic + community blowback
-    archetypes.js       # metashare distribution math (shift/flatten/counter)
-    content/            # static rosters: artists, personas (50+), themes, distributors
-  components/           # TopBar (health meters), DistributorsPanel, OrganizedPlayPanel, feeds
-    setbuilder/         # SetBuilder (accordion), RarityEditor, PackFormatEditor, ProductLineupEditor
+    bans.js             # pull-from-print + community blowback
+    promos.js           # unpullable promo cards
+    clock.js            # weekly "what changed" attention note
+    content/            # static rosters: artists (44), personas (52), themes,
+                        # gimmicks (28), distributors, grading, merch, media,
+                        # rivals, concepts, milestones
+  components/           # TopBar, SetsPanel, MarketTicker, CardBrowser,
+                        # LedgerPanel, HistoryPanel, Chart, PackRipper,
+                        # PersonasPanel, CastPanel, DistributorsPanel,
+                        # AmbitionPanel, RetrospectivePanel, feeds, useModal
+    setbuilder/         # SetBuilder (accordion), RarityEditor, PackFormatEditor,
+                        # ProductLineupEditor, SignatureCardEditor
   styles/index.css      # vivid crimson / noir dashboard skin
 ```
