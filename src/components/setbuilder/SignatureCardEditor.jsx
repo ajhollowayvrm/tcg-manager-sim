@@ -2,11 +2,17 @@
 // commission, standout appeal, and the card's flavor + art-direction copy.
 
 import { ARTISTS, getArtist } from '../../game/content/artists.js'
-import { getRarity, visualTier, defaultRaritySheet } from '../../game/rarities.js'
+import {
+  getRarity, visualTier, defaultRaritySheet,
+  makeUniqueRarity, syncFormatWithUniqueRarity, pruneRarityFromFormat,
+} from '../../game/rarities.js'
 import { TREATMENTS, getTreatment } from '../../game/characters.js'
 import { getArchetype, archetypeMatchesTheme, archetypesByCategory } from '../../game/content/archetypes.js'
 import { FINISHES, getFinish, cardAppeal } from '../../game/sets.js'
 import SetSymbol from '../SetSymbol.jsx'
+import NumberField from './NumberField.jsx'
+
+const PICKABLE_FINISHES = FINISHES.filter((f) => f.id !== 'standard')
 
 function formatCash(n) {
   return '$' + n.toLocaleString('en-US')
@@ -72,9 +78,41 @@ const CHAR_TREND = {
   icon: { icon: '★', cls: 'trend--est', label: 'icon' },
 }
 
-export default function SignatureCardEditor({ card, theme, artists, characters = [], rarities, onChange, onRemove }) {
+export default function SignatureCardEditor({
+  card, theme, artists, characters = [], rarities, packFormat,
+  onChange, onRaritiesChange, onPackFormatChange, onRemove,
+}) {
   const sheet = rarities ?? defaultRaritySheet()
   const set = (patch) => onChange({ ...card, ...patch })
+  // By default a signature card just references a shared rarity off the
+  // sheet and takes on its pull rate/value/finishes for free. Only once the
+  // player customizes those does it get a `unique` rarity of its own — see
+  // rarities.js's makeUniqueRarity — scoped to this one card.
+  const rarityEntry = getRarity(sheet, card.rarity)
+  const isUniqueRarity = !!rarityEntry.unique
+  const sharedRarities = sheet.filter((r) => !r.unique)
+
+  const makeThisCardUnique = () => {
+    const uniq = makeUniqueRarity(rarityEntry, card.name)
+    onRaritiesChange([...sheet, uniq])
+    onPackFormatChange(syncFormatWithUniqueRarity(packFormat, rarityEntry.id, uniq.id))
+    set({ rarity: uniq.id })
+  }
+  const updateUniqueRarity = (patch) =>
+    onRaritiesChange(sheet.map((r) => (r.id === rarityEntry.id ? { ...r, ...patch } : r)))
+  const revertToSharedRarity = () => {
+    onRaritiesChange(sheet.filter((r) => r.id !== rarityEntry.id))
+    onPackFormatChange(pruneRarityFromFormat(packFormat, rarityEntry.id))
+    set({ rarity: rarityEntry.derivedFrom ?? sharedRarities[0]?.id ?? 'rare' })
+  }
+  const toggleUniqueFinish = (finishId) => {
+    const has = (rarityEntry.finishes ?? []).includes(finishId)
+    updateUniqueRarity({
+      finishes: has
+        ? rarityEntry.finishes.filter((f) => f !== finishId)
+        : [...(rarityEntry.finishes ?? []), finishId],
+    })
+  }
   // Merge static identity (name/specialty) with the live drifted career so the
   // displayed cost/reach and trend reflect the current week.
   const artistOf = (id) => {
@@ -101,16 +139,78 @@ export default function SignatureCardEditor({ card, theme, artists, characters =
         <CardFramePreview card={card} theme={theme} sheet={sheet} artist={artist} />
         <div className="sigcard__form">
 
-      <div className="sigcard__row sigcard__controls">
-        <label className="field">
-          <span>Rarity</span>
-          <select value={card.rarity} onChange={(e) => set({ rarity: e.target.value })}>
-            {sheet.map((r) => (
-              <option key={r.id} value={r.id}>{r.name}</option>
+      {!isUniqueRarity ? (
+        <div className="sigcard__row sigcard__rarityrow">
+          <label className="field">
+            <span>Rarity</span>
+            <select value={card.rarity} onChange={(e) => set({ rarity: e.target.value })}>
+              {sharedRarities.map((r) => (
+                <option key={r.id} value={r.id}>{r.name}</option>
+              ))}
+            </select>
+            <span className="field__note">
+              Takes on this rarity's pull rate, value and finishes automatically.
+            </span>
+          </label>
+          <button type="button" className="btn btn--ghost sigcard__uniquebtn" onClick={makeThisCardUnique}>
+            ✦ Give this card its own Unique rarity
+          </button>
+        </div>
+      ) : (
+        <div className="field field--full sigcard__unique">
+          <span>
+            Rarity — <strong>Unique</strong>
+            <span className="muted"> (started from {getRarity(sharedRarities, rarityEntry.derivedFrom).name})</span>
+          </span>
+          <div className="sigcard__row sigcard__uniquerow">
+            <label className="field">
+              <span>Pull rate</span>
+              <NumberField
+                value={rarityEntry.pullWeight}
+                aria-label="Pull weight"
+                placeholder="Pull"
+                onCommit={(n) => updateUniqueRarity({ pullWeight: n })}
+              />
+            </label>
+            <label className="field">
+              <span>Value tier</span>
+              <NumberField
+                max={100}
+                value={rarityEntry.valueTier}
+                aria-label="Value tier"
+                placeholder="Value"
+                onCommit={(n) => updateUniqueRarity({ valueTier: n })}
+              />
+            </label>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={!!rarityEntry.secret}
+                onChange={(e) => updateUniqueRarity({ secret: e.target.checked })}
+              />
+              Secret rare
+            </label>
+          </div>
+          <div className="rared__finishgrid">
+            {PICKABLE_FINISHES.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                className={'btn btn--chip' + ((rarityEntry.finishes ?? []).includes(f.id) ? ' is-active' : '')}
+                title={`${f.blurb} (×${f.costMul} print cost)`}
+                onClick={() => toggleUniqueFinish(f.id)}
+              >
+                {f.name}
+              </button>
             ))}
-          </select>
-        </label>
+          </div>
+          <button type="button" className="btn btn--ghost sigcard__uniquebtn" onClick={revertToSharedRarity}>
+            ↩ Revert to shared rarity
+          </button>
+        </div>
+      )}
 
+      <div className="sigcard__row sigcard__controls">
         <label className="field" title="A hard-capped total copy count, independent of the set's print run — a true numbered chase card. Once this many are pulled, ever, it's gone.">
           <span>Serial numbered</span>
           <select

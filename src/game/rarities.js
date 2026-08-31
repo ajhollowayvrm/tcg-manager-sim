@@ -108,6 +108,65 @@ export function makeRarity(name = 'New Rarity') {
   return { id: rid('rar'), name, pullWeight: 10, valueTier: 50, secret: false, finishes: [], variants: [] }
 }
 
+// ---- Unique (per-signature-card) rarities ---------------------------------
+// A signature card defaults to whatever rarity it's assigned — no separate
+// storage needed, since everything downstream resolves the card's rarity id
+// live against the sheet. Only when the player customizes a card's pull
+// rate/value/secret/finishes does it need a rarity of its own: a normal sheet
+// entry, cloned from the rarity it was picked from, but flagged `unique` and
+// scoped to that one card so nothing else can land on it (see the `unique`
+// filters in sets.js's bulk/random rarity pools).
+
+// Clone `base`'s characteristics into a new one-card rarity. `label` is the
+// card's own name, so the entry reads e.g. "Emberwing (Unique)" everywhere a
+// rarity name is shown (pack odds, card frame). `derivedFrom` remembers what
+// it was cloned from, so the card can revert to sharing that rarity again.
+export function makeUniqueRarity(base, label) {
+  return {
+    id: rid('uniq'),
+    name: `${label || 'Signature card'} (Unique)`,
+    pullWeight: base?.pullWeight ?? 10,
+    valueTier: base?.valueTier ?? 50,
+    secret: base?.secret ?? false,
+    finishes: [...(base?.finishes ?? [])],
+    unique: true,
+    derivedFrom: base?.id ?? null,
+  }
+}
+
+// Join a freshly spun-off unique rarity to every slot its base rarity is
+// already in — the same "a new chase card must be pullable somewhere" idea
+// as syncFormatWithVariants, but a one-shot call at spin-off time rather than
+// a standing reconciliation pass.
+export function syncFormatWithUniqueRarity(format, baseId, newId) {
+  const slots = format?.slots ?? []
+  if (!slots.length) return format
+  return {
+    ...format,
+    slots: slots.map((slot) =>
+      (slot.rarityIds ?? []).includes(baseId)
+        ? { ...slot, rarityIds: [...slot.rarityIds, newId] }
+        : slot,
+    ),
+  }
+}
+
+// Strip one rarity id out of every slot — used both when a customized card
+// reverts to a shared rarity and when a customized card is removed outright,
+// so its one-off rarity never lingers as an orphaned, unpullable sheet row.
+export function pruneRarityFromFormat(format, rarityId) {
+  const slots = format?.slots ?? []
+  if (!slots.length) return format
+  return {
+    ...format,
+    slots: slots.map((slot) =>
+      (slot.rarityIds ?? []).includes(rarityId)
+        ? { ...slot, rarityIds: slot.rarityIds.filter((id) => id !== rarityId) }
+        : slot,
+    ),
+  }
+}
+
 // The most cards one variant may print. A variant card is numbered above the
 // set count, so without a ceiling a player could quietly triple the set's real
 // size and the completionist maths behind it.

@@ -206,7 +206,10 @@ export function mintTreatmentCards(state, { block, setId, tier, themeId, intensi
   // highest value tier) so they slot into the chase pull naturally and resolve a
   // real display name / value tier — while `treatment:true` flags their special
   // market behavior. Falls back to the default sheet's top rarity.
-  const sh = (sheet?.length ? sheet : defaultRaritySheet())
+  // Unique (per-signature-card) rarities are excluded — each belongs to
+  // exactly the one signature card it was spun off for (see rarities.js's
+  // makeUniqueRarity), never a batch of newly-minted treatment cards.
+  const sh = (sheet?.length ? sheet.filter((r) => !r.unique) : defaultRaritySheet())
   const topRarity = [...sh].sort((a, b) => (b.valueTier ?? 0) - (a.valueTier ?? 0))[0] ?? { id: 'secret', valueTier: 96 }
 
   const cards = []
@@ -260,7 +263,8 @@ export function mintAnniversaryCards(state, { setId, themeId, sheet }) {
   const theme = getTheme(themeId) ?? getTheme('dragons')
   const rng = makeRng(hashSeed(`anniversary:${setId}:${state.week}`))
 
-  const sh = (sheet?.length ? sheet : defaultRaritySheet())
+  // Unique (per-signature-card) rarities are excluded — see mintTreatmentCards.
+  const sh = (sheet?.length ? sheet.filter((r) => !r.unique) : defaultRaritySheet())
   const topRarity = [...sh].sort((a, b) => (b.valueTier ?? 0) - (a.valueTier ?? 0))[0] ?? { id: 'secret', valueTier: 96 }
 
   const cards = []
