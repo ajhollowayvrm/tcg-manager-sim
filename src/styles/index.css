@@ -704,6 +704,18 @@ body {
 .spark { display: block; }
 .spark--flat { width: 60px; height: 18px; }
 
+/* A variant shares its base card's name, so the badge is the only thing telling
+   the two rows apart in a price list. Reads as a printing, not a status. */
+.tag--variant {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.ticker__more {
+  align-self: flex-start; margin-top: 6px; background: none; border: none;
+  color: var(--text-dim); font: inherit; font-size: 0.72rem; padding: 4px 2px; cursor: pointer;
+}
+.ticker__more:hover { color: var(--text); }
+
 /* ---- Rarity editor (set builder) ---- */
 .rared { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
 .rared__head, .rared__row {
@@ -737,6 +749,37 @@ body {
 }
 .rared__remove { color: var(--bad); padding: 4px 6px; }
 .rared__add { align-self: flex-start; margin-top: 2px; }
+
+/* ---- Variant printings (a separate CARD, not a finish on the base one) ----
+   Indented under their parent rarity and marked with a left rule, because the
+   difference between "this rarity is also full art" and "this rarity also has
+   a full-art alt print" is the whole feature. The variant row carries a fourth
+   number the rarity row does not: how many cards get the printing. */
+.rared__variant {
+  display: flex; flex-direction: column; gap: 4px;
+  margin-left: 10px; padding-left: 10px; border-left: 2px solid var(--border);
+}
+.rared__row--variant { grid-template-columns: 1fr 56px 56px 56px 28px; }
+.rared__num--count { border-style: dashed; }
+.rared__addvariant {
+  align-self: flex-start; background: none; border: none; color: var(--text-dim);
+  font: inherit; font-size: 0.72rem; padding: 2px 4px; cursor: pointer;
+}
+.rared__addvariant:hover { color: var(--text); }
+.rared__variantfoot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rared__yield { font-size: 0.7rem; color: var(--text-dim); }
+.rared__yield.is-warn { color: var(--bad); }
+/* A variant is pullable in its own right, so it appears in the booster-slot
+   picker too — dashed there to read as a sub-printing of the rarity above it. */
+.packfmt__rar--variant { border-style: dashed; }
+
+@media (max-width: 380px) {
+  .rared__row--variant {
+    grid-template-columns: 1fr 1fr auto auto;
+    grid-template-areas: 'name name name name' 'pull value count remove';
+  }
+  .rared__num--count { grid-area: count; }
+}
 
 .rared__group { display: flex; flex-direction: column; gap: 4px; }
 .rared__finishtoggle {

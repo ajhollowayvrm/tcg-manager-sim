@@ -20,7 +20,7 @@
 
 import { makeRng, hashSeed, range } from './rng.js'
 import { clamp } from './simulation.js'
-import { packRichnessDelta } from './rarities.js'
+import { packRichnessDelta, printingOf } from './rarities.js'
 import { getTheme } from './content/themes.js'
 import { getArchetype } from './content/archetypes.js'
 import { traitNames } from './content/traits.js'
@@ -76,22 +76,68 @@ function perceive(truth, persona, rng) {
 // Low-credibility personas have a much noisier focus — they latch onto the
 // wrong card more often, which (with a noisy read) is how a rage-baiter ends up
 // screaming about a perfectly fine card.
-function focusCard(cards, persona, rng) {
+function focusCard(cards, persona, rng, variants) {
   if (cards.length === 0) return null
   const wobble = 30 + (1 - persona.credibility / 100) * 70 // up to ±100 for low-cred
   const scored = cards.map((c) => {
     const f = c.popFactors
+    // A variant trading well above its base copy is the thing a room actually
+    // argues about, and price alone under-weights it: the premium is the story,
+    // not the absolute number. Art- and value-minded voices notice hardest.
+    //
+    // Deliberately small. The other taste terms reach ~100 each, so this tops
+    // out around 15 — enough to lift a hot alt art into the conversation, not
+    // enough to make it the ONLY conversation. At 6× that weight the whole feed
+    // became one card, which is not what a community sounds like.
+    const v = variants?.get(c.id)
+    const variantPull = v
+      ? Math.min(v.premium, 6) * 2.5 * (0.4 + persona.taste.value * 0.3 + persona.taste.art * 0.3)
+      : 0
     const score =
       persona.taste.power * f.punch +
       persona.taste.value * Math.min(c.singlePrice, 200) * 0.5 +
       persona.taste.art * f.artAppeal +
       persona.taste.fun * f.hype +
+      variantPull +
       range(rng, 0, wobble)
     return { c, score }
   })
   scored.sort((a, b) => b.score - a.score)
   return scored[0].c
 }
+
+// ---- Variant printings ----------------------------------------------------
+
+// What the community can SEE about an alternate printing: its name, and how far
+// it trades above the base card it reprints. The premium is the whole story of
+// a variant — a real room does not say "the Alt Art is good", it says "the Alt
+// Art is five times the regular copy". A variant nobody wants trades at parity,
+// and that is worth saying out loud too: it is the clearest feedback a player
+// can get that a printing they paid to produce did not land.
+export function variantContext(state) {
+  const byId = new Map(state.cards.map((c) => [c.id, c]))
+  const setById = new Map(state.sets.map((sx) => [sx.id, sx]))
+  const out = new Map()
+  for (const card of state.cards) {
+    if (!card.variantOf) continue
+    const printing = printingOf(setById.get(card.setId)?.rarities, card.rarity)
+    if (!printing.isVariant) continue
+    const base = byId.get(card.variantOf)
+    const basePrice = base?.singlePrice ?? 0
+    out.set(card.id, {
+      name: printing.variantName,
+      basePrice,
+      premium: basePrice > 0 ? card.singlePrice / basePrice : 1,
+    })
+  }
+  return out
+}
+
+// The premium bands the takes below branch on. A variant at 3× the base copy is
+// the card everyone is chasing; one at parity is one nobody noticed.
+const VARIANT_HOT = 3
+const VARIANT_WARM = 1.6
+const VARIANT_FLAT = 1.15
 
 // ---- Grievances -----------------------------------------------------------
 
@@ -363,7 +409,99 @@ function pick(rng, pool) {
   return pool[Math.floor(rng() * pool.length) % pool.length]
 }
 
-function takeFor(persona, card, perceived, set, rng, displayName, grievances) {
+// What each voice says about an ALTERNATE PRINTING, ahead of their normal card
+// take. A variant is a different kind of object from a card: nobody argues about
+// whether it is strong, they argue about whether it is worth the multiple. So
+// these branch on the premium over the base copy, not on `perceived` punch.
+//
+// Returns null when this voice has nothing variant-specific to say, and the
+// caller falls through to the ordinary take — the feed keeps its texture rather
+// than turning into one repeated observation about alt arts.
+function variantTake(persona, card, variant, set, rng, displayName) {
+  const c = displayName ?? card?.name
+  const v = variant.name
+  const s = set?.name ?? 'the set'
+  const an = /^[aeiou]/i.test(v) ? 'an' : 'a' // names are player-authored: "an Alt Art", "a Gold"
+  const mult = variant.premium
+  const x = mult >= 10 ? Math.round(mult) : Math.round(mult * 10) / 10
+  const hot = mult >= VARIANT_HOT
+  const warm = mult >= VARIANT_WARM
+  const flat = mult < VARIANT_FLAT
+  const t = persona.type
+
+  if (t === 'collector') {
+    if (hot) return { stance: 'hype', text: pick(rng, [
+      `The ${v} ${c} is the only version that matters. Base copies are a placeholder.`,
+      `${x}× the regular copy for the ${v} ${c} and it is STILL going up. This is the card of ${s}.`,
+      `Sold my base ${c} to fund the ${v}. Only version I want in the binder.`,
+    ]) }
+    if (warm) return { stance: 'hype', text: pick(rng, [
+      `The ${v} ${c} is quietly pulling away from the base copy. ${x}× and climbing.`,
+      `${v} ${c} is the sleeper of ${s}. Get one before the spread widens.`,
+    ]) }
+    if (flat) return { stance: 'pan', text: pick(rng, [
+      `Nobody is paying up for the ${v} ${c}. It trades like the base copy — that treatment did not land.`,
+      `The ${v} ${c} was supposed to be the chase. It is worth the same as the regular. Awkward.`,
+    ]) }
+    return null
+  }
+
+  if (t === 'analyst') {
+    if (hot) return { stance: 'warn', text: pick(rng, [
+      `${v} ${c} trades at ${x}× the base printing. That spread IS the set — everything else is filler around it.`,
+      `The ${v}/base spread on ${c} is ${x}×. Historically that gap closes hard once supply catches up.`,
+    ]) }
+    if (flat) return { stance: 'pan', text: pick(rng, [
+      `${v} ${c} at ${x}× base is a rounding error. The variant is not doing any work in this set.`,
+      `Ran the numbers on ${s}: the ${v} treatment added cost and no premium. That is a loss.`,
+    ]) }
+    if (warm) return { stance: 'neutral', text: pick(rng, [
+      `${v} ${c} sits at ${x}× the base copy. Healthy spread, no bubble in it yet.`,
+    ]) }
+    return null
+  }
+
+  if (t === 'authenticator') {
+    if (hot) return { stance: 'warn', text: pick(rng, [
+      `At ${x}× base, expect ${v} ${c} fakes. Check the print texture before you pay that.`,
+      `${v} ${c} population is thin for the money it is moving. Get yours slabbed.`,
+      `Seeing base ${c} copies passed off as the ${v}. Know what you are buying.`,
+    ]) }
+    return null
+  }
+
+  if (t === 'streamer') {
+    const ragey = persona.taste.fairness >= 0.4
+    if (hot && !ragey) return { stance: 'hype', text: pick(rng, [
+      `PULLED THE ${v.toUpperCase()} ${c.toUpperCase()} ON STREAM. chat lost it. ${x}x the base copy`,
+      `${v} ${c} hit the mat and i genuinely yelled. best pull of ${s}`,
+      `been ripping ${s} all night for the ${v} ${c}. worth every box`,
+    ]) }
+    if (hot && ragey) return { stance: 'alarm', text: pick(rng, [
+      `so the ${v} ${c} is ${x}x the normal one now. this is what chase design does to a hobby`,
+      `remember when you just... got the card. now there's ${an} ${v} and it costs ${x}x. cool cool cool`,
+    ]) }
+    if (flat) return { stance: 'pan', text: pick(rng, [
+      `opened a ${v} ${c}. worth the same as the normal one lmao what is the point`,
+    ]) }
+    return null
+  }
+
+  if (t === 'reviewer' && set) {
+    if (hot) return { stance: 'love', text: pick(rng, [
+      `The ${v} treatment is what ${s} will be remembered for. The ${c} is a genuinely beautiful card.`,
+      `${s} understood the assignment on the ${v} cards. Worth chasing, worth owning.`,
+    ]) }
+    if (flat) return { stance: 'pan', text: pick(rng, [
+      `The ${v} cards in ${s} do not justify themselves. A second printing needs a reason to exist.`,
+    ]) }
+    return null
+  }
+
+  return null
+}
+
+function takeFor(persona, card, perceived, set, rng, displayName, grievances, variant) {
   const strong = perceived > 25
   const busted = perceived > 50
   const weak = perceived < -20
@@ -395,6 +533,25 @@ function takeFor(persona, card, perceived, set, rng, displayName, grievances) {
       // Flagged so the character-chatter layer leaves it alone. A grievance is
       // about what the PLAYER did to the room, not about who is on the card.
       return { stance, text: pick(rng, GRIEVANCE_LINES[grievances.worst])(s, set), grievance: true }
+    }
+  }
+
+  // An alternate printing is its own conversation, and it outranks the ordinary
+  // card take — a room looking at a card that exists twice at two prices talks
+  // about the gap, not about how hard the card hits. Sits BELOW grievances on
+  // purpose: a player who has gouged the room does not get to change the
+  // subject by printing a pretty alt art.
+  //
+  // Gated the same way a grievance is, and for the same reason: even a genuinely
+  // exciting alt art does not make EVERY voice lead with it in the same week.
+  // A hot premium and a value/art-minded persona make it likely; a variant
+  // trading near its base copy is barely worth the breath.
+  if (variant) {
+    const heat = clamp((variant.premium - 1) / (VARIANT_HOT - 1), 0, 1)
+    const cares = 0.15 + (persona.taste?.value ?? 0) * 0.3 + (persona.taste?.art ?? 0) * 0.25
+    if (rng() < cares * (0.35 + heat * 0.65)) {
+      const vt = variantTake(persona, card, variant, set, rng, displayName)
+      if (vt) return vt
     }
   }
 
@@ -553,6 +710,9 @@ export function reactPersonas(state) {
   // Only live cards are part of the format — banned/rotated cards are out of the
   // conversation. The "field" average and persona focus both work off live cards.
   const liveCards = state.cards.filter((c) => !c.banned && !c.rotated && !c.promo)
+  // Priced once for the whole week: every take that lands on a variant reads
+  // the same premium, so the room agrees with itself about what a card is worth.
+  const variants = variantContext(state)
   // What the community has to complain about in the newest set, read off the
   // player's actual business decisions (price, print run, pack richness,
   // manufactured scarcity, bloat) rather than off card stats.
@@ -567,7 +727,7 @@ export function reactPersonas(state) {
     const chattiness = persona.reach / 200 + (setFresh ? 0.35 : 0)
     if (rng() > chattiness) continue
 
-    const card = focusCard(liveCards, persona, rng)
+    const card = focusCard(liveCards, persona, rng, variants)
     if (!card && !(persona.type === 'reviewer' && latestSet)) continue
 
     const truth = card ? cardThreat(card, fieldAvg) : 0
@@ -578,7 +738,8 @@ export function reactPersonas(state) {
     const character = card?.characterId ? state.characters?.find((ch) => ch.id === card.characterId) : null
     const known = character && character.fame >= CHARACTER_KNOWN_FAME ? character : null
     const displayName = known ? known.name : undefined
-    const base = takeFor(persona, card, perceived, latestSet, rng, displayName, grievances)
+    const variant = card ? variants.get(card.id) : null
+    const base = takeFor(persona, card, perceived, latestSet, rng, displayName, grievances, variant)
     // A known character does not just lend their NAME to a card take — the
     // community talks about them in their own right, in the voice their archetype
     // earns. Falls back to the card take whenever that voice has nothing to say

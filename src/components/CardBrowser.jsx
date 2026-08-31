@@ -12,7 +12,7 @@
 
 import { useMemo, useState } from 'react'
 import SetSymbol from './SetSymbol.jsx'
-import { visualTier, getRarity } from '../game/rarities.js'
+import { visualTier, getRarity, printingOf } from '../game/rarities.js'
 
 const PAGE = 40
 
@@ -21,6 +21,7 @@ const STATUS_FILTERS = [
   { id: 'inprint', label: 'In print' },
   { id: 'outofprint', label: 'Out of print' },
   { id: 'chase', label: 'Chase' },
+  { id: 'variant', label: 'Variants' },
   { id: 'graded', label: 'Graded' },
   { id: 'serial', label: 'Serialised' },
   { id: 'promo', label: 'Promo' },
@@ -65,6 +66,9 @@ export default function CardBrowser({ state }) {
           case 'inprint': return !c.rotated && !c.outOfPrint && !c.promo
           case 'outofprint': return !!(c.outOfPrint || c._set?.outOfPrint)
           case 'chase': return !!(c.treatment || c.secret || c.signature)
+          // Alternate printings only — the fastest way to see what every
+          // variant in the catalog is actually worth, side by side.
+          case 'variant': return !!c.variantOf
           case 'graded': return !!c.graded
           case 'serial': return !!c.serialCap
           case 'promo': return !!c.promo
@@ -136,12 +140,18 @@ export default function CardBrowser({ state }) {
             <ul className="ticker browser__list">
               {slice.map((c) => {
                 const tier = visualTier(c._set?.rarities, c.rarity)
+                const printing = printingOf(c._set?.rarities, c.rarity)
                 const oop = c.outOfPrint || c._set?.outOfPrint
                 return (
                   <li key={c.id} className="ticker__row browser__row">
                     <span className={`ticker__name rarity--${tier}`}>
                       <SetSymbol themeId={c._set?.themeId} tier={tier} size={13} />
                       {c.name}
+                      {printing.isVariant && (
+                        <span className="tag tag--variant" title={`${printing.variantName} — a separate printing of this card`}>
+                          {printing.variantName}
+                        </span>
+                      )}
                       {c.serialCap && (
                         <span className="tag tag--serial">{c.serialIssued}/{c.serialCap}</span>
                       )}

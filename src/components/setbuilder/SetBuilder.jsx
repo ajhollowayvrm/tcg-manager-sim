@@ -10,7 +10,7 @@ import PackFormatEditor from './PackFormatEditor.jsx'
 import PackOddsPanel from './PackOddsPanel.jsx'
 import AccordionSection from './AccordionSection.jsx'
 import ProductLineupEditor from './ProductLineupEditor.jsx'
-import { packSize, PACK_PRESETS } from '../../game/rarities.js'
+import { packSize, PACK_PRESETS, syncFormatWithVariants } from '../../game/rarities.js'
 import { SKU_TYPES } from '../../game/products.js'
 import {
   createDraft,
@@ -19,6 +19,7 @@ import {
   setCost,
   sizeProfile,
   validateDraft,
+  expectedRarityCounts,
   MAX_SIGNATURE_CARDS,
   MIN_SET_LENGTH,
   MAX_SET_LENGTH,
@@ -328,7 +329,14 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
               {draft.secretCount > 0 && <> plus {draft.secretCount} secret rare{draft.secretCount > 1 ? 's' : ''} (e.g. {draft.setLength + 1}/{draft.setLength})</>}.
               Any card — even a humble common — can become a market darling.
             </span>
-            <RarityEditor sheet={draft.rarities} onChange={(rarities) => patch({ rarities })} />
+            <RarityEditor
+              sheet={draft.rarities}
+              counts={expectedRarityCounts(draft)}
+              // A new variant joins the slots its parent is already in, so a
+              // chase card the player just authored is actually chaseable
+              // without a second trip to the booster-format section.
+              onChange={(rarities) => patch({ rarities, packFormat: syncFormatWithVariants(draft.packFormat, rarities) })}
+            />
           </AccordionSection>
 
           {/* Look & feel — the two DESIGN dials. Paired deliberately: loudness

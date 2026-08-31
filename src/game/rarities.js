@@ -10,8 +10,17 @@
 //   secret     — a "secret rare" sits ABOVE the numbered set count (e.g. 151/150)
 //                and is the scarcest chase.
 //
+// A rarity also carries FINISHES and VARIANTS, and the two answer different
+// questions. Finishes are ADDITIVE: every card at the rarity gets all of them
+// on the one card (Full Art + Rainbow Foil = one card that is both). A variant
+// is a SEPARATE PRINTING: an Alt Art of an Ultra Rare is its own card, with its
+// own finishes, its own pull weight, its own value, and its own collector
+// number above the set count — the base Ultra Rare still exists beside it.
+//
 // Cards reference their rarity by id; helpers resolve the id against the set's
-// sheet (falling back to the default sheet for safety).
+// sheet (falling back to the default sheet for safety). A variant's id resolves
+// the same way, because expandRaritySheet lifts variants into real sheet
+// entries — so packs, odds and displays treat one as just another rarity.
 
 // Ids for player-created rarities. The counter alone is NOT enough: it resets
 // to 0 on every page load, so a custom `rar_1` saved in one session collided
@@ -96,13 +105,155 @@ export function defaultRaritySheet() {
 
 // A blank custom rarity for the editor's "add rarity" button.
 export function makeRarity(name = 'New Rarity') {
-  return { id: rid('rar'), name, pullWeight: 10, valueTier: 50, secret: false, finishes: [] }
+  return { id: rid('rar'), name, pullWeight: 10, valueTier: 50, secret: false, finishes: [], variants: [] }
+}
+
+// The most cards one variant may print. A variant card is numbered above the
+// set count, so without a ceiling a player could quietly triple the set's real
+// size and the completionist maths behind it.
+export const MAX_VARIANT_COUNT = 20
+
+// A blank variant printing for the editor's "add variant" button. Defaults sit
+// deliberately BELOW its parent on pull weight and ABOVE it on value: a variant
+// that is neither rarer nor more wanted than its base printing has no reason to
+// exist, and starting it that way makes the point without a tooltip.
+export function makeVariant(parent, name = 'Alt Art') {
+  return {
+    id: rid('var'),
+    name,
+    pullWeight: Math.round(Math.max(0, parent?.pullWeight ?? 1) * 0.15 * 1000) / 1000,
+    valueTier: Math.min(100, (parent?.valueTier ?? 50) + 8),
+    count: 3,
+    finishes: [...(parent?.finishes ?? [])],
+  }
+}
+
+// One variant as a full sheet entry. `secret` is true because a variant IS
+// numbered above the set count — that flag is what the rest of the game reads
+// to mean "above the count, and a chase", and both are true here.
+function expandVariant(parent, variant) {
+  return {
+    id: variant.id,
+    name: `${parent.name} · ${variant.name}`,
+    pullWeight: Math.max(0, variant.pullWeight ?? 0),
+    valueTier: variant.valueTier ?? parent.valueTier,
+    secret: true,
+    finishes: variant.finishes ?? [],
+    variantOf: parent.id,
+    variantName: variant.name,
+    variantCount: Math.max(0, Math.round(variant.count ?? 0)),
+  }
+}
+
+// The authored sheet flattened into the list packs, odds and the slot picker
+// actually draw from: every rarity, each followed by its own variants. The
+// nested form is what a set STORES (and what the editor edits); this is what
+// everything downstream reads, so a variant needs no special case to be
+// pullable, priced, or shown in the odds table.
+export function expandRaritySheet(sheet) {
+  const out = []
+  for (const r of sheet ?? []) {
+    out.push(r)
+    for (const v of r.variants ?? []) out.push(expandVariant(r, v))
+  }
+  return out
+}
+
+// How much more a variant is worth than the base printing it reprints, from the
+// one thing that actually drives an alt-art premium in a real hobby: it is
+// RARER than the card it reprints. Nothing else in the sim reads this. A
+// variant's value tier and finishes only nudge the price seed (a few percent),
+// so before this a 6×-rarer Alt Art traded at 1.02× the base copy — the chase
+// card the player designed was worth the same as the thing it was chasing.
+//
+// The exponent softens the ratio hard: 7× rarer is ~3× the price, not 7×. That
+// matches how alt arts actually trade, and it keeps a player who sets a
+// near-zero pull weight from minting an infinitely valuable card. A variant no
+// rarer than its base earns no premium at all, which is the honest answer —
+// if everyone has one, it is not a chase.
+export function variantScarcityPremium(sheet, rarityId) {
+  const entry = getRarity(sheet, rarityId)
+  if (!entry.variantOf) return 1
+  const parent = getRarity(sheet, entry.variantOf)
+  const mine = Math.max(0.0001, entry.pullWeight)
+  const theirs = Math.max(0.0001, parent.pullWeight)
+  const ratio = theirs / mine
+  if (ratio <= 1) return 1
+  return Math.min(12, ratio ** 0.55)
+}
+
+// What PRINTING a card is, for anything that lists cards next to each other.
+// A variant shares its base card's NAME by design — an Alt Art of Emberwing is
+// Emberwing — so a price list that shows names alone shows the same card twice
+// at two prices with nothing to tell them apart. Every card row needs this.
+//
+// Returns the parent rarity's name plus, for a variant, the variant's own name
+// on its own ("Alt Art", not "Rare · Alt Art") so a row can badge it compactly.
+export function printingOf(sheet, rarityId) {
+  const entry = getRarity(sheet, rarityId)
+  if (!entry.variantOf) return { rarityName: entry.name, variantName: null, isVariant: false }
+  const parent = getRarity(sheet, entry.variantOf)
+  return { rarityName: parent.name, variantName: entry.variantName ?? entry.name, isVariant: true }
+}
+
+// Keep the booster format honest about a sheet that has changed under it. Two
+// things go stale, and both are silent:
+//
+//   A new variant is in no slot, so it reads "not in this pack" in the odds
+//   panel and never pulls — the player authored a chase card that cannot be
+//   chased. It joins every slot its PARENT is in, which is what "an Alt Art of
+//   a Rare" means: pullable wherever a Rare is.
+//
+//   A deleted rarity leaves its id behind in the slots. Harmless to the draw
+//   (drawSlotRarity ignores ids the set has no cards for) but it makes the slot
+//   editor lie about what a slot contains.
+//
+// A variant the player has since removed from every slot ON PURPOSE stays
+// removed: only a variant in NO slot at all is treated as new.
+export function syncFormatWithVariants(format, sheet) {
+  const slots = format?.slots ?? []
+  if (!slots.length) return format
+  const live = new Set(expandRaritySheet(sheet).map((r) => r.id))
+  const inAnySlot = new Set(slots.flatMap((s) => s.rarityIds ?? []))
+
+  let changed = false
+  const next = slots.map((slot) => {
+    const ids = (slot.rarityIds ?? []).filter((id) => live.has(id))
+    const add = []
+    for (const { parent, entry } of variantEntries(sheet)) {
+      if (!inAnySlot.has(entry.id) && ids.includes(parent.id)) add.push(entry.id)
+    }
+    if (add.length || ids.length !== (slot.rarityIds ?? []).length) changed = true
+    return add.length ? { ...slot, rarityIds: [...ids, ...add] } : { ...slot, rarityIds: ids }
+  })
+  return changed ? { ...format, slots: next } : format
+}
+
+// Just the variant entries, parent included — generateCards needs the pairing
+// to know which cards a variant reprints.
+export function variantEntries(sheet) {
+  const out = []
+  for (const r of sheet ?? []) {
+    for (const v of r.variants ?? []) out.push({ parent: r, variant: v, entry: expandVariant(r, v) })
+  }
+  return out
 }
 
 // Resolve a rarity id against a sheet; fall back to a neutral mid rarity so a
 // missing/renamed id never crashes pricing or display.
 export function getRarity(sheet, id) {
-  return (sheet ?? []).find((r) => r.id === id) ?? { id, name: id, pullWeight: 10, valueTier: 40, secret: false, finishes: [] }
+  const list = sheet ?? []
+  const direct = list.find((r) => r.id === id)
+  if (direct) return direct
+  // A card printed as a variant carries the VARIANT's id, which lives nested
+  // under its parent rather than at the top level of an authored sheet. Resolve
+  // it to the same expanded entry packs and odds see, so a variant card's
+  // finishes and value tier read correctly wherever a sheet is passed raw.
+  for (const r of list) {
+    const v = (r.variants ?? []).find((x) => x.id === id)
+    if (v) return expandVariant(r, v)
+  }
+  return { id, name: id, pullWeight: 10, valueTier: 40, secret: false, finishes: [] }
 }
 
 // Pick a rarity id from a sheet weighted by pullWeight (a pack pull, or assigning
@@ -330,6 +481,17 @@ export function validateRaritySheet(sheet) {
   if (sheet.every((r) => r.secret)) errors.push('A set needs at least one non-secret rarity.')
   if (!sheet.some((r) => Math.max(0, r.pullWeight) > 0 && !r.secret)) {
     errors.push('At least one non-secret rarity must be pullable (pull weight > 0).')
+  }
+  for (const r of sheet) {
+    for (const v of r.variants ?? []) {
+      if (!v.name.trim()) errors.push(`A variant of ${r.name || 'a rarity'} needs a name.`)
+      if (Math.round(v.count ?? 0) < 1) {
+        errors.push(`${r.name} · ${v.name || 'variant'} prints 0 cards — set a count or remove it.`)
+      }
+      if (Math.round(v.count ?? 0) > MAX_VARIANT_COUNT) {
+        errors.push(`${r.name} · ${v.name || 'variant'} prints more than ${MAX_VARIANT_COUNT} cards.`)
+      }
+    }
   }
   return errors
 }

@@ -9,7 +9,7 @@ import { clamp, communitySentiment } from './simulation.js'
 import { PRINT_INTENSITY_NEUTRAL } from './config.js'
 import { printRunUnits } from './revenue.js'
 import { currentArtist } from './artists.js'
-import { defaultRaritySheet, getRarity, pickRarity, validateRaritySheet, defaultPackFormat, validatePackFormat, packRichnessDelta, FINISHES, getFinish, combinedFinishEffect } from './rarities.js'
+import { defaultRaritySheet, getRarity, pickRarity, validateRaritySheet, defaultPackFormat, validatePackFormat, packRichnessDelta, FINISHES, getFinish, combinedFinishEffect, expandRaritySheet, variantEntries, variantScarcityPremium } from './rarities.js'
 
 // Re-exported for existing call sites (SignatureCardEditor.jsx etc.) — the
 // finish system now lives in rarities.js since a whole RARITY can carry
@@ -342,7 +342,9 @@ export function setCost(draft, artistOf = getArtist) {
   // stamp/etch step. Weighted by each rarity's SHARE of the sheet's pull
   // weight, so a finish on a common (most of the print run) costs far more
   // than the same finish on a rare secret (a sliver of it).
-  const sheet = draft.rarities ?? defaultRaritySheet()
+  // Variants count here too: a separate printing is a separate production run,
+  // so the expanded sheet (rarities + their variants) is what carries cost.
+  const sheet = expandRaritySheet(draft.rarities ?? defaultRaritySheet())
   const totalPullWeight = sheet.reduce((s, r) => s + Math.max(0, r.pullWeight), 0) || 1
   const finishCostMul = 1 + sheet.reduce((sum, r) => {
     if (!r.finishes?.length) return sum
@@ -479,6 +481,40 @@ export function validateDraft(draft, ctx = {}) {
   return errors
 }
 
+// How many cards each rarity can expect to draw in this draft, before any
+// variant printings. A variant REPRINTS its parent rarity's cards, so a variant
+// on a rarity that draws none prints nothing — which is invisible at release
+// time unless the editor says so. Signature highlights are exact (the player
+// placed them by hand); bulk cards are the expected value of the pull-weight
+// distribution, and secrets divide the secret count between secret rarities.
+export function expectedRarityCounts(draft) {
+  const sheet = draft.rarities ?? defaultRaritySheet()
+  const length = clamp(Math.round(draft.setLength ?? 60), MIN_SET_LENGTH, MAX_SET_LENGTH)
+  const secretCount = clamp(Math.round(draft.secretCount ?? 0), 0, MAX_SECRET_CARDS)
+  const sigs = (draft.signatureCards ?? []).slice(0, length)
+
+  const counts = new Map(sheet.map((r) => [r.id, 0]))
+  for (const sig of sigs) counts.set(sig.rarity, (counts.get(sig.rarity) ?? 0) + 1)
+
+  const nonSecret = sheet.filter((r) => !r.secret && Math.max(0, r.pullWeight) > 0)
+  const total = nonSecret.reduce((sum, r) => sum + Math.max(0, r.pullWeight), 0)
+  const bulk = Math.max(0, length - sigs.length)
+  if (total > 0) {
+    for (const r of nonSecret) {
+      counts.set(r.id, (counts.get(r.id) ?? 0) + bulk * (Math.max(0, r.pullWeight) / total))
+    }
+  }
+
+  const secretRarities = sheet.filter((r) => r.secret)
+  if (secretRarities.length) {
+    for (let i = 0; i < secretCount; i++) {
+      const r = secretRarities[i % secretRarities.length]
+      counts.set(r.id, (counts.get(r.id) ?? 0) + 1)
+    }
+  }
+  return counts
+}
+
 // ---- Card generation ------------------------------------------------------
 
 // A card's hidden "pop factors" — the inputs the market prices from. Rarity's
@@ -558,7 +594,11 @@ function buildCard(spec, draft, theme, sheet, rng, artistOf, characters = []) {
   // Initial price seeds off rarity + art + hype; the market moves it from here.
   const seed = factors.rarity * 0.25 + factors.artAppeal * 0.4 + factors.hype * 0.35
   const scarcity = 1 + (1 - draft.printRun / 100) * 1.5
-  const singlePrice = Math.max(0.1, Math.round(seed * 0.6 * scarcity * 10) / 10)
+  // An alternate printing is priced off how much rarer it is than the card it
+  // reprints — the actual reason an alt art costs a multiple of the base copy.
+  // 1 for every ordinary card, so no non-variant price moves because of this.
+  const variantPremium = variantScarcityPremium(sheet, spec.rarity)
+  const singlePrice = Math.max(0.1, Math.round(seed * 0.6 * scarcity * variantPremium * 10) / 10)
   return {
     id: `${draft._setId}_${spec.id}`,
     setId: draft._setId,
@@ -567,6 +607,10 @@ function buildCard(spec, draft, theme, sheet, rng, artistOf, characters = []) {
     number: spec.number, // collector number, e.g. "73/60" or secret "61/60"
     secret: spec.secret ?? false,
     signature: spec.signature ?? false,
+    // The card this is an alternate printing of. Built with the same set-id
+    // prefix as `id` above, because generateCards works in spec ids and this
+    // has to resolve against the finished card records.
+    variantOf: spec.variantOf ? `${draft._setId}_${spec.variantOf}` : null,
     artistId: spec.artistId ?? null,
     characterId: spec.characterId ?? null,
     treatment: spec.treatment ?? null,
@@ -640,6 +684,40 @@ export function generateCards(draft, setId, week, artistOf = getArtist, characte
       number: `${num}/${length}`, secret: true,
       appeal: clamp(Math.round(range(rng, 20, 80)), 0, 100),
     })
+  }
+
+  // 4) Variant printings. A variant is a SECOND card of one the set already
+  //    has — same name, same character, same artist — printed with the
+  //    variant's own finishes and numbered above the count beside the secrets.
+  //    It reprints the rarity's MARQUEE cards (signature highlights first, then
+  //    the highest-appeal bulk), because that is which card a real set gives an
+  //    alt art to. A variant whose parent rarity drew no cards prints nothing.
+  let above = length + secretCount
+  for (const { parent, entry } of variantEntries(sheet)) {
+    const pool = [...specs.filter((sp) => sp.rarity === parent.id)].sort(
+      (a, b) => (b.signature ? 1 : 0) - (a.signature ? 1 : 0) || (b.appeal ?? 0) - (a.appeal ?? 0),
+    )
+    if (!pool.length) continue
+    const want = Math.min(entry.variantCount, pool.length)
+    for (let i = 0; i < want; i++) {
+      const base = pool[i]
+      above += 1
+      specs.push({
+        id: `${entry.id}_${i + 1}`,
+        name: base.name,
+        rarity: entry.id,
+        number: `${above}/${length}`,
+        secret: true, // numbered above the count, and a chase — both true of a variant
+        appeal: base.appeal,
+        artistId: base.artistId ?? null,
+        characterId: base.characterId ?? null,
+        flavorText: base.flavorText,
+        artNotes: base.artNotes,
+        // NOT `finish`: a variant's treatment comes from the variant's own
+        // finishes (via its sheet entry), not from the base card's printing.
+        variantOf: base.id,
+      })
+    }
   }
 
   return specs.map((spec) => buildCard(spec, draft, theme, sheet, rng, artistOf, characters))

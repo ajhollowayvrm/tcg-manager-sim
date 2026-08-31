@@ -9,7 +9,7 @@
 // records, so their current price shows on the reveal).
 
 import { makeRng, hashSeed } from './rng.js'
-import { getRarity, packSize, slotWeightOf } from './rarities.js'
+import { getRarity, packSize, slotWeightOf, expandRaritySheet } from './rarities.js'
 
 const LEGACY_PACK_SIZE = 6 // cards per pack for sets saved before authored formats
 
@@ -38,7 +38,9 @@ export function ripPack(state, setId, nonce = 0) {
   )
   if (!setCards.length) return null
 
-  const sheet = set.rarities ?? []
+  // Variants are pullable in their own right (their own weight, their own odds
+  // line), so packs draw from the EXPANDED sheet, not the authored one.
+  const sheet = expandRaritySheet(set.rarities ?? [])
   const rng = makeRng(hashSeed(`pack:${setId}:${state.week}:${nonce}`))
 
   // Bucket the set's cards by rarity id so we can pull a card OF the drawn rarity.

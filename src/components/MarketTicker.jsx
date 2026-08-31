@@ -1,12 +1,20 @@
 // Live secondary-market ticker. Highlights this week's movers with color and a
 // pop/flop pulse, and lists every tracked single with a sparkline plus its
 // sealed price. This is where the color budget pays off (see BRIEF.md).
+//
+// Two boards, because they answer different questions. The HOT board is the top
+// singles by price with their sparklines — "what is this market about right
+// now". Behind it, "show all" prices EVERY card in print, which is the only
+// place a player can compare a variant against the base printing it reprints:
+// they share a name, so a list that shows names alone shows one card twice.
+// The full board drops the sparklines — a late run holds thousands of cards,
+// and an SVG per row is what makes that list crawl.
 
+import { useState } from 'react'
 import SetSymbol from './SetSymbol.jsx'
-import { visualTier } from '../game/rarities.js'
+import { visualTier, printingOf } from '../game/rarities.js'
 
-// Sets can now run to hundreds of cards — show only the most valuable singles so
-// the ticker stays a "what's hot" board, not a spreadsheet.
+// How many singles the hot board shows before "show all" takes over.
 const MAX_ROWS = 12
 
 function fmt(n) {
@@ -33,6 +41,7 @@ function Sparkline({ history }) {
 }
 
 export default function MarketTicker({ state }) {
+  const [showAll, setShowAll] = useState(false)
   const hasCards = state.cards.length > 0
   const moverPct = new Map((state.movers ?? []).map((m) => [m.id, m.pct]))
   const week = state.week
@@ -40,8 +49,9 @@ export default function MarketTicker({ state }) {
   // Look up each card's set (theme for the symbol, rarity sheet for the foil).
   const setById = new Map(state.sets.map((s) => [s.id, s]))
 
-  // Sort by price desc so the chase cards sit on top; cap to the top movers/value.
-  const cards = [...state.cards].sort((a, b) => b.singlePrice - a.singlePrice).slice(0, MAX_ROWS)
+  // Sort by price desc so the chase cards sit on top.
+  const ranked = [...state.cards].sort((a, b) => b.singlePrice - a.singlePrice)
+  const cards = showAll ? ranked : ranked.slice(0, MAX_ROWS)
 
   return (
     <div className="panel">
@@ -80,11 +90,17 @@ export default function MarketTicker({ state }) {
                 : card.rotated ? 'rotated' : null
               const statusLabel = status === 'outofprint' ? 'out of print' : status
               const tier = visualTier(set?.rarities, card.rarity)
+              const printing = printingOf(set?.rarities, card.rarity)
               return (
                 <li key={key} className={`ticker__row${dir}${big}${status ? ' ticker__row--' + status : ''}`}>
                   <span className={`ticker__name rarity--${tier}`}>
                     <SetSymbol themeId={set?.themeId} tier={tier} size={14} />
                     {card.name}
+                    {printing.isVariant && (
+                      <span className="tag tag--variant" title={`${printing.variantName} — a separate printing of this card`}>
+                        {printing.variantName}
+                      </span>
+                    )}
                     {card.serialCap && (
                       <span className="tag tag--serial" title="A hard-capped serialized chase card">
                         {card.serialIssued}/{card.serialCap}
@@ -97,7 +113,7 @@ export default function MarketTicker({ state }) {
                     )}
                     {status && <span className={`tag tag--${status}`}>{statusLabel}</span>}
                   </span>
-                  <Sparkline history={card.priceHistory} />
+                  {!showAll && <Sparkline history={card.priceHistory} />}
                   <span className="ticker__scarcity">
                     <span className="ticker__sealed" title="Sealed price">📦 {fmt(card.sealedPrice)}</span>
                     {card.legacyValue > 0 && (
@@ -116,6 +132,18 @@ export default function MarketTicker({ state }) {
               )
             })}
           </ul>
+
+          {ranked.length > MAX_ROWS && (
+            <button
+              type="button"
+              className="ticker__more"
+              onClick={() => setShowAll(!showAll)}
+            >
+              {showAll
+                ? `Show top ${MAX_ROWS}`
+                : `Show all ${ranked.length.toLocaleString('en-US')} cards`}
+            </button>
+          )}
         </>
       ) : (
         <p className="panel__empty">No cards on the market yet. Release a set to get things moving.</p>

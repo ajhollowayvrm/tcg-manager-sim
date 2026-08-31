@@ -5,7 +5,7 @@
 // player) and, when a set publishes its odds, as the public-facing display on
 // the rip screen.
 
-import { computePackOdds } from '../../game/rarities.js'
+import { computePackOdds, expandRaritySheet } from '../../game/rarities.js'
 
 function pct(p) {
   if (p >= 0.1) return (p * 100).toFixed(1) + '%'
@@ -20,11 +20,14 @@ function oddsLabel(oddsOneIn) {
 }
 
 export default function PackOddsPanel({ sheet, format, title }) {
-  const odds = computePackOdds(sheet ?? [], format ?? {})
+  // Variants pull on their own weight, so they earn their own row here — the
+  // whole point of this table is that it cannot drift from the real draw.
+  const full = expandRaritySheet(sheet ?? [])
+  const odds = computePackOdds(full, format ?? {})
   // Rarest first — what a collector actually wants to know first.
   const rows = [...odds.perRarity].sort((a, b) => {
-    const ra = sheet.find((r) => r.id === a.rarityId)
-    const rb = sheet.find((r) => r.id === b.rarityId)
+    const ra = full.find((r) => r.id === a.rarityId)
+    const rb = full.find((r) => r.id === b.rarityId)
     return (rb?.valueTier ?? 0) - (ra?.valueTier ?? 0)
   })
 

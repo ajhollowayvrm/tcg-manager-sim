@@ -4,12 +4,15 @@
 // RarityEditor's row layout. The rarity choices come from the set's own sheet,
 // so a slot can only reference rarities the set actually has.
 
-import { PACK_PRESETS, buildPreset, makePackSlot, packSize } from '../../game/rarities.js'
+import { PACK_PRESETS, buildPreset, makePackSlot, packSize, expandRaritySheet } from '../../game/rarities.js'
 import NumberField from './NumberField.jsx'
 
 export default function PackFormatEditor({ format, sheet, onChange }) {
   const slots = format?.slots ?? []
   const size = packSize(format)
+  // Variants are pullable rarities, so a slot can chase one specifically —
+  // "this slot is the alt-art slot" has to be expressible.
+  const pickable = expandRaritySheet(sheet ?? [])
 
   const setSlots = (next, preset = null) => onChange({ ...format, preset, slots: next })
   const updateSlot = (i, patch) =>
@@ -53,12 +56,12 @@ export default function PackFormatEditor({ format, sheet, onChange }) {
             />
             <span className="packfmt__times">×</span>
             <div className="packfmt__rarities">
-              {sheet.map((r) => {
+              {pickable.map((r) => {
                 const on = (slot.rarityIds ?? []).includes(r.id)
                 return (
                   <button
                     key={r.id}
-                    className={'packfmt__rar' + (on ? ' is-on' : '')}
+                    className={'packfmt__rar' + (on ? ' is-on' : '') + (r.variantOf ? ' packfmt__rar--variant' : '')}
                     onClick={() => toggleRarity(i, r.id)}
                     title={on ? `Remove ${r.name}` : `Add ${r.name}`}
                   >
