@@ -255,7 +255,9 @@ export function makeRandomCard(n, theme, loudness, rng, sheet = defaultRarityShe
   const card = createSignatureCard(n)
   card.name = randomCardName(theme, rng, nameStyle)
   // Signatures lean rare: pick from the top half of the sheet by value tier.
-  const ranked = [...sheet].sort((a, b) => b.valueTier - a.valueTier)
+  // Unique rarities are excluded — each belongs to exactly the one hand-
+  // customized card it was spun off for, never a randomly-filled one.
+  const ranked = [...sheet].filter((r) => !r.unique).sort((a, b) => b.valueTier - a.valueTier)
   const top = ranked.slice(0, Math.max(1, Math.ceil(ranked.length / 2)))
   card.rarity = top[Math.floor(rng() * top.length) % top.length].id
   card.appeal = clamp(Math.round(loudness + range(rng, -18, 18)), 5, 100)
@@ -496,7 +498,10 @@ export function expectedRarityCounts(draft) {
   const counts = new Map(sheet.map((r) => [r.id, 0]))
   for (const sig of sigs) counts.set(sig.rarity, (counts.get(sig.rarity) ?? 0) + 1)
 
-  const nonSecret = sheet.filter((r) => !r.secret && Math.max(0, r.pullWeight) > 0)
+  // Unique rarities are excluded from the bulk-fill share — each belongs to
+  // exactly the one signature card it was spun off for, so it never dilutes
+  // (or is diluted by) the expected count of a shared rarity.
+  const nonSecret = sheet.filter((r) => !r.secret && !r.unique && Math.max(0, r.pullWeight) > 0)
   const total = nonSecret.reduce((sum, r) => sum + Math.max(0, r.pullWeight), 0)
   const bulk = Math.max(0, length - sigs.length)
   if (total > 0) {
@@ -505,7 +510,7 @@ export function expectedRarityCounts(draft) {
     }
   }
 
-  const secretRarities = sheet.filter((r) => r.secret)
+  const secretRarities = sheet.filter((r) => r.secret && !r.unique)
   if (secretRarities.length) {
     for (let i = 0; i < secretCount; i++) {
       const r = secretRarities[i % secretRarities.length]
@@ -644,8 +649,11 @@ export function generateCards(draft, setId, week, artistOf = getArtist, characte
   const length = clamp(Math.round(draft.setLength ?? 60), MIN_SET_LENGTH, MAX_SET_LENGTH)
   const secretCount = clamp(Math.round(draft.secretCount ?? 0), 0, MAX_SECRET_CARDS)
   const sigs = draft.signatureCards ?? []
-  const nonSecret = sheet.filter((r) => !r.secret && Math.max(0, r.pullWeight) > 0)
-  const secretRarities = sheet.filter((r) => r.secret)
+  // Unique rarities are excluded from bulk/secret fill — each belongs to
+  // exactly the one signature card it was spun off for (see rarities.js's
+  // makeUniqueRarity), never a randomly-generated one.
+  const nonSecret = sheet.filter((r) => !r.secret && !r.unique && Math.max(0, r.pullWeight) > 0)
+  const secretRarities = sheet.filter((r) => r.secret && !r.unique)
 
   const specs = []
 

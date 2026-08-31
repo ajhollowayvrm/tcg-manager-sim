@@ -10,7 +10,7 @@ import PackFormatEditor from './PackFormatEditor.jsx'
 import PackOddsPanel from './PackOddsPanel.jsx'
 import AccordionSection from './AccordionSection.jsx'
 import ProductLineupEditor from './ProductLineupEditor.jsx'
-import { packSize, PACK_PRESETS, syncFormatWithVariants } from '../../game/rarities.js'
+import { packSize, PACK_PRESETS, syncFormatWithVariants, getRarity, pruneRarityFromFormat } from '../../game/rarities.js'
 import { SKU_TYPES } from '../../game/products.js'
 import {
   createDraft,
@@ -146,11 +146,22 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
       signatureCards: fillRandomCards(d.signatureCards, d.signatureCards.length + 1, getTheme(d.themeId), d.designLoudness, `${d.name}:add`, d.rarities, nameStyle),
     }))
 
+  // Removing a card also cleans up the one-card Unique rarity it may own
+  // (see SignatureCardEditor's makeThisCardUnique) — otherwise it lingers as
+  // an orphaned, unpullable row in the rarity sheet and booster format.
   const removeCard = (idx) =>
-    setDraft((d) => ({
-      ...d,
-      signatureCards: d.signatureCards.filter((_, i) => i !== idx),
-    }))
+    setDraft((d) => {
+      const removed = d.signatureCards[idx]
+      const entry = removed ? getRarity(d.rarities, removed.rarity) : null
+      const rarities = entry?.unique ? d.rarities.filter((r) => r.id !== entry.id) : d.rarities
+      const packFormat = entry?.unique ? pruneRarityFromFormat(d.packFormat, entry.id) : d.packFormat
+      return {
+        ...d,
+        signatureCards: d.signatureCards.filter((_, i) => i !== idx),
+        rarities,
+        packFormat,
+      }
+    })
 
   // One-line summaries shown in each collapsed accordion header — at-a-glance
   // confirmation of what's set inside without expanding.
@@ -164,7 +175,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
       : 'No block to ride'
   const summaries = {
     block: blockSummary,
-    composition: `${draft.setLength} cards, ${draft.rarities.length} rarities${draft.secretCount ? `, ${draft.secretCount} secret` : ''}`,
+    composition: `${draft.setLength} cards, ${draft.rarities.filter((r) => !r.unique).length} rarities${draft.secretCount ? `, ${draft.secretCount} secret` : ''}`,
     booster: `${packSize(draft.packFormat)}-card ${presetName}`,
     odds: draft.oddsPublished ? 'Published' : 'Obscured',
     godPack: !(draft.godPack?.enabled ?? true)
@@ -330,12 +341,18 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
               Any card — even a humble common — can become a market darling.
             </span>
             <RarityEditor
-              sheet={draft.rarities}
+              // Unique (per-signature-card) rarities are hidden here — each is
+              // owned and edited from the signature card it belongs to, not
+              // the shared sheet (see SignatureCardEditor). Preserved on write.
+              sheet={draft.rarities.filter((r) => !r.unique)}
               counts={expectedRarityCounts(draft)}
               // A new variant joins the slots its parent is already in, so a
               // chase card the player just authored is actually chaseable
               // without a second trip to the booster-format section.
-              onChange={(rarities) => patch({ rarities, packFormat: syncFormatWithVariants(draft.packFormat, rarities) })}
+              onChange={(shared) => {
+                const rarities = [...shared, ...draft.rarities.filter((r) => r.unique)]
+                patch({ rarities, packFormat: syncFormatWithVariants(draft.packFormat, rarities) })
+              }}
             />
           </AccordionSection>
 
@@ -402,7 +419,10 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
                   artists={artists}
                   characters={characters}
                   rarities={draft.rarities}
+                  packFormat={draft.packFormat}
                   onChange={(next) => setCard(i, next)}
+                  onRaritiesChange={(rarities) => patch({ rarities })}
+                  onPackFormatChange={(packFormat) => patch({ packFormat })}
                   onRemove={() => removeCard(i)}
                 />
               ))}
@@ -444,7 +464,10 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
               reprints={draft.reprintedCards ?? []}
               liveCards={liveCards}
               sets={sets}
-              rarities={draft.rarities}
+              // Unique (per-signature-card) rarities are hidden — an "upgrade"
+              // target has to be a shared rarity, or the reprint would silently
+              // start sharing another card's one-off pull pool.
+              rarities={draft.rarities.filter((r) => !r.unique)}
               max={maxReprintedCards(draft.tier)}
               allowUpgrade={tier.id === 'anniversary'}
               onChange={(reprintedCards) => patch({ reprintedCards })}
@@ -459,7 +482,10 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
             </span>
             <PackFormatEditor
               format={draft.packFormat}
-              sheet={draft.rarities}
+              // Unique (per-signature-card) rarities aren't manually assignable
+              // to a slot — their slot membership is fully automatic (see
+              // syncFormatWithUniqueRarity/pruneRarityFromFormat).
+              sheet={draft.rarities.filter((r) => !r.unique)}
               onChange={(packFormat) => patch({ packFormat })}
             />
           </AccordionSection>
@@ -510,7 +536,10 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
                   classic behavior). Pick several for a real combination.
                 </span>
                 <div className="rared__finishgrid">
-                  {draft.rarities.map((r) => {
+                  {/* Unique (per-signature-card) rarities are hidden — a god
+                      pack restriction is meant to name a shared tier, not one
+                      specific hand-designed card. */}
+                  {draft.rarities.filter((r) => !r.unique).map((r) => {
                     const picked = draft.godPack?.rarityIds ?? []
                     const on = picked.includes(r.id)
                     return (
