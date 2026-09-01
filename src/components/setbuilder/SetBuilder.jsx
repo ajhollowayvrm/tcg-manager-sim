@@ -194,6 +194,20 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
   // happens to look fine moving from a long section to a short one only because
   // the browser clamps the offset — not something to rely on.
   const paneRef = useRef(null)
+  // Which signature cards are expanded, by card id. Held here rather than
+  // inside each editor so "collapse all" can reach them and so the state is
+  // keyed to the card rather than to its position — removing card 2 must not
+  // silently transfer its open state to whatever slides up into index 2.
+  //
+  // Cards start COLLAPSED and a newly added one opens itself: adding is the
+  // moment you want to edit, and everything else is a list you are scanning.
+  const [openCards, setOpenCards] = useState(() => new Set())
+  const toggleCard = (id) => setOpenCards((o) => {
+    const next = new Set(o)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    return next
+  })
   const toggle = (id) => setOpen((o) => ({ ...o, [id]: !o[id] }))
   useEffect(() => {
     if (paneRef.current) paneRef.current.scrollTop = 0
@@ -273,10 +287,15 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
   const addCard = () =>
     setDraft((d) => {
       if (d.signatureCards.length >= MAX_SIGNATURE_CARDS) return d
-      return { ...d, signatureCards: [...d.signatureCards, createSignatureCard(nextId(d.signatureCards))] }
+      const made = createSignatureCard(nextId(d.signatureCards))
+      setOpenCards((o) => new Set(o).add(made.id))
+      return { ...d, signatureCards: [...d.signatureCards, made] }
     })
 
   // Add one themed-random highlight (capped at the max), using the set's sheet.
+  // A random card arrives finished, so it does NOT auto-expand — the point of
+  // the button is to fill the list without reading each one. Add several and you
+  // get a list, not six screens of open editors.
   const addRandom = () =>
     setDraft((d) => ({
       ...d,
@@ -573,6 +592,16 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
             <div className="builder__sectionhead">
               <span className="muted">Optional marquee cards.</span>
               <div className="builder__cardbtns">
+                {draft.signatureCards.length > 1 && (
+                  <button
+                    className="btn btn--ghost"
+                    onClick={() => setOpenCards(
+                      openCards.size ? new Set() : new Set(draft.signatureCards.map((c) => c.id)),
+                    )}
+                  >
+                    {openCards.size ? '▸ Collapse all' : '▾ Expand all'}
+                  </button>
+                )}
                 <button
                   className="btn"
                   onClick={addRandom}
@@ -599,6 +628,8 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
                   characters={characters}
                   rarities={draft.rarities}
                   packFormat={draft.packFormat}
+                  open={openCards.has(card.id)}
+                  onToggleOpen={() => toggleCard(card.id)}
                   onChange={(next) => setCard(i, next)}
                   onRaritiesChange={(rarities) => patch({ rarities })}
                   onPackFormatChange={(packFormat) => patch({ packFormat })}

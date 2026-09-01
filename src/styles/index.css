@@ -425,6 +425,37 @@ body {
 .sigcard__controls { flex-wrap: wrap; }
 .sigcard__remove { color: var(--bad); }
 
+/* ---- Collapsed signature card -------------------------------------------
+   One row per card instead of a ~600px editor, so a set with a dozen marquee
+   cards is a list you can scan rather than a scroll you have to survive. */
+.sigcard--collapsed { flex-direction: row; align-items: center; gap: 6px; padding: 4px 6px 4px 4px; }
+.sigcard__summary {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px; border: none; border-radius: 6px;
+  background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer;
+}
+.sigcard__summary:hover { background: var(--surface-2); }
+.sigcard__chevron { color: var(--text-dim); font-size: 0.75rem; flex: none; width: 10px; }
+.sigcard__chevronbtn {
+  background: none; border: none; padding: 4px; cursor: pointer; flex: none;
+  display: flex; align-items: center;
+}
+.sigcard__chevronbtn:hover .sigcard__chevron { color: var(--text); }
+.sigcard__sumname { font-weight: 600; font-size: 0.88rem; white-space: nowrap; flex: none; }
+/* The meta line is what gets sacrificed when the row runs out of width — the
+   name and the rarity gem are what identify the card. */
+.sigcard__summeta {
+  font-size: 0.72rem; color: var(--text-dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+/* A phone has no room for name and meta on one line; stack them. */
+@media (max-width: 560px) {
+  .sigcard__summary { flex-wrap: wrap; gap: 2px 8px; }
+  .sigcard__sumname { flex: 1 1 auto; white-space: normal; }
+  .sigcard__summeta { flex: 1 1 100%; margin-left: 18px; }
+}
+
 .toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
 .toggle__opt { background: var(--surface); color: var(--text-dim); border: none; padding: 6px 14px; cursor: pointer; font: inherit; }
 .toggle__opt.is-active { background: var(--accent); color: #fff; }

@@ -80,6 +80,7 @@ const CHAR_TREND = {
 
 export default function SignatureCardEditor({
   card, theme, artists, characters = [], rarities, packFormat,
+  open = true, onToggleOpen,
   onChange, onRaritiesChange, onPackFormatChange, onRemove,
 }) {
   const sheet = rarities ?? defaultRaritySheet()
@@ -123,9 +124,41 @@ export default function SignatureCardEditor({
   }
   const artist = card.artistId ? artistOf(card.artistId) : null
 
+  // COLLAPSED, a card is one row: enough to recognise it and pick the one to
+  // edit, and nothing else. Expanded it is ~600px of editor on a desktop and
+  // ~900px on a phone, so a set with six marquee cards was 5.4 screens of
+  // scrolling on a laptop and 10.1 on a phone — and the cap is thirty.
+  if (!open) {
+    return (
+      <div className="sigcard sigcard--collapsed">
+        <button
+          type="button"
+          className="sigcard__summary"
+          aria-expanded="false"
+          onClick={onToggleOpen}
+        >
+          <span className="sigcard__chevron" aria-hidden="true">▸</span>
+          <span className={`cardframe__gem gem--${visualTier(sheet, card.rarity)}`} aria-hidden="true" />
+          <span className="sigcard__sumname">{card.name || 'Unnamed card'}</span>
+          <span className="sigcard__summeta">{summarise(card, sheet, artist, characters)}</span>
+        </button>
+        <button className="btn btn--ghost sigcard__remove" onClick={onRemove} title="Remove card">✕</button>
+      </div>
+    )
+  }
+
   return (
     <div className="sigcard">
       <div className="sigcard__row">
+        <button
+          type="button"
+          className="sigcard__chevronbtn"
+          aria-expanded="true"
+          onClick={onToggleOpen}
+          title="Collapse this card"
+        >
+          <span className="sigcard__chevron" aria-hidden="true">▾</span>
+        </button>
         <input
           className="sigcard__name"
           value={card.name}
@@ -318,6 +351,26 @@ export default function SignatureCardEditor({
       </div>
     </div>
   )
+}
+
+// The one line a collapsed card shows. Ordered by what actually distinguishes
+// two marquee cards from each other in a list: what it is (rarity), who drew it,
+// and who is on it. Appeal is included because it is the dial the player is
+// usually comparing across cards, and a serial cap because it is the loudest
+// thing a card can carry.
+function summarise(card, sheet, artist, characters) {
+  const entry = getRarity(sheet, card.rarity)
+  const parts = [entry.unique ? 'Unique rarity' : entry.name]
+  if (card.serialCap) parts.push(card.serialCap === 1 ? '1-of-1' : `/${card.serialCap}`)
+  const finish = getFinish(card.finish)
+  if (finish.id !== 'standard') parts.push(finish.name)
+  if (artist) parts.push(artist.name)
+  const who = card.characterId
+    ? characters.find((c) => c.id === card.characterId)?.name
+    : (card.newCharacterName?.trim() || null)
+  if (who) parts.push(`🎭 ${who}`)
+  parts.push(`appeal ${cardAppeal(card, sheet)}`)
+  return parts.join(' · ')
 }
 
 // Feature a character on this card instead of a one-off: mint a brand-new one
