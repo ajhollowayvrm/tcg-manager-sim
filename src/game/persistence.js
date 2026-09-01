@@ -6,6 +6,11 @@
 
 import { normalizeCharacter } from './characters.js'
 import { normalizeIllustrationSet } from './illustrationsets.js'
+import {
+  normalizeRaritySheetStandard,
+  normalizePackFormatStandard,
+  normalizeBlueprint,
+} from './standards.js'
 
 const KEY = 'tcg-manager-sim/save'
 
@@ -126,6 +131,23 @@ const KEY = 'tcg-manager-sim/save'
 //
 // Both are the point of the feature rather than accidents, and neither
 // invalidates the save the way a changed field's MEANING would.
+//
+// v18 HOLDS AGAIN through studio standards (`state.raritySheets`,
+// `state.packFormats`, `state.blueprints`; see standards.js), and this one is
+// the easiest call of the three. All three arrays are ADDITIVE, hydrate() below
+// fills them through their normalisers, and every read site is a lookup into a
+// library that is simply empty on an old save: seedFromStandards returns an
+// empty patch, so createDraft seeds the built-in sheet and the Classic pack
+// exactly as it always has, and the import controls render as "nothing saved
+// yet". Unlike illustration sets there is no caveat to attach — a standard is
+// COPIED into a draft and never linked, so nothing here can reach an existing
+// set, an existing card, or the weekly tick at all. An old run does play
+// identically, and that is a property of the design rather than luck: see rule 1
+// in standards.js for why the copy is not optional.
+//
+// Nothing was added to a CARD, so CARD_DEFAULTS and the save's size profile are
+// untouched — a handful of named config objects against a catalogue that is 92%
+// of the save is invisible.
 const VERSION = 18
 
 // ---- Where the run save lives ----------------------------------------------
@@ -276,6 +298,10 @@ export function hydrate(state) {
   // Hoisted out of the map below: built inside it, this would rebuild a
   // several-thousand-entry Set once per illustration set.
   const liveCardIds = new Set(state.cards.map((c) => c.id))
+  // Hoisted for the same reason: the blueprint normaliser below needs the ids
+  // that SURVIVED these two passes, not the ids that went into them.
+  const sheets = (state.raritySheets ?? []).map(normalizeRaritySheetStandard).filter(Boolean)
+  const formats = (state.packFormats ?? []).map(normalizePackFormatStandard).filter(Boolean)
   return {
     ...state,
     cards: state.cards.map((c) => ({ ...CARD_DEFAULTS, ...c })),
@@ -304,6 +330,23 @@ export function hydrate(state) {
     artists: (state.artists ?? []).map((a) => ({ ...a, heat: a.heat ?? 0 })),
     illustrationSets: (state.illustrationSets ?? [])
       .map((g) => normalizeIllustrationSet(g, liveCardIds))
+      .filter(Boolean),
+    // Studio standards, on the same additive terms, and with the same
+    // load-bearing filter(Boolean): each normaliser returns null for a record it
+    // cannot make sound, which for a sheet or a format means one its own
+    // validator would reject. A library entry the release button would refuse is
+    // worse than no entry — it sits there looking importable.
+    raritySheets: sheets,
+    packFormats: formats,
+    // Blueprints resolve LAST, against the two SURVIVING libraries rather than
+    // the raw arrays, so one that pins a sheet the player deleted — or one the
+    // normaliser above just dropped — loses that half instead of handing the
+    // builder a dangling id.
+    blueprints: (state.blueprints ?? [])
+      .map((b) => normalizeBlueprint(b, {
+        sheetIds: new Set(sheets.map((s) => s.id)),
+        formatIds: new Set(formats.map((f) => f.id)),
+      }))
       .filter(Boolean),
   }
 }

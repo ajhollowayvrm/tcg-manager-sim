@@ -140,6 +140,20 @@ export function createInitialState(config) {
     // later. Empty until the player authors one in the set builder.
     illustrationSets: [],
 
+    // Studio standards — the rarity sheets and booster formats the player names
+    // once and imports into any set, plus blueprints pinning a known-good pair
+    // of the two. See standards.js. They live here rather than on a set record
+    // for the opposite reason to illustration sets: a group SPANS releases,
+    // while a standard is deliberately COPIED into each one. What a released set
+    // stores has to stay a self-sufficient description of that set's design —
+    // reprintAsUnlimited rebuilds a whole card pool from nothing but the stored
+    // record — so editing a standard never reaches a set already shipped.
+    // Empty until the player saves one; a fresh company's first set is seeded
+    // from the built-in default sheet and the Classic pack exactly as always.
+    raritySheets: [],
+    packFormats: [],
+    blueprints: [],
+
     // Account-level prestige carried in from previous runs (see legacy.js's
     // PRESTIGE_PERKS and persistence.js). Read-only during a run.
     prestige,

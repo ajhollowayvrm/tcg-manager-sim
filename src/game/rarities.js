@@ -27,7 +27,7 @@
 // with a fresh `rar_1` created in the next. Timestamp + counter keeps ids
 // unique across reloads and within a single tight loop.
 let _uid = 0
-function rid(base) {
+export function rid(base) {
   _uid += 1
   return `${base}_${Date.now().toString(36)}${_uid.toString(36)}`
 }
