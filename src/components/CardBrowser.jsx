@@ -13,6 +13,8 @@
 import { useMemo, useState } from 'react'
 import SetSymbol from './SetSymbol.jsx'
 import { visualTier, getRarity, printingOf } from '../game/rarities.js'
+import { illustrationContext } from '../game/illustrationsets.js'
+import { getIllustrationKind } from '../game/content/illustrationsets.js'
 
 const PAGE = 40
 
@@ -22,6 +24,7 @@ const STATUS_FILTERS = [
   { id: 'outofprint', label: 'Out of print' },
   { id: 'chase', label: 'Chase' },
   { id: 'variant', label: 'Variants' },
+  { id: 'illustration', label: 'Illustration sets' },
   { id: 'graded', label: 'Graded' },
   { id: 'serial', label: 'Serialised' },
   { id: 'promo', label: 'Promo' },
@@ -51,13 +54,16 @@ export default function CardBrowser({ state }) {
     () => new Map((state.movers ?? []).map((m) => [m.id, m.pct])),
     [state.movers],
   )
+  // Which cards belong to an illustration set, built the same way the market
+  // builds it — one pass, shared by the badge and the filter.
+  const groups = useMemo(() => illustrationContext(state), [state])
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase()
     const rows = state.cards
       .map((c) => {
         const set = setById.get(c.setId)
-        return { ...c, _set: set, _pct: moverPct.get(c.id) ?? 0, _released: set?.releasedWeek ?? 0 }
+        return { ...c, _set: set, _pct: moverPct.get(c.id) ?? 0, _released: set?.releasedWeek ?? 0, _group: groups.get(c.id) ?? null }
       })
       .filter((c) => {
         if (setId !== 'all' && c.setId !== setId) return false
@@ -69,6 +75,7 @@ export default function CardBrowser({ state }) {
           // Alternate printings only — the fastest way to see what every
           // variant in the catalog is actually worth, side by side.
           case 'variant': return !!c.variantOf
+          case 'illustration': return !!c._group
           case 'graded': return !!c.graded
           case 'serial': return !!c.serialCap
           case 'promo': return !!c.promo
@@ -77,7 +84,7 @@ export default function CardBrowser({ state }) {
       })
     rows.sort(SORTS[sort].fn)
     return rows
-  }, [state.cards, setById, moverPct, status, setId, query, sort])
+  }, [state.cards, setById, moverPct, groups, status, setId, query, sort])
 
   // Clamp the page whenever the filters shrink the list under the cursor.
   const pages = Math.max(1, Math.ceil(shown.length / PAGE))
@@ -125,6 +132,10 @@ export default function CardBrowser({ state }) {
             </div>
           </div>
 
+          {status === 'illustration' && (
+            <IllustrationSummary state={state} onPick={(name) => reset(setQuery)(name)} />
+          )}
+
           <p className="browser__count">
             {shown.length.toLocaleString()} card{shown.length === 1 ? '' : 's'}
             {shown.length !== state.cards.length && <> of {state.cards.length.toLocaleString()}</>}
@@ -150,6 +161,14 @@ export default function CardBrowser({ state }) {
                       {printing.isVariant && (
                         <span className="tag tag--variant" title={`${printing.variantName} — a separate printing of this card`}>
                           {printing.variantName}
+                        </span>
+                      )}
+                      {c._group && (
+                        <span
+                          className={'tag tag--ilset' + (c._group.isCapstone ? ' is-capstone' : '')}
+                          title={`${c._group.group.name} — ${c._group.group.members.length} of ${c._group.group.plannedSize}${c._group.isCapstone ? ', and the card that finishes it' : ''}`}
+                        >
+                          {c._group.isCapstone ? '★ ' : ''}{c._group.group.name}
                         </span>
                       )}
                       {c.serialCap && (
@@ -191,5 +210,67 @@ export default function CardBrowser({ state }) {
         </>
       )}
     </div>
+  )
+}
+
+// The binder view: every illustration set the studio has, as a row. This is the
+// payoff surface for the whole mechanic — without it a group is a hidden price
+// multiplier, and the thing a collector actually enjoys (seeing the run sitting
+// together, and the hole in it) never appears anywhere.
+function IllustrationSummary({ state, onPick }) {
+  const groups = state.illustrationSets ?? []
+  if (!groups.length) {
+    return (
+      <p className="panel__empty">
+        No illustration sets yet. Open one in the set builder — a group of cards
+        meant to be collected together.
+      </p>
+    )
+  }
+  const byId = new Map(state.cards.map((c) => [c.id, c]))
+  const ordered = [...groups].sort((a, b) => (b.openedWeek ?? 0) - (a.openedWeek ?? 0))
+
+  return (
+    <ul className="ilsetlist">
+      {ordered.map((g) => {
+        const kind = getIllustrationKind(g.kindId)
+        const members = (g.members ?? []).map((m) => byId.get(m.cardId)).filter(Boolean)
+        const value = members.reduce((sum, c) => sum + (c.singlePrice ?? 0), 0)
+        const owed = Math.max(0, (g.plannedSize ?? 0) - (g.members?.length ?? 0))
+        return (
+          <li key={g.id} className={`ilsetlist__row is-${g.status}`}>
+            <div className="ilsetlist__head">
+              <button className="ilsetlist__name" onClick={() => onPick(members[0]?.name ?? '')}>
+                {g.name}
+              </button>
+              <span className="ilsetlist__meta">
+                {kind.name}
+                {g.discovered && <span className="tag tag--found" title="Collectors named this one; the studio never planned it">fan-named</span>}
+                {' · '}{g.members.length}/{g.plannedSize}
+                {' · '}cohesion {Math.round((g.cohesion ?? 0) * 100)}%
+                {' · '}${Math.round(value).toLocaleString()}
+              </span>
+            </div>
+            <div className="ilsetlist__cards">
+              {members.map((c) => (
+                <span key={c.id} className="ilsetlist__card" title={`$${(c.singlePrice ?? 0).toFixed(2)}`}>
+                  {c.name}
+                </span>
+              ))}
+              {Array.from({ length: owed }, (_, i) => (
+                <span key={`gap${i}`} className="ilsetlist__card is-gap">not yet printed</span>
+              ))}
+            </div>
+            {g.status !== 'complete' && (
+              <span className="ilsetlist__status">
+                {g.status === 'open' && `${owed} still promised.`}
+                {g.status === 'stale' && `⚠ ${owed} promised and nothing new in a long time.`}
+                {g.status === 'abandoned' && `Written off. The premium is gone.`}
+              </span>
+            )}
+          </li>
+        )
+      })}
+    </ul>
   )
 }

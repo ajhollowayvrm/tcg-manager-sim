@@ -91,6 +91,38 @@ gold etch), flavour text, art-direction notes, an optional serial cap
 There is deliberately **no rules text and no mechanical mode**. Nothing is
 designed around what a card *does*, only around how much it is wanted.
 
+### Illustration sets
+
+A named group of cards meant to be collected **together** — the Froakie /
+Frogadier / Greninja shape, where the capstone is worth a multiple of its
+linemates precisely because it finishes the run.
+
+Five **kinds** (`content/illustrationsets.js`): a progression line, an
+illustrator's suite, a character run across releases, linked art broken over
+several cards, and a flat themed cycle. Kinds differ in their coherence
+*requirements* — pure data — and in exactly one market number, `capstoneWeight`,
+saying how hard the payoff concentrates on the rarest member.
+
+**Cohesion** (0–1) scores a group against its kind's requirements: an escalating
+rarity ladder, one illustrator, a related cast, a shared art brief, breadth. It
+is frozen when members change. The set builder shows the per-requirement
+breakdown live, because otherwise it is a hidden number.
+
+Groups live in top-level state and **span releases**: a set opens one or
+continues one already open. Announcing a run you do not finish buys launch buzz
+now; leave it 26 weeks and it goes stale, 26 more and it is written off — the
+premium is withdrawn and the room says so. A studio that breaks promises is
+believed less next time. Overusing the mechanic draws a `manufactured` grievance,
+which is about *packaging* where `scarcity` is about supply.
+
+Collectors also name runs the studio never planned — rarely, about one every
+forty weeks.
+
+**Character promotion.** A new character can be a later role or form of one
+already on the roster — Kell, Broken Boy into Kell, Royal Soldier. Two entries
+with their own archetypes and fame, linked by a lineage the cohesion scorer
+reads. The successor debuts already partly famous. Locks on debut.
+
 ### Presentation
 
 - **Spotlight reveals** — preview up to five cards pre-launch. Buzz peaks at
@@ -124,7 +156,10 @@ panel, and printed again and again.
   comeback), so a career reads as a narrative. The debut beat is pinned.
 
 Artists are the parallel system: a fixed 44-name roster with drifting cost and
-reach, so a cheap rising star is spottable before it blows up.
+reach, so a cheap rising star is spottable before it blows up. They also carry
+**collector heat**, drifting off how their live cards actually perform — a
+sought-after illustrator's cards carry a premium and the community talks about
+the hand, not just the card.
 
 ---
 
@@ -135,7 +170,10 @@ punch and hype. Prices resolve weekly with real variance plus momentum, so an
 undervalued card can catch fire and a guaranteed chase can land flat. Sealed and
 singles track separately. Speculative bubbles are possible and can burst.
 Franchise reputation lifts old sets' collector floor independent of any one
-card's hype — the Base Set Charizard effect.
+card's hype — the Base Set Charizard effect. Cards in an illustration set carry a
+completion premium, capped well below serialisation because a group is a design
+act rather than a scarcity one, and their hype is nudged toward the group's mean
+each week so the members visibly move together.
 
 **Segments.** Two: `casual` and `collectors`. Almost no decision pleases both.
 
@@ -241,6 +279,9 @@ GameState {
              popFactors: {...}, sealedPrice, singlePrice, priceHistory: [...] } ],
   characters: [ { id, name, archetypeId, traits, hook, pronouns, fame,
                   trajectory, appearances, beats, fameHistory } ],
+  illustrationSets: [ { id, kindId, name, plannedSize, status, cohesion,
+                       members: [ { cardId, setId, week, artistId,
+                                    characterId, valueTier } ] } ],
   artists: [...], personas: [...], distributors: [...], gradingPartners: [...],
   merchLines: [...], mediaDeals: [...],
   goodwillSpend, lastOverhead, legacy, retirement, prestige,

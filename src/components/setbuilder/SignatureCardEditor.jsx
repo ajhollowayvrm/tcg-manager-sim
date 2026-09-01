@@ -343,7 +343,7 @@ function CharacterPicker({ card, characters, set, theme }) {
       </span>
       <div className="toggle toggle--counter">
         <button className={'toggle__opt' + (mode === 'none' ? ' is-active' : '')}
-          onClick={() => set({ characterId: null, newCharacterName: '', newCharacterArchetype: 'unaligned', newCharacterSpecies: '', newCharacterHook: '', treatment: 'debut' })}>
+          onClick={() => set({ characterId: null, newCharacterName: '', newCharacterArchetype: 'unaligned', newCharacterSpecies: '', newCharacterHook: '', newCharacterPromotedFrom: null, treatment: 'debut' })}>
           One-off
         </button>
         <button className={'toggle__opt' + (mode === 'new' ? ' is-active' : '')}
@@ -358,7 +358,7 @@ function CharacterPicker({ card, characters, set, theme }) {
             // glancing at the existing roster and coming back must not silently
             // reset the player's pick to Unaligned, which would quietly drop both
             // the theme-cohesion bonus and the fame-drift bias.
-            newCharacterName: '', newCharacterSpecies: '', newCharacterHook: '',
+            newCharacterName: '', newCharacterSpecies: '', newCharacterHook: '', newCharacterPromotedFrom: null,
             characterId: characters[0]?.id ?? null, treatment: 'debut',
           })}>
           Existing character
@@ -405,6 +405,35 @@ function CharacterPicker({ card, characters, set, theme }) {
             onChange={(e) => set({ newCharacterHook: e.target.value })}
             placeholder="Hook (optional, e.g. 'Never raises their voice.')"
           />
+          {/* PROMOTION. This new character can be a later role or form of one
+              already on the roster — Kell, Broken Boy becoming Kell, Royal
+              Soldier. They stay two separate entries with their own archetypes
+              and their own fame, linked by a lineage the illustration-set
+              scorer reads, so a line built from the pair reads as one line.
+              Locks on debut, like the archetype. */}
+          {characters.length > 0 && (
+            <>
+              <select
+                className="counter__target"
+                value={card.newCharacterPromotedFrom ?? ''}
+                onChange={(e) => set({ newCharacterPromotedFrom: e.target.value || null })}
+              >
+                <option value="">— A brand-new character —</option>
+                {characters.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    A promotion of {c.name} (fame {Math.round(c.fame)})
+                  </option>
+                ))}
+              </select>
+              {card.newCharacterPromotedFrom && (
+                <span className="field__note">
+                  Debuts already known — carries over part of{' '}
+                  {characters.find((c) => c.id === card.newCharacterPromotedFrom)?.name}'s
+                  fame, and both careers record the moment.
+                </span>
+              )}
+            </>
+          )}
           <span className="field__note">
             {newMatch
               ? `A ${newArchetype.name.toLowerCase()} suits this set's theme — an on-theme face reads as a coherent printing and lifts the card's appeal. `

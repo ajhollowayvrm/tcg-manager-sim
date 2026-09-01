@@ -24,6 +24,7 @@ import { advanceMediaDeals } from './media.js'
 import { shelfPrintLevel } from './segments.js'
 import { applyOverhead } from './overhead.js'
 import { updateLegacy, scoreRun } from './legacy.js'
+import { applyIllustrationSets } from './illustrationsets.js'
 
 // Buzz half-life: how fast a set's own release-buzz fades between drops (tuned
 // so a set stays fresh-feeling for a few months, then needs a new release to
@@ -78,6 +79,30 @@ export function communitySentiment(personas) {
     total += w
   }
   return total ? wSum / total : null
+}
+
+// Apply illustrationsets.js's weekly patch to the live state. The module returns
+// a patch rather than mutating, matching merch.js and distributors.js.
+//
+// The persona sentiment bump is spelled out here rather than imported: this file
+// cannot import from reducer.js (reducer imports this module), which is the same
+// corner events.js works around by duplicating applySentimentBump's shape inline
+// with a comment saying why.
+function applyIllustrationGroups(next) {
+  const patch = applyIllustrationSets(next)
+  next.illustrationSets = patch.illustrationSets
+  next.sets = patch.sets
+  for (const line of patch.feed) {
+    next.eventsFeed = [{ week: next.week, text: line, kind: 'illustration' }, ...next.eventsFeed].slice(0, 60)
+  }
+  for (const b of patch.personaSentimentBumps) {
+    const key = b.tasteKey ?? 'art'
+    const floor = b.floor ?? 0.4
+    next.personas = (next.personas ?? []).map((p) => {
+      const amt = (p.taste?.[key] ?? 0) >= floor ? b.amount : b.ambientAmount
+      return { ...p, sentiment: clamp(p.sentiment + amt, -100, 100) }
+    })
+  }
 }
 
 export function advanceWeek(state) {
@@ -165,6 +190,17 @@ export function advanceWeek(state) {
   const { cards, movers } = resolveMarket(next)
   next.cards = cards
   next.movers = movers
+
+  // Illustration sets: advance each group's status (open → stale → abandoned)
+  // and refresh every set's sealed-demand lift.
+  //
+  // Placed AFTER resolveMarket and BEFORE the personas, and both halves matter.
+  // After the market, because the pass reads this week's settled prices and
+  // because a status change should move NEXT week's pricing — the same
+  // causality applyDistributors is ordered for above. Before the personas, so a
+  // run that goes stale or gets written off this week is voiced this week
+  // rather than a week late.
+  applyIllustrationGroups(next)
 
   // Community personas react to the resolved week: they post to the feedback
   // feed (signal vs noise) and their reactions feed back as hype/ban-pressure

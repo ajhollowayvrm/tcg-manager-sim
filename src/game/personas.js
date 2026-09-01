@@ -21,6 +21,9 @@
 import { makeRng, hashSeed, range } from './rng.js'
 import { clamp } from './simulation.js'
 import { packRichnessDelta, printingOf } from './rarities.js'
+import { illustrationContext, illustrationOverusePressure } from './illustrationsets.js'
+import { getIllustrationKind } from './content/illustrationsets.js'
+import { getArtist } from './content/artists.js'
 import { getTheme } from './content/themes.js'
 import { getArchetype } from './content/archetypes.js'
 import { traitNames } from './content/traits.js'
@@ -76,7 +79,7 @@ function perceive(truth, persona, rng) {
 // Low-credibility personas have a much noisier focus — they latch onto the
 // wrong card more often, which (with a noisy read) is how a rage-baiter ends up
 // screaming about a perfectly fine card.
-function focusCard(cards, persona, rng, variants) {
+function focusCard(cards, persona, rng, variants, groups, artistHeat) {
   if (cards.length === 0) return null
   const wobble = 30 + (1 - persona.credibility / 100) * 70 // up to ±100 for low-cred
   const scored = cards.map((c) => {
@@ -93,12 +96,35 @@ function focusCard(cards, persona, rng, variants) {
     const variantPull = v
       ? Math.min(v.premium, 6) * 2.5 * (0.4 + persona.taste.value * 0.3 + persona.taste.art * 0.3)
       : 0
+    // A card that is part of a designed run is a different kind of talking point
+    // — the room discusses the SET, and the card that finishes it hardest of
+    // all. Art-minded voices notice most.
+    //
+    // Capped around 8, deliberately quieter than variantPull's ~15: a live price
+    // spread between two printings of one card is an immediate, arguable number,
+    // while a group is a slow story. It also adds exactly 0 on a Map miss and
+    // draws NO rng of its own — an unconditional extra draw here would shift
+    // every subsequent one and silently move the whole balance table.
+    const g = groups?.get(c.id)
+    const groupPull = g
+      ? (0.5 + (g.group.cohesion ?? 0)) * (g.isCapstone ? 6 : 3)
+        * (0.4 + (persona.taste?.art ?? 0) * 0.5)
+      : 0
+    // WHO DREW IT. A room with a favourite illustrator talks about their cards,
+    // and until artists carried collector heat there was no way for it to. Small
+    // and art-weighted, like the group term. Adds 0 with no artist or no heat,
+    // and draws no rng.
+    const artistPull = c.artistId
+      ? ((artistHeat?.get(c.artistId) ?? 0) / 100) * 8 * (0.3 + (persona.taste?.art ?? 0) * 0.7)
+      : 0
     const score =
       persona.taste.power * f.punch +
       persona.taste.value * Math.min(c.singlePrice, 200) * 0.5 +
       persona.taste.art * f.artAppeal +
       persona.taste.fun * f.hype +
       variantPull +
+      groupPull +
+      artistPull +
       range(rng, 0, wobble)
     return { c, score }
   })
@@ -139,6 +165,17 @@ const VARIANT_HOT = 3
 const VARIANT_WARM = 1.6
 const VARIANT_FLAT = 1.15
 
+// Below this, a group is a run in name only and the room says so. Set at the
+// level a kind's requirements produce when roughly half of them are unmet — a
+// deliberate design that lands at 0.5 is not "incoherent", but one thrown
+// together from unrelated cards scores well under it.
+const ILLUSTRATION_LOOSE = 0.45
+
+// Artist collector heat (artists.js) at which the room talks about the hand
+// rather than the card, and the level above which it does so breathlessly.
+const ARTIST_NOTICED = 40
+const ARTIST_HOT = 70
+
 // ---- Grievances -----------------------------------------------------------
 
 // What the community has to COMPLAIN about in a set, read off the actual
@@ -155,7 +192,7 @@ const VARIANT_FLAT = 1.15
 // the loudest one so a take can be specific about what it's angry about.
 const GENRE_NORM_PRICE = 4.5 // the booster elasticity reference (products.js)
 
-export function setGrievances(set, cards = []) {
+export function setGrievances(set, cards = [], illustrationPressure = 0) {
   if (!set) return { worst: null, score: 0, all: {} }
   const price = set.price ?? GENRE_NORM_PRICE
   const printRun = set.printRun ?? 50
@@ -194,7 +231,23 @@ export function setGrievances(set, cards = []) {
   // all — the flag was free to set and invisible to everyone.
   const gated = (set.products ?? []).some((p) => p.kind === 'spc' && p.exclusivePromo) ? 0.45 : 0
 
-  const all = { gouging, overprint, scarcity, stingy, gated }
+  // Manufactured curation: a studio that packages ordinary cards as a designed
+  // run on every single release, or leaves a shelf of half-finished ones.
+  //
+  // Distinct from `scarcity` above, and the distinction is the point: scarcity
+  // is about SUPPLY — thin runs, serial numbering, cards that cannot be had.
+  // This is about PACKAGING — the cards are as available as ever, they have just
+  // been arranged into a thing you are told to complete. Both are cynical; they
+  // are cynical about different levers.
+  //
+  // Capped at 0.5, just above `gated` (0.45), so it CAN become the loudest
+  // complaint but only at genuine spam. It is computed by illustrationsets.js
+  // and passed in, because it has to read the whole catalogue: this function is
+  // handed one set and would therefore never notice a studio opening a
+  // perfectly coherent trio on every release forever.
+  const manufactured = clamp(illustrationPressure, 0, 1) * 0.5
+
+  const all = { gouging, overprint, scarcity, stingy, gated, manufactured }
   let worst = null
   let score = 0
   for (const [k, v] of Object.entries(all)) {
@@ -230,6 +283,11 @@ const GRIEVANCE_LINES = {
     (s) => `The best card in ${s} is locked inside the expensive box. That's the whole design.`,
     (s) => `You cannot pull the ${s} exclusive. You can only buy the box. Think about that.`,
     (s) => `${s}'s chase card is paywalled behind a collector box. Grim.`,
+  ],
+  manufactured: [
+    (s) => `Every set now has a "run" with a capstone. ${s} is a spreadsheet, not an art department.`,
+    (s) => `${s} ships another trio you're told to complete. At some point curation is just a checklist.`,
+    (s) => `Half of what I own is one card short of something. ${s} does it again.`,
   ],
   // Kept for the reviewer's own bloat branch, which reads set.bloat directly.
   bloat: [
@@ -417,6 +475,78 @@ function pick(rng, pool) {
 // Returns null when this voice has nothing variant-specific to say, and the
 // caller falls through to the ordinary take — the feed keeps its texture rather
 // than turning into one repeated observation about alt arts.
+// What the community says about the HAND behind a card, once that illustrator is
+// hot enough for the room to know the name. Until artists carried collector
+// heat there was no way for a persona to have a favourite illustrator, which is
+// a strange gap in a game about collecting art.
+//
+// Deliberately short and unhedged — this is how people actually talk about an
+// artist they have decided is worth following.
+function artistTake(persona, card, artistName, heat, rng, displayName) {
+  const c = displayName ?? card.name
+  const a = artistName
+  if (heat >= ARTIST_HOT) {
+    return { stance: 'hype', text: pick(rng, [
+      `Anything ${a} touches right now is money. ${c} included.`,
+      `${a} is having a year. ${c} is the one I would buy.`,
+      `I have stopped reading the card names. If it says ${a}, I want it.`,
+    ]) }
+  }
+  return { stance: 'hype', text: pick(rng, [
+    `${a} is quietly becoming the reason to open these. Look at ${c}.`,
+    `Nobody is talking about ${a} yet. ${c} is the tell.`,
+  ]) }
+}
+
+// What the community says about a card that belongs to a designed run. The
+// subject is the GROUP, not the card — which is the whole point of the mechanic
+// and the thing a card-shaped take cannot express.
+//
+// Three things are worth saying, and they are the three states a run can be in:
+// finished and coherent (the good outcome, and someone has to say so or the
+// player never learns it landed), still owed (the anticipation the announcement
+// buzz is paid for), and incoherent (a run in name only — the clearest feedback
+// that a player paid for direction they did not actually apply).
+function illustrationTake(persona, card, entry, rng, displayName) {
+  const c = displayName ?? card.name
+  const g = entry.group
+  const noun = getIllustrationKind(g.kindId).noun
+  const have = g.members?.length ?? 0
+  const want = g.plannedSize ?? have
+  const owed = Math.max(0, want - have)
+
+  if (g.cohesion < ILLUSTRATION_LOOSE) {
+    return { stance: 'pan', text: pick(rng, [
+      `Calling ${g.name} a ${noun} is a stretch. Different hands, no through-line — they just numbered them together.`,
+      `${g.name} is a ${noun} on the packaging and nowhere else. ${c} has nothing to do with the rest of it.`,
+      `They want me to chase ${g.name} as a set. It isn't one.`,
+    ]) }
+  }
+  if (g.status === 'abandoned') {
+    return { stance: 'pan', text: pick(rng, [
+      `${g.name} is never getting finished, is it. ${c} is just a card now.`,
+      `Still ${owed} short on ${g.name}. I've stopped expecting it.`,
+    ]) }
+  }
+  if (owed > 0) {
+    return { stance: 'hype', text: pick(rng, [
+      `${c} is ${have} of ${want} for ${g.name}. I am not going to be normal about the last ${owed === 1 ? 'one' : owed}.`,
+      `${g.name} is ${have}/${want} and the binder page has a hole in it. ${c} is gorgeous, and that is the problem.`,
+      `Whatever finishes ${g.name} is going to cost a fortune. Buying ${c} now.`,
+    ]) }
+  }
+  if (entry.isCapstone) {
+    return { stance: 'hype', text: pick(rng, [
+      `${c} is the one that finishes ${g.name}, and it is priced like it.`,
+      `${g.name} is complete and ${c} is the card everyone actually needs. Good luck.`,
+    ]) }
+  }
+  return { stance: 'hype', text: pick(rng, [
+    `${g.name} all sat together on one page is the best thing they have printed.`,
+    `Completed ${g.name} today. ${c} in a binder next to the rest of them — that is the hobby.`,
+  ]) }
+}
+
 function variantTake(persona, card, variant, set, rng, displayName) {
   const c = displayName ?? card?.name
   const v = variant.name
@@ -501,7 +631,7 @@ function variantTake(persona, card, variant, set, rng, displayName) {
   return null
 }
 
-function takeFor(persona, card, perceived, set, rng, displayName, grievances, variant) {
+function takeFor(persona, card, perceived, set, rng, displayName, grievances, variant, group, artist) {
   const strong = perceived > 25
   const busted = perceived > 50
   const weak = perceived < -20
@@ -552,6 +682,36 @@ function takeFor(persona, card, perceived, set, rng, displayName, grievances, va
     if (rng() < cares * (0.35 + heat * 0.65)) {
       const vt = variantTake(persona, card, variant, set, rng, displayName)
       if (vt) return vt
+    }
+  }
+
+  // Illustration-set take. Sits BELOW the variant branch, and the ordering is
+  // grievance > variant premium > group > card. A live price spread between two
+  // printings of one card is an immediate, arguable number; a group is a slower
+  // story, and a room with a real complaint leads with the complaint.
+  //
+  // Gated the same probabilistic way, so even a beautiful run does not make
+  // every voice lead with it in the same week. Art-minded personas care most,
+  // and an unfinished run is talked about harder than a finished one — the hole
+  // in the page is the thing people post about.
+  if (group) {
+    const owed = Math.max(0, (group.group.plannedSize ?? 0) - (group.group.members?.length ?? 0))
+    const cares = 0.12 + (persona.taste?.art ?? 0) * 0.35 + (persona.taste?.fun ?? 0) * 0.1
+    const heat = owed > 0 ? 0.85 : 0.5
+    if (rng() < cares * heat) {
+      const it = illustrationTake(persona, card, group, rng, displayName)
+      if (it) return it
+    }
+  }
+
+  // The illustrator, below the group. A room that has noticed an artist talks
+  // about them, but a designed run they are part of is the bigger story, and a
+  // live price spread is bigger still.
+  if (card && artist && artist.heat >= ARTIST_NOTICED) {
+    const cares = 0.1 + (persona.taste?.art ?? 0) * 0.4
+    if (rng() < cares * (0.3 + (artist.heat / 100) * 0.7)) {
+      const at = artistTake(persona, card, artist.name, artist.heat, rng, displayName)
+      if (at) return at
     }
   }
 
@@ -716,7 +876,14 @@ export function reactPersonas(state) {
   // What the community has to complain about in the newest set, read off the
   // player's actual business decisions (price, print run, pack richness,
   // manufactured scarcity, bloat) rather than off card stats.
-  const grievances = latestSet ? setGrievances(latestSet, state.cards) : null
+  // Priced once for the week, like `variants` above: every take that lands on a
+  // group member reads the same group, so the room agrees with itself.
+  const groups = illustrationContext(state)
+  // Collector heat per illustrator, indexed once for the week (artists.js).
+  const artistHeat = new Map((state.artists ?? []).map((a) => [a.id, a.heat ?? 0]))
+  const grievances = latestSet
+    ? setGrievances(latestSet, state.cards, illustrationOverusePressure(state))
+    : null
   const fieldAvg = liveCards.length
     ? liveCards.reduce((s, c) => s + c.popFactors.punch, 0) / liveCards.length
     : 50
@@ -727,7 +894,7 @@ export function reactPersonas(state) {
     const chattiness = persona.reach / 200 + (setFresh ? 0.35 : 0)
     if (rng() > chattiness) continue
 
-    const card = focusCard(liveCards, persona, rng, variants)
+    const card = focusCard(liveCards, persona, rng, variants, groups, artistHeat)
     if (!card && !(persona.type === 'reviewer' && latestSet)) continue
 
     const truth = card ? cardThreat(card, fieldAvg) : 0
@@ -739,7 +906,12 @@ export function reactPersonas(state) {
     const known = character && character.fame >= CHARACTER_KNOWN_FAME ? character : null
     const displayName = known ? known.name : undefined
     const variant = card ? variants.get(card.id) : null
-    const base = takeFor(persona, card, perceived, latestSet, rng, displayName, grievances, variant)
+    const group = card ? groups.get(card.id) : null
+    // The illustrator behind the focused card, if the room has noticed them.
+    const artistOfCard = card?.artistId
+      ? { name: getArtist(card.artistId)?.name, heat: artistHeat.get(card.artistId) ?? 0 }
+      : null
+    const base = takeFor(persona, card, perceived, latestSet, rng, displayName, grievances, variant, group, artistOfCard?.name ? artistOfCard : null)
     // A known character does not just lend their NAME to a card take — the
     // community talks about them in their own right, in the voice their archetype
     // earns. Falls back to the card take whenever that voice has nothing to say

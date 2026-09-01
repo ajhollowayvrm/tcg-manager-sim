@@ -43,7 +43,7 @@
 //      in the UI and the community chatter instead. revenue.js:62 and
 //      personas.js:187 already refuse two other terms for this same reason.
 //
-// This module imports only rng.js, rarities.js and its own content table. It
+// This module imports only rng.js, rarities.js and two content tables. It
 // deliberately does NOT import clamp from simulation.js: market.js and
 // characters.js already close import cycles with that module and they survive
 // only because clamp is a hoisted function declaration. A third one is not worth
@@ -51,6 +51,8 @@
 // makes with its own clampUnit.
 
 import { getRarity } from './rarities.js'
+import { getArtist } from './content/artists.js'
+import { makeRng, hashSeed } from './rng.js'
 import {
   getIllustrationKind,
   MAX_CAPSTONE_WEIGHT,
@@ -126,17 +128,35 @@ const OUT_OF_REACH_PREMIUM = 0.15
 const HALO_MAX = 0.1
 
 // Sealed-demand lift per coherent group in a set, and the cap across all of
-// them. Matched exactly to spotlightAppeal's 0..0.12 band, because the two are
-// pre-launch marketing acts of comparable size.
-const APPEAL_PER_GROUP = 0.04
+// them. The CAP matches spotlightAppeal's 0..0.12 exactly — both are marketing
+// acts of comparable size and neither should be able to run away.
+//
+// The per-group rate is higher than a single reveal's, though, and measurement
+// forced the question. At 0.04 a coherent trio bought 0.032 of appeal for
+// $36,000 while a full spotlight campaign bought the whole 0.12 for $10,000 —
+// so the cheaper lever was nearly four times better and there was no reason to
+// ever author a group. The two are not equivalent: a reveal is SPENT at launch
+// (it front-loads attention on a card people then open packs to find once),
+// while an illustration set is a chase that persists for as long as the run is
+// unfinished. Two coherent groups now reach the cap.
+const APPEAL_PER_GROUP = 0.06
 const APPEAL_MAX = 0.12
 
-// Buzz for ANNOUNCING a run you have not finished. Without an up-front payoff
-// the "risk" of abandoning one is fake — there is nothing to have taken. Teasing
-// "the capstone comes later" has to buy something NOW so that walking away from
-// it is a broken promise rather than a bonus you merely failed to collect.
+// Launch buzz from a coherent illustration set, in two parts.
+//
+// PRESENT is for simply having one in the release, finished or not. A designed
+// run IS a headline feature of a set, and an earlier version paid buzz only for
+// what was still OWED — so the most desirable outcome the mechanic can produce,
+// a finished coherent run, was the one the launch said nothing about.
+//
+// PROMISED is for a run this release does not finish. Without an up-front payoff
+// the risk of abandoning one is fake: there would be nothing taken, only a bonus
+// never collected. Teasing "the capstone comes later" has to buy something now
+// so that walking away is a broken promise.
+//
 // Compare spotlightBuzz (0..9), a midnight launch (+8..14), a themed drop (+4..8).
-const ANNOUNCE_BUZZ_MAX = 5
+const ILLUSTRATION_BUZZ_PRESENT = 2
+const ILLUSTRATION_BUZZ_PROMISED = 4
 
 // How long an open group may sit untouched. 26 weeks is two full cadence cycles
 // at the brief's 12-20 week reference — long enough that a studio shipping on
@@ -542,11 +562,43 @@ export function illustrationAppealFor(setId, groups) {
 // Buzz for announcing a run this release does not finish. Scales with how much
 // is still owed, so teasing one more card is a whisper and teasing four is a
 // campaign.
-export function announcementBuzz(group) {
-  if (!group || group.status !== 'open') return 0
+// How much the room still believes an announcement, from the studio's actual
+// record of finishing what it starts. 1 until there is a record to read.
+//
+// THIS EXISTS BECAUSE THE FIRST VERSION WAS EXPLOITABLE, and the harness caught
+// it: a strategy that opened a four-card run every release and finished none of
+// them was the BEST performing of the illustration strategies, +0.98% on the
+// control against +0.22% for one that actually completed its runs. Announcing
+// bought more launch buzz than delivering, the commission was identical, and the
+// one-off sentiment hit for walking away was too small to notice. The optimal
+// play was to promise constantly and deliver nothing.
+//
+// Scaling the PROMISED half by the studio's track record fixes it at the source
+// rather than by inflating the punishment: the first broken promise is free (a
+// studio with no record gets the benefit of the doubt), and a serial abandoner
+// bottoms out at 0.15x — the room simply stops listening. That is also just what
+// happens.
+export function promiseCredibility(groups) {
+  let done = 0
+  let broken = 0
+  for (const g of groups ?? []) {
+    if (g.status === 'complete') done++
+    else if (g.status === 'abandoned' || g.status === 'stale') broken++
+  }
+  if (done + broken === 0) return 1
+  return clamp(0.15 + 0.85 * (done / (done + broken)), 0.15, 1)
+}
+
+export function announcementBuzz(group, credibility = 1) {
+  if (!group || group.status === 'abandoned') return 0
+  const cohesion = clamp(group.cohesion ?? 0, 0, 1)
+  if (cohesion <= 0) return 0
   const owed = Math.max(0, (group.plannedSize ?? 0) - (group.members?.length ?? 0))
-  const share = clamp(owed / Math.max(1, group.plannedSize ?? 1), 0, 1)
-  return Math.round(ANNOUNCE_BUZZ_MAX * share * clamp(group.cohesion ?? 0, 0, 1) * 10) / 10
+  const share = group.status === 'open'
+    ? clamp(owed / Math.max(1, group.plannedSize ?? 1), 0, 1)
+    : 0
+  const promised = ILLUSTRATION_BUZZ_PROMISED * share * clamp(credibility, 0, 1)
+  return Math.round(cohesion * (ILLUSTRATION_BUZZ_PRESENT + promised) * 10) / 10
 }
 
 // How much the room has to object to. Reads the WHOLE state rather than the
@@ -586,13 +638,13 @@ function advanceStatus(group, week) {
   if (group.status === 'open' && idle >= STALE_WEEKS) {
     return {
       group: { ...group, status: 'stale' },
-      feed: `Nobody has seen a new card from the ${group.name} ${getIllustrationKind(group.kindId).noun} in ${idle} weeks. Collectors sitting on ${group.members.length} of ${group.plannedSize} are asking whether the rest is coming.`,
+      feed: `Nobody has seen a new card from ${group.name} in ${idle} weeks. Collectors sitting on ${group.members.length} of ${group.plannedSize} are asking whether the rest is coming.`,
     }
   }
   if (group.status === 'stale' && idle >= STALE_WEEKS + ABANDON_WEEKS) {
     return {
       group: { ...group, status: 'abandoned', abandonedWeek: week },
-      feed: `The ${group.name} ${getIllustrationKind(group.kindId).noun} is being written off as abandoned — ${owed} card${owed === 1 ? '' : 's'} promised and never printed. The ones that did ship are now just cards.`,
+      feed: `${group.name} is being written off as abandoned — ${owed} card${owed === 1 ? '' : 's'} promised and never printed. The ones that did ship are now just cards.`,
     }
   }
   return { group, feed: null }
@@ -621,16 +673,43 @@ export function applyIllustrationSets(state) {
       changed = true
       feed.push(line)
       if (group.status === 'abandoned') {
+        // Scaled by how big the broken promise was: walking away from one card
+        // of four is a disappointment, walking away from three of four is a
+        // different thing entirely, and a flat hit priced them the same.
+        const owedShare = clamp(
+          Math.max(0, (group.plannedSize ?? 0) - (group.members?.length ?? 0))
+          / Math.max(1, group.plannedSize ?? 1),
+          0, 1,
+        )
+        const scale = 0.5 + owedShare
         bumps.push({
           tasteKey: 'art',
           floor: 0.4,
-          amount: ABANDON_SENTIMENT,
-          ambientAmount: ABANDON_AMBIENT_SENTIMENT,
+          amount: ABANDON_SENTIMENT * scale,
+          ambientAmount: ABANDON_AMBIENT_SENTIMENT * scale,
         })
       }
     }
     return group
   })
+
+  // Community discovery. Its own rng stream, seeded on the week, so it cannot
+  // shift any other system's draws (personas.js documents why that matters).
+  const rng = makeRng(hashSeed(`illustration-discovery:${week}`))
+  if (rng() < DISCOVERY_CHANCE) {
+    const loudest = (state.personas ?? []).reduce(
+      (best, p) => (!best || (p.reach ?? 0) > (best.reach ?? 0) ? p : best),
+      null,
+    )
+    if (loudest && (loudest.reach ?? 0) >= DISCOVERY_MIN_REACH) {
+      const found = findAccidentalGroup({ ...state, illustrationSets: nextGroups }, rng)
+      if (found) {
+        nextGroups.push(found)
+        changed = true
+        feed.push(`Nobody at the studio planned it, but collectors have started calling ${found.members.length} of ${(state.sets ?? []).find((x) => x.id === found.openedSetId)?.name ?? 'an old set'}'s cards "${found.name}" — and pricing them as a set.`)
+      }
+    }
+  }
 
   // Refresh every set's sealed-demand lift. Cheap (sets are tens, not
   // thousands) and it is what lets a late capstone revive an old set.
@@ -648,6 +727,94 @@ export function applyIllustrationSets(state) {
     feed,
     personaSentimentBumps: bumps,
   }
+}
+
+// ---- Community-discovered groups ------------------------------------------
+
+// Collectors name things the publisher never planned. A set ships, and three
+// cards in it by the same hand — never designed as a run, never marketed as
+// one — end up in every binder together because somebody on the internet
+// noticed and the name stuck.
+//
+// This is the counterpart to the authored path, and it is deliberately RARE:
+// roughly one every forty weeks. It is a delight, not a mechanic to farm — the
+// player cannot cause it, cannot pay for it, and would not want a feed full of
+// them. Discovered groups are capped at a lower cohesion than an authored one
+// can reach (DISCOVERED_COHESION_CAP), because nobody designed them: the cards
+// genuinely do go together less well than a commissioned run.
+const DISCOVERY_CHANCE = 1 / 40
+const DISCOVERED_COHESION_CAP = 0.7
+// Somebody has to be around to notice and be believed. Below this the room has
+// no voice with enough standing for a name to stick.
+const DISCOVERY_MIN_REACH = 55
+
+// Names the community gives a run it found. Deliberately plainer than anything a
+// marketing department would write — that is the tell that a player did not
+// author it.
+const DISCOVERED_NAMES = [
+  (artist) => `the ${artist} three`,
+  (artist) => `the ${artist} run`,
+  (artist) => `the unofficial ${artist} set`,
+]
+
+// Look for an accidental run: cards in ONE set, by ONE illustrator, none of them
+// already in a group. Returns a group or null.
+function findAccidentalGroup(state, rng) {
+  const claimed = new Set()
+  for (const g of state.illustrationSets ?? []) {
+    for (const m of g.members ?? []) claimed.add(m.cardId)
+  }
+  const bySetArtist = new Map()
+  for (const card of state.cards ?? []) {
+    if (!card.artistId || card.promo || card.rotated || card.outOfPrint) continue
+    if (claimed.has(card.id) || card.variantOf) continue
+    const key = `${card.setId}:${card.artistId}`
+    const list = bySetArtist.get(key) ?? []
+    list.push(card)
+    bySetArtist.set(key, list)
+  }
+  const candidates = [...bySetArtist.entries()].filter(([, list]) => list.length >= 3)
+  if (!candidates.length) return null
+  const [key, list] = candidates[Math.floor(rng() * candidates.length)]
+  const [setId, artistId] = key.split(':')
+  const set = (state.sets ?? []).find((x) => x.id === setId)
+  if (!set) return null
+
+  // The three best of them, by collector tier — which is what a community
+  // actually fixates on.
+  const picked = [...list]
+    .sort((a, b) => (b.popFactors?.rarity ?? 0) - (a.popFactors?.rarity ?? 0))
+    .slice(0, 3)
+  const artistName = getArtist(artistId)?.name ?? 'that artist'
+  // Just the surname or nickname — a room does not say the full credited name.
+  const shortName = artistName.replace(/"[^"]*"/g, '').trim().split(/\s+/).pop()
+
+  const group = {
+    id: `ilset_${(state.illustrationSets ?? []).length + 1}`,
+    kindId: 'suite', // one hand, one set — that is what was actually found
+    name: DISCOVERED_NAMES[Math.floor(rng() * DISCOVERED_NAMES.length)](shortName),
+    artBrief: '',
+    plannedSize: picked.length,
+    openedWeek: state.week,
+    openedSetId: setId,
+    status: 'complete', // it was found finished; there is nothing owed
+    lastMemberWeek: state.week,
+    discovered: true,
+    members: picked.map((c) => makeMember(c, {
+      setId,
+      week: set.releasedWeek ?? state.week,
+      valueTier: valueTierOf(set, c),
+      briefMatch: false,
+    })),
+    cohesion: 0,
+    cohesionParts: {},
+    completedWeek: state.week,
+    abandonedWeek: null,
+  }
+  const { score, parts } = scoreCohesion(group, { characters: state.characters ?? [] })
+  group.cohesion = Math.min(DISCOVERED_COHESION_CAP, Math.round(score * 1000) / 1000)
+  group.cohesionParts = parts
+  return group
 }
 
 // ---- Persistence ----------------------------------------------------------

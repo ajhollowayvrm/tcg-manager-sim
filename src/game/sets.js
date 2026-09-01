@@ -19,7 +19,7 @@ import { defaultProducts, finalizeProducts, productPrintCost, validateProducts, 
 import { makePromoCard } from './promos.js'
 import { getTier, openBlock, refreshBlockWarp, mintTreatmentCards, mintAnniversaryCards, canUnlockAnniversary } from './blocks.js'
 import { getGimmick, NO_GIMMICK } from './content/gimmicks.js'
-import { createCharacter, famePopBonus, getTreatment, recordAppearance } from './characters.js'
+import { createCharacter, famePopBonus, getTreatment, recordAppearance, recordPromotion, wouldCycle } from './characters.js'
 import { archetypeMatchesTheme } from './content/archetypes.js'
 import {
   getIllustrationKind,
@@ -27,7 +27,7 @@ import {
 } from './content/illustrationsets.js'
 import {
   openGroup, addMembers, makeMember, briefMatches, scoreCohesion,
-  groupLift, announcementBuzz, illustrationAppealFor, valueTierOf,
+  groupLift, announcementBuzz, promiseCredibility, illustrationAppealFor, valueTierOf,
 } from './illustrationsets.js'
 
 export const MIN_SIGNATURE_CARDS = 0 // signature highlights are optional now
@@ -55,8 +55,15 @@ const EXCLUSIVE_PROMO_COST = 55_000
 
 // Opening an illustration set, and committing one card to it. See the
 // illustrationSet line in setCost for how these are anchored.
-const ILLUSTRATION_OPEN_COST = 18_000
-const ILLUSTRATION_MEMBER_COST = 6_000
+//
+// Halved from 18k/6k after measurement: at that price a three-card trio cost
+// $36,000 a release and the harness's illustration strategy finished BEHIND a
+// control making the identical art decisions without the group. The cost was
+// simply above what the mechanic returns. $21,000 for a trio now sits beside
+// the art-director lever, which buys a whole-set +12 for roughly double one
+// artist's rate.
+const ILLUSTRATION_OPEN_COST = 9_000
+const ILLUSTRATION_MEMBER_COST = 4_000
 
 // Spacing at which a rider set stops reading as part of a treadmill.
 const RIDER_SPACING_WEEKS = 12
@@ -240,6 +247,9 @@ export function createSignatureCard(n, rarityId = 'rare') {
     newCharacterArchetype: 'unaligned',
     newCharacterSpecies: '',
     newCharacterHook: '',
+    // The roster character this new one is a promotion of, if any — see
+    // characters.js's promotedFromId. Null for an ordinary debut.
+    newCharacterPromotedFrom: null,
     treatment: 'debut',
     // Optional: a hard-capped total copy count (10/25/50/99/1) independent of
     // the set's print run — a true serialized chase card. Once this many
@@ -537,9 +547,9 @@ export function validateDraft(draft, ctx = {}) {
       const open = (ctx.illustrationSets ?? []).find((g) => g.id === il.groupId)
       if (!open) errors.push('That illustration set no longer exists — pick another.')
       else if (open.status !== 'open') {
-        errors.push(`The ${open.name} ${getIllustrationKind(open.kindId).noun} is ${open.status} — it cannot take new cards.`)
+        errors.push(`${open.name} is ${open.status} — it cannot take new cards.`)
       } else if (!picks.length) {
-        errors.push(`Continuing the ${open.name} ${getIllustrationKind(open.kindId).noun} needs at least one card.`)
+        errors.push(`Continuing ${open.name} needs at least one card.`)
       } else if ((open.members?.length ?? 0) + picks.length > getIllustrationKind(open.kindId).maxSize) {
         errors.push(`A ${getIllustrationKind(open.kindId).noun} holds at most ${getIllustrationKind(open.kindId).maxSize} cards.`)
       }
@@ -887,16 +897,30 @@ export function releaseSet(state, draft) {
   // generating cards, so the character exists (with a stable id) in time both for
   // its own fame lookup and the debut appearance recorded below.
   let characters = state.characters ?? []
+  const promotions = []
   const resolvedSigs = (draft.signatureCards ?? []).map((sig) => {
     if (sig.characterId || !sig.newCharacterName?.trim()) return sig
+    // A new character may be a PROMOTION of one already on the roster — Kell,
+    // Broken Boy becoming Kell, Royal Soldier. Refused if it would close a loop
+    // or run past the depth cap; the picker offers only legal parents, so this
+    // only bites a stale draft held open across a save load.
+    const parentId = sig.newCharacterPromotedFrom
+      && !wouldCycle(characters, null, sig.newCharacterPromotedFrom)
+      ? sig.newCharacterPromotedFrom
+      : null
+    const parent = parentId ? characters.find((c) => c.id === parentId) : null
     const created = createCharacter(sig.newCharacterName, {
       archetypeId: sig.newCharacterArchetype,
       species: sig.newCharacterSpecies,
       hook: sig.newCharacterHook,
+      promotedFromId: parent ? parent.id : null,
+      _inheritFame: parent ? parent.fame : 0,
     })
     characters = [...characters, created]
+    if (parent) promotions.push({ childId: created.id, parentId: parent.id })
     return { ...sig, characterId: created.id, treatment: 'debut' }
   })
+
   draft = { ...draft, signatureCards: resolvedSigs }
 
   const nameStyle = getConcept(state.config?.conceptId).nameStyle
@@ -930,6 +954,14 @@ export function releaseSet(state, draft) {
       cardId: card.id, setId, treatment: card.treatment, popFactors: card.popFactors,
       week: state.week, setName: draft.name,
     })
+  }
+
+  // Promotion beats on both careers. Filed AFTER recordAppearance above, so the
+  // successor's pinned 'debut' beat leads its timeline and the promotion reads
+  // as the thing that happened next — filing it first put the character's story
+  // in the wrong order on its own detail sheet.
+  for (const p of promotions) {
+    characters = recordPromotion(characters, { ...p, week: state.week })
   }
 
   const set = {
@@ -1133,12 +1165,12 @@ export function releaseSet(state, draft) {
   // Previews stoke the launch on top of the event itself.
   set.buzz = clamp(set.buzz + spotlightBuzz, 10, 100)
 
-  // Announcing a run this release does not finish buys buzz NOW. Without that,
-  // the risk of abandoning one is fake — there would be nothing to have taken,
-  // only a bonus never collected. Teasing "and the capstone comes later" has to
-  // pay, so that walking away from it is a broken promise. Scales with how much
-  // is still owed and with how coherent what has shipped is.
-  const announceBuzz = ilResult ? announcementBuzz(ilResult.group) : 0
+  // A coherent illustration set is a headline feature of the release, and
+  // announcing a run this set does not finish buys extra on top — see
+  // announcementBuzz. Both scale with how coherent what shipped actually is.
+  const announceBuzz = ilResult
+    ? announcementBuzz(ilResult.group, promiseCredibility(state.illustrationSets ?? []))
+    : 0
   if (announceBuzz > 0) set.buzz = clamp(set.buzz + announceBuzz, 10, 100)
 
   // Cover character: putting a known face on the box lends the set that

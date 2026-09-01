@@ -285,6 +285,9 @@ export function hydrate(state) {
     // that no longer exists (an imported partial save is the realistic way that
     // happens), and normalizeIllustrationSet returns null for a group left with
     // fewer than two members — hence the same load-bearing filter(Boolean).
+    // Artists gained a collector-heat field on the same additive terms — an
+    // older save simply has none, lands on 0, and prices exactly as it did.
+    artists: (state.artists ?? []).map((a) => ({ ...a, heat: a.heat ?? 0 })),
     illustrationSets: (state.illustrationSets ?? [])
       .map((g) => normalizeIllustrationSet(g, liveCardIds))
       .filter(Boolean),

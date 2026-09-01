@@ -193,6 +193,8 @@ export default function App() {
           liveCards={game.state.cards.filter((c) => !c.banned && !c.rotated)}
           sets={game.state.sets}
           blocks={game.state.blocks ?? []}
+          illustrationSets={game.state.illustrationSets ?? []}
+          week={game.state.week}
           franchise={game.state.franchise}
           perks={game.state.prestige?.perks ?? []}
           conceptId={game.state.config?.conceptId}

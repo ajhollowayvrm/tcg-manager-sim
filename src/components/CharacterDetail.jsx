@@ -17,6 +17,7 @@ import { useState } from 'react'
 import { useModal } from './useModal.js'
 import Chart from './Chart.jsx'
 import { getArchetype, archetypeMatchesTheme, archetypesByCategory } from '../game/content/archetypes.js'
+import { promotionChain } from '../game/characters.js'
 import { TRAITS, MAX_TRAITS, getTrait } from '../game/content/traits.js'
 import { getTreatment } from '../game/characters.js'
 import { getTheme } from '../game/content/themes.js'
@@ -37,6 +38,8 @@ const BEAT_CUE = {
   icon: { icon: '★', cls: 'mood--good' },
   fall: { icon: '↓', cls: 'mood--bad' },
   comeback: { icon: '⟲', cls: 'mood--good' },
+  promotion: { icon: '⇧', cls: 'mood--good' },
+  succeeded: { icon: '⇥', cls: 'mood--neutral' },
 }
 
 function money(n) { return '$' + Math.round(n).toLocaleString('en-US') }
@@ -95,6 +98,24 @@ export default function CharacterDetail({ character, state, onClose, onUpdate })
           )}
 
           {character.hook && <p className="charsheet__hook">“{character.hook}”</p>}
+
+          {/* The promotion chain — who this character grew out of. Two roster
+              entries, one story: Kell, Broken Boy into Kell, Royal Soldier. */}
+          {(() => {
+            const chain = promotionChain(state.characters ?? [], character.id)
+            const successors = (state.characters ?? []).filter((c) => c.promotedFromId === character.id)
+            if (!chain.length && !successors.length) return null
+            return (
+              <p className="charsheet__lineage">
+                {chain.length > 0 && (
+                  <>Grew out of <strong>{chain.map((c) => c.name).join(' → ')}</strong>.{' '}</>
+                )}
+                {successors.length > 0 && (
+                  <>The story carries on as <strong>{successors.map((c) => c.name).join(', ')}</strong>.</>
+                )}
+              </p>
+            )
+          })()}
 
           <p className="field__note">{archetype.blurb}</p>
           <p className="field__note">{TRAJ_BLURB[character.trajectory]}</p>

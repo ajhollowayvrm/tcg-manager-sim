@@ -45,6 +45,16 @@ const MAX_BEATS = 12
 // hard ceiling on what one character costs the save.
 const FAME_HISTORY_WEEKS = 52
 
+// How much of a predecessor's fame a promoted character debuts with. A third is
+// enough that promoting an icon is visibly a head start, and little enough that
+// it is not simply better than building a new character — the successor still
+// has to earn the rest on its own cards.
+const PROMOTION_FAME_INHERIT = 0.35
+
+// How far a promotion chain may be walked. Guards a cycle smuggled in through an
+// imported save; the assignment path refuses to create one in the first place.
+export const MAX_PROMOTION_DEPTH = 5
+
 // Treatment tiers a signature card can carry when it features an EXISTING
 // character. Each is a cost multiplier on the card's artist commission (a bigger
 // treatment costs more to produce) and an appeal multiplier on the fame bonus the
@@ -110,10 +120,31 @@ export function createCharacter(name, opts = {}) {
     hook: (o.hook ?? '').trim(),
     pronouns: (o.pronouns ?? '').trim(),
     species: (o.species ?? '').trim(), // optional epithet — "the Ashen"
+    // PROMOTION. The character this one grew out of — "Kell, Broken Boy" into
+    // "Kell, Royal Soldier". They are two separate roster entries on purpose:
+    // the promoted form has its own archetype, its own fame curve and its own
+    // cards, exactly as a second-stage evolution is its own card rather than a
+    // sticker on the first. The link is what lets illustrationsets.js's
+    // relatedCast scorer see a line built from the pair as one line; without it
+    // that group scores zero on same-character and the mechanic refuses to
+    // recognise the case it exists for.
+    //
+    // LOCKED ON DEBUT, exactly as archetypeId is (see the reducer's editable
+    // field list). A re-pointable lineage is a free exploit: you would wait to
+    // see which of your characters got hot and then declare everyone descended
+    // from them.
+    promotedFromId: o.promotedFromId ?? null,
     debutSetId: null,
     debutWeek: null,
     appearances: [], // { cardId, setId, treatment }
-    fame: 12,
+    // A promoted character arrives KNOWN. Kell, Royal Soldier is famous on day
+    // one because Kell, Broken Boy was, and a debut that starts from 12 would
+    // throw that away — the whole point of a promotion is that the audience
+    // already cares. A third of the predecessor's standing carries over, so a
+    // promotion off an icon is a real head start and one off a nobody is not.
+    // `_inheritFame` is passed by the promotion helper below, which is the only
+    // thing that knows the predecessor's current fame.
+    fame: clamp(12 + (o._inheritFame ?? 0) * PROMOTION_FAME_INHERIT, 0, 100),
     fameHistory: [], // rounded weekly samples, newest last, capped
     beats: [], // { week, kind, label } — the character's story so far
     trajectory: 'rising', // 'rising' | 'established' | 'fading' | 'icon'
@@ -142,6 +173,7 @@ export function normalizeCharacter(c) {
     pronouns: c.pronouns ?? '',
     species: c.species ?? '',
     debutWeek: c.debutWeek ?? null,
+    promotedFromId: c.promotedFromId ?? null,
     appearances: c.appearances ?? [],
     fameHistory: c.fameHistory ?? [],
     beats: c.beats ?? [],
@@ -182,6 +214,69 @@ function hasBeat(c, kind) {
 export function famePopBonus(fame, treatmentId = 'debut') {
   const mul = getTreatment(treatmentId).appealMul
   return clamp(fame * 0.28 * mul, 0, 45)
+}
+
+// ---- Promotion --------------------------------------------------------------
+
+// Would making `childId` a promotion of `parentId` close a loop? Walks the chain
+// up from the proposed parent looking for the child. A cycle here would hang
+// every consumer that follows the chain — the cohesion scorer's ancestry index,
+// the Cast panel's lineage display — so it is refused at the point of creation
+// rather than defended against everywhere afterwards.
+export function wouldCycle(characters, childId, parentId) {
+  if (!parentId) return false
+  if (childId && childId === parentId) return true
+  const byId = new Map((characters ?? []).map((c) => [c.id, c]))
+  const seen = new Set()
+  let cur = byId.get(parentId)
+  let depth = 0
+  while (cur && depth < MAX_PROMOTION_DEPTH + 2) {
+    if (cur.id === childId) return true
+    if (seen.has(cur.id)) return true // an existing cycle; refuse to extend it
+    seen.add(cur.id)
+    cur = byId.get(cur.promotedFromId)
+    depth++
+  }
+  return depth >= MAX_PROMOTION_DEPTH
+}
+
+// The whole promotion chain above a character, nearest ancestor first.
+export function promotionChain(characters, id) {
+  const byId = new Map((characters ?? []).map((c) => [c.id, c]))
+  const out = []
+  const seen = new Set([id])
+  let cur = byId.get(byId.get(id)?.promotedFromId)
+  while (cur && !seen.has(cur.id) && out.length < MAX_PROMOTION_DEPTH) {
+    out.push(cur)
+    seen.add(cur.id)
+    cur = byId.get(cur.promotedFromId)
+  }
+  return out
+}
+
+// File the two story beats a promotion creates, so both careers read as one
+// story rather than two unrelated ones that happen to share a first name. The
+// successor gets a 'promotion' beat; the predecessor gets 'succeeded'.
+//
+// Neither is guarded by hasBeat: a character CAN be promoted more than once
+// across a long run (Broken Boy into Royal Soldier into Kingsguard), and each
+// step is a real turning point. The predecessor's beat repeats for the same
+// reason a `fall` does.
+export function recordPromotion(characters, { childId, parentId, week }) {
+  if (!childId || !parentId) return characters
+  const byId = new Map(characters.map((c) => [c.id, c]))
+  const child = byId.get(childId)
+  const parent = byId.get(parentId)
+  if (!child || !parent) return characters
+  return characters.map((c) => {
+    if (c.id === childId) {
+      return { ...c, beats: withBeat(c, week, 'promotion', `Grew out of ${parent.name}`) }
+    }
+    if (c.id === parentId) {
+      return { ...c, beats: withBeat(c, week, 'succeeded', `${child.name} carries the story on`) }
+    }
+    return c
+  })
 }
 
 // Record a new appearance (called on set release for every signature card that

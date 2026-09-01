@@ -19,6 +19,24 @@ import { clamp } from './simulation.js'
 const COST_MIN = 1_500
 const COST_MAX = 30_000
 
+// ---- Collector heat ---------------------------------------------------------
+// How badly collectors want an artist's work RIGHT NOW, 0-100.
+//
+// Until this existed, card.artistId was written at print time, spent on a
+// one-off art-appeal bonus, and then read by nothing ever again. An illustrator
+// was a cost line. Nobody in the community had a favourite artist, no card was
+// worth more because of who drew it, and the whole forty-four-name roster with
+// its drifting careers existed only to be a price tag with a specialty tag
+// attached.
+//
+// Heat is the collector-side counterpart to a character's fame, and it is built
+// the same way: off how the artist's LIVE cards are actually performing, not on
+// a random walk. An artist with nothing in print cools toward zero.
+const HEAT_DECAY = 0.94 // ~11 weeks to halve with nothing in print
+const HEAT_GAIN = 0.16 // how fast a hot week pulls heat toward the signal
+// The value premium itself lives in market.js (ARTIST_HEAT_PREMIUM) — see the
+// note there on why it is not imported across this module boundary.
+
 // Build the initial per-artist career state from the static roster.
 // `perks` carries the prestige unlocks from previous runs (see legacy.js).
 // 'seed_artist' promotes the highest-reach rising star straight to established,
@@ -30,6 +48,7 @@ export function seedArtists(perks = []) {
     reach: a.reach,
     trajectory: a.trajectory,
     weeksInTrajectory: 0,
+    heat: 0,
   }))
   if (!perks.includes('seed_artist')) return seeded
   const star = seeded
@@ -51,7 +70,7 @@ export function currentArtist(state, id) {
   if (!base) return null
   const live = state.artists?.find((a) => a.id === id)
   if (!live) return base
-  return { ...base, cost: live.cost, reach: live.reach, trajectory: live.trajectory }
+  return { ...base, cost: live.cost, reach: live.reach, trajectory: live.trajectory, heat: live.heat ?? 0 }
 }
 
 // Per-trajectory weekly drift. Multipliers/deltas are small — a career moves
@@ -124,7 +143,36 @@ export function driftArtists(next) {
     next.artists = seedArtists()
   }
   const rng = makeRng(hashSeed(`artists:${next.week}`))
-  next.artists = next.artists.map((a) => driftOne(a, rng))
+  const heat = heatSignals(next)
+  next.artists = next.artists.map((a) => {
+    const drifted = driftOne(a, rng)
+    const signal = heat.get(a.id)
+    const prev = a.heat ?? 0
+    // No live cards: cool off. Otherwise ease toward this week's signal.
+    const target = signal ?? 0
+    return { ...drifted, heat: clamp(prev * HEAT_DECAY + (target - prev * HEAT_DECAY) * HEAT_GAIN, 0, 100) }
+  })
+}
+
+// This week's collector signal per artist: how well their live cards are doing.
+// Built from the same quantities characters.js's performanceSignal reads —
+// momentum and hype — so a hot artist and a hot character are hot for the same
+// observable reasons. Averaged per artist rather than summed, so an illustrator
+// with one adored card is not beaten by one with forty forgettable ones.
+function heatSignals(state) {
+  const acc = new Map()
+  for (const c of state.cards ?? []) {
+    if (!c.artistId || c.rotated || c.outOfPrint) continue
+    const e = acc.get(c.artistId) ?? { sum: 0, n: 0 }
+    // hype is 0..~3 and momentum is a price delta; both are scaled into the
+    // same 0..100 space heat lives in.
+    e.sum += clamp((c.hype ?? 0) * 30 + clamp((c.momentum ?? 0) * 2, -20, 20), 0, 100)
+    e.n += 1
+    acc.set(c.artistId, e)
+  }
+  const out = new Map()
+  for (const [id, e] of acc) out.set(id, e.n ? e.sum / e.n : 0)
+  return out
 }
 
 // Apply a one-off "blow up" to a rising/steady artist (used by the breakout

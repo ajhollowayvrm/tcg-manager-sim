@@ -25,7 +25,16 @@ legacy toward future runs, but nothing ever asks you to.
   so pruning is the central late-game decision. Pull a set and its singles spike
   on scarcity — but yanking one that was still selling reads as manufactured
   scarcity and costs goodwill.
-- **The cast.** Characters you invent and print again and again. Each picks an
+- **Illustration sets.** Groups of cards meant to be collected together — a
+  progression line up a rarity ladder, an illustrator's suite, one character
+  across eras, linked art broken over several cards. A group can span releases:
+  open one now, finish it years later. The capstone that completes a run is worth
+  a multiple of its linemates, the members move together on the ticker, and a run
+  you announce and never finish goes stale, gets written off, and costs you the
+  room's trust — after which nobody believes the next announcement either.
+- **The cast.** Characters you invent and print again and again. One can be
+  *promoted* into a later role — Kell, Broken Boy into Kell, Royal Soldier — a
+  second roster entry that debuts already partly famous and reads as one story. Each picks an
   archetype from 12 — mascot, villain, legendary, trickster and the rest — which
   decides both which sets they suit and how their fame behaves: a mascot climbs
   fastest and bruises easiest, a villain grows on the heat that would sink one.

@@ -125,6 +125,59 @@ function attachCast(state, draft, knobs) {
   return { ...draft, signatureCards: sigs, coverCharacterId: existing.id }
 }
 
+
+// AN ILLUSTRATION SET PER RELEASE. Until this existed, nothing in the harness
+// authored a group, so the whole of illustrationsets.js — cohesion scoring, the
+// completion premium, the halo, the stale/abandoned clock and the manufactured
+// grievance — ran unmeasured, exactly as characters.js did before attachCast.
+//
+// `knobs.illustration` is { kindId, plannedSize, artistId, abandon }. The three
+// signature cards it commits are pinned to ONE artist and given art notes that
+// answer the group's brief, and picked in ascending rarity order (Double Rare →
+// Illustration Rare → Special Illustration Rare) so the ladder requirement
+// actually scores. A strategy that got any of those wrong would measure a
+// mechanic scoring near zero and conclude it does nothing.
+//
+// `abandon: true` opens a group on every release and never continues one — the
+// control that proves the incompletion penalty bites rather than merely being
+// described.
+function attachIllustration(state, draft, knobs) {
+  const spec = knobs.illustration
+  if (!spec || !draft.signatureCards?.length) return draft
+  const brief = 'frost river dusk'
+  const sigs = [...draft.signatureCards]
+  // Cards 0..2 are the members: one artist, one brief, ascending rarity.
+  const LADDER = ['dbl', 'ir', 'sir']
+  for (let i = 0; i < 3 && i < sigs.length; i++) {
+    sigs[i] = { ...sigs[i], artistId: spec.artistId, artNotes: brief, rarity: LADDER[i] }
+  }
+  // Picked in ladder order, which is the order the cohesion scorer reads.
+  const picks = [0, 1, 2].filter((i) => i < sigs.length).map((i) => ({ kind: 'signature', ref: i }))
+
+  // The CONTROL. `groupless` applies every side effect of the illustration
+  // strategies — the same commissioned artist, the same art notes, the same
+  // rarity ladder — and then authors no group at all.
+  //
+  // Without it the comparison is worthless, and this was measured the wrong way
+  // first: matching against 'Target cadence (prune 6)' looked like the
+  // illustration strategy LOSING about 1.4M, when most of that gap was three
+  // artist commissions a release that the reference simply never pays for
+  // (buildDraft leaves every signature card uncommissioned). The illustration
+  // set has to be measured against a studio making the same art decisions.
+  if (spec.groupless) return { ...draft, signatureCards: sigs }
+
+  const open = spec.abandon
+    ? null
+    : (state.illustrationSets ?? []).find((g) => g.status === 'open')
+  const illustrationSet = open
+    ? { mode: 'continue', groupId: open.id, kindId: open.kindId, name: open.name, artBrief: open.artBrief, plannedSize: open.plannedSize, picks: picks.slice(0, Math.max(0, open.plannedSize - open.members.length)) }
+    : { mode: 'open', groupId: null, kindId: spec.kindId, name: `${draft.name} ${spec.kindId}`, artBrief: brief, plannedSize: spec.plannedSize, picks }
+
+  // A continue with no room left is a no-op rather than an invalid draft.
+  if (illustrationSet.mode === 'continue' && !illustrationSet.picks.length) return { ...draft, signatureCards: sigs }
+  return { ...draft, signatureCards: sigs, illustrationSet }
+}
+
 // ---- Strategies -----------------------------------------------------------
 // Each decides what to do at the start of a week given the live state.
 
@@ -177,7 +230,7 @@ function makeStrategy({ name, cadence, knobs, rotateEvery, ignoreCash = false, m
       const weeksSinceMajor = lastMajor ? s.week - lastMajor.releasedWeek : Infinity
       const isMajorDue = s.sets.length === 0 || weeksSinceMajor >= cadence
       if (isMajorDue) {
-        const draft = attachCast(s, buildDraft(s.sets.length + 1, knobs, ctx.salt, 'major'), knobs)
+        const draft = attachIllustration(s, attachCast(s, buildDraft(s.sets.length + 1, knobs, ctx.salt, 'major'), knobs), knobs)
         if (ignoreCash || canFund(s, draft)) {
           s = applyRelease(s, draft)
           ctx.releases++
@@ -185,7 +238,7 @@ function makeStrategy({ name, cadence, knobs, rotateEvery, ignoreCash = false, m
       } else if (minorEvery && s.blocks?.length && weeksSinceAny >= minorEvery) {
         // Between majors: a rider riding the newest block. Alternate minor/micro.
         const tier = (ctx.riders % 2 === 0) ? 'minor' : 'micro'
-        const draft = attachCast(s, buildDraft(s.sets.length + 1, knobs, ctx.salt, tier, s.blocks), knobs)
+        const draft = attachIllustration(s, attachCast(s, buildDraft(s.sets.length + 1, knobs, ctx.salt, tier, s.blocks), knobs), knobs)
         if (ignoreCash || canFund(s, draft)) {
           s = applyRelease(s, draft)
           ctx.releases++
@@ -327,6 +380,35 @@ const STRATEGIES = [
   makeStrategy({ name: 'Fast cadence (8wk)', cadence: 8, rotateEvery: null, maxLiveSets: 6,
     knobs: { designLoudness: 50, printRun: 50, pricePoint: 4.5, chaseAppeal: 70,
       namePool: NAME_POOL, themes: THEMES, gimmicks: ['mega'] } }),
+  // ---- Illustration-set strategies ----------------------------------------
+  // All three are matched to 'Target cadence (prune 6)' on EVERY other knob, so
+  // the pair isolates the mechanic the way 'Landmark sets' / 'Tight sets'
+  // isolates the size math. Anything these rows do that the reference row does
+  // not is the illustration set, and nothing else.
+  makeStrategy({ name: 'Illustration control', cadence: 14, rotateEvery: null, maxLiveSets: 6,
+    knobs: { designLoudness: 50, printRun: 50, pricePoint: 4.5, chaseAppeal: 70,
+      namePool: NAME_POOL, themes: THEMES, gimmicks: ['mega'],
+      illustration: { kindId: 'line', plannedSize: 3, artistId: 'a01', groupless: true } } }),
+  makeStrategy({ name: 'Illustration line', cadence: 14, rotateEvery: null, maxLiveSets: 6,
+    knobs: { designLoudness: 50, printRun: 50, pricePoint: 4.5, chaseAppeal: 70,
+      namePool: NAME_POOL, themes: THEMES, gimmicks: ['mega'],
+      illustration: { kindId: 'line', plannedSize: 3, artistId: 'a01' } } }),
+  // The spread kind, to confirm capstoneWeight actually does something: a suite
+  // pays its members more and its top card less, so ilPremium should read LOWER
+  // than the line's on comparable cash.
+  makeStrategy({ name: 'Illustration suite', cadence: 14, rotateEvery: null, maxLiveSets: 6,
+    knobs: { designLoudness: 50, printRun: 50, pricePoint: 4.5, chaseAppeal: 70,
+      namePool: NAME_POOL, themes: THEMES, gimmicks: ['mega'],
+      illustration: { kindId: 'suite', plannedSize: 3, artistId: 'a01' } } }),
+  // Opens a run every release and never finishes one. This is the control that
+  // proves the incompletion penalty BITES: it should pay the commission and the
+  // announcement buzz, then watch every group go stale and get written off,
+  // ending behind the reference play on sentiment and no better on cash.
+  makeStrategy({ name: 'Abandoned illustration', cadence: 14, rotateEvery: null, maxLiveSets: 6,
+    knobs: { designLoudness: 50, printRun: 50, pricePoint: 4.5, chaseAppeal: 70,
+      namePool: NAME_POOL, themes: THEMES, gimmicks: ['mega'],
+      illustration: { kindId: 'line', plannedSize: 4, artistId: 'a01', abandon: true } } }),
+
   // The goodwill programme (overhead.js sink D) as a real choice: this studio
   // spends a third to a half of gross income on the community. It should show
   // the best sentiment and reputation and far less cash than the reference —
@@ -473,12 +555,56 @@ function playOne(strategy, salt, trace = false, horizon = DEFAULT_HORIZON) {
     treatmentCards: state.cards.filter((c) => c.treatment).length,
     cards: state.cards.length,
     pulls: ctx.pulls,
+    // Illustration sets. ilPremium is the number that proves fairValue is
+    // actually wired: the mean price of every group CAPSTONE over the mean price
+    // of every non-member chase card. It reads 1.00 on any strategy that
+    // authors no groups, and should land around 1.5-1.8 on one that does.
+    ilOpened: (state.illustrationSets ?? []).length,
+    ilCompleted: (state.illustrationSets ?? []).filter((g) => g.status === 'complete').length,
+    ilAbandoned: (state.illustrationSets ?? []).filter((g) => g.status === 'abandoned').length,
+    ilCohesion: meanCohesion(state),
+    ilPremium: capstonePremium(state),
     moverRate: weeksWithMover / Math.max(1, state.week - 1),
     bigMoves,
     minCash,
     minPlayers,
     samples,
   }
+}
+
+// Mean cohesion across every group that actually completed. A strategy whose
+// completed groups score below ~0.8 is authoring them wrong, not measuring a
+// weak mechanic — check attachIllustration's ladder before touching a constant.
+function meanCohesion(state) {
+  const done = (state.illustrationSets ?? []).filter((g) => g.status === 'complete')
+  if (!done.length) return 0
+  return done.reduce((s, g) => s + (g.cohesion ?? 0), 0) / done.length
+}
+
+// Mean capstone price over mean non-member chase price. 1 when there are no
+// groups, so every existing strategy's column is unchanged.
+function capstonePremium(state) {
+  const groups = (state.illustrationSets ?? []).filter((g) => g.status !== 'abandoned')
+  if (!groups.length) return 1
+  const byId = new Map((state.cards ?? []).map((c) => [c.id, c]))
+  const memberIds = new Set()
+  const caps = []
+  for (const g of groups) {
+    let top = null
+    for (const m of g.members ?? []) {
+      memberIds.add(m.cardId)
+      if (!top || (m.valueTier ?? 0) > (top.valueTier ?? 0)) top = m
+    }
+    const c = top && byId.get(top.cardId)
+    if (c) caps.push(c.singlePrice ?? 0)
+  }
+  const peers = (state.cards ?? []).filter(
+    (c) => !memberIds.has(c.id) && (c.treatment || c.secret || c.signature),
+  )
+  if (!caps.length || !peers.length) return 1
+  const capMean = caps.reduce((a, b) => a + b, 0) / caps.length
+  const peerMean = peers.reduce((a, c) => a + (c.singlePrice ?? 0), 0) / peers.length
+  return peerMean > 0 ? capMean / peerMean : 1
 }
 
 // Sets still being printed — distinct from `releases` (lifetime count). This is
@@ -545,6 +671,11 @@ function summarize(opts) {
       moverRate: avg((r) => r.moverRate),
       bigMoves: avg((r) => r.bigMoves),
       treatmentCards: avg((r) => r.treatmentCards),
+      ilOpened: avg((r) => r.ilOpened),
+      ilCompleted: avg((r) => r.ilCompleted),
+      ilAbandoned: avg((r) => r.ilAbandoned),
+      ilCohesion: avg((r) => r.ilCohesion),
+      ilPremium: avg((r) => r.ilPremium),
       // Weeks per release — the number the brief's 12–20 week target is about.
       cadence: avg((r) => (r.releases > 0 ? (r.endWeek - 1) / r.releases : 0)),
       kinds: [...new Set(runs.map((r) => r.kind))].join('/'),
@@ -560,7 +691,7 @@ function summarize(opts) {
   const H = [
     ['strategy', 23], ['survive', 9], ['deaths', 14], ['cash', 9], ['ovhd', 8],
     ['spend%', 8], ['netWk', 9], ['players', 9], ['sent', 7], ['rep', 6], ['pInt', 6],
-    ['rel', 5], ['live', 6], ['cad', 6], ['outcome', 10],
+    ['rel', 5], ['live', 6], ['cad', 6], ['ilset', 7], ['outcome', 10],
   ]
   console.log(H.map(([h, w]) => h.padEnd(w)).join(''))
   console.log('-'.repeat(H.reduce((s, [, w]) => s + w, 0)))
@@ -581,6 +712,11 @@ function summarize(opts) {
       r.releases.toFixed(0),
       r.liveSets.toFixed(0),
       r.cadence.toFixed(0),
+      // completed/opened. An em dash for a studio that never authored one, so
+      // the column reads as "not playing this game" rather than "played it
+      // badly". Cohesion and the capstone premium go to --json only; the table
+      // is already fifteen columns wide.
+      r.ilOpened >= 0.5 ? `${r.ilCompleted.toFixed(0)}/${r.ilOpened.toFixed(0)}` : '—',
       r.kinds,
     ]
     console.log(cells.map((c, i) => String(c).padEnd(H[i][1])).join(''))

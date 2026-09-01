@@ -9,6 +9,7 @@ import RarityEditor from './RarityEditor.jsx'
 import PackFormatEditor from './PackFormatEditor.jsx'
 import PackOddsPanel from './PackOddsPanel.jsx'
 import AccordionSection from './AccordionSection.jsx'
+import IllustrationSetEditor from './IllustrationSetEditor.jsx'
 import ProductLineupEditor from './ProductLineupEditor.jsx'
 import { packSize, PACK_PRESETS, syncFormatWithVariants, getRarity, pruneRarityFromFormat } from '../../game/rarities.js'
 import { SKU_TYPES } from '../../game/products.js'
@@ -48,7 +49,7 @@ function nextId(cards) {
   return max + 1
 }
 
-export default function SetBuilder({ setNumber, cash, artists, characters = [], liveCards = [], sets = [], blocks = [], franchise, perks = [], conceptId, onRelease, onClose }) {
+export default function SetBuilder({ setNumber, cash, artists, characters = [], liveCards = [], sets = [], blocks = [], illustrationSets = [], week = 1, franchise, perks = [], conceptId, onRelease, onClose }) {
   // The first set you ever ship MUST be a major (it opens your first block); once
   // a block is live you can ship riders. Seed the tier accordingly.
   const isFirstSet = blocks.length === 0
@@ -58,6 +59,10 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
   // only, see content/concepts.js. Feeds the auto-fill preview below so it
   // matches what release will actually generate.
   const nameStyle = getConcept(conceptId).nameStyle
+  // Groups a release can still add cards to. An abandoned or completed one is
+  // deliberately absent: reopening an abandoned run is what would let a player
+  // farm the announcement buzz forever.
+  const openIllustrationSets = illustrationSets.filter((g) => g.status === 'open')
 
   // Accordion: sections toggle independently (multi-open). Identity is open by
   // default; everything else starts collapsed so the modal opens short and
@@ -120,7 +125,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
   // reflect current prices, not the static seed.
   const artistOf = (id) => artists?.find((a) => a.id === id) ?? null
   const cost = setCost(draft, (id) => artistOf(id) ?? undefined)
-  const errors = validateDraft(draft, { blocks, isFirstSet, franchise, setsShipped: sets.length, perks })
+  const errors = validateDraft(draft, { blocks, isFirstSet, franchise, setsShipped: sets.length, perks, illustrationSets })
   // Cash can go negative (a loan), so affordability NO LONGER blocks release —
   // it only flags that you'll dip into debt. The only release gate is validity.
   const goesIntoDebt = cash - cost.total < 0
@@ -193,6 +198,17 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
     spotlight: (draft.spotlight?.picks?.length ?? 0)
       ? `${draft.spotlight.picks.length} previewed`
       : 'no previews',
+    illustration: (() => {
+      const il = draft.illustrationSet
+      if (!il || il.mode === 'none') return 'none'
+      if (il.mode === 'continue') {
+        const g = openIllustrationSets.find((x) => x.id === il.groupId)
+        return g
+          ? `continuing ${g.name} (${g.members.length + (il.picks?.length ?? 0)}/${g.plannedSize})`
+          : 'continuing a set'
+      }
+      return `${il.name?.trim() || 'unnamed'} — ${il.picks?.length ?? 0} of ${il.plannedSize}`
+    })(),
   }
 
   return (
@@ -453,6 +469,27 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
             />
           </AccordionSection>
 
+          {/* Illustration set — a named group of cards meant to be collected
+              together. Sits after the spotlight because a reveal can then be
+              pointed at one of its members. */}
+          <AccordionSection
+            title="Illustration set"
+            summary={summaries.illustration}
+            open={open.illustration}
+            onToggle={() => toggle('illustration')}
+          >
+            <IllustrationSetEditor
+              spec={draft.illustrationSet}
+              signatureCards={draft.signatureCards}
+              rarities={draft.rarities}
+              characters={characters}
+              openGroups={openIllustrationSets}
+              setId={`set_${sets.length + 1}`}
+              week={week}
+              onChange={(illustrationSet) => patch({ illustrationSet })}
+            />
+          </AccordionSection>
+
           {/* Reprint popular cards from older sets — a fan-service / hype draw */}
           <AccordionSection
             title={`Reprint popular cards (${draft.reprintedCards?.length ?? 0}/${maxReprintedCards(draft.tier)})`}
@@ -690,6 +727,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
             {cost.prerelease > 0 && <CostLine label="Prerelease" value={cost.prerelease} />}
             {cost.releaseEvent > 0 && <CostLine label="Release event" value={cost.releaseEvent} />}
             {cost.spotlight > 0 && <CostLine label="Preview campaign" value={cost.spotlight} />}
+            {cost.illustrationSet > 0 && <CostLine label="Illustration set direction" value={cost.illustrationSet} />}
             <CostLine label="Total" value={cost.total} total />
             <div className={'costs__cash' + (goesIntoDebt ? ' is-bad' : '')}>
               On hand: {formatCash(cash)}

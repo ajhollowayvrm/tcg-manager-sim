@@ -9,6 +9,7 @@ import { useState } from 'react'
 import SetSymbol from './SetSymbol.jsx'
 import { reprintCost } from '../game/sets.js'
 import { getTier } from '../game/blocks.js'
+import { getIllustrationKind } from '../game/content/illustrationsets.js'
 
 const REPRINT_RUN_DEFAULT = 55 // matches the reducer's own default when no run size is chosen
 
@@ -144,6 +145,21 @@ function SetRow({ set, state, lastPerSet, onReprint, onPull, canPull, onAdjustWa
             ? <span className="tag tag--outofprint">out of print</span>
             : set.rotated && <span className="tag tag--rotated">rotated</span>}
           {soldOut && !set.rotated && <span className="tag tag--soldout">sold out</span>}
+          {/* Illustration sets this release contributed cards to. A stale or
+              abandoned one is flagged: an unfinished run is a live liability,
+              and the sets panel is where a player looks at the shelf. */}
+          {(state.illustrationSets ?? [])
+            .filter((g) => (g.members ?? []).some((m) => m.setId === set.id))
+            .map((g) => (
+              <span
+                key={g.id}
+                className={`tag tag--ilset is-${g.status}`}
+                title={`${g.name} — ${getIllustrationKind(g.kindId).name}, ${g.members.length} of ${g.plannedSize}${g.status === 'stale' ? '. Overdue.' : g.status === 'abandoned' ? '. Written off.' : ''}`}
+              >
+                {g.status === 'stale' ? '⚠ ' : g.status === 'abandoned' ? '✕ ' : '🎨 '}
+                {g.name} {g.members.length}/{g.plannedSize}
+              </span>
+            ))}
           {buzzPct > 0 && (
             <span
               className="tag tag--buzz"

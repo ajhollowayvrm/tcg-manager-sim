@@ -61,6 +61,25 @@ export const MILESTONES = [
   { id: 'vintage', name: 'Vintage', points: 80,
     blurb: 'Kept a set in the catalogue for five years.',
     test: (s) => (s.sets ?? []).some((x) => s.week - x.releasedWeek >= 260) },
+  // Illustration sets are, by measurement, close to cash-neutral: what they buy
+  // is collection value, community goodwill and a catalogue worth remembering,
+  // not margin. Legacy is exactly the axis the game already keeps for that, so
+  // this is where the reward for finishing one is legible.
+  { id: 'first_illustration_set', name: 'It goes together', points: 40,
+    blurb: 'Completed your first illustration set.',
+    test: (s) => (s.illustrationSets ?? []).some((g) => g.status === 'complete') },
+  { id: 'long_run', name: 'Worth the wait', points: 90,
+    blurb: 'Completed an illustration set that spanned three or more releases.',
+    test: (s) => (s.illustrationSets ?? []).some(
+      (g) => g.status === 'complete' && new Set((g.members ?? []).map((m) => m.setId)).size >= 3,
+    ) },
+  { id: 'curator', name: 'Curator', points: 120,
+    blurb: 'Completed eight illustration sets, and abandoned none.',
+    test: (s) => {
+      const groups = s.illustrationSets ?? []
+      if (groups.some((g) => g.status === 'abandoned')) return false
+      return groups.filter((g) => g.status === 'complete').length >= 8
+    } },
 
   // ---- Discipline ---------------------------------------------------------
   { id: 'debt_free', name: 'Solvent', points: 60,

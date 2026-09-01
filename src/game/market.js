@@ -7,6 +7,19 @@ import { makeRng, hashSeed, range } from './rng.js'
 import { clamp } from './simulation.js'
 import { legacyMultiplier } from './franchise.js'
 import { COLLECTOR_MARKET_TILT } from './config.js'
+import { illustrationContext, completionPremium, HALO_MAX } from './illustrationsets.js'
+
+// The most a sought-after illustrator adds to their cards' value. Capped at the
+// same 1.25x as a block-gimmick treatment card, deliberately: being by the
+// illustrator of the moment is worth about what being an era's chase subtype is.
+//
+// Defined here rather than imported from artists.js on purpose. artists.js
+// imports clamp from simulation.js, and simulation.js imports resolveMarket from
+// this file — so importing a CONST across that edge would put it in the temporal
+// dead zone if the modules ever evaluate in the other order. The existing cycles
+// in this graph survive only because what they import (clamp) is a hoisted
+// function declaration. Not worth the risk for one number.
+const ARTIST_HEAT_PREMIUM = 0.25
 
 const PRICE_HISTORY_LEN = 26 // ~half a year of weekly points kept per card
 
@@ -23,7 +36,7 @@ const PROMO_SUPPLY_MAX = 5150
 // `legacyMul` (default 1, from franchise.js's legacyMultiplier) lifts old
 // vintage cards for reasons independent of any one card's own stats — a
 // franchise's growing reputation makes the whole back-catalog worth more.
-export function fairValue(card, set, legacyMul = 1) {
+export function fairValue(card, set, legacyMul = 1, groupPremium = 1, artistHeat = 0) {
   const f = card.popFactors
 
   // Under-printed sets keep singles scarce and pricey; over-print drags them.
@@ -60,7 +73,27 @@ export function fairValue(card, set, legacyMul = 1) {
   // richer across every card in it — the design choice to make pulls feel
   // special pays off directly in secondary-market value.
   const chaseLift = 0.7 + ((set.rarityChase ?? 50) / 100) * 0.6
-  const collectorLift = (set.collectorMul ?? 1) * (card.treatment ? 1.25 : 1) * serialLift * gradedLift * chaseLift
+  // Belonging to an illustration set (illustrationsets.js). A capstone that
+  // FINISHES a coherent run carries the big multiplier — that is what a
+  // collector is actually paying for — and every other member holds a smaller
+  // floor because somebody needs it to complete the run. Both scale by how much
+  // of what was promised has actually been printed, so an abandoned trilogy
+  // pays nothing at all.
+  //
+  // It tops out around 1.8x, which is far below serialLift (15x) and
+  // variantScarcityPremium (12x), and that gap is the design statement: a group
+  // is a DESIGN act, not a scarcity act. Nothing about grouping three cards
+  // reduces how many copies are printed. Exactly 1 for a card in no group, so
+  // this is safe to fold in unconditionally.
+  // Who DREW it. artistId was written onto every signature card at print time,
+  // spent on a one-off art-appeal bonus, and then read by nothing — so the
+  // forty-four-name roster was a price list, and no card was ever worth more
+  // because of the hand behind it. An artist's collector heat (artists.js)
+  // drifts off how their live cards actually perform, and tops out at the same
+  // 1.25x as a block-gimmick treatment card: being by the illustrator of the
+  // moment is worth about what being an era's chase subtype is.
+  const artistLift = 1 + clamp(artistHeat / 100, 0, 1) * ARTIST_HEAT_PREMIUM
+  const collectorLift = (set.collectorMul ?? 1) * (card.treatment ? 1.25 : 1) * serialLift * gradedLift * chaseLift * groupPremium * artistLift
   const collectorVal = collectorBase * scarcity * 0.6 * collectorLift * legacyMul * COLLECTOR_MARKET_TILT
 
   return clamp(collectorVal, 0.25, 12000)
@@ -70,8 +103,8 @@ export function fairValue(card, set, legacyMul = 1) {
 
 // Mutates a card-market record in place for one week and returns a "mover"
 // descriptor if the move is big enough to surface on the ticker.
-function stepCard(card, set, rng, legacyMul = 1) {
-  const fair = fairValue(card, set, legacyMul)
+function stepCard(card, set, rng, legacyMul = 1, groupPremium = 1, artistHeat = 0) {
+  const fair = fairValue(card, set, legacyMul, groupPremium, artistHeat)
   const prev = card.singlePrice
 
   // Hype is a self-reinforcing bubble term that decays. While elevated it
@@ -141,6 +174,13 @@ export function resolveMarket(state) {
   const setById = new Map(state.sets.map((s) => [s.id, s]))
   const rng = makeRng(hashSeed(`market:${state.week}`))
   const reputation = state.franchise?.reputation ?? 0
+  // Built ONCE, beside setById, for the same reason: a `.find()` over groups
+  // inside the per-card loop below would be O(cards x groups) every week, and a
+  // late run holds several thousand cards. Empty Map on a run with no groups,
+  // so every lookup misses and completionPremium returns exactly 1.
+  const groups = illustrationContext(state)
+  // Artist collector heat, indexed once for the same reason.
+  const heatById = new Map((state.artists ?? []).map((a) => [a.id, a.heat ?? 0]))
 
   const movers = []
   const cards = state.cards.map((orig) => {
@@ -185,7 +225,11 @@ export function resolveMarket(state) {
 
     const ageWeeks = state.week - set.releasedWeek
     const legacyMul = legacyMultiplier(reputation, ageWeeks, { anniversaryBoost: set.tier === 'anniversary' })
-    const mover = stepCard(card, set, rng, legacyMul)
+    const mover = stepCard(
+      card, set, rng, legacyMul,
+      completionPremium(groups.get(card.id)),
+      card.artistId ? (heatById.get(card.artistId) ?? 0) : 0,
+    )
     card.sealedPrice = sealedPrice(set, ageWeeks)
     // A rough dollar estimate of how much of this week's price is the franchise-
     // reputation "legacy" premium, for the ticker to show as a distinct line.
@@ -195,6 +239,52 @@ export function resolveMarket(state) {
     if (Math.abs(mover.pct) >= 0.06) movers.push(mover)
     return card
   })
+
+  // ---- Illustration-set halo ----------------------------------------------
+  // The thing that makes a group FEEL like a group rather than a hidden
+  // multiplier: its members move together. Each member's hype is nudged toward
+  // the group's mean price move this week, scaled by how coherent the group is.
+  //
+  // It acts on `hype` and never on price or momentum, and that is load-bearing.
+  // stepCard already carries memory (`momentum = momentum*0.5 + delta*0.5`), so
+  // coupling N members through a shared PRICE move would feed each member's
+  // momentum, which raises next week's mean, which feeds it again — a runaway
+  // with nothing bounding it. `hype` decays 14%/week against a hard cap and is
+  // the designed bubble channel, so the coupling is bounded by construction.
+  //
+  // Capped at HALO_MAX (0.1), deliberately below a loud collector persona's bump
+  // (0.22 x reach/100) and below a god pack (+0.15): a group is a slow story,
+  // not a spike. Writing hype AFTER the step is safe — nothing else reads it
+  // this week; stepCard picks it up at the start of the next one.
+  if (groups.size) {
+    const byId = new Map(cards.map((c) => [c.id, c]))
+    const seen = new Set()
+    // This week's move, read off the card's own price history rather than off
+    // `movers`. movers only holds cards past the 6% reporting threshold, so
+    // taking the mean from it would score a member that moved 5% as having not
+    // moved at all — and quietly bias every group's mean toward zero.
+    const moveOf = (c) => {
+      const h = c.priceHistory ?? []
+      if (h.length < 2) return 0
+      const prev = h[h.length - 2]
+      return prev > 0 ? (h[h.length - 1] - prev) / prev : 0
+    }
+    for (const entry of groups.values()) {
+      const group = entry.group
+      if (seen.has(group.id) || !group.cohesion) continue
+      seen.add(group.id)
+      const members = (group.members ?? []).map((m) => byId.get(m.cardId)).filter(Boolean)
+      if (members.length < 2) continue
+      let sum = 0
+      for (const c of members) sum += moveOf(c)
+      const mean = sum / members.length
+      if (mean === 0) continue
+      const pull = clamp(mean, -HALO_MAX, HALO_MAX) * group.cohesion
+      for (const c of members) {
+        c.hype = clamp((c.hype ?? 0) + pull, 0, 3)
+      }
+    }
+  }
 
   movers.sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct))
   return { cards, movers: movers.slice(0, 8) }
