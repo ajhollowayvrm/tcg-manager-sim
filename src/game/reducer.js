@@ -62,9 +62,16 @@ export function reducer(state, action) {
       // A tier-aware launch line: a major opens a block (names the gimmick); a
       // rider rides one. Falls back to the classic line for a blockless release.
       const tierLabel = tier === 'minor' ? 'Minor set' : tier === 'micro' ? 'Micro set' : 'Major set'
+      // A block opened WITHOUT a gimmick is a plain themed era — a first-class,
+      // cheaper choice, not a missing value. blocks.js stores `gimmickName: null`
+      // for one, and this line interpolated it straight into the launch feed, so
+      // every plain era announced itself as `opens the “Dragons Block” block
+      // (null)`. Named eras are unchanged.
       const blockLine = block
         ? (tier === 'major'
-            ? ` — opens the “${block.name}” block (${block.gimmickName}).`
+            ? (block.gimmickName
+                ? ` — opens the “${block.name}” block (${block.gimmickName}).`
+                : ` — opens the “${block.name}” block.`)
             : ` — a ${tier} set in the “${block.name}” block.`)
         : ' — fresh chase pulls hit the shelves.'
       // Regional stagger: the lead region gets its own (cosmetic) name in the
