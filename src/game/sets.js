@@ -372,7 +372,10 @@ export function sizeProfile(draft) {
 // `artistOf` resolves an artist id to its CURRENT (possibly drifted) record;
 // defaults to the static roster so old call sites / tests still work. The live
 // game passes a state-aware resolver so a risen star costs what they cost now.
-export function setCost(draft, artistOf = getArtist) {
+// `ctx` carries { illustrationSets } so a continue can be billed against the
+// kind of the group it is continuing. Optional — an old call site or the
+// harness bills off the draft, which is correct for an 'open'.
+export function setCost(draft, artistOf = getArtist, ctx = {}) {
   // A booster richer than the Classic baseline costs more to manufacture; a
   // leaner one costs a touch less. Measured relative to Classic so the default
   // pack is cost-neutral. Light: a hit-heavy pack runs ~+15-20% on the print line.
@@ -473,7 +476,15 @@ export function setCost(draft, artistOf = getArtist) {
   // their rate ($3k-$60k). Continuing an open group pays only for the cards it
   // adds — the direction was bought when the group opened.
   const ilSpec = draft.illustrationSet
-  const ilKind = getIllustrationKind(ilSpec?.kindId)
+  // On a CONTINUE the kind comes from the group being continued, not from the
+  // draft. draft.kindId is a leftover there — the editor never touches it in
+  // continue mode — so billing off it charged the same two cards three
+  // different prices depending on which kind card the player last clicked
+  // before switching modes.
+  const ilGroup = ilSpec?.mode === 'continue'
+    ? (ctx.illustrationSets ?? []).find((g) => g.id === ilSpec.groupId)
+    : null
+  const ilKind = getIllustrationKind(ilGroup ? ilGroup.kindId : ilSpec?.kindId)
   const ilPicks = ilSpec && ilSpec.mode !== 'none' ? (ilSpec.picks?.length ?? 0) : 0
   const illustrationSet = ilPicks
     ? Math.round(
@@ -541,21 +552,47 @@ export function validateDraft(draft, ctx = {}) {
   // thing that would otherwise let a player farm the announcement buzz forever.
   const il = draft.illustrationSet
   if (il && il.mode !== 'none') {
-    const kind = getIllustrationKind(il.kindId)
     const picks = il.picks ?? []
+    // Every pick has to point at a signature card that still exists. Nothing
+    // checked this, and setCost bills on picks.length regardless — so deleting
+    // the cards you had picked shipped a release that charged the full
+    // art-direction fee and then created no group at all, with nothing in the
+    // feed or the UI to say why.
+    const sigCount = (draft.signatureCards ?? []).length
+    const dead = picks.filter(
+      (pk) => pk?.kind === 'signature'
+        && !(Number.isInteger(Number(pk.ref)) && Number(pk.ref) >= 0 && Number(pk.ref) < sigCount),
+    ).length
+    if (dead > 0) {
+      errors.push(`${dead} illustration-set card${dead === 1 ? ' no longer exists' : 's no longer exist'} — re-pick.`)
+    }
+    const live = picks.length - dead
+    const continued = il.mode === 'continue'
+      ? (ctx.illustrationSets ?? []).find((g) => g.id === il.groupId)
+      : null
+    const kind = getIllustrationKind(continued ? continued.kindId : il.kindId)
+    if (!continued && live < 2) {
+      errors.push(`A ${kind.noun} needs at least two cards in this release to open.`)
+    }
     if (il.mode === 'continue') {
       const open = (ctx.illustrationSets ?? []).find((g) => g.id === il.groupId)
       if (!open) errors.push('That illustration set no longer exists — pick another.')
-      else if (open.status !== 'open') {
+      else if (open.status !== 'open' && open.status !== 'stale') {
         errors.push(`${open.name} is ${open.status} — it cannot take new cards.`)
       } else if (!picks.length) {
         errors.push(`Continuing ${open.name} needs at least one card.`)
-      } else if ((open.members?.length ?? 0) + picks.length > getIllustrationKind(open.kindId).maxSize) {
-        errors.push(`A ${getIllustrationKind(open.kindId).noun} holds at most ${getIllustrationKind(open.kindId).maxSize} cards.`)
+      } else if ((open.members?.length ?? 0) + live > (open.plannedSize ?? kind.maxSize)) {
+        // Bounded by what was PROMISED, not just by what the kind allows.
+        // maxSize alone let a 3-card promise take a fourth card and finish
+        // "4/3", which reads as a bug everywhere it is displayed.
+        const room = Math.max(0, (open.plannedSize ?? 0) - (open.members?.length ?? 0))
+        errors.push(
+          `${open.name} promised ${open.plannedSize} cards and already has ${open.members?.length ?? 0}`
+          + (room ? ` — room for ${room} more.` : ' — it is already full.'),
+        )
       }
     } else {
       if (!il.name?.trim()) errors.push('An illustration set needs a name.')
-      if (picks.length < 2) errors.push(`A ${kind.noun} needs at least two cards in this release to open.`)
       if (picks.length > kind.maxSize) errors.push(`A ${kind.noun} holds at most ${kind.maxSize} cards.`)
       const planned = Math.round(il.plannedSize ?? kind.defaultPlannedSize)
       if (planned < kind.minSize || planned > kind.maxSize) {
@@ -863,7 +900,7 @@ export function releaseSet(state, draft) {
   // (and elevates a card) what they're worth now, not their seed value.
   const artistOf = (id) => currentArtist(state, id)
   const tier = getTier(draft.tier ?? 'major')
-  const cost = setCost(draft, artistOf)
+  const cost = setCost(draft, artistOf, { illustrationSets: state.illustrationSets })
   // How this set's SIZE reads: event scale, chase density, and bloat.
   const size = sizeProfile(draft)
 
@@ -1356,9 +1393,10 @@ function draftGroup(state, draft, setId, week) {
   if (spec.mode === 'continue') {
     const open = (state.illustrationSets ?? []).find((g) => g.id === spec.groupId)
     // Guarded rather than trusted: validateDraft rejects a continue against a
-    // group that is missing or no longer open, but releaseSet is also reachable
-    // from the harness and from a stale draft held open across a save load.
-    return open && open.status === 'open' ? open : null
+    // group that is missing or already finished, but releaseSet is also
+    // reachable from the harness and from a stale draft held open across a save
+    // load. STALE counts as continuable — see addMembers.
+    return open && (open.status === 'open' || open.status === 'stale') ? open : null
   }
   return openGroup(state, spec, setId, week)
 }
@@ -1379,11 +1417,22 @@ function provisionalIllustrationLift(state, draft, setId, characters) {
   // Only signature picks can be scored here. A ref that is out of range (a
   // signature removed after being picked) is dropped, exactly as a spotlight
   // pick with no card is.
+  //
+  // Bounded by the SET LENGTH as well as the signature count, because
+  // generateCards does `sigs.slice(0, length)` — a micro set with a 15-card
+  // floor and more signatures than that simply never prints the overflow. Left
+  // unbounded, phase A scored and lifted a card that phase B would then find
+  // missing, so a group could collect a permanent print-time bonus and then
+  // fail to exist at all.
+  const printable = Math.min(
+    sigs.length,
+    clamp(Math.round(draft.setLength ?? sigs.length), MIN_SET_LENGTH, MAX_SET_LENGTH),
+  )
   const picked = []
   for (const pick of draft.illustrationSet?.picks ?? []) {
     if (pick?.kind !== 'signature') continue
     const i = Number(pick.ref)
-    if (!Number.isInteger(i) || i < 0 || i >= sigs.length) continue
+    if (!Number.isInteger(i) || i < 0 || i >= printable) continue
     const sig = sigs[i]
     picked.push({
       specId: `c${i + 1}`,
@@ -1411,12 +1460,22 @@ function provisionalIllustrationLift(state, draft, setId, characters) {
   let topTier = -1
   for (const m of provisional.members) topTier = Math.max(topTier, m.valueTier ?? 0)
   let crowned = false
-  // Walk in print order so that, on a tie at the top tier, the FIRST such card
-  // takes it — matching capstoneIdOf, which breaks ties toward the later week
-  // and therefore toward an already-printed member when one exists.
-  const existingTop = (group.members ?? []).some((m) => (m.valueTier ?? 0) >= topTier)
+  // The first pick that REACHES the top tier is the capstone; if none does, an
+  // already-printed member keeps the crown and nothing here is crowned.
+  //
+  // This used to also require that no existing member was at the top tier
+  // (`existingTop`, using >=), on the stated grounds that capstoneIdOf breaks a
+  // tie toward the already-printed card. It does the opposite: it breaks ties
+  // toward the LATER week, so a card printed now at the same top tier takes the
+  // crown from one printed earlier. Phase A therefore crowned nobody on a tie
+  // while phase B crowned the new card, and the capstone's print lift was
+  // silently downgraded to a member's.
+  //
+  // It bit the CHARACTER RUN kind hardest, which is the one it could least
+  // afford to: a run has no ladder requirement, so its members naturally sit at
+  // the same rarity and EVERY cross-release continue hit the tie.
   for (const p of picked) {
-    const isCapstone = !existingTop && !crowned && (p.entry.valueTier ?? 0) >= topTier
+    const isCapstone = !crowned && (p.entry.valueTier ?? 0) >= topTier
     if (isCapstone) crowned = true
     lift.set(p.specId, groupLift(score, isCapstone, group.kindId))
   }
@@ -1441,7 +1500,10 @@ function resolveIllustrationSet(state, draft, setId, group, pools, characters) {
   // phase B files three, one of them a randomly generated card the player never
   // picked. (resolveCardPicks itself is left alone — spotlight has always
   // behaved this way and changing it is a separate decision.)
-  const sigCount = (draft.signatureCards ?? []).length
+  const sigCount = Math.min(
+    (draft.signatureCards ?? []).length,
+    clamp(Math.round(draft.setLength ?? 0), MIN_SET_LENGTH, MAX_SET_LENGTH),
+  )
   const usable = (spec.picks ?? []).filter(
     (p) => p?.kind !== 'signature' || (Number.isInteger(Number(p.ref)) && Number(p.ref) >= 0 && Number(p.ref) < sigCount),
   )

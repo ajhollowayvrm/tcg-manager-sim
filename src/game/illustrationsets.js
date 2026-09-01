@@ -181,7 +181,10 @@ function modalShare(members, key) {
   const counts = new Map()
   for (const m of members) {
     const v = m[key]
-    if (!v) continue
+    // `== null`, not falsy: a valueTier of 0 is a real tier (a rarity missing
+    // from a set's sheet resolves to it), and treating it as absent silently
+    // dropped those members out of flatRarity.
+    if (v == null || v === '') continue
     counts.set(v, (counts.get(v) ?? 0) + 1)
   }
   let best = 0
@@ -416,18 +419,29 @@ export function openGroup(state, spec, setId, week) {
 
 // Append members and rescore. Returns a NEW group; never mutates.
 export function addMembers(group, entries, { characters = [], week } = {}) {
-  // Only an OPEN group takes new cards. Unreachable through the release path —
-  // validateDraft refuses a continue against a finished run and draftGroup
-  // returns null for one — but left unguarded this happily grew a complete
-  // 3-of-3 to four cards, which is a footgun sitting one careless call site
-  // away from re-scoring a group the player already finished.
-  if (group.status && group.status !== 'open') return group
+  // An OPEN or STALE group takes new cards; a complete or abandoned one does
+  // not. Stale has to be included or the 26-week grace period between "nobody
+  // has seen a new card in a while" and "this is written off" is dead code: the
+  // feed asks the room's question ("is the rest coming?") and the game then
+  // gives the player no way at all to answer it, so every group that ticks past
+  // STALE_WEEKS is mathematically guaranteed to be abandoned.
+  //
+  // Abandoned stays closed: reopening one is what would let a player farm the
+  // announcement buzz forever.
+  if (group.status && group.status !== 'open' && group.status !== 'stale') return group
   const fresh = (entries ?? []).filter(
     (e) => e && !(group.members ?? []).some((m) => m.cardId === e.cardId),
   )
   if (!fresh.length) return group
   const members = [...(group.members ?? []), ...fresh]
-  const next = { ...group, members, lastMemberWeek: week ?? group.lastMemberWeek }
+  // A late delivery revives a stale run: the clock restarts from this week, and
+  // the group is open again rather than sitting one tick from being written off.
+  const next = {
+    ...group,
+    members,
+    lastMemberWeek: week ?? group.lastMemberWeek,
+    status: group.status === 'stale' ? 'open' : group.status,
+  }
   const { score, parts } = scoreCohesion(next, { characters })
   next.cohesion = Math.round(score * 1000) / 1000
   next.cohesionParts = parts
@@ -473,10 +487,15 @@ function outOfReachOf(members, setById) {
   return seen.size > 0 ? gone / seen.size : 0
 }
 
-// Map every card that benefits from a group to what it benefits from. Built once
-// per week and handed to the readers, the way personas.js's variantContext
-// already is — nothing does a `.find()` over groups inside a per-card loop, which
-// on a late run would be O(6000 cards x groups) every tick.
+// Map every card that benefits from a group to what it benefits from. Built and
+// handed to its readers the way personas.js's variantContext already is —
+// nothing does a `.find()` over groups inside a per-card loop, which on a late
+// run would be O(6000 cards x groups) every tick.
+//
+// Three callers build it independently: resolveMarket, reactPersonas, and the
+// card browser's memo. That is a handful of linear passes over the card list per
+// week rather than the single one an earlier version of this comment claimed —
+// fine at this scale, and worth knowing before anyone adds a fourth.
 //
 // VARIANTS INHERIT. generateCards mints a variant printing as a second card with
 // the SAME name, artist and character — literally the same illustration. An alt
@@ -608,6 +627,14 @@ export function promiseCredibility(groups) {
   let done = 0
   let broken = 0
   for (const g of groups ?? []) {
+    // A run the COMMUNITY found is not a promise the studio kept, and counting
+    // it as one launders a serial abandoner's record: discovery mints a group
+    // already `complete` about eight times over a long run, which was enough to
+    // drag a studio that finishes nothing from 0.15 credibility up to 0.72 —
+    // undoing the exact anti-exploit this function exists to be. The milestones
+    // and the overuse grievance already exclude discovered groups; this was the
+    // third reader and it was missed.
+    if (g.discovered) continue
     if (g.status === 'complete') done++
     else if (g.status === 'abandoned' || g.status === 'stale') broken++
   }
@@ -646,6 +673,11 @@ export function illustrationOverusePressure(state) {
     // curation they did not do is the wrong way round.
     if (g.discovered) continue
     if (g.status === 'abandoned' || g.status === 'stale') broken++
+    // An abandoned run's cards are "just cards" again — the design says so and
+    // completionPremium enforces it. Counting them in the packaging share too
+    // made an abandoned group generate grievance twice: once as a broken
+    // promise, and again forever as catalogue the studio supposedly packaged.
+    if (g.status === 'abandoned') continue
     for (const m of g.members ?? []) grouped.add(m.cardId)
   }
   const share = chase.filter((c) => grouped.has(c.id)).length / chase.length
@@ -723,9 +755,17 @@ export function applyIllustrationSets(state) {
     return group
   })
 
-  // Community discovery. Its own rng stream, seeded on the week, so it cannot
-  // shift any other system's draws (personas.js documents why that matters).
-  const rng = makeRng(hashSeed(`illustration-discovery:${week}`))
+  // Community discovery. Its own rng stream, so it cannot shift any other
+  // system's draws (personas.js documents why that matters).
+  //
+  // Salted with the company and game name, the way initialState seeds the rival.
+  // Keyed on the week ALONE, discovery fired on exactly weeks 11, 35, 42, 80,
+  // 199, 215, 293 and 298 of every run anyone ever played — a fixed calendar a
+  // returning player would simply learn. The other week-keyed streams
+  // (`market:`, `artists:`) share that property harmlessly because they only
+  // move numbers; this one mints permanent state.
+  const salt = `${state.config?.companyName ?? ''}:${state.config?.gameName ?? ''}`
+  const rng = makeRng(hashSeed(`illustration-discovery:${salt}:${week}`))
   if (rng() < DISCOVERY_CHANCE) {
     const loudest = (state.personas ?? []).reduce(
       (best, p) => (!best || (p.reach ?? 0) > (best.reach ?? 0) ? p : best),

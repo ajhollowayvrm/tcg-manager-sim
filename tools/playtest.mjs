@@ -559,9 +559,14 @@ function playOne(strategy, salt, trace = false, horizon = DEFAULT_HORIZON) {
     // actually wired: the mean price of every group CAPSTONE over the mean price
     // of every non-member chase card. It reads 1.00 on any strategy that
     // authors no groups, and should land around 1.5-1.8 on one that does.
-    ilOpened: (state.illustrationSets ?? []).length,
-    ilCompleted: (state.illustrationSets ?? []).filter((g) => g.status === 'complete').length,
-    ilAbandoned: (state.illustrationSets ?? []).filter((g) => g.status === 'abandoned').length,
+    // AUTHORED groups only. Discovery mints groups already `complete` about
+    // eight times over a long run, and counting those made the table report the
+    // community's curation as the player's — a studio that authored nothing
+    // still showed completed sets.
+    ilOpened: authoredGroups(state).length,
+    ilCompleted: authoredGroups(state).filter((g) => g.status === 'complete').length,
+    ilAbandoned: authoredGroups(state).filter((g) => g.status === 'abandoned').length,
+    ilDiscovered: (state.illustrationSets ?? []).filter((g) => g.discovered).length,
     ilCohesion: meanCohesion(state),
     ilPremium: capstonePremium(state),
     moverRate: weeksWithMover / Math.max(1, state.week - 1),
@@ -575,8 +580,13 @@ function playOne(strategy, salt, trace = false, horizon = DEFAULT_HORIZON) {
 // Mean cohesion across every group that actually completed. A strategy whose
 // completed groups score below ~0.8 is authoring them wrong, not measuring a
 // weak mechanic — check attachIllustration's ladder before touching a constant.
+// Groups the player actually authored, as opposed to ones collectors named.
+function authoredGroups(state) {
+  return (state.illustrationSets ?? []).filter((g) => !g.discovered)
+}
+
 function meanCohesion(state) {
-  const done = (state.illustrationSets ?? []).filter((g) => g.status === 'complete')
+  const done = authoredGroups(state).filter((g) => g.status === 'complete')
   if (!done.length) return 0
   return done.reduce((s, g) => s + (g.cohesion ?? 0), 0) / done.length
 }
@@ -674,6 +684,7 @@ function summarize(opts) {
       ilOpened: avg((r) => r.ilOpened),
       ilCompleted: avg((r) => r.ilCompleted),
       ilAbandoned: avg((r) => r.ilAbandoned),
+      ilDiscovered: avg((r) => r.ilDiscovered),
       ilCohesion: avg((r) => r.ilCohesion),
       ilPremium: avg((r) => r.ilPremium),
       // Weeks per release — the number the brief's 12–20 week target is about.

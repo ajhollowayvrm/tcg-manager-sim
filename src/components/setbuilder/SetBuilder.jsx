@@ -59,10 +59,13 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
   // only, see content/concepts.js. Feeds the auto-fill preview below so it
   // matches what release will actually generate.
   const nameStyle = getConcept(conceptId).nameStyle
-  // Groups a release can still add cards to. An abandoned or completed one is
-  // deliberately absent: reopening an abandoned run is what would let a player
-  // farm the announcement buzz forever.
-  const openIllustrationSets = illustrationSets.filter((g) => g.status === 'open')
+  // Groups a release can still add cards to. A STALE one is included — it is
+  // overdue, not dead, and leaving it out was what made the grace period before
+  // write-off unusable. A completed or abandoned one stays out: reopening an
+  // abandoned run is what would let a player farm the announcement buzz forever.
+  const openIllustrationSets = illustrationSets.filter(
+    (g) => g.status === 'open' || g.status === 'stale',
+  )
 
   // Accordion: sections toggle independently (multi-open). Identity is open by
   // default; everything else starts collapsed so the modal opens short and
@@ -124,7 +127,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
   // Resolve artists to their live drifted record so the cost summary and editor
   // reflect current prices, not the static seed.
   const artistOf = (id) => artists?.find((a) => a.id === id) ?? null
-  const cost = setCost(draft, (id) => artistOf(id) ?? undefined)
+  const cost = setCost(draft, (id) => artistOf(id) ?? undefined, { illustrationSets })
   const errors = validateDraft(draft, { blocks, isFirstSet, franchise, setsShipped: sets.length, perks, illustrationSets })
   // Cash can go negative (a loan), so affordability NO LONGER blocks release —
   // it only flags that you'll dip into debt. The only release gate is validity.
@@ -160,11 +163,22 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
       const entry = removed ? getRarity(d.rarities, removed.rarity) : null
       const rarities = entry?.unique ? d.rarities.filter((r) => r.id !== entry.id) : d.rarities
       const packFormat = entry?.unique ? pruneRarityFromFormat(d.packFormat, entry.id) : d.packFormat
+      // Picks are ARRAY INDICES, so removing a card shifts every later ref onto
+      // a different card. For a spotlight reveal that is merely wrong; for an
+      // illustration set it silently rewrites GROUP MEMBERSHIP, and the group
+      // then ships with cards the player never chose (or with refs past the end,
+      // which are dropped at release after being billed for). Drop the removed
+      // card's pick and shift the rest down.
+      const shift = (picks) => (picks ?? [])
+        .filter((p) => !(p.kind === 'signature' && p.ref === idx))
+        .map((p) => (p.kind === 'signature' && p.ref > idx ? { ...p, ref: p.ref - 1 } : p))
       return {
         ...d,
         signatureCards: d.signatureCards.filter((_, i) => i !== idx),
         rarities,
         packFormat,
+        illustrationSet: { ...d.illustrationSet, picks: shift(d.illustrationSet?.picks) },
+        spotlight: { ...d.spotlight, picks: shift(d.spotlight?.picks) },
       }
     })
 

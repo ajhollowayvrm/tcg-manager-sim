@@ -104,14 +104,28 @@ const KEY = 'tcg-manager-sim/save'
 // v18 ALSO HOLDS through illustration sets (`state.illustrationSets`, and the
 // one optional `set.illustrationAppeal` number; see illustrationsets.js). Both
 // are ADDITIVE and hydrate() below fills the array through
-// normalizeIllustrationSet. Every read site resolves to an identity on a save
-// that has no groups: completionPremium returns exactly 1, groupLift returns
-// { pop: 0, hypeMul: 1 }, illustrationAppeal reads as 0, the overuse pressure is
-// 0, and the persona focus term adds 0 WITHOUT drawing from the rng — so the
-// weekly random stream is byte-identical and the balance table does not move
-// under a loaded run. Card records are untouched, so CARD_DEFAULTS and the
-// save's size profile are unchanged. Same call as the character-identity change
-// above, for the same reason.
+// normalizeIllustrationSet. Every GROUP read site resolves to an identity on a
+// save that has no groups: completionPremium returns exactly 1, groupLift
+// returns { pop: 0, hypeMul: 1 }, illustrationAppeal reads as 0, the overuse
+// pressure is 0, and the persona focus term adds 0 without drawing from the
+// rng. Card records are untouched, so CARD_DEFAULTS and the save's size profile
+// are unchanged. Same call as the character-identity change above.
+//
+// BUT DO NOT READ THAT AS "an old run plays identically". It loads, it keeps
+// its cards and its money, and nothing crashes — that is the guarantee, and it
+// is the one the no-migration rule actually needs. Two things in this feature
+// deliberately DO change an old run's numbers, and an earlier version of this
+// note wrongly claimed otherwise:
+//
+//   Artist collector heat starts at 0 and climbs from week one off cards the
+//   save already holds, so fairValue's artistLift (up to 1.25x) is live
+//   immediately, and once a hot artist crosses the chatter threshold a new
+//   conditional rng draw shifts that persona's remaining stream.
+//
+//   Community discovery can mint a group in an old save that never had one.
+//
+// Both are the point of the feature rather than accidents, and neither
+// invalidates the save the way a changed field's MEANING would.
 const VERSION = 18
 
 // ---- Where the run save lives ----------------------------------------------
