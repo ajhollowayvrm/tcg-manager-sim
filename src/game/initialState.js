@@ -132,6 +132,13 @@ export function createInitialState(config) {
     // Scheduled "wide release" waves from a staggered regional launch — see
     // sets.js/useGame.js RELEASE_SET and simulation.js's weekly check.
     pendingWaves: [],
+    // Illustration sets — named groups of cards that go together in the art and
+    // in the collecting (a family line, an illustrator's suite, one character
+    // across eras). See illustrationsets.js. They live HERE rather than on a set
+    // record because a group is allowed to span releases: the whole point of a
+    // character run is that it opens in one set and pays off in another, years
+    // later. Empty until the player authors one in the set builder.
+    illustrationSets: [],
 
     // Account-level prestige carried in from previous runs (see legacy.js's
     // PRESTIGE_PERKS and persistence.js). Read-only during a run.

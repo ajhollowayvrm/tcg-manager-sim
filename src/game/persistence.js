@@ -5,6 +5,7 @@
 // is always saved, and reloading the tab resumes exactly where you left off.
 
 import { normalizeCharacter } from './characters.js'
+import { normalizeIllustrationSet } from './illustrationsets.js'
 
 const KEY = 'tcg-manager-sim/save'
 
@@ -99,6 +100,18 @@ const KEY = 'tcg-manager-sim/save'
 // This breaks the habit set by v14 and v17, which bumped for hygiene alone. The
 // habit is not worth a run in progress: a bump does not migrate a save, it
 // DISCARDS it (see loadState below), and nothing here reads a stale number.
+//
+// v18 ALSO HOLDS through illustration sets (`state.illustrationSets`, and the
+// one optional `set.illustrationAppeal` number; see illustrationsets.js). Both
+// are ADDITIVE and hydrate() below fills the array through
+// normalizeIllustrationSet. Every read site resolves to an identity on a save
+// that has no groups: completionPremium returns exactly 1, groupLift returns
+// { pop: 0, hypeMul: 1 }, illustrationAppeal reads as 0, the overuse pressure is
+// 0, and the persona focus term adds 0 WITHOUT drawing from the rng — so the
+// weekly random stream is byte-identical and the balance table does not move
+// under a loaded run. Card records are untouched, so CARD_DEFAULTS and the
+// save's size profile are unchanged. Same call as the character-identity change
+// above, for the same reason.
 const VERSION = 18
 
 // ---- Where the run save lives ----------------------------------------------
@@ -246,6 +259,9 @@ export function serialize(state) {
 // from a save is exactly the kind of thing that bites six months later.
 export function hydrate(state) {
   if (!state?.cards) return state
+  // Hoisted out of the map below: built inside it, this would rebuild a
+  // several-thousand-entry Set once per illustration set.
+  const liveCardIds = new Set(state.cards.map((c) => c.id))
   return {
     ...state,
     cards: state.cards.map((c) => ({ ...CARD_DEFAULTS, ...c })),
@@ -264,6 +280,14 @@ export function hydrate(state) {
     // `characters` array survives into state and throws in driftCharacters on
     // the very next tick — wedging every following week, not just one.
     characters: (state.characters ?? []).map(normalizeCharacter).filter(Boolean),
+    // Illustration sets, on the same additive terms as characters above. The
+    // live card-id set is passed in so a group cannot keep pointing at a card
+    // that no longer exists (an imported partial save is the realistic way that
+    // happens), and normalizeIllustrationSet returns null for a group left with
+    // fewer than two members — hence the same load-bearing filter(Boolean).
+    illustrationSets: (state.illustrationSets ?? [])
+      .map((g) => normalizeIllustrationSet(g, liveCardIds))
+      .filter(Boolean),
   }
 }
 
