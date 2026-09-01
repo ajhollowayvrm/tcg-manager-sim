@@ -77,7 +77,15 @@ function buildDraft(setNumber, knobs, nameSalt, tier = 'major', blocks = []) {
   d.signatureCards = Array.from({ length: n }, (_, i) => {
     const c = createSignatureCard(i + 1)
     c.name = `${d.name} Chase ${i + 1}`
-    c.rarity = i < 2 ? 'mythic' : 'rare'
+    // 'sir', not 'mythic': 'mythic' is a VISUAL tier from rarities.js's
+    // visualTier(), not a rarity-sheet id. The sheet ids are common/uncommon/
+    // rare/dbl/ace/ir/sir/hyper, so getRarity(sheet, 'mythic') fell through to
+    // its neutral fallback at valueTier 40 — barely above a plain Rare (32).
+    // Every sweep before this therefore priced the harness's "chase" cards as
+    // mid-tier filler, and no strategy in the table was exercising the top of
+    // the rarity ladder at all. A player could never reproduce it either: the
+    // set builder's rarity picker only ever offers real sheet ids.
+    c.rarity = i < 2 ? 'sir' : 'rare'
     // A strategy's "chase appeal" sets how loud its signature cards are.
     c.appeal = Math.min(100, knobs.chaseAppeal + (i === 0 ? 15 : 0))
     // Serialized chase cards — a 15x singles multiplier that used to be free
