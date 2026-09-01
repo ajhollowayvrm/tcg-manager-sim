@@ -1432,7 +1432,20 @@ function resolveIllustrationSet(state, draft, setId, group, pools, characters) {
   const kind = getIllustrationKind(group.kindId)
   const room = kind.maxSize - (group.members?.length ?? 0)
   if (room <= 0) return null
-  const ids = resolveCardPicks((spec.picks ?? []).slice(0, room), pools)
+  // Drop a signature pick whose index is past the end of the draft's signature
+  // cards BEFORE resolving. resolveCardPicks maps signature ref i to collector
+  // number i+1, and a numbered set has cards at every number — so a stale ref
+  // of 99 does not fail to resolve, it silently lands on the BULK card at 100.
+  // Phase A already ignores out-of-range refs, so without this the two phases
+  // disagree about who is even in the group: phase A scores two members while
+  // phase B files three, one of them a randomly generated card the player never
+  // picked. (resolveCardPicks itself is left alone — spotlight has always
+  // behaved this way and changing it is a separate decision.)
+  const sigCount = (draft.signatureCards ?? []).length
+  const usable = (spec.picks ?? []).filter(
+    (p) => p?.kind !== 'signature' || (Number.isInteger(Number(p.ref)) && Number(p.ref) >= 0 && Number(p.ref) < sigCount),
+  )
+  const ids = resolveCardPicks(usable.slice(0, room), pools)
   if (!ids.length) return null
 
   const all = [...pools.cards, ...pools.treatmentCards, ...pools.reprintCards]

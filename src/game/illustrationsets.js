@@ -416,6 +416,12 @@ export function openGroup(state, spec, setId, week) {
 
 // Append members and rescore. Returns a NEW group; never mutates.
 export function addMembers(group, entries, { characters = [], week } = {}) {
+  // Only an OPEN group takes new cards. Unreachable through the release path —
+  // validateDraft refuses a continue against a finished run and draftGroup
+  // returns null for one — but left unguarded this happily grew a complete
+  // 3-of-3 to four cards, which is a footgun sitting one careless call site
+  // away from re-scoring a group the player already finished.
+  if (group.status && group.status !== 'open') return group
   const fresh = (entries ?? []).filter(
     (e) => e && !(group.members ?? []).some((m) => m.cardId === e.cardId),
   )
