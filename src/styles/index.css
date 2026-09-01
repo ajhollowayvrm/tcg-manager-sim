@@ -520,6 +520,50 @@ body {
   .topbar { gap: 8px 10px; padding: 10px 12px; padding-top: calc(10px + env(safe-area-inset-top)); }
   .health { width: 100%; margin-left: 0; gap: 6px; }
   .meter { flex: 1 1 30%; min-width: 96px; }
+
+  /* THE HEADER WAS 55% OF THE SCREEN. Measured on a 440x956 phone the six
+     meters plus their captions ran ~530px before a single panel appeared, on
+     every tab, so the Community feed showed four lines and the sets list showed
+     two rows. Three things were paying for that and all three are cheap here:
+
+     1. The caption under each meter ("brand prestige — no ceiling, lifts old
+        sets' value") wraps to three lines at this width. It is already the
+        meter's title attribute, so nothing is lost by hiding it — EXCEPT when
+        the meter is in danger, which is exactly when the player needs to be
+        told what the number means, so that case keeps it.
+     2. label-beside-value put "FRANCHISE REP" and "14" in a ~112px box, so the
+        label wrapped to two lines. Stacked, the label gets the full width and
+        the value gets to be the big number it should be on a phone.
+     3. The bar, the delta and the padding were all sized for a desktop row.
+
+     Net: ~530px down to ~215px. */
+  .meter { padding: 7px 8px; }
+  .meter__top { display: block; }
+  .meter__label { display: block; font-size: 0.58rem; line-height: 1.25; }
+  .meter__value { display: block; font-size: 1.02rem; line-height: 1.2; margin-top: 1px; }
+  .meter__track { margin-top: 5px; }
+  .meter__foot { font-size: 0.58rem; margin-top: 3px; }
+  .meter__loss { display: none; }
+  /* ...but say what the threshold is at the moment it starts to matter. */
+  .meter--danger .meter__loss { display: inline; }
+  .meter__delta { line-height: 1.2; }
+
+  /* The three context stats (reputation, scalper heat, rival) share one short
+     strip instead of taking a second full row of cards. Label and value sit
+     inline, the bar thins to a rule underneath. */
+  .meter--minor { flex: 1 1 30%; padding: 5px 8px; }
+  .meter--minor .meter__top { display: flex; align-items: baseline; gap: 6px; }
+  .meter--minor .meter__label { font-size: 0.55rem; }
+  .meter--minor .meter__value { font-size: 0.8rem; margin: 0 0 0 auto; }
+  .meter--minor .meter__track { height: 3px; margin-top: 4px; }
+  .meter--minor .meter__foot { display: none; }
+  .meter--minor.meter--danger .meter__foot { display: flex; margin-top: 2px; }
+
+  /* The pull/reprint control gets its own line rather than sitting beside a
+     stat line that wraps to two rows next to it. */
+  .sets__meta { flex-wrap: wrap; }
+  .sets__meta > :last-child { margin-left: auto; }
+
   .topbar__time { width: 100%; }
   .topbar__time .btn--design { flex: 1 1 auto; text-align: center; }
   .topbar__time .btn--advance { flex: 1 1 auto; text-align: center; }
@@ -594,6 +638,37 @@ body {
   .field input, .field select, .field textarea, .sigcard__name { padding: 10px; }
   .check input { width: 20px; height: 20px; }
   input[type='range'] { height: 28px; } /* taller hit area for the thumb */
+
+  /* TAP TARGETS. Measured on a 440x956 touch viewport, the padding above left
+     most controls short of the 44px iOS asks for: buttons landed at 37px, the
+     filter chips at 22px, and the odds toggle — a real control that publishes a
+     set's pull rates — at FOURTEEN pixels tall. Three different fixes, because
+     the right one depends on whether the control can afford to grow:
+
+     1. Things that own their line grow honestly. */
+  .btn, select, .roster__sort, .roster__head { min-height: 44px; }
+  /* The LABEL is the tap target for a checkbox — clicking it toggles the input —
+     so sizing the 24px box alone still leaves a 30px row to hit. */
+  .check { min-height: 44px; align-items: center; }
+  .check input { width: 24px; height: 24px; }
+
+  /* 2. Dense filter rows grow, but only to 36px. A row of eight chips at the
+        full 44 wraps to three rows and costs ~70px of the fold on a tab whose
+        job is showing a list; 36px is a 64% bigger target for a fraction of
+        that. A deliberate trade, not an oversight. */
+  .roster__chip { min-height: 36px; display: inline-flex; align-items: center; }
+
+  /* 3. Inline badges and secondary text buttons keep their size and grow only
+        their HIT AREA, via a transparent overlay. Growing the box instead would
+        push the tags off a set row or double the height of a market row — the
+        thing that makes them readable is that they are small. */
+  button.tag, .sets__pull, .sets__reprint, .ticker__more, .browser__pager .btn--ghost {
+    position: relative;
+  }
+  button.tag::after, .sets__pull::after, .sets__reprint::after, .ticker__more::after {
+    content: ''; position: absolute; left: 0; right: 0;
+    top: 50%; height: 44px; transform: translateY(-50%);
+  }
 }
 
 /* ---- Panels ---- */
@@ -1162,8 +1237,12 @@ body {
 .bans__pullnone { flex: 1; font-size: 0.8rem; color: var(--text-dim); }
 
 /* Status tags on market rows */
+/* nowrap: without it a two-word tag ("DRAWING HEAT") broke across two lines
+   inside its own 5px-padded chip on a phone, which reads as a rendering fault
+   rather than a label. */
 .tag { font-size: 0.55rem; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase;
-  padding: 1px 5px; border-radius: 4px; margin-left: 6px; vertical-align: middle; }
+  padding: 1px 5px; border-radius: 4px; margin-left: 6px; vertical-align: middle;
+  white-space: nowrap; }
 .tag--banned { background: var(--bad); color: #2b0606; }
 .tag--rotated { background: var(--silver); color: #0b0c1a; }
 .tag--outofprint { background: var(--pop); color: #2b2406; }
@@ -1183,7 +1262,19 @@ button.tag--oddsobscured:hover { border-color: var(--accent-2); color: var(--tex
 .sets__row { display: flex; flex-direction: column; gap: 5px; padding: 8px 10px; background: var(--surface-2); border-radius: 6px; }
 .sets__row--rotated { opacity: 0.6; }
 .sets__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.sets__name { font-weight: 600; font-size: 0.9rem; display: inline-flex; align-items: center; gap: 6px; }
+/* wrap + min-width:0: a set carrying several status tags (tier, drawing heat,
+   odds, an illustration set) overflowed its own row on a phone, pushing the
+   weekly earnings clean off the right edge. The tags now wrap under the title
+   instead. */
+.sets__name {
+  font-weight: 600; font-size: 0.9rem;
+  display: inline-flex; align-items: center; gap: 6px;
+  flex-wrap: wrap; min-width: 0;
+}
+.sets__title { white-space: nowrap; }
+/* .tag carries a 6px left margin for inline use in market rows; inside this
+   flex row the 6px gap already spaces them, so the margin would double it. */
+.sets__name .tag { margin-left: 0; }
 .sets__wk { font-size: 0.78rem; font-weight: 700; color: var(--good); font-variant-numeric: tabular-nums; }
 .sets__row--rotated .sets__wk { color: var(--text-dim); }
 .sets__track { height: 8px; background: var(--bg); border-radius: 99px; overflow: hidden; }

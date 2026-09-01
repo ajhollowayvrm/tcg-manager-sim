@@ -138,7 +138,10 @@ function SetRow({ set, state, lastPerSet, onReprint, onPull, canPull, onAdjustWa
       <div className="sets__head">
         <span className="sets__name">
           <SetSymbol themeId={set.themeId} rarity="rare" size={15} />
-          {set.name}
+          {/* The name is its own element so it can refuse to wrap. As a bare
+              text node it broke mid-title ("Set / 1") as soon as the status tags
+              beside it squeezed the row on a phone. */}
+          <span className="sets__title">{set.name}</span>
           {tier && <span className={`tag tag--${set.tier}`} title={tier.blurb}>{tier.symbol} {set.tier}</span>}
           {set.firstEdition && <span className="tag tag--outofprint" title="Original printing — a permanent premium tier">1st ed</span>}
           {set.outOfPrint

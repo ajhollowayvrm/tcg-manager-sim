@@ -77,6 +77,7 @@ export default function TopBar({ game, onDesignSet, onOpenSettings }) {
         />
         <Meter
           label="Franchise Rep"
+          minor
           value={Math.round(reputation)}
           // Purely a growth stat — uncapped, so the bar is a soft visual
           // reference (150) rather than a real ceiling.
@@ -85,6 +86,7 @@ export default function TopBar({ game, onDesignSet, onOpenSettings }) {
         />
         <Meter
           label="Scalper Heat"
+          minor
           value={heat}
           pct={clampPct(heat)}
           danger={heat >= SCALPER_THRESHOLD}
@@ -92,6 +94,7 @@ export default function TopBar({ game, onDesignSet, onOpenSettings }) {
         />
         <Meter
           label="Rival Threat"
+          minor
           value={rivalStrength}
           pct={clampPct(rivalStrength)}
           danger={rivalStrength >= RIVAL_HOT_THRESHOLD}
@@ -122,10 +125,20 @@ export default function TopBar({ game, onDesignSet, onOpenSettings }) {
 // One health meter: a label, the current value, a fill bar that reddens in the
 // danger zone, and the loss threshold as a hint. `extra` renders a small
 // element below the track (e.g. the Players meter's segment-mix bar).
-function Meter({ label, value, pct, danger, loss, footer, delta, extra }) {
+// `minor` marks the three stats that are NOT ruin lines. docs/BRIEF.md is
+// explicit that cash, players and satisfaction are the always-visible meters
+// that redden as they approach a loss; franchise reputation, scalper heat and
+// the rival are context. On a phone that distinction is worth real estate — the
+// minor three render as a compact strip rather than three more full cards, which
+// is the difference between a header that costs a quarter of the screen and one
+// that costs a third. Unchanged on desktop, where there is room for both.
+function Meter({ label, value, pct, danger, loss, footer, delta, extra, minor }) {
   const caption = footer ?? loss
   return (
-    <div className={'meter' + (danger ? ' meter--danger' : '')} title={footer ?? `Loss: ${loss}`}>
+    <div
+      className={'meter' + (danger ? ' meter--danger' : '') + (minor ? ' meter--minor' : '')}
+      title={footer ?? `Loss: ${loss}`}
+    >
       <div className="meter__top">
         <span className="meter__label">{label}</span>
         <span className="meter__value">{value}</span>
