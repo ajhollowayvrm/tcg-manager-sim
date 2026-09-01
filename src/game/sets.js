@@ -21,6 +21,14 @@ import { getTier, openBlock, refreshBlockWarp, mintTreatmentCards, mintAnniversa
 import { getGimmick, NO_GIMMICK } from './content/gimmicks.js'
 import { createCharacter, famePopBonus, getTreatment, recordAppearance } from './characters.js'
 import { archetypeMatchesTheme } from './content/archetypes.js'
+import {
+  getIllustrationKind,
+  DEFAULT_ILLUSTRATION_KIND_ID,
+} from './content/illustrationsets.js'
+import {
+  openGroup, addMembers, makeMember, briefMatches, scoreCohesion,
+  groupLift, announcementBuzz, illustrationAppealFor, valueTierOf,
+} from './illustrationsets.js'
 
 export const MIN_SIGNATURE_CARDS = 0 // signature highlights are optional now
 // Raised from 15. A major runs up to 250 cards, so a cap of fifteen marquee
@@ -44,6 +52,11 @@ const RELEASE_PULL = 0.45 // how far toward its own level a fresh drop drags the
 // A collector-box exclusive promo: a short run of an unpullable card, plus its
 // own commission. Previously free — see setCost.
 const EXCLUSIVE_PROMO_COST = 55_000
+
+// Opening an illustration set, and committing one card to it. See the
+// illustrationSet line in setCost for how these are anchored.
+const ILLUSTRATION_OPEN_COST = 18_000
+const ILLUSTRATION_MEMBER_COST = 6_000
 
 // Spacing at which a rider set stops reading as part of a treadmill.
 const RIDER_SPACING_WEEKS = 12
@@ -171,6 +184,23 @@ export function createDraft(setNumber, tier = 'major', liveBlocks = []) {
     // picking several lets a god pack draw from any of them (a real
     // combination, not just the very top tier).
     godPack: { enabled: true, rarityIds: [] },
+
+    // Illustration set: a named group of cards in this release that are meant
+    // to be collected together (see illustrationsets.js). `mode` is 'none',
+    // 'open' (start a new group) or 'continue' (add to one already open, which
+    // is how a group spans releases). `picks` reuses the spotlight pick shape
+    // byte for byte — { kind, ref } against this set's signature cards,
+    // treatment cards and reprints — so both resolve through the same
+    // resolveCardPicks below rather than through two near-identical resolvers.
+    illustrationSet: {
+      mode: 'none',
+      groupId: null,
+      kindId: DEFAULT_ILLUSTRATION_KIND_ID,
+      name: '',
+      artBrief: '',
+      plannedSize: getIllustrationKind(DEFAULT_ILLUSTRATION_KIND_ID).defaultPlannedSize,
+      picks: [],
+    },
   }
 }
 
@@ -421,9 +451,30 @@ export function setCost(draft, artistOf = getArtist) {
   // nothing. (It also draws a `gated` grievance now — see personas.js.)
   const exclusivePromo = (draft.products ?? []).some((p) => p.kind === 'spc' && p.exclusivePromo)
     ? EXCLUSIVE_PROMO_COST : 0
+  // An illustration set is an ART-DIRECTION commission, not a printing one. The
+  // cards have to be designed against each other — a shared brief, a consistent
+  // hand, a rarity ladder that reads — and that is billable work on top of
+  // whatever each card's own artist already costs (which `art` above charges
+  // separately and unchanged). Opening one is the fixed cost of the direction;
+  // each card committed to it is the per-piece cost.
+  //
+  // A three-card trio runs ~$36k against a ~$143k first major. Compare: an SPC
+  // exclusive promo $55k, a spotlight reveal $2k each, an art director double
+  // their rate ($3k-$60k). Continuing an open group pays only for the cards it
+  // adds — the direction was bought when the group opened.
+  const ilSpec = draft.illustrationSet
+  const ilKind = getIllustrationKind(ilSpec?.kindId)
+  const ilPicks = ilSpec && ilSpec.mode !== 'none' ? (ilSpec.picks?.length ?? 0) : 0
+  const illustrationSet = ilPicks
+    ? Math.round(
+      ((ilSpec.mode === 'open' ? ILLUSTRATION_OPEN_COST : 0) + ilPicks * ILLUSTRATION_MEMBER_COST)
+      * ilKind.commissionMul,
+    )
+    : 0
   return {
     dev, printCost, art, artDirection, serialization, prerelease, releaseEvent, skus, spotlight, exclusivePromo,
-    total: dev + printCost + art + artDirection + serialization + prerelease + releaseEvent + skus + spotlight + exclusivePromo,
+    illustrationSet,
+    total: dev + printCost + art + artDirection + serialization + prerelease + releaseEvent + skus + spotlight + exclusivePromo + illustrationSet,
   }
 }
 
@@ -474,6 +525,36 @@ export function validateDraft(draft, ctx = {}) {
   if ((draft.spotlight?.picks?.length ?? 0) > MAX_SPOTLIGHT_PICKS) {
     errors.push(`No more than ${MAX_SPOTLIGHT_PICKS} spotlight reveals.`)
   }
+  // Illustration set rules. A group has to be a group: two members minimum, and
+  // never more than the kind allows. A 'continue' has to point at a group that
+  // is still open — an abandoned run cannot be quietly reopened, which is the
+  // thing that would otherwise let a player farm the announcement buzz forever.
+  const il = draft.illustrationSet
+  if (il && il.mode !== 'none') {
+    const kind = getIllustrationKind(il.kindId)
+    const picks = il.picks ?? []
+    if (il.mode === 'continue') {
+      const open = (ctx.illustrationSets ?? []).find((g) => g.id === il.groupId)
+      if (!open) errors.push('That illustration set no longer exists — pick another.')
+      else if (open.status !== 'open') {
+        errors.push(`The ${open.name} ${getIllustrationKind(open.kindId).noun} is ${open.status} — it cannot take new cards.`)
+      } else if (!picks.length) {
+        errors.push(`Continuing the ${open.name} ${getIllustrationKind(open.kindId).noun} needs at least one card.`)
+      } else if ((open.members?.length ?? 0) + picks.length > getIllustrationKind(open.kindId).maxSize) {
+        errors.push(`A ${getIllustrationKind(open.kindId).noun} holds at most ${getIllustrationKind(open.kindId).maxSize} cards.`)
+      }
+    } else {
+      if (!il.name?.trim()) errors.push('An illustration set needs a name.')
+      if (picks.length < 2) errors.push(`A ${kind.noun} needs at least two cards in this release to open.`)
+      if (picks.length > kind.maxSize) errors.push(`A ${kind.noun} holds at most ${kind.maxSize} cards.`)
+      const planned = Math.round(il.plannedSize ?? kind.defaultPlannedSize)
+      if (planned < kind.minSize || planned > kind.maxSize) {
+        errors.push(`A ${kind.noun} runs ${kind.minSize}\u2013${kind.maxSize} cards.`)
+      }
+      if (picks.length > planned) errors.push(`You picked ${picks.length} cards for a ${kind.noun} of ${planned}.`)
+    }
+  }
+
   errors.push(...validateRaritySheet(draft.rarities))
   errors.push(...validatePackFormat(draft.packFormat))
   errors.push(...validateProducts(draft.products))
@@ -534,7 +615,7 @@ function artNotesMatchTheme(notes, theme) {
   return theme.tags.some((t) => words.includes(t.toLowerCase()))
 }
 
-function popFactors(card, draft, theme, sheet, rng, artistOf = getArtist, characters = []) {
+function popFactors(card, draft, theme, sheet, rng, artistOf = getArtist, characters = [], illustrationPop = 0) {
   const standout = cardAppeal(card, sheet)
   const artist = card.artistId ? artistOf(card.artistId) : null
   const rarityTier = getRarity(sheet, card.rarity).valueTier
@@ -565,14 +646,24 @@ function popFactors(card, draft, theme, sheet, rng, artistOf = getArtist, charac
   // it (+10 against +20): who is on the card matters less than who drew it.
   const archetypeMatch = character && archetypeMatchesTheme(character.archetypeId, tags) ? 10 : 0
 
+  // Belonging to a coherent illustration set is worth roughly what an on-theme
+  // character is (+10) and rather less than the artist who drew it (+20). It has
+  // to stay in that band: an illustrator SUITE is one artist across several
+  // cards, and that artist is already collecting the +20 specialty match on
+  // every one of them, so a generous group bonus would pay twice for a single
+  // decision. See POP_LIFT in illustrationsets.js.
+  //
+  // Half the lift lands here and half on the card's hype SEED in buildCard,
+  // because this line ends in a hard clamp to 100 and the capstone is exactly
+  // the card most likely to be sitting on that ceiling already.
   return {
     // `punch` is how loudly this card reads next to its shelfmates — a
     // presentation signal, not a power level. (Name kept: personas.js and
     // events.js read it.)
     punch: clamp(standout + range(rng, -10, 10), 0, 100),
     rarity: rarityTier, // 0–100 collector value tier from the set's sheet
-    artAppeal: clamp(artAppeal + fameBonus + archetypeMatch, 0, 100),
-    hype: clamp(hype + fameBonus + archetypeMatch, 0, 100),
+    artAppeal: clamp(artAppeal + fameBonus + archetypeMatch + illustrationPop, 0, 100),
+    hype: clamp(hype + fameBonus + archetypeMatch + illustrationPop, 0, 100),
   }
 }
 
@@ -594,8 +685,8 @@ export function cardAppeal(card, sheet) {
 
 // Build one market-ready card record from a "spec" (id/name/rarity/number + an
 // optional designed signature card behind it).
-function buildCard(spec, draft, theme, sheet, rng, artistOf, characters = []) {
-  const factors = popFactors(spec, draft, theme, sheet, rng, artistOf, characters)
+function buildCard(spec, draft, theme, sheet, rng, artistOf, characters = [], lift = null) {
+  const factors = popFactors(spec, draft, theme, sheet, rng, artistOf, characters, lift?.pop ?? 0)
   // Initial price seeds off rarity + art + hype; the market moves it from here.
   const seed = factors.rarity * 0.25 + factors.artAppeal * 0.4 + factors.hype * 0.35
   const scarcity = 1 + (1 - draft.printRun / 100) * 1.5
@@ -627,7 +718,10 @@ function buildCard(spec, draft, theme, sheet, rng, artistOf, characters = []) {
     sealedPrice: draft.pricePoint,
     singlePrice,
     priceHistory: [singlePrice],
-    hype: (factors.hype / 100) * (draft.prerelease.chasePullable ? 1.3 : 1),
+    // The other half of the illustration-set lift (see popFactors above). It
+    // rides here rather than in popFactors because this ceiling is ~3, not 100,
+    // so it still pays on a capstone whose art appeal is already maxed out.
+    hype: (factors.hype / 100) * (draft.prerelease.chasePullable ? 1.3 : 1) * (lift?.hypeMul ?? 1),
     momentum: 0,
   }
 }
@@ -637,7 +731,10 @@ function buildCard(spec, draft, theme, sheet, rng, artistOf, characters = []) {
 // numbered above the count. Signature highlights are slotted in as the top cards
 // (keeping their designed name/rarity/art/power); the rest are themed-random, so
 // any of them — even a humble common — can later become a market darling.
-export function generateCards(draft, setId, week, artistOf = getArtist, characters = [], nameStyle = 'creature') {
+// `illustrationLift` maps a SPEC id ('c3') to the print-time lift its
+// illustration-set membership earns. Keyed by spec rather than card id because
+// card ids do not exist until the final map below.
+export function generateCards(draft, setId, week, artistOf = getArtist, characters = [], nameStyle = 'creature', illustrationLift = null) {
   // getTheme returns null for an id it doesn't know (a stale save, a renamed
   // theme). popFactors reads theme.tags unguarded, so fall back the same way
   // blocks.js's mintTreatmentCards already does rather than crash generation.
@@ -728,7 +825,7 @@ export function generateCards(draft, setId, week, artistOf = getArtist, characte
     }
   }
 
-  return specs.map((spec) => buildCard(spec, draft, theme, sheet, rng, artistOf, characters))
+  return specs.map((spec) => buildCard(spec, draft, theme, sheet, rng, artistOf, characters, illustrationLift?.get(spec.id) ?? null))
 }
 
 // ---- Release effects ------------------------------------------------------
@@ -803,7 +900,26 @@ export function releaseSet(state, draft) {
   draft = { ...draft, signatureCards: resolvedSigs }
 
   const nameStyle = getConcept(state.config?.conceptId).nameStyle
-  const cards = generateCards(draft, setId, state.week, artistOf, characters, nameStyle)
+
+  // ---- Illustration set, phase A: the print-time lift ---------------------
+  // A group's payoff is scored TWICE during a release, and the split is forced
+  // by the order things are minted in.
+  //
+  // Treatment cards and reprints do not exist yet — mintTreatmentCards and
+  // applyCardReprints both run further down, after generateCards. So the lift
+  // baked into popFactors can only see this release's SIGNATURE cards. That is
+  // not merely a workaround: neither of the other two ever goes through
+  // popFactors at all. A reprint carries its original's appeal by design, and a
+  // treatment card is minted by blocks.js down its own path. There is nothing on
+  // either of them to lift.
+  //
+  // So phase A scores a provisional group from the signature picks (plus the
+  // members a continued group already has) and uses it for the appeal and hype
+  // bonus. Phase B, after everything is minted, rebuilds the group from ALL the
+  // resolved picks and rescores — and that score is the one that is frozen and
+  // that the market reads.
+  const ilPhaseA = provisionalIllustrationLift(state, draft, setId, characters)
+  const cards = generateCards(draft, setId, state.week, artistOf, characters, nameStyle, ilPhaseA.lift)
 
   // Every signature card that features a character (new or existing) records a
   // new appearance — bumps fame, files the debut set on a first printing. Feeds
@@ -921,7 +1037,7 @@ export function releaseSet(state, draft) {
   // card id in this set's freshly-minted pool, so the reveal actually lands on
   // a real card people can then chase.
   const spotlightPicks = (draft.spotlight?.picks ?? []).slice(0, MAX_SPOTLIGHT_PICKS)
-  const spotlightIds = resolveSpotlightIds(spotlightPicks, { setId, cards, treatmentCards, reprintCards: reprintResult.reprintCards })
+  const spotlightIds = resolveCardPicks(spotlightPicks, { setId, cards, treatmentCards, reprintCards: reprintResult.reprintCards })
   const spotlightNames = spotlightIds
     .map((id) => [...cards, ...treatmentCards, ...reprintResult.reprintCards].find((c) => c.id === id)?.name)
     .filter(Boolean)
@@ -935,6 +1051,19 @@ export function releaseSet(state, draft) {
   // with its own gentler over-reveal taper.
   set.spotlightAppeal = clamp(0.05 * spotlightIds.length - 0.05 * Math.max(0, spotlightIds.length - 3), 0, 0.12)
 
+  // ---- Illustration set, phase B: the real group ---------------------------
+  // Everything is minted now, so every pick — signature, treatment card or
+  // reprint — resolves to a card that exists. This score is the authoritative
+  // one: it is frozen onto the group and it is what the market reads.
+  const ilResult = resolveIllustrationSet(state, draft, setId, ilPhaseA.group, {
+    setId, cards, treatmentCards, reprintCards: reprintResult.reprintCards,
+  }, characters)
+  const illustrationSets = ilResult?.illustrationSets ?? null
+  // Sealed-demand lift, in the same band and the same place as spotlightAppeal.
+  set.illustrationAppeal = ilResult
+    ? illustrationAppealFor(setId, ilResult.illustrationSets)
+    : 0
+
   // The set's cover character (if any), resolved once for both the feed line
   // and the launch bump below.
   const cover = draft.coverCharacterId
@@ -942,6 +1071,11 @@ export function releaseSet(state, draft) {
     : null
 
   const feedParts = [
+    ilResult
+      ? (ilResult.group.status === 'complete'
+        ? `${ilResult.group.name} is complete at ${ilResult.group.members.length} cards — collectors are chasing the ${getIllustrationKind(ilResult.group.kindId).noun}, not the card.`
+        : `${ilResult.group.name} begins: ${ilResult.group.members.length} of ${ilResult.group.plannedSize} printed, the rest promised.`)
+      : null,
     reprintResult.feed,
     promoCards.length ? `Collector box includes an exclusive promo.` : null,
     anniversaryCards.length ? `${anniversaryCards.length} anniversary chase card${anniversaryCards.length > 1 ? 's' : ''} debut — instant nostalgia for the faithful.` : null,
@@ -998,6 +1132,14 @@ export function releaseSet(state, draft) {
 
   // Previews stoke the launch on top of the event itself.
   set.buzz = clamp(set.buzz + spotlightBuzz, 10, 100)
+
+  // Announcing a run this release does not finish buys buzz NOW. Without that,
+  // the risk of abandoning one is fake — there would be nothing to have taken,
+  // only a bonus never collected. Teasing "and the capstone comes later" has to
+  // pay, so that walking away from it is a broken promise. Scales with how much
+  // is still owed and with how coherent what has shipped is.
+  const announceBuzz = ilResult ? announcementBuzz(ilResult.group) : 0
+  if (announceBuzz > 0) set.buzz = clamp(set.buzz + announceBuzz, 10, 100)
 
   // Cover character: putting a known face on the box lends the set that
   // character's accumulated fame. Costs nothing (they're already yours) — the
@@ -1137,6 +1279,9 @@ export function releaseSet(state, draft) {
     releaseFeed: feedParts.length ? feedParts.join(' ') : null,
     personaSentimentBump, // odds-transparency goodwill bump, or null
     scalperHeatDelta: releaseEventScalperBump || null, // only non-null for a midnight launch
+    // state.illustrationSets after opening or extending a group, or null when
+    // this release authored none — the reducer keeps the existing array then.
+    illustrationSets,
   }
 }
 
@@ -1150,7 +1295,11 @@ export function releaseSet(state, draft) {
 // treatment slot the block didn't end up minting) are silently dropped — the
 // player shouldn't pay for, or benefit from, a reveal that has no card.
 // Deduped so the same card can't be counted twice toward the reveal curve.
-function resolveSpotlightIds(picks, { setId, cards, treatmentCards, reprintCards }) {
+// Renamed from resolveSpotlightIds when illustration sets gained the same
+// { kind, ref } pick shape. Two callers now, one resolver: a spotlight reveal
+// and an illustration-set membership are the same question ("which real card
+// does this pick mean?") asked at two points in the release.
+function resolveCardPicks(picks, { setId, cards, treatmentCards, reprintCards }) {
   const out = []
   for (const pick of picks ?? []) {
     const i = Number(pick?.ref)
@@ -1162,6 +1311,134 @@ function resolveSpotlightIds(picks, { setId, cards, treatmentCards, reprintCards
     if (id && !out.includes(id)) out.push(id)
   }
   return out
+}
+
+// ---- Illustration sets ----------------------------------------------------
+
+// The group a draft is contributing to this release: an existing open one for
+// 'continue', or a freshly minted one for 'open'. Null when the draft is not
+// authoring a group at all.
+function draftGroup(state, draft, setId, week) {
+  const spec = draft.illustrationSet
+  if (!spec || spec.mode === 'none') return null
+  if (spec.mode === 'continue') {
+    const open = (state.illustrationSets ?? []).find((g) => g.id === spec.groupId)
+    // Guarded rather than trusted: validateDraft rejects a continue against a
+    // group that is missing or no longer open, but releaseSet is also reachable
+    // from the harness and from a stale draft held open across a save load.
+    return open && open.status === 'open' ? open : null
+  }
+  return openGroup(state, spec, setId, week)
+}
+
+// Phase A (see the call site in releaseSet). Scores a PROVISIONAL group made of
+// whatever the continued group already holds plus this release's signature
+// picks, and turns it into a spec-id -> lift map for generateCards.
+//
+// Returns { lift, group } — `group` is handed back so phase B does not have to
+// re-resolve which group is being written to.
+function provisionalIllustrationLift(state, draft, setId, characters) {
+  const group = draftGroup(state, draft, setId, state.week)
+  const lift = new Map()
+  if (!group) return { lift, group: null }
+
+  const sheet = draft.rarities ?? defaultRaritySheet()
+  const sigs = draft.signatureCards ?? []
+  // Only signature picks can be scored here. A ref that is out of range (a
+  // signature removed after being picked) is dropped, exactly as a spotlight
+  // pick with no card is.
+  const picked = []
+  for (const pick of draft.illustrationSet?.picks ?? []) {
+    if (pick?.kind !== 'signature') continue
+    const i = Number(pick.ref)
+    if (!Number.isInteger(i) || i < 0 || i >= sigs.length) continue
+    const sig = sigs[i]
+    picked.push({
+      specId: `c${i + 1}`,
+      entry: {
+        cardId: `${setId}_c${i + 1}`,
+        setId,
+        week: state.week,
+        artistId: sig.artistId ?? null,
+        characterId: sig.characterId ?? null,
+        valueTier: getRarity(sheet, sig.rarity).valueTier ?? 0,
+        briefMatch: briefMatches(sig.artNotes, group.artBrief),
+      },
+    })
+  }
+  if (!picked.length) return { lift, group }
+
+  const provisional = {
+    ...group,
+    members: [...(group.members ?? []), ...picked.map((p) => p.entry)],
+  }
+  const { score } = scoreCohesion(provisional, { characters })
+  // The capstone is the highest tier across the WHOLE provisional group, so a
+  // card continuing a run only takes the crown if it actually out-ranks what
+  // has already been printed.
+  let topTier = -1
+  for (const m of provisional.members) topTier = Math.max(topTier, m.valueTier ?? 0)
+  let crowned = false
+  // Walk in print order so that, on a tie at the top tier, the FIRST such card
+  // takes it — matching capstoneIdOf, which breaks ties toward the later week
+  // and therefore toward an already-printed member when one exists.
+  const existingTop = (group.members ?? []).some((m) => (m.valueTier ?? 0) >= topTier)
+  for (const p of picked) {
+    const isCapstone = !existingTop && !crowned && (p.entry.valueTier ?? 0) >= topTier
+    if (isCapstone) crowned = true
+    lift.set(p.specId, groupLift(score, isCapstone, group.kindId))
+  }
+  return { lift, group }
+}
+
+// Phase B. Every resolved pick becomes a real member entry against the cards
+// that now exist, the group is rescored, and the full replacement array is
+// returned for the reducer. Returns null when the draft authored no group.
+function resolveIllustrationSet(state, draft, setId, group, pools, characters) {
+  if (!group) return null
+  const spec = draft.illustrationSet
+  const kind = getIllustrationKind(group.kindId)
+  const room = kind.maxSize - (group.members?.length ?? 0)
+  if (room <= 0) return null
+  const ids = resolveCardPicks((spec.picks ?? []).slice(0, room), pools)
+  if (!ids.length) return null
+
+  const all = [...pools.cards, ...pools.treatmentCards, ...pools.reprintCards]
+  const byId = new Map(all.map((c) => [c.id, c]))
+  const sheet = draft.rarities ?? defaultRaritySheet()
+  // artNotes is authored on the DRAFT and never copied onto the card record
+  // (buildCard returns twenty-one fields and that is not one of them), so the
+  // brief match has to be read back through the signature index. Signature i
+  // takes collector number i+1 and therefore card id `${setId}_c${i+1}` — an
+  // exact mapping, unlike matching on name, which a variant printing duplicates.
+  const notesByCardId = new Map(
+    (draft.signatureCards ?? []).map((sig, i) => [`${setId}_c${i + 1}`, sig.artNotes]),
+  )
+  const entries = []
+  for (const id of ids) {
+    const card = byId.get(id)
+    if (!card) continue
+    entries.push(makeMember(card, {
+      setId,
+      week: state.week,
+      valueTier: getRarity(sheet, card.rarity).valueTier ?? 0,
+      briefMatch: briefMatches(notesByCardId.get(id), group.artBrief),
+    }))
+  }
+  if (!entries.length) return null
+
+  const filled = addMembers(group, entries, { characters, week: state.week })
+  // A group needs two members to mean anything. One resolved pick on a fresh
+  // group is dropped outright rather than left as a one-card group nothing can
+  // ever score — validateDraft already refuses this, so it only bites a draft
+  // whose other picks all failed to resolve.
+  if ((filled.members?.length ?? 0) < 2) return null
+
+  const existing = state.illustrationSets ?? []
+  const groups = existing.some((g) => g.id === filled.id)
+    ? existing.map((g) => (g.id === filled.id ? filled : g))
+    : [...existing, filled]
+  return { group: filled, illustrationSets: groups }
 }
 
 // Resolve card reprints on a draft: re-issue chosen old cards into the new set.

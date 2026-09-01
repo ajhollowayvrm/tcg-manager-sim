@@ -51,7 +51,7 @@ export function reducer(state, action) {
       return applyClockDirective(next)
     }
     case 'RELEASE_SET': {
-      const { set, existingSets, cards, cashDelta, printIntensity, softenedCards, releaseFeed, newPlayers, pendingWave, blocks, block, tier, characters, personaSentimentBump, scalperHeatDelta } = releaseSet(state, action.draft)
+      const { set, existingSets, cards, cashDelta, printIntensity, softenedCards, releaseFeed, newPlayers, pendingWave, blocks, block, tier, characters, personaSentimentBump, scalperHeatDelta, illustrationSets } = releaseSet(state, action.draft)
       // If a card reprint softened existing originals, build from that patched
       // array; otherwise from the current one. Then append the new set's cards.
       const baseCards = softenedCards ?? state.cards
@@ -65,7 +65,7 @@ export function reducer(state, action) {
       // A block opened WITHOUT a gimmick is a plain themed era — a first-class,
       // cheaper choice, not a missing value. blocks.js stores `gimmickName: null`
       // for one, and this line interpolated it straight into the launch feed, so
-      // every plain era announced itself as `opens the “Dragons Block” block
+      // every plain era announced itself as `opens the "Dragons Block" block
       // (null)`. Named eras are unchanged.
       const blockLine = block
         ? (tier === 'major'
@@ -90,6 +90,7 @@ export function reducer(state, action) {
         cards: [...baseCards, ...cards],
         blocks: blocks ?? state.blocks,
         characters: characters ?? state.characters,
+        illustrationSets: illustrationSets ?? state.illustrationSets,
         pendingWaves: pendingWave ? [...(state.pendingWaves ?? []), pendingWave] : state.pendingWaves,
         segments,
         playerBase,
