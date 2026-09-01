@@ -14,11 +14,17 @@ export default function PackFormatEditor({ format, sheet, onChange }) {
   // "this slot is the alt-art slot" has to be expressible.
   const pickable = expandRaritySheet(sheet ?? [])
 
+  // `preset` records where this pack SHAPE came from, so editing a slot has to
+  // clear it — a Classic pack with a rewritten hit slot is not Classic any more.
+  // Every mutator used to pass `format?.preset` straight back through, so the
+  // default below was never once exercised: the chip stayed lit and the
+  // builder's summary line kept reporting "Classic" however heavily the slots
+  // had been rewritten. Applying a preset (below) is the only thing that sets it.
   const setSlots = (next, preset = null) => onChange({ ...format, preset, slots: next })
   const updateSlot = (i, patch) =>
-    setSlots(slots.map((s, idx) => (idx === i ? { ...s, ...patch } : s)), format?.preset)
-  const removeSlot = (i) => setSlots(slots.filter((_, idx) => idx !== i), format?.preset)
-  const addSlot = () => setSlots([...slots, makePackSlot()], format?.preset)
+    setSlots(slots.map((s, idx) => (idx === i ? { ...s, ...patch } : s)))
+  const removeSlot = (i) => setSlots(slots.filter((_, idx) => idx !== i))
+  const addSlot = () => setSlots([...slots, makePackSlot()])
 
   // Toggle a rarity id in a slot's allowed list.
   const toggleRarity = (i, rid) => {

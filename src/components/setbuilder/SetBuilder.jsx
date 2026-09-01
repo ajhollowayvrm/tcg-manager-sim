@@ -254,6 +254,15 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
         spotlight: d.spotlight,
         prerelease: d.prerelease,
         releaseEvent: d.releaseEvent,
+        // Neither of these is a tier-dependent default, and both used to be
+        // silently wiped by the re-seed above — they were simply missing from
+        // this list. The god pack's `rarityIds` name entries in the rarity sheet
+        // that IS carried two lines up, so dropping it while keeping the sheet
+        // was incoherent rather than deliberate; and re-seeding the illustration
+        // set threw away the player's group name, art brief and card picks along
+        // with the kind, for a group that has nothing to do with the tier.
+        godPack: d.godPack,
+        illustrationSet: d.illustrationSet,
         // Theme is a per-set flavor pick, independent of tier — switching tier
         // shouldn't reset it out from under the player.
         themeId: d.themeId,
