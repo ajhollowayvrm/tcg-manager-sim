@@ -222,6 +222,9 @@ body {
   display: flex; flex-direction: column;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
 }
+/* The set builder is a thirteen-section form and earns a wider sheet than a
+   confirm dialog. Scoped to the builder so every other modal keeps its 760px. */
+.modal__sheet:has(.builder--wide) { width: min(1180px, 100%); }
 .modal__head, .modal__foot {
   display: flex; align-items: center; justify-content: space-between;
   padding: 14px 18px; border-bottom: 1px solid var(--border);
@@ -1695,3 +1698,119 @@ button.tag--oddsobscured:hover { border-color: var(--accent-2); color: var(--tex
 /* A character's promotion chain on their detail sheet. */
 .charsheet__lineage { font-size: 0.78rem; color: var(--text-dim); margin: 4px 0 0; }
 .charsheet__lineage strong { color: var(--text); }
+
+/* ---- Set builder: the wide two-pane layout -------------------------------
+   Narrow keeps the accordion (correct for a phone). At >=1024px the same
+   sections become a nav rail plus a single open pane, because thirteen
+   collapsed headers is ~690px of navigation chrome the player had to scroll
+   past to reach whichever section they had just opened. The breakpoint here
+   must match useWideLayout()'s media query in SetBuilder.jsx. */
+@media (min-width: 1024px) {
+  .builder--wide {
+    display: grid;
+    grid-template-columns: 248px minmax(0, 1fr);
+    gap: 0;
+    padding: 0;
+    /* The body itself stops scrolling; the rail and the pane each scroll on
+       their own. Scrolling the body as one meant a long section dragged the
+       whole nav off the top of the sheet, which is the thing a rail exists to
+       prevent. min-height:0 is required for a grid child to be allowed to
+       shrink below its content and therefore to scroll at all. */
+    overflow: hidden;
+    min-height: 0;
+  }
+  .builder--wide > * { min-height: 0; }
+  .builder--wide .bnav {
+    overflow-y: auto;
+    padding: 10px 10px 10px 14px;
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .builder--wide .builder__pane {
+    overflow-y: auto;
+    padding: 18px 20px;
+    display: flex; flex-direction: column; gap: 14px;
+    min-width: 0;
+  }
+  /* Every non-active section still renders as an empty <section>, and the
+     pane's 14px flex gap between thirteen of them stacked ~170px of blank
+     space above whichever one was open. */
+  .builder--wide .acc:not(.acc--open) { display: none; }
+  /* The rail IS the header now: showing the section's own title again directly
+     under the row you just clicked is a redundant line, and the card chrome
+     around it reads as a box inside a box. */
+  .builder--wide .acc { border: none; background: none; border-radius: 0; overflow: visible; }
+  .builder--wide .acc__head { display: none; }
+  .builder--wide .acc__body { padding: 0; }
+  /* A short label above a wide input reads as a stray line at this width. Put
+     the two side by side and let the control take the space it needs. */
+  .builder--wide .builder__pane > .field:not(.field--full),
+  .builder--wide .acc__body > .field:not(.field--full) {
+    display: grid;
+    grid-template-columns: 180px minmax(0, 1fr);
+    align-items: center;
+    gap: 4px 14px;
+  }
+  .builder--wide .acc__body > .field:not(.field--full) > .field__note {
+    grid-column: 2; margin-top: 0;
+  }
+  /* A 900px-wide text input for a set name, and help text running the full
+     width of the pane, are both harder to read than the narrower originals —
+     the extra width the two-pane layout buys should go to the editors that
+     need it (rarity sheet, pack format, product lineup, tier cards), not to
+     stretching a single-line field across the sheet. Capped at a comfortable
+     measure; anything that wants the full width is unaffected. */
+  .builder--wide .acc__body .field > input,
+  .builder--wide .acc__body .field > select,
+  .builder--wide .acc__body .field > textarea { max-width: 560px; }
+  .builder--wide .acc__body .field__note,
+  .builder--wide .acc__body > p { max-width: 76ch; }
+  /* The tier cards get the full pane width, so they can sit four across
+     without the text column collapsing. */
+  .builder--wide .tierpicker { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  /* The cost breakdown is the modal's main feedback and was a cramped column in
+     the corner. At this width the itemised lines flow into two columns; the
+     total and the cash line stay full width beneath them. Multi-column rather
+     than a grid because the number of cost lines varies from four to eleven
+     depending on what the set has been given, so no fixed row count is right. */
+  .modal__sheet:has(.builder--wide) .costs { min-width: 520px; }
+  /* Two columns only once there are six or more lines. Below that the split
+     stranded a single item in column two and read as a mistake. */
+  .modal__sheet:has(.builder--wide) .costs__items:has(> :nth-child(6)) {
+    column-count: 2; column-gap: 32px;
+  }
+  .modal__sheet:has(.builder--wide) .costs__items .costs__line {
+    break-inside: avoid;
+  }
+}
+
+/* The rail itself. */
+.bnav__group { display: flex; flex-direction: column; gap: 2px; }
+.bnav__grouphead {
+  margin: 0 0 2px 8px;
+  font-size: 0.62rem; font-weight: 800; letter-spacing: 0.9px;
+  text-transform: uppercase; color: var(--text-dim);
+}
+.bnav__item {
+  display: flex; flex-direction: column; gap: 0;
+  text-align: left; width: 100%;
+  padding: 4px 10px;
+  border: 1px solid transparent; border-radius: 7px;
+  background: none; color: var(--text); font: inherit; cursor: pointer;
+  border-left: 2px solid transparent;
+  line-height: 1.3;
+}
+.bnav__item:hover { background: var(--surface-2); }
+.bnav__item.is-active {
+  background: color-mix(in srgb, var(--accent-2) 14%, var(--surface-2));
+  border-left-color: var(--accent-2);
+}
+.bnav__label { font-size: 0.82rem; font-weight: 600; }
+.bnav__item.is-active .bnav__label { color: var(--accent-2); }
+.bnav__sum {
+  font-size: 0.68rem; color: var(--text-dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.builder__panetitle {
+  margin: 0 0 2px; font-size: 1rem; font-weight: 700; color: var(--text);
+}

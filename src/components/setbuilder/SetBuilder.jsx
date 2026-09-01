@@ -1,7 +1,7 @@
 // The set-creation flow. A modal over the dashboard holding the slider layer,
 // signature card editor, prerelease toggle, a live cost summary, and Release.
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useModal } from '../useModal.js'
 import Slider from './Slider.jsx'
 import SignatureCardEditor from './SignatureCardEditor.jsx'
@@ -49,6 +49,108 @@ function nextId(cards) {
   return max + 1
 }
 
+// The nav rail's contents on the wide layout, grouped so thirteen sections read
+// as four decisions instead of one undifferentiated list. `sum` names the key in
+// `summaries` whose one-liner the rail row shows, so a player can read the whole
+// configuration down the rail without opening anything.
+//
+// 'tier' has no summaries key — its subtitle is the chosen tier's own name.
+const NAV = [
+  {
+    group: 'The set',
+    items: [
+      { id: 'tier', label: 'Release tier' },
+      { id: 'identity', label: 'Identity & era', sum: 'block' },
+      { id: 'composition', label: 'Set composition', sum: 'composition' },
+      { id: 'look', label: 'Look & feel', sum: 'look' },
+    ],
+  },
+  {
+    group: 'The cards',
+    items: [
+      { id: 'signatures', label: 'Signature highlights', sum: 'signatures' },
+      { id: 'illustration', label: 'Illustration set', sum: 'illustration' },
+      { id: 'reprints', label: 'Reprint favourites', sum: 'reprints' },
+    ],
+  },
+  {
+    group: 'The pack',
+    items: [
+      { id: 'booster', label: 'Booster format', sum: 'booster' },
+      { id: 'odds', label: 'Pack odds', sum: 'odds' },
+      { id: 'godPack', label: 'God pack', sum: 'godPack' },
+    ],
+  },
+  {
+    group: 'The launch',
+    items: [
+      { id: 'products', label: 'Print & pricing', sum: 'products' },
+      { id: 'spotlight', label: 'Spotlight & preview', sum: 'spotlight' },
+      { id: 'prerelease', label: 'Prerelease', sum: 'prerelease' },
+      { id: 'releaseEvent', label: 'Release event', sum: 'releaseEvent' },
+    ],
+  },
+]
+
+// The rail label for a section id, for the pane's heading.
+function navLabel(id) {
+  for (const group of NAV) {
+    const hit = group.items.find((i) => i.id === id)
+    if (hit) return hit.label
+  }
+  return ''
+}
+
+// True on a viewport with room for the two-pane layout. Matches the CSS
+// breakpoint below; both have to agree or the rail renders without the grid to
+// sit in. Listens, so dragging a window across the breakpoint re-lays-out.
+function useWideLayout() {
+  const query = '(min-width: 1024px)'
+  const [wide, setWide] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia
+      ? window.matchMedia(query).matches
+      : false,
+  )
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return undefined
+    const mq = window.matchMedia(query)
+    const onChange = (e) => setWide(e.matches)
+    mq.addEventListener('change', onChange)
+    setWide(mq.matches)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+  return wide
+}
+
+// The nav rail. Each row is the section's name plus the same one-line summary
+// the accordion header shows when collapsed — so the rail doubles as a
+// read-only view of the whole configuration.
+function BuilderNav({ active, onPick, summaries, tierName }) {
+  return (
+    <nav className="bnav" aria-label="Set builder sections">
+      {NAV.map((section) => (
+        <div key={section.group} className="bnav__group">
+          <h3 className="bnav__grouphead">{section.group}</h3>
+          {section.items.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={'bnav__item' + (active === item.id ? ' is-active' : '')}
+              aria-current={active === item.id ? 'true' : undefined}
+              onClick={() => onPick(item.id)}
+            >
+              <span className="bnav__label">{item.label}</span>
+              <span className="bnav__sum">
+                {item.id === 'tier' ? tierName : (summaries[item.sum] ?? '')}
+              </span>
+            </button>
+          ))}
+        </div>
+      ))}
+    </nav>
+  )
+}
+
 export default function SetBuilder({ setNumber, cash, artists, characters = [], liveCards = [], sets = [], blocks = [], illustrationSets = [], week = 1, franchise, perks = [], conceptId, onRelease, onClose }) {
   // The first set you ever ship MUST be a major (it opens your first block); once
   // a block is live you can ship riders. Seed the tier accordingly.
@@ -71,8 +173,35 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
   // default; everything else starts collapsed so the modal opens short and
   // scannable. Each collapsed header shows a one-line summary of its contents.
   const modalRef = useModal(onClose)
+  // WIDE layout is a two-pane form: a nav rail on the left, one section's
+  // controls on the right. NARROW keeps the accordion, which is the right
+  // control for a phone and was never the problem.
+  //
+  // The problem it fixes is specific to desktop. Thirteen collapsed headers is
+  // roughly 690px of pure navigation chrome, so opening the last section put its
+  // controls below the fold with every header still above them — you scrolled
+  // past the whole table of contents to read one row of a slider. Meanwhile the
+  // 760px sheet used half a 1500px viewport and left the rest as dimmed
+  // backdrop.
+  const wide = useWideLayout()
   const [open, setOpen] = useState({ identity: true })
+  // On the wide layout exactly one section is open at a time and the rail picks
+  // it; on narrow, sections toggle independently as before.
+  const [active, setActive] = useState('tier')
+  // Switching sections starts the new one at the top. Without this the pane
+  // keeps the old scroll offset, so moving between two long sections opens the
+  // second one already scrolled part-way down with its heading off-screen. It
+  // happens to look fine moving from a long section to a short one only because
+  // the browser clamps the offset — not something to rely on.
+  const paneRef = useRef(null)
   const toggle = (id) => setOpen((o) => ({ ...o, [id]: !o[id] }))
+  useEffect(() => {
+    if (paneRef.current) paneRef.current.scrollTop = 0
+  }, [active])
+  const isOpen = (id) => (wide ? active === id : !!open[id])
+  const onSection = (id) => (wide
+    ? () => setActive(id)
+    : () => toggle(id))
 
   const patch = (p) => setDraft((d) => ({ ...d, ...p }))
   const tier = getTier(draft.tier)
@@ -233,17 +362,37 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
           <button className="btn btn--ghost" onClick={onClose}>✕</button>
         </header>
 
-        <div className="modal__body">
+        <div className={'modal__body builder' + (wide ? ' builder--wide' : '')}>
+          {wide && (
+            <BuilderNav
+              active={active}
+              onPick={setActive}
+              summaries={summaries}
+              tierName={tier.name}
+            />
+          )}
+
+          <div className="builder__pane" ref={paneRef}>
+          {/* The rail highlights the active row, but at this width the eye is on
+              the pane and needs an anchor of its own — the accordion's own
+              header is hidden here because it would repeat the rail's summary
+              line underneath it. */}
+          {wide && <h3 className="builder__panetitle">{navLabel(active)}</h3>}
           {/* Release tier — the first decision. A major opens a block; a minor/
-              micro rides a live one. Drives the whole set's scale & effects. */}
-          <TierPicker tier={draft.tier} isFirstSet={isFirstSet} anniversaryGate={anniversaryGate} onChange={onTierChange} />
+              micro rides a live one. Drives the whole set's scale & effects.
+              On the wide layout it is the rail's first row and the section the
+              modal opens on, so the first decision is still the first thing you
+              see — it just stops occupying 150px forever once it is made. */}
+          {(!wide || active === 'tier') && (
+            <TierPicker tier={draft.tier} isFirstSet={isFirstSet} anniversaryGate={anniversaryGate} onChange={onTierChange} />
+          )}
 
 
           {/* Identity & era — what this set IS. The era is part of a set's
               identity, so the block/gimmick editor lives here rather than in a
               section of its own; splitting them is what made the old flow read
               mechanics-first. Open by default. */}
-          <AccordionSection title="Identity & era" summary={summaries.block} open={open.identity} onToggle={() => toggle('identity')}>
+          <AccordionSection title="Identity & era" summary={summaries.block} open={isOpen('identity')} onToggle={onSection('identity')}>
             <label className="field field--full">
               <span>Set name</span>
               <input value={draft.name} onChange={(e) => patch({ name: e.target.value })} />
@@ -343,7 +492,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
           </AccordionSection>
 
           {/* Set composition — length, secret rares, and the rarity sheet */}
-          <AccordionSection title="Set composition" summary={summaries.composition} open={open.composition} onToggle={() => toggle('composition')}>
+          <AccordionSection title="Set composition" summary={summaries.composition} open={isOpen('composition')} onToggle={onSection('composition')}>
             <Slider
               label={`Set length (cards) — ${sizeLabel(size.s)}`}
               value={draft.setLength}
@@ -390,7 +539,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
               and chase distribution are both about how the set presents itself,
               which is what keeps loudness reading as a design lever rather than
               a balance one. */}
-          <AccordionSection title="Look & feel" summary={summaries.look} open={open.look} onToggle={() => toggle('look')}>
+          <AccordionSection title="Look & feel" summary={summaries.look} open={isOpen('look')} onToggle={onSection('look')}>
             <Slider
               label="Design loudness"
               value={draft.designLoudness}
@@ -418,8 +567,8 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
           <AccordionSection
             title={`Signature highlights (${draft.signatureCards.length}/${MAX_SIGNATURE_CARDS})`}
             summary={summaries.signatures}
-            open={open.signatures}
-            onToggle={() => toggle('signatures')}
+            open={isOpen('signatures')}
+            onToggle={onSection('signatures')}
           >
             <div className="builder__sectionhead">
               <span className="muted">Optional marquee cards.</span>
@@ -463,8 +612,8 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
           <AccordionSection
             title={`Spotlight & preview (${draft.spotlight?.picks?.length ?? 0}/${MAX_SPOTLIGHT_PICKS})`}
             summary={summaries.spotlight}
-            open={open.spotlight}
-            onToggle={() => toggle('spotlight')}
+            open={isOpen('spotlight')}
+            onToggle={onSection('spotlight')}
           >
             <span className="field__note">
               Cards you show off publicly before the set drops. A couple of
@@ -489,8 +638,8 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
           <AccordionSection
             title="Illustration set"
             summary={summaries.illustration}
-            open={open.illustration}
-            onToggle={() => toggle('illustration')}
+            open={isOpen('illustration')}
+            onToggle={onSection('illustration')}
           >
             <IllustrationSetEditor
               spec={draft.illustrationSet}
@@ -508,8 +657,8 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
           <AccordionSection
             title={`Reprint popular cards (${draft.reprintedCards?.length ?? 0}/${maxReprintedCards(draft.tier)})`}
             summary={summaries.reprints}
-            open={open.reprints}
-            onToggle={() => toggle('reprints')}
+            open={isOpen('reprints')}
+            onToggle={onSection('reprints')}
           >
             <ReprintPicker
               reprints={draft.reprintedCards ?? []}
@@ -525,7 +674,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
             />
           </AccordionSection>
           {/* Booster format — how a pack is built from the rarity sheet */}
-          <AccordionSection title="Booster format" summary={summaries.booster} open={open.booster} onToggle={() => toggle('booster')}>
+          <AccordionSection title="Booster format" summary={summaries.booster} open={isOpen('booster')} onToggle={onSection('booster')}>
             <span className="field__note">
               How a pack is built from your rarities — slot counts and which
               rarities each slot pulls. Hit-heavy boosters cost a little more to
@@ -544,7 +693,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
           {/* Pack odds & transparency — always previewed; publishing trades a
               little hype/mystique for community trust and dampens a
               gambling-mechanics backlash risk on a chase-heavy set. */}
-          <AccordionSection title="Pack odds & transparency" summary={summaries.odds} open={open.odds} onToggle={() => toggle('odds')}>
+          <AccordionSection title="Pack odds & transparency" summary={summaries.odds} open={isOpen('odds')} onToggle={onSection('odds')}>
             <label className="check">
               <input
                 type="checkbox"
@@ -566,7 +715,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
               hits. Still a vanishingly rare roll (see packs.js's
               GOD_PACK_CHANCE); this only decides whether this set can roll
               one at all, and what it's built from when it does. */}
-          <AccordionSection title="God pack" summary={summaries.godPack} open={open.godPack} onToggle={() => toggle('godPack')}>
+          <AccordionSection title="God pack" summary={summaries.godPack} open={isOpen('godPack')} onToggle={onSection('godPack')}>
             <label className="check">
               <input
                 type="checkbox"
@@ -615,7 +764,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
           </AccordionSection>
 
           {/* Product lineup — which SKUs the set ships in beyond boosters */}
-          <AccordionSection title="Print & pricing" summary={summaries.products} open={open.products} onToggle={() => toggle('products')}>
+          <AccordionSection title="Print & pricing" summary={summaries.products} open={isOpen('products')} onToggle={onSection('products')}>
             <Slider
               label="Print run"
               value={draft.printRun}
@@ -665,7 +814,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
           </AccordionSection>
 
           {/* Prerelease */}
-          <AccordionSection title="Prerelease" summary={summaries.prerelease} open={open.prerelease} onToggle={() => toggle('prerelease')}>
+          <AccordionSection title="Prerelease" summary={summaries.prerelease} open={isOpen('prerelease')} onToggle={onSection('prerelease')}>
             <label className="check">
               <input
                 type="checkbox"
@@ -696,7 +845,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
           </AccordionSection>
 
           {/* Special release event — flavor on top of a normal release */}
-          <AccordionSection title="Release event" summary={summaries.releaseEvent} open={open.releaseEvent} onToggle={() => toggle('releaseEvent')}>
+          <AccordionSection title="Release event" summary={summaries.releaseEvent} open={isOpen('releaseEvent')} onToggle={onSection('releaseEvent')}>
             <label className="check">
               <input
                 type="radio"
@@ -726,11 +875,13 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
             </label>
           </AccordionSection>
 
+          </div>
         </div>
 
         {/* Cost summary + release */}
         <footer className="modal__foot">
           <div className="costs">
+            <div className="costs__items">
             <CostLine label="Development" value={cost.dev} />
             <CostLine label={(draft.products?.length ?? 0) ? 'Booster print' : 'Print run'} value={cost.printCost} />
             {cost.skus > 0 && <CostLine label="Other SKUs print" value={cost.skus} />}
@@ -742,6 +893,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
             {cost.releaseEvent > 0 && <CostLine label="Release event" value={cost.releaseEvent} />}
             {cost.spotlight > 0 && <CostLine label="Preview campaign" value={cost.spotlight} />}
             {cost.illustrationSet > 0 && <CostLine label="Illustration set direction" value={cost.illustrationSet} />}
+            </div>
             <CostLine label="Total" value={cost.total} total />
             <div className={'costs__cash' + (goesIntoDebt ? ' is-bad' : '')}>
               On hand: {formatCash(cash)}
