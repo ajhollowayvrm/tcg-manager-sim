@@ -65,18 +65,24 @@ export const MILESTONES = [
   // is collection value, community goodwill and a catalogue worth remembering,
   // not margin. Legacy is exactly the axis the game already keeps for that, so
   // this is where the reward for finishing one is legible.
+  // `!g.discovered` is load-bearing on all three: a group the COMMUNITY named
+  // out of cards that happened to sit together is not something the player did,
+  // and awarding "Completed your first illustration set" for one is simply
+  // false. It fired that way in testing — a discovered run tripped the milestone
+  // in week 11 of a run that had authored nothing.
   { id: 'first_illustration_set', name: 'It goes together', points: 40,
     blurb: 'Completed your first illustration set.',
-    test: (s) => (s.illustrationSets ?? []).some((g) => g.status === 'complete') },
+    test: (s) => (s.illustrationSets ?? []).some((g) => g.status === 'complete' && !g.discovered) },
   { id: 'long_run', name: 'Worth the wait', points: 90,
     blurb: 'Completed an illustration set that spanned three or more releases.',
     test: (s) => (s.illustrationSets ?? []).some(
-      (g) => g.status === 'complete' && new Set((g.members ?? []).map((m) => m.setId)).size >= 3,
+      (g) => g.status === 'complete' && !g.discovered
+        && new Set((g.members ?? []).map((m) => m.setId)).size >= 3,
     ) },
   { id: 'curator', name: 'Curator', points: 120,
     blurb: 'Completed eight illustration sets, and abandoned none.',
     test: (s) => {
-      const groups = s.illustrationSets ?? []
+      const groups = (s.illustrationSets ?? []).filter((g) => !g.discovered)
       if (groups.some((g) => g.status === 'abandoned')) return false
       return groups.filter((g) => g.status === 'complete').length >= 8
     } },

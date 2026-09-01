@@ -367,16 +367,36 @@ export function briefMatches(notes, artBrief) {
     .some((w) => w.length > 2 && want.has(w))
 }
 
-// Mint a group. The id is derived from the PERSISTED array length, matching
-// `set_${n+1}` and `block_${n+1}` — not rarities.js's rid() timestamp scheme,
-// which exists specifically for ids minted inside the set builder before any
-// state write, where a reload can collide two counters. A group is only ever
-// created by a release, so the length is authoritative.
+// The next free group id. Derived from the highest suffix in use, NOT from the
+// array length, and the difference is load-bearing here in a way it is not for
+// `set_${n+1}` or `block_${n+1}`.
+//
+// Sets and blocks are never removed, so their length only ever grows. Groups
+// ARE removed: normalizeIllustrationSet drops any group left with fewer than two
+// live members when a save loads. Three groups minus a dropped middle one leaves
+// a length of 2, and the next release then mints `ilset_3` on top of the
+// `ilset_3` that is still sitting there — two groups sharing an id, which makes
+// a `continue` resolve to whichever `.find()` reaches first and collides the
+// React keys in the browser.
+function nextGroupId(groups) {
+  let max = 0
+  for (const g of groups ?? []) {
+    const m = /^ilset_(\d+)$/.exec(g?.id ?? '')
+    if (m) max = Math.max(max, Number(m[1]))
+  }
+  return `ilset_${max + 1}`
+}
+
+// Mint a group. Sequential ids in the style of `set_${n+1}` and
+// `block_${n+1}` — not rarities.js's rid() timestamp scheme, which exists
+// specifically for ids minted inside the set builder before any state write,
+// where a reload can collide two counters. A group is only ever created by a
+// release or by discovery, so a scan of what exists is authoritative.
 export function openGroup(state, spec, setId, week) {
   const kind = getIllustrationKind(spec?.kindId)
   const existing = state.illustrationSets ?? []
   return {
-    id: `ilset_${existing.length + 1}`,
+    id: nextGroupId(existing),
     kindId: kind.id,
     name: (spec?.name ?? '').trim() || `Untitled ${kind.noun}`,
     artBrief: (spec?.artBrief ?? '').trim(),
@@ -615,6 +635,10 @@ export function illustrationOverusePressure(state) {
   const grouped = new Set()
   let broken = 0
   for (const g of groups) {
+    // A group the community named is not the studio packaging anything, so it
+    // cannot be evidence that the studio over-packages. Blaming a player for
+    // curation they did not do is the wrong way round.
+    if (g.discovered) continue
     if (g.status === 'abandoned' || g.status === 'stale') broken++
     for (const m of g.members ?? []) grouped.add(m.cardId)
   }
@@ -790,7 +814,7 @@ function findAccidentalGroup(state, rng) {
   const shortName = artistName.replace(/"[^"]*"/g, '').trim().split(/\s+/).pop()
 
   const group = {
-    id: `ilset_${(state.illustrationSets ?? []).length + 1}`,
+    id: nextGroupId(state.illustrationSets),
     kindId: 'suite', // one hand, one set — that is what was actually found
     name: DISCOVERED_NAMES[Math.floor(rng() * DISCOVERED_NAMES.length)](shortName),
     artBrief: '',
