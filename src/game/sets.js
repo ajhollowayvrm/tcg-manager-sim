@@ -27,7 +27,7 @@ import {
 } from './content/illustrationsets.js'
 import {
   openGroup, addMembers, makeMember, briefMatches, scoreCohesion,
-  groupLift, announcementBuzz, promiseCredibility, illustrationAppealFor, valueTierOf,
+  groupLift, announcementBuzz, promiseCredibility, illustrationAppealFor,
 } from './illustrationsets.js'
 
 export const MIN_SIGNATURE_CARDS = 0 // signature highlights are optional now

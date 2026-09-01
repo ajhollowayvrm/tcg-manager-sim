@@ -888,8 +888,8 @@ export function normalizeIllustrationSet(g, liveCardIds = null) {
 export { HALO_MAX, STALE_WEEKS, ABANDON_WEEKS }
 
 // Resolve a card's rarity value tier against its set's sheet — the one thing
-// makeMember needs that the card record does not carry. Kept here so both
-// releaseSet and the discovery pass agree on how a tier is read.
-export function valueTierOf(set, card) {
+// makeMember needs that the card record does not carry. Module-local: only the
+// discovery pass needs it, since releaseSet already has the sheet in hand.
+function valueTierOf(set, card) {
   return getRarity(set?.rarities, card?.rarity).valueTier ?? 0
 }

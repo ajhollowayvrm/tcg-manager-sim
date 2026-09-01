@@ -943,7 +943,7 @@ function intensityLabel(intensity) {
 
 // Pick which of this set's cards get shown off publicly before launch.
 // Candidates come from the three groups that exist at design time and can be
-// resolved to real cards at release (see sets.js's resolveSpotlightIds):
+// resolved to real cards at release (see sets.js's resolveCardPicks):
 // signature highlights, the block's minted chase cards, and chosen reprints.
 // Picks are stored as { kind, ref } where `ref` is the index within its group,
 // so a pick survives renaming a card but is dropped if that card goes away.
