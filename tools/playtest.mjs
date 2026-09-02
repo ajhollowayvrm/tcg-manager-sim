@@ -16,6 +16,11 @@ import { communitySentiment } from '../src/game/simulation.js'
 import { reducer } from '../src/game/reducer.js'
 import { createDraft, createSignatureCard, setCost } from '../src/game/sets.js'
 import { getTier } from '../src/game/blocks.js'
+import { upgradeCost } from '../src/game/upgrades.js'
+import { BRAND_PARTNERS } from '../src/game/content/partners.js'
+import { partnerBlock } from '../src/game/partners.js'
+import { GRANT_KINDS } from '../src/game/content/grassroots.js'
+import { grantBlock } from '../src/game/grassroots.js'
 
 const DEFAULT_HORIZON = 312 // ~6 years of weeks — a long run, per the brief's "year 6"
 
@@ -204,7 +209,20 @@ function canFund(state, draft) {
   return state.cash - setCost(draft).total > CREDIT_FLOOR
 }
 
-function makeStrategy({ name, cadence, knobs, rotateEvery, ignoreCash = false, minorEvery = null, maxLiveSets = null, goodwill = 0 }) {
+// The optional business/community knobs exercise the systems that arrived
+// with the five-tab navigation. Every one is opt-in, so a strategy that names
+// none of them plays exactly the game it played before:
+//   artistContract — sign the highest-reach artist to a 52-week exclusive and
+//                    re-sign when it lapses (artists.js)
+//   partnerEvery   — every N weeks, sign the first brand partner that will
+//                    have you, fronted by the most famous character (partners.js)
+//   grassroots     — the standing programme level, 0..1 (grassroots.js)
+//   grants         — fund every grant kind whenever it is off cooldown and the
+//                    bank holds more than $100k
+//   upgrades       — upgrade ids to buy, one level per week while affordable
+//                    (upgrades.js)
+function makeStrategy({ name, cadence, knobs, rotateEvery, ignoreCash = false, minorEvery = null, maxLiveSets = null, goodwill = 0,
+  artistContract = false, partnerEvery = null, grassroots = 0, grants = false, upgrades = [] }) {
   return {
     name,
     // What this studio PLEDGES at onboarding, which is what cadence.js judges it
@@ -219,6 +237,40 @@ function makeStrategy({ name, cadence, knobs, rotateEvery, ignoreCash = false, m
       // Set the standing goodwill commitment once, on the first week.
       if (goodwill > 0 && (s.goodwillSpend ?? 0) !== goodwill) {
         s = act(s, { type: 'SET_GOODWILL', level: goodwill })
+      }
+      if (grassroots > 0 && (s.grassroots?.level ?? 0) !== grassroots) {
+        s = act(s, { type: 'SET_GRASSROOTS', level: grassroots })
+      }
+      // One upgrade level a week, cheapest-first as listed, while the bank
+      // can cover it with room to print.
+      for (const id of upgrades) {
+        const cost = upgradeCost(s, id)
+        if (cost > 0 && s.cash - cost > 150_000) {
+          const next = act(s, { type: 'PURCHASE_UPGRADE', id })
+          if (next !== s) { s = next; ctx.upgrades++; break }
+        }
+      }
+      if (artistContract && !(s.artistContracts ?? []).some((c) => c.active) && s.cash > 200_000) {
+        const star = [...(s.artists ?? [])].sort((a, b) => b.reach - a.reach)[0]
+        if (star) {
+          const next = act(s, { type: 'SIGN_ARTIST_CONTRACT', artistId: star.id, termWeeks: 52 })
+          if (next !== s) { s = next; ctx.contracts++ }
+        }
+      }
+      if (partnerEvery && s.week % partnerEvery === 0 && s.cash > 250_000) {
+        const partner = BRAND_PARTNERS.find((p) => !partnerBlock(s, p.id))
+        if (partner) {
+          const face = [...(s.characters ?? [])].filter((c) => !c.retiredWeek).sort((a, b) => b.fame - a.fame)[0]
+          const next = act(s, { type: 'SIGN_PARTNER_PROMO', partnerId: partner.id, options: { characterId: face?.id ?? null } })
+          if (next !== s) { s = next; ctx.partners++ }
+        }
+      }
+      if (grants && s.cash > 100_000) {
+        const kind = GRANT_KINDS.find((g) => !grantBlock(s, g.id))
+        if (kind) {
+          const next = act(s, { type: 'FUND_GRANT', kindId: kind.id })
+          if (next !== s) { s = next; ctx.grants++ }
+        }
       }
       // Release on cadence if we can afford it (real setCost on the actual draft,
       // with a thin safety buffer so a strategy doesn't bankrupt itself printing).
@@ -277,6 +329,15 @@ function makeStrategy({ name, cadence, knobs, rotateEvery, ignoreCash = false, m
 }
 
 const STRATEGIES = [
+  // Every business and community lever at once, on the Balanced release
+  // rhythm: an exclusive on the biggest artist, a brand tie-in twice a year, a
+  // half-funded grassroots programme, every grant on cooldown, and three
+  // upgrades. Compare against 'Balanced' to see what the levers cost and buy.
+  makeStrategy({ name: 'Networked (deals+grants)', cadence: 12, rotateEvery: 78,
+    artistContract: true, partnerEvery: 26, grassroots: 0.5, grants: true,
+    upgrades: ['community_team', 'warehouse_automation', 'print_partner'],
+    knobs: { designLoudness: 55, printRun: 55, pricePoint: 4.5, chaseAppeal: 70, namePool: NAME_POOL, themes: THEMES, gimmicks: ['mega'],
+      cast: { name: 'Pip', archetypeId: 'mascot' } } }),
   makeStrategy({ name: 'Conservative', cadence: 16, rotateEvery: 104,
     knobs: { designLoudness: 45, printRun: 45, pricePoint: 4.5, chaseAppeal: 60, namePool: NAME_POOL, themes: THEMES, gimmicks: ['mega'] } }),
   makeStrategy({ name: 'Balanced', cadence: 12, rotateEvery: 78,
@@ -480,7 +541,7 @@ function playOne(strategy, salt, trace = false, horizon = DEFAULT_HORIZON) {
     cadenceWeeks: strategy.pledge,
     started: true,
   })
-  const ctx = { salt, releases: 0, pulls: 0, riders: 0 }
+  const ctx = { salt, releases: 0, pulls: 0, riders: 0, upgrades: 0, contracts: 0, partners: 0, grants: 0 }
   const samples = [] // periodic snapshots for trajectory stats
   let bigMoves = 0, weeksWithMover = 0
   let minCash = Infinity, minPlayers = Infinity // closest anyone came to losing

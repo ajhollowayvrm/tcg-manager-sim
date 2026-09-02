@@ -2,9 +2,9 @@
 // awarded through a channel outside normal packs, so its supply is tiny and it
 // becomes one of the scarcest, most prestigious singles in the game.
 //
-// Today the only mint path is a Collector-box (SPC) SKU flagged
-// exclusivePromo — see sets.js, where releasing such a set calls
-// makePromoCard() to mint the promo that ships with that box.
+// Two mint paths: a Collector-box (SPC) SKU flagged exclusivePromo (sets.js,
+// at release) and a brand-partner tie-in (partners.js), which may front the
+// promo with a cast character and name an artist.
 
 import { makeRng, hashSeed, range } from './rng.js'
 import { clamp } from './simulation.js'
@@ -20,7 +20,7 @@ function promoSupply(prestige) {
 // tiny supply, and high collector appeal; they seed at a high price and the
 // market takes them from there. `theme` flavors the name/art; `nonce` keeps ids
 // and resolution unique.
-export function makePromoCard(state, { label, prestige, themeId, nonce }) {
+export function makePromoCard(state, { label, prestige, themeId, nonce, characterId = null, artistId = null, fameBonus = 0 }) {
   const rng = makeRng(hashSeed(`promo:${label}:${state.week}:${nonce}`))
   const theme = getTheme(themeId) ?? getTheme('dragons')
   const NOUNS = ['Champion', 'Sovereign', 'Avatar', 'Eidolon', 'Paragon', 'Warlord', 'Archon']
@@ -29,8 +29,10 @@ export function makePromoCard(state, { label, prestige, themeId, nonce }) {
 
   // Collector value scales with prestige; punch is a modest random (a promo
   // can be competitively relevant but is prized for scarcity above all).
-  const artAppeal = clamp(60 + prestige * 35 + range(rng, -8, 8), 0, 100)
-  const hype = clamp(55 + prestige * 40 + range(rng, -10, 10), 0, 100)
+  // A featured character lends the promo their pull (characters.js's
+  // famePopBonus), split between how it looks and how badly it is wanted.
+  const artAppeal = clamp(60 + prestige * 35 + range(rng, -8, 8) + fameBonus / 2, 0, 100)
+  const hype = clamp(55 + prestige * 40 + range(rng, -10, 10) + fameBonus / 2, 0, 100)
   const punch = clamp(40 + range(rng, -15, 25), 0, 100)
   const rarityTier = clamp(80 + prestige * 18, 0, 100) // top-tier collectible
 
@@ -48,7 +50,9 @@ export function makePromoCard(state, { label, prestige, themeId, nonce }) {
     secret: false,
     signature: false,
     promo: true, // THE flag: never appears in a booster (packs.js excludes it)
-    artistId: null,
+    artistId,
+    characterId,
+    treatment: characterId ? 'standard' : undefined,
     popFactors: { punch, rarity: rarityTier, artAppeal, hype },
     sealedPrice: 0,
     singlePrice,

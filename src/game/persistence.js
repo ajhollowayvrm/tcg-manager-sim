@@ -328,6 +328,14 @@ export function hydrate(state) {
     // Artists gained a collector-heat field on the same additive terms — an
     // older save simply has none, lands on 0, and prices exactly as it did.
     artists: (state.artists ?? []).map((a) => ({ ...a, heat: a.heat ?? 0 })),
+    // The business and community systems that arrived with the five-tab
+    // navigation, all on the same additive terms: an older save has none of
+    // them and lands on the empty defaults createInitialState seeds.
+    artistContracts: Array.isArray(state.artistContracts) ? state.artistContracts : [],
+    partnerDeals: Array.isArray(state.partnerDeals) ? state.partnerDeals : [],
+    grassroots: { level: Math.min(1, Math.max(0, Number(state.grassroots?.level) || 0)) },
+    grassrootsGrants: Array.isArray(state.grassrootsGrants) ? state.grassrootsGrants : [],
+    upgrades: state.upgrades && typeof state.upgrades === 'object' ? state.upgrades : {},
     illustrationSets: (state.illustrationSets ?? [])
       .map((g) => normalizeIllustrationSet(g, liveCardIds))
       .filter(Boolean),

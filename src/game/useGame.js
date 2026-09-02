@@ -75,7 +75,9 @@ export function useGame() {
   const reset = useCallback(() => dispatch({ type: 'RESET' }), [])
   // `identity` carries the archetype, traits, hook, pronouns and species epithet
   // — see createCharacter in characters.js.
-  const addCharacter = useCallback((name, identity) => dispatch({ type: 'ADD_CHARACTER', name, identity }), [])
+  // `lineage` ({ kindId, parentIds }) makes the new character grow out of one
+  // or two already on the roster — see characters.js's createLineageCharacter.
+  const addCharacter = useCallback((name, identity, lineage) => dispatch({ type: 'ADD_CHARACTER', name, identity, lineage }), [])
   const updateCharacter = useCallback((id, patch) => dispatch({ type: 'UPDATE_CHARACTER', id, patch }), [])
   // A nonce so consecutive rips of the same set in the same week differ.
   const ripNonce = useRef(0)
@@ -90,6 +92,11 @@ export function useGame() {
   const dropDist = useCallback((distId) => dispatch({ type: 'DROP_DISTRIBUTOR', distId }), [])
   const cultivateDist = useCallback((distId) => dispatch({ type: 'CULTIVATE_DISTRIBUTOR', distId }), [])
   const upgradeSupplyChainAction = useCallback(() => dispatch({ type: 'UPGRADE_SUPPLY_CHAIN' }), [])
+  const purchaseUpgradeAction = useCallback((id) => dispatch({ type: 'PURCHASE_UPGRADE', id }), [])
+  // Illustrator exclusives (artists.js) and brand-partner promos (partners.js).
+  const signArtist = useCallback((artistId, termWeeks) => dispatch({ type: 'SIGN_ARTIST_CONTRACT', artistId, termWeeks }), [])
+  const endArtist = useCallback((artistId) => dispatch({ type: 'END_ARTIST_CONTRACT', artistId }), [])
+  const signPartner = useCallback((partnerId, options) => dispatch({ type: 'SIGN_PARTNER_PROMO', partnerId, options }), [])
   const signGrading = useCallback((partnerId) => dispatch({ type: 'SIGN_GRADING_PARTNER', partnerId }), [])
   const dropGrading = useCallback((partnerId) => dispatch({ type: 'DROP_GRADING_PARTNER', partnerId }), [])
   const cultivateGrading = useCallback((partnerId) => dispatch({ type: 'CULTIVATE_GRADING_PARTNER', partnerId }), [])
@@ -102,6 +109,9 @@ export function useGame() {
   const retireMerch = useCallback((kind) => dispatch({ type: 'RETIRE_MERCH_LINE', kind }), [])
   const pitchMedia = useCallback((dealId) => dispatch({ type: 'PITCH_MEDIA_DEAL', dealId }), [])
   const setGoodwill = useCallback((level) => dispatch({ type: 'SET_GOODWILL', level }), [])
+  // Grassroots: the standing programme level and one-off grants (grassroots.js).
+  const setGrassroots = useCallback((level) => dispatch({ type: 'SET_GRASSROOTS', level }), [])
+  const fundGrantAction = useCallback((kindId) => dispatch({ type: 'FUND_GRANT', kindId }), [])
   // Studio standards. `kind` is 'raritySheet' | 'packFormat' | 'blueprint';
   // saving is an upsert, so the panel's edits and the set builder's "save as
   // standard" are the same call. See standards.js.
@@ -118,5 +128,5 @@ export function useGame() {
     return true
   }, [])
 
-  return { state, advanceWeek: advanceWeekAction, release, pull, reprint, adjustWave, reset, addCharacter, updateCharacter, rip, startGame, comp, sponsor, unsponsor, invitePrerelease: invitePrereleaseAction, sponsorTournament: sponsorTournamentAction, signDist, dropDist, cultivateDist, upgradeSupplyChain: upgradeSupplyChainAction, signGrading, dropGrading, cultivateGrading, runBreak: runBreakAction, togglePurchaseLimits, togglePhantomStock, toggleOddsPublished, launchMerch, refreshMerch, retireMerch, pitchMedia, setGoodwill, retire, saveStandard, deleteStandard, booting, saveError, exportRun, importRun }
+  return { state, advanceWeek: advanceWeekAction, release, pull, reprint, adjustWave, reset, addCharacter, updateCharacter, rip, startGame, comp, sponsor, unsponsor, invitePrerelease: invitePrereleaseAction, sponsorTournament: sponsorTournamentAction, signDist, dropDist, cultivateDist, upgradeSupplyChain: upgradeSupplyChainAction, purchaseUpgrade: purchaseUpgradeAction, signArtist, endArtist, signPartner, signGrading, dropGrading, cultivateGrading, runBreak: runBreakAction, togglePurchaseLimits, togglePhantomStock, toggleOddsPublished, launchMerch, refreshMerch, retireMerch, pitchMedia, setGoodwill, setGrassroots, fundGrant: fundGrantAction, retire, saveStandard, deleteStandard, booting, saveError, exportRun, importRun }
 }

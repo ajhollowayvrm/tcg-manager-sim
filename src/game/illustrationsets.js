@@ -226,20 +226,33 @@ function related(aId, bId, chainOf) {
   return (chainOf.get(aId) ?? []).includes(bId) || (chainOf.get(bId) ?? []).includes(aId)
 }
 
-// Every ancestor of each character, precomputed once. Depth is capped by
-// characters.js's own loop guard, but this walks defensively anyway — a cycle
-// smuggled in through an imported save must not hang the market.
+// Every ancestor of each character, precomputed once, over EVERY parent (a
+// fusion has two — characters.js's lineageParentIds; older records carry the
+// one in promotedFromId). Depth is capped by characters.js's own loop guard,
+// but this walks defensively anyway — a cycle smuggled in through an imported
+// save must not hang the market.
 function ancestryIndex(characters = []) {
   const byId = new Map(characters.map((c) => [c.id, c]))
+  const parentsOf = (c) => (Array.isArray(c.lineageParentIds) && c.lineageParentIds.length
+    ? c.lineageParentIds
+    : (c.promotedFromId ? [c.promotedFromId] : []))
   const out = new Map()
   for (const c of characters) {
     const chain = []
     const seen = new Set([c.id])
-    let cur = byId.get(c.promotedFromId)
-    while (cur && !seen.has(cur.id) && chain.length < 8) {
-      chain.push(cur.id)
-      seen.add(cur.id)
-      cur = byId.get(cur.promotedFromId)
+    let frontier = parentsOf(c)
+    let depth = 0
+    while (frontier.length && depth < 8) {
+      const next = []
+      for (const pid of frontier) {
+        const p = byId.get(pid)
+        if (!p || seen.has(pid)) continue
+        seen.add(pid)
+        chain.push(pid)
+        next.push(...parentsOf(p))
+      }
+      frontier = next
+      depth++
     }
     out.set(c.id, chain)
   }

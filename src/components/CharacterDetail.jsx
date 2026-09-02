@@ -18,7 +18,8 @@ import { useModal } from './useModal.js'
 import Section from './nav/Section.jsx'
 import Chart from './Chart.jsx'
 import { getArchetype, archetypeMatchesTheme, archetypesByCategory } from '../game/content/archetypes.js'
-import { promotionChain } from '../game/characters.js'
+import { promotionChain, lineageParents } from '../game/characters.js'
+import { getLineageKind } from '../game/content/lineages.js'
 import { TRAITS, MAX_TRAITS, getTrait } from '../game/content/traits.js'
 import { getTreatment } from '../game/characters.js'
 import { getTheme } from '../game/content/themes.js'
@@ -40,7 +41,14 @@ const BEAT_CUE = {
   fall: { icon: '↓', cls: 'mood--bad' },
   comeback: { icon: '⟲', cls: 'mood--good' },
   promotion: { icon: '⇧', cls: 'mood--good' },
+  evolution: { icon: '⇧', cls: 'mood--good' },
+  transformation: { icon: '⇄', cls: 'mood--good' },
+  fusion: { icon: '⧉', cls: 'mood--good' },
+  growth: { icon: '⇧', cls: 'mood--good' },
+  corruption: { icon: '☠', cls: 'mood--bad' },
+  succession: { icon: '⇧', cls: 'mood--good' },
   succeeded: { icon: '⇥', cls: 'mood--neutral' },
+  retired: { icon: '⇥', cls: 'mood--neutral' },
 }
 
 function money(n) { return '$' + Math.round(n).toLocaleString('en-US') }
@@ -100,20 +108,32 @@ export default function CharacterDetail({ character, state, onClose, onUpdate })
 
           {character.hook && <p className="charsheet__hook">“{character.hook}”</p>}
 
-          {/* The promotion chain — who this character grew out of. Two roster
-              entries, one story: Kell, Broken Boy into Kell, Royal Soldier. */}
+          {/* The lineage — who this character grew out of, by what kind of
+              link, and who grew out of them. Two roster entries, one story:
+              Kell, Broken Boy into Kell, Royal Soldier. */}
           {(() => {
-            const chain = promotionChain(state.characters ?? [], character.id)
-            const successors = (state.characters ?? []).filter((c) => c.promotedFromId === character.id)
-            if (!chain.length && !successors.length) return null
+            const roster = state.characters ?? []
+            const kind = getLineageKind(character.lineageKindId)
+            const parents = lineageParents(character).map((id) => roster.find((c) => c.id === id)).filter(Boolean)
+            const chain = promotionChain(roster, character.id).filter((c) => !parents.includes(c))
+            const successors = roster.filter((c) => lineageParents(c).includes(character.id))
+            if (!parents.length && !successors.length && !character.retiredWeek) return null
             return (
               <p className="charsheet__lineage">
-                {chain.length > 0 && (
-                  <>Grew out of <strong>{chain.map((c) => c.name).join(' → ')}</strong>.{' '}</>
+                {parents.length > 0 && (
+                  <>
+                    {kind ? `A ${kind.name.toLowerCase()} of ` : 'Grew out of '}
+                    <strong>{parents.map((c) => c.name).join(' and ')}</strong>
+                    {chain.length > 0 && <> (before them, {chain.map((c) => c.name).join(', ')})</>}.{' '}
+                  </>
                 )}
                 {successors.length > 0 && (
-                  <>The story carries on as <strong>{successors.map((c) => c.name).join(', ')}</strong>.</>
+                  <>The story carries on as <strong>{successors.map((c) => {
+                    const k = getLineageKind(c.lineageKindId)
+                    return k ? `${c.name} (${k.name.toLowerCase()})` : c.name
+                  }).join(', ')}</strong>.{' '}</>
                 )}
+                {character.retiredWeek && <>Stepped aside in week {character.retiredWeek} — no new printings.</>}
               </p>
             )
           })()}
@@ -227,7 +247,7 @@ function IdentityEditor({ character, onSave, onCancel }) {
   const [archetypeId, setArchetypeId] = useState(character.archetypeId)
   // A printed character's archetype is fixed. The reducer enforces this; the
   // editor mirrors it so the player is never shown a control that does nothing.
-  const locked = !!character.debutSetId
+  const locked = (character.appearances ?? []).length > 0
   const [traits, setTraits] = useState(character.traits ?? [])
   const [hook, setHook] = useState(character.hook ?? '')
   const [pronouns, setPronouns] = useState(character.pronouns ?? '')
@@ -252,7 +272,7 @@ function IdentityEditor({ character, onSave, onCancel }) {
           <span>Archetype <span className="muted">(locked — they are in print)</span></span>
           <p className="charsheet__locked">{getArchetype(archetypeId).name}</p>
           <span className="field__note">
-            An archetype is fixed once a character has a debut set. It decides which
+            An archetype is fixed once a character has a printing. It decides which
             themes they suit and how their fame moves, so it cannot be re-picked to
             match whatever set you are building next.
           </span>
@@ -289,8 +309,11 @@ function IdentityEditor({ character, onSave, onCancel }) {
 
 // The archetype dropdown, grouped by category. Shared by this editor and the
 // Cast panel's creation form, so the two pickers can never drift apart.
-export function ArchetypeSelect({ value, onChange, label = 'Archetype' }) {
+// `filter(id)` hides archetypes a lineage kind's rule refuses (LineagesPanel).
+export function ArchetypeSelect({ value, onChange, label = 'Archetype', filter = null }) {
   const groups = archetypesByCategory()
+    .map((g) => ({ ...g, archetypes: filter ? g.archetypes.filter((a) => filter(a.id)) : g.archetypes }))
+    .filter((g) => g.archetypes.length)
   const chosen = getArchetype(value)
   return (
     <label className="field field--full">

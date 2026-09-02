@@ -10,18 +10,23 @@ import FeedbackFeed from './components/FeedbackFeed.jsx'
 import EventsFeed from './components/EventsFeed.jsx'
 import PersonasPanel from './components/PersonasPanel.jsx'
 import CastPanel from './components/CastPanel.jsx'
+import LineagesPanel from './components/LineagesPanel.jsx'
 import StandardsPanel from './components/StandardsPanel.jsx'
 import SetsPanel from './components/SetsPanel.jsx'
 import PackRipper from './components/PackRipper.jsx'
 import DistributionPanel from './components/DistributionPanel.jsx'
 import GradingPanel from './components/GradingPanel.jsx'
 import IllustratorsPanel from './components/IllustratorsPanel.jsx'
+import PartnersPanel from './components/PartnersPanel.jsx'
 import VenturesPanel from './components/VenturesPanel.jsx'
 import ProgrammesPanel from './components/ProgrammesPanel.jsx'
+import GrassrootsPanel from './components/GrassrootsPanel.jsx'
 import LegacyPanel from './components/LegacyPanel.jsx'
+import UpgradesPanel from './components/UpgradesPanel.jsx'
 import CardBrowser from './components/CardBrowser.jsx'
 import LedgerPanel from './components/LedgerPanel.jsx'
 import HistoryPanel from './components/HistoryPanel.jsx'
+import ScalpWatchPanel from './components/ScalpWatchPanel.jsx'
 import Onboarding from './components/Onboarding.jsx'
 import SetBuilder from './components/setbuilder/SetBuilder.jsx'
 import SettingsPanel from './components/SettingsPanel.jsx'
@@ -42,6 +47,7 @@ const TABS = [
       { id: 'overview', label: 'Overview' },
       { id: 'sets', label: 'Sets' },
       { id: 'cast', label: 'Cast' },
+      { id: 'lineages', label: 'Lineages' },
       { id: 'standards', label: 'Standards' },
     ],
   },
@@ -51,6 +57,7 @@ const TABS = [
       { id: 'distribution', label: 'Distribution' },
       { id: 'grading', label: 'Grading' },
       { id: 'illustrators', label: 'Illustrators' },
+      { id: 'partners', label: 'Partners' },
       { id: 'ventures', label: 'Ventures' },
     ],
   },
@@ -60,6 +67,7 @@ const TABS = [
       { id: 'pulse', label: 'Pulse' },
       { id: 'voices', label: 'Voices' },
       { id: 'programmes', label: 'Programmes' },
+      { id: 'grassroots', label: 'Grassroots' },
       { id: 'news', label: 'News' },
     ],
   },
@@ -70,12 +78,14 @@ const TABS = [
       { id: 'trends', label: 'Trends' },
       { id: 'market', label: 'Market' },
       { id: 'cards', label: 'Cards' },
+      { id: 'scalp', label: 'Scalp Watch' },
     ],
   },
   {
     id: 'misc', label: 'Misc', icon: '⚙️',
     subtabs: [
       { id: 'settings', label: 'Settings' },
+      { id: 'upgrades', label: 'Upgrades' },
       { id: 'legacy', label: 'Legacy' },
     ],
   },
@@ -138,20 +148,21 @@ export default function App() {
       </>
     ),
     'studio.cast': <CastPanel state={state} onAddCharacter={game.addCharacter} onUpdateCharacter={game.updateCharacter} />,
+    'studio.lineages': <LineagesPanel state={state} onAddCharacter={game.addCharacter} />,
     'studio.standards': <StandardsPanel state={state} onSave={game.saveStandard} onDelete={game.deleteStandard} />,
 
     'business.distribution': (
       <DistributionPanel
         state={state}
         onSign={game.signDist} onCultivate={game.cultivateDist} onDrop={game.dropDist}
-        onUpgradeSupplyChain={game.upgradeSupplyChain}
         onTogglePurchaseLimits={game.togglePurchaseLimits} onTogglePhantomStock={game.togglePhantomStock}
       />
     ),
     'business.grading': (
       <GradingPanel state={state} onSignGrading={game.signGrading} onCultivateGrading={game.cultivateGrading} onDropGrading={game.dropGrading} />
     ),
-    'business.illustrators': <IllustratorsPanel state={state} />,
+    'business.illustrators': <IllustratorsPanel state={state} onSignArtist={game.signArtist} onEndArtist={game.endArtist} />,
+    'business.partners': <PartnersPanel state={state} onSignPartner={game.signPartner} />,
     'business.ventures': (
       <VenturesPanel
         state={state}
@@ -173,6 +184,7 @@ export default function App() {
       <PersonasPanel state={state} onComp={game.comp} onSponsor={game.sponsor} onDropSponsor={game.unsponsor} onInvitePrerelease={game.invitePrerelease} onSponsorTournament={game.sponsorTournament} />
     ),
     'community.programmes': <ProgrammesPanel state={state} onSetGoodwill={game.setGoodwill} onRunBreak={game.runBreak} />,
+    'community.grassroots': <GrassrootsPanel state={state} onSetGrassroots={game.setGrassroots} onFundGrant={game.fundGrant} />,
     'community.news': <EventsFeed state={state} />,
 
     'stats.money': (
@@ -184,6 +196,7 @@ export default function App() {
     'stats.trends': <HistoryPanel state={state} />,
     'stats.market': <MarketTicker state={state} />,
     'stats.cards': <CardBrowser state={state} />,
+    'stats.scalp': <ScalpWatchPanel state={state} />,
 
     'misc.settings': (
       <SettingsPanel
@@ -194,6 +207,7 @@ export default function App() {
         onReset={game.reset}
       />
     ),
+    'misc.upgrades': <UpgradesPanel state={state} onPurchase={game.purchaseUpgrade} onUpgradeSupplyChain={game.upgradeSupplyChain} />,
     'misc.legacy': (
       <LegacyPanel
         state={state}
@@ -283,6 +297,7 @@ export default function App() {
               blueprints: state.blueprints ?? [],
             }}
             onSaveStandard={game.saveStandard}
+            upgrades={state.upgrades ?? {}}
             week={state.week}
             franchise={state.franchise}
             perks={state.prestige?.perks ?? []}

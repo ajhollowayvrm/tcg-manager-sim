@@ -8,6 +8,8 @@ import {
 } from '../../game/rarities.js'
 import { TREATMENTS, getTreatment } from '../../game/characters.js'
 import { getArchetype, archetypeMatchesTheme, archetypesByCategory } from '../../game/content/archetypes.js'
+import { LINEAGE_KINDS, getLineageKind } from '../../game/content/lineages.js'
+import { validateLineage } from '../../game/characters.js'
 import { FINISHES, getFinish, cardAppeal } from '../../game/sets.js'
 import SetSymbol from '../SetSymbol.jsx'
 import NumberField from './NumberField.jsx'
@@ -379,6 +381,13 @@ function summarise(card, sheet, artist, characters) {
 function CharacterPicker({ card, characters, set, theme }) {
   const mode = card.characterId ? 'existing' : card.newCharacterName ? 'new' : 'none'
   const selected = card.characterId ? characters.find((c) => c.id === card.characterId) : null
+  // A character a lineage kind retired takes no new printings.
+  const printable = characters.filter((c) => !c.retiredWeek)
+  const lineageKind = getLineageKind(card.newCharacterLineageKind)
+  const lineageParentIds = [card.newCharacterPromotedFrom, card.newCharacterSecondParent].filter(Boolean)
+  const lineageError = lineageKind
+    ? validateLineage(characters, { kindId: lineageKind.id, parentIds: lineageParentIds, archetypeId: card.newCharacterArchetype })
+    : null
   const newArchetype = getArchetype(card.newCharacterArchetype)
   const newMatch = theme && archetypeMatchesTheme(newArchetype.id, theme.tags)
   // Whether the character already on this card suits the set's theme. Same ★ cue
@@ -396,7 +405,7 @@ function CharacterPicker({ card, characters, set, theme }) {
       </span>
       <div className="toggle toggle--counter">
         <button className={'toggle__opt' + (mode === 'none' ? ' is-active' : '')}
-          onClick={() => set({ characterId: null, newCharacterName: '', newCharacterArchetype: 'unaligned', newCharacterSpecies: '', newCharacterHook: '', newCharacterPromotedFrom: null, treatment: 'debut' })}>
+          onClick={() => set({ characterId: null, newCharacterName: '', newCharacterArchetype: 'unaligned', newCharacterSpecies: '', newCharacterHook: '', newCharacterPromotedFrom: null, newCharacterLineageKind: null, newCharacterSecondParent: null, treatment: 'debut' })}>
           One-off
         </button>
         <button className={'toggle__opt' + (mode === 'new' ? ' is-active' : '')}
@@ -404,15 +413,16 @@ function CharacterPicker({ card, characters, set, theme }) {
           New character
         </button>
         <button className={'toggle__opt' + (mode === 'existing' ? ' is-active' : '')}
-          disabled={characters.length === 0}
-          title={characters.length === 0 ? 'No characters yet — create one first.' : undefined}
+          disabled={printable.length === 0}
+          title={printable.length === 0 ? 'No characters yet — create one first.' : undefined}
           onClick={() => set({
             // The archetype is KEPT, matching the "New character" branch above:
             // glancing at the existing roster and coming back must not silently
             // reset the player's pick to Unaligned, which would quietly drop both
             // the theme-cohesion bonus and the fame-drift bias.
             newCharacterName: '', newCharacterSpecies: '', newCharacterHook: '', newCharacterPromotedFrom: null,
-            characterId: characters[0]?.id ?? null, treatment: 'debut',
+            newCharacterLineageKind: null, newCharacterSecondParent: null,
+            characterId: printable[0]?.id ?? null, treatment: 'debut',
           })}>
           Existing character
         </button>
@@ -458,32 +468,71 @@ function CharacterPicker({ card, characters, set, theme }) {
             onChange={(e) => set({ newCharacterHook: e.target.value })}
             placeholder="Hook (optional, e.g. 'Never raises their voice.')"
           />
-          {/* PROMOTION. This new character can be a later role or form of one
-              already on the roster — Kell, Broken Boy becoming Kell, Royal
-              Soldier. They stay two separate entries with their own archetypes
-              and their own fame, linked by a lineage the illustration-set
-              scorer reads, so a line built from the pair reads as one line.
+          {/* LINEAGE. This new character can grow out of one (or two) already
+              on the roster — Kell, Broken Boy becoming Kell, Royal Soldier.
+              They stay separate entries with their own archetypes and their
+              own fame, linked by a lineage the illustration-set scorer reads,
+              so a line built from the pair reads as one line. The KIND decides
+              how much fame carries over, which archetypes the child may take,
+              and whether the parent keeps printing (content/lineages.js).
               Locks on debut, like the archetype. */}
-          {characters.length > 0 && (
+          {printable.length > 0 && (
             <>
               <select
                 className="counter__target"
-                value={card.newCharacterPromotedFrom ?? ''}
-                onChange={(e) => set({ newCharacterPromotedFrom: e.target.value || null })}
+                value={card.newCharacterLineageKind ?? ''}
+                onChange={(e) => set({
+                  newCharacterLineageKind: e.target.value || null,
+                  newCharacterPromotedFrom: e.target.value ? card.newCharacterPromotedFrom : null,
+                  newCharacterSecondParent: null,
+                })}
               >
                 <option value="">— A brand-new character —</option>
-                {characters.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    A promotion of {c.name} (fame {Math.round(c.fame)})
-                  </option>
+                {LINEAGE_KINDS.map((k) => (
+                  <option key={k.id} value={k.id}>{k.name} — {k.short}</option>
                 ))}
               </select>
-              {card.newCharacterPromotedFrom && (
-                <span className="field__note">
-                  Debuts already known — carries over part of{' '}
-                  {characters.find((c) => c.id === card.newCharacterPromotedFrom)?.name}'s
-                  fame, and both careers record the moment.
-                </span>
+              {lineageKind && (
+                <>
+                  <span className="field__note">{lineageKind.blurb}</span>
+                  <select
+                    className="counter__target"
+                    value={card.newCharacterPromotedFrom ?? ''}
+                    onChange={(e) => set({ newCharacterPromotedFrom: e.target.value || null })}
+                  >
+                    <option value="">{lineageKind.parents === 2 ? '— First parent —' : '— Grows out of —'}</option>
+                    {printable.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} ({getArchetype(c.archetypeId).name}, fame {Math.round(c.fame)})
+                      </option>
+                    ))}
+                  </select>
+                  {lineageKind.parents === 2 && (
+                    <select
+                      className="counter__target"
+                      value={card.newCharacterSecondParent ?? ''}
+                      onChange={(e) => set({ newCharacterSecondParent: e.target.value || null })}
+                    >
+                      <option value="">— Second parent —</option>
+                      {printable.filter((c) => c.id !== card.newCharacterPromotedFrom).map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name} ({getArchetype(c.archetypeId).name}, fame {Math.round(c.fame)})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {lineageError && card.newCharacterPromotedFrom && (
+                    <span className="field__note is-warn">{lineageError} Released as-is, this card debuts a plain new character.</span>
+                  )}
+                  {!lineageError && card.newCharacterPromotedFrom && (
+                    <span className="field__note">
+                      Debuts already known — carries over {Math.round(lineageKind.fameInherit * 100)}% of{' '}
+                      {lineageParentIds.map((id) => printable.find((c) => c.id === id)?.name).join(' and ')}'s
+                      fame, and every career records the moment.
+                      {lineageKind.retiresParent ? ' The predecessor steps aside.' : ''}
+                    </span>
+                  )}
+                </>
               )}
             </>
           )}

@@ -15,7 +15,7 @@ function fmtCash(n) {
 }
 
 export default function DistributionPanel({
-  state, onSign, onCultivate, onDrop, onUpgradeSupplyChain,
+  state, onSign, onCultivate, onDrop,
   onTogglePurchaseLimits, onTogglePhantomStock,
 }) {
   const liveSets = state.sets.filter((s) => !s.rotated && (s.supply ?? 0) - (s.sold ?? 0) > 0)
@@ -25,8 +25,6 @@ export default function DistributionPanel({
   const heat = Math.round(state.scalperHeat ?? 0)
   const scalping = heat >= SCALPER_THRESHOLD
   const dealsById = new Map((state.distributors ?? []).filter((d) => d.active).map((d) => [d.id, d]))
-  const capacity = Math.round(state.supplyChainCapacity ?? 40)
-  const capacityCost = Math.round(15_000 + capacity * 900)
   const activeCount = dealsById.size
 
   return (
@@ -123,27 +121,10 @@ export default function DistributionPanel({
           </label>
         </div>
 
-        {/* Supply-chain capacity — a logistics investment that makes print/supply
-            snags rarer and cheaper. */}
-        {onUpgradeSupplyChain && (
-          <div className="scalp">
-            <div className="scalp__row">
-              <span className="scalp__label">Supply-chain capacity</span>
-              <span className="scalp__val">{capacity}</span>
-            </div>
-            <div className="scalp__track">
-              <div className="scalp__fill" style={{ width: `${capacity}%` }} />
-            </div>
-            <button
-              className="btn btn--ghost"
-              disabled={capacity >= 100}
-              onClick={onUpgradeSupplyChain}
-              title="Invest in logistics — fewer and lighter print/shipping snags"
-            >
-              {capacity >= 100 ? 'At full capacity' : `Upgrade (+10) — ${fmtCash(capacityCost)}`}
-            </button>
-          </div>
-        )}
+        <p className="field__note">
+          Supply-chain capacity — the logistics investment that makes snags rarer —
+          now lives under Misc › Upgrades.
+        </p>
       </Section>
 
       <Section id="biz.rival" title="Shelf rivalry" level={2}>

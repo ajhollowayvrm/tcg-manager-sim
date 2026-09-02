@@ -37,6 +37,21 @@ const HEAT_GAIN = 0.16 // how fast a hot week pulls heat toward the signal
 // The value premium itself lives in market.js (ARTIST_HEAT_PREMIUM) — see the
 // note there on why it is not imported across this module boundary.
 
+// ---- Exclusive contracts ----------------------------------------------------
+// An exclusive is a signing fee plus a weekly retainer for a fixed term. What it
+// buys: the artist's rate is FROZEN for the term (the real reason to sign a
+// rising star before they blow up), every commission with them costs less, and
+// their collector heat climbs faster because your cards are the only place their
+// work appears. A fading name on a retainer is money out the door — the term
+// runs regardless. Capped so the roster cannot simply be bought.
+export const MAX_ARTIST_CONTRACTS = 3
+export const CONTRACT_TERMS = [26, 52]
+const CONTRACT_SIGNING_MUL = 2 // signing fee = this many card rates
+const CONTRACT_FEE_RATE = 0.08 // weekly retainer as a share of the card rate at signing
+const CONTRACT_DISCOUNT = 0.6 // commission cost while contracted
+const CONTRACT_HEAT_MUL = 1.2 // heat gain while contracted
+const CONTRACT_EXIT_SHARE = 0.25 // of the remaining fees, to end early
+
 // Build the initial per-artist career state from the static roster.
 // `perks` carries the prestige unlocks from previous runs (see legacy.js).
 // 'seed_artist' promotes the highest-reach rising star straight to established,
@@ -70,7 +85,92 @@ export function currentArtist(state, id) {
   if (!base) return null
   const live = state.artists?.find((a) => a.id === id)
   if (!live) return base
-  return { ...base, cost: live.cost, reach: live.reach, trajectory: live.trajectory, heat: live.heat ?? 0 }
+  // Under contract the commission rate is discounted, so every consumer of the
+  // live cost — set cost, the builder's dropdown — sees the contracted price.
+  const deal = activeContract(state, id)
+  const cost = deal ? Math.round(live.cost * CONTRACT_DISCOUNT / 100) * 100 : live.cost
+  return { ...base, cost, reach: live.reach, trajectory: live.trajectory, heat: live.heat ?? 0, contracted: !!deal }
+}
+
+export function activeContract(state, artistId) {
+  return (state.artistContracts ?? []).find((c) => c.artistId === artistId && c.active) ?? null
+}
+
+// What signing costs, off the artist's CURRENT rate. `artist` is a live
+// career record ({ cost }) or a currentArtist() result.
+export function contractTerms(artist, termWeeks) {
+  const rate = artist?.cost ?? 0
+  return {
+    signingFee: Math.round(rate * CONTRACT_SIGNING_MUL / 100) * 100,
+    weeklyFee: Math.round(rate * CONTRACT_FEE_RATE / 10) * 10,
+  }
+}
+
+function money(n) {
+  return '$' + Math.round(n).toLocaleString('en-US')
+}
+
+// Returns { artistContracts, cashDelta, feed, personaSentimentBump } or null.
+export function signArtistContract(state, artistId, termWeeks) {
+  const base = getArtist(artistId)
+  const live = (state.artists ?? []).find((a) => a.id === artistId)
+  if (!base || !live) return null
+  if (!CONTRACT_TERMS.includes(termWeeks)) return null
+  const active = (state.artistContracts ?? []).filter((c) => c.active)
+  if (active.length >= MAX_ARTIST_CONTRACTS) return null
+  if (active.some((c) => c.artistId === artistId)) return null
+  const { signingFee, weeklyFee } = contractTerms(live, termWeeks)
+  const deal = {
+    artistId, signedWeek: state.week, endsWeek: state.week + termWeeks,
+    weeklyFee, lockedCost: live.cost, active: true,
+  }
+  const artistContracts = [...(state.artistContracts ?? []).filter((c) => c.artistId !== artistId), deal]
+  // Locking up a name the art crowd already loves is news to them.
+  const personaSentimentBump = live.reach >= 70
+    ? { tasteKey: 'art', floor: 0.4, amount: 2, ambientAmount: 0.5 }
+    : null
+  return {
+    artistContracts,
+    cashDelta: -signingFee,
+    personaSentimentBump,
+    feed: `Signed ${base.name} to a ${termWeeks}-week exclusive — their rate is locked at ${money(live.cost)} and every commission runs cheaper.`,
+  }
+}
+
+// Ending early pays a share of the fees still owed. Returns
+// { artistContracts, cashDelta, feed } or null.
+export function endArtistContract(state, artistId) {
+  const base = getArtist(artistId)
+  const deal = activeContract(state, artistId)
+  if (!base || !deal) return null
+  const remaining = Math.max(0, deal.endsWeek - state.week) * deal.weeklyFee
+  const exit = Math.round(remaining * CONTRACT_EXIT_SHARE)
+  const artistContracts = state.artistContracts.map((c) =>
+    c.artistId === artistId && c.active ? { ...c, active: false, endedWeek: state.week } : c,
+  )
+  return { artistContracts, cashDelta: -exit, feed: `Bought out ${base.name}'s exclusive early for ${money(exit)}.` }
+}
+
+// The week's retainers, for overhead.js.
+export function weeklyContractFees(state) {
+  return (state.artistContracts ?? []).filter((c) => c.active).reduce((s, c) => s + c.weeklyFee, 0)
+}
+
+// Retire deals whose term is up. Mutates `next` in place (called from
+// advanceWeek after driftArtists).
+export function expireArtistContracts(next) {
+  const due = (next.artistContracts ?? []).filter((c) => c.active && next.week >= c.endsWeek)
+  if (!due.length) return
+  next.artistContracts = next.artistContracts.map((c) =>
+    due.includes(c) ? { ...c, active: false, endedWeek: next.week } : c,
+  )
+  for (const c of due) {
+    const name = getArtist(c.artistId)?.name ?? c.artistId
+    next.eventsFeed = [
+      { week: next.week, kind: 'artist', text: `${name}'s exclusive has run its term — their rate floats again.` },
+      ...next.eventsFeed,
+    ].slice(0, 60)
+  }
 }
 
 // Per-trajectory weekly drift. Multipliers/deltas are small — a career moves
@@ -144,13 +244,20 @@ export function driftArtists(next) {
   }
   const rng = makeRng(hashSeed(`artists:${next.week}`))
   const heat = heatSignals(next)
+  const contracted = new Set((next.artistContracts ?? []).filter((c) => c.active).map((c) => c.artistId))
   next.artists = next.artists.map((a) => {
     const drifted = driftOne(a, rng)
     const signal = heat.get(a.id)
     const prev = a.heat ?? 0
     // No live cards: cool off. Otherwise ease toward this week's signal.
     const target = signal ?? 0
-    return { ...drifted, heat: clamp(prev * HEAT_DECAY + (target - prev * HEAT_DECAY) * HEAT_GAIN, 0, 100) }
+    const gain = HEAT_GAIN * (contracted.has(a.id) ? CONTRACT_HEAT_MUL : 1)
+    return {
+      ...drifted,
+      // An exclusive freezes the rate for the term. The career still moves.
+      cost: contracted.has(a.id) ? a.cost : drifted.cost,
+      heat: clamp(prev * HEAT_DECAY + (target - prev * HEAT_DECAY) * gain, 0, 100),
+    }
   })
 }
 

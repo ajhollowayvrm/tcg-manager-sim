@@ -18,9 +18,10 @@ import { seedFromStandards, cloneSheet, cloneFormat, cloneGodPack } from './stan
 export { FINISHES, getFinish }
 import { defaultProducts, finalizeProducts, productPrintCost, validateProducts, DEFAULT_CHANNELS } from './products.js'
 import { makePromoCard } from './promos.js'
+import { printBillMul, artDirectorRate } from './upgrades.js'
 import { getTier, openBlock, refreshBlockWarp, mintTreatmentCards, mintAnniversaryCards, canUnlockAnniversary } from './blocks.js'
 import { getGimmick, NO_GIMMICK } from './content/gimmicks.js'
-import { createCharacter, famePopBonus, getTreatment, recordAppearance, recordPromotion, wouldCycle } from './characters.js'
+import { createCharacter, famePopBonus, getTreatment, recordAppearance, createLineageCharacter } from './characters.js'
 import { archetypeMatchesTheme } from './content/archetypes.js'
 import {
   getIllustrationKind,
@@ -262,9 +263,12 @@ export function createSignatureCard(n, rarityId = 'rare') {
     newCharacterArchetype: 'unaligned',
     newCharacterSpecies: '',
     newCharacterHook: '',
-    // The roster character this new one is a promotion of, if any — see
-    // characters.js's promotedFromId. Null for an ordinary debut.
+    // The roster character(s) this new one grows out of, if any, and the kind
+    // of link — see characters.js's lineage section and content/lineages.js.
+    // All null for an ordinary debut. A fusion fills the second parent too.
     newCharacterPromotedFrom: null,
+    newCharacterLineageKind: null,
+    newCharacterSecondParent: null,
     treatment: 'debut',
     // Optional: a hard-capped total copy count (10/25/50/99/1) independent of
     // the set's print run — a true serialized chase card. Once this many
@@ -388,8 +392,10 @@ export function sizeProfile(draft) {
 // defaults to the static roster so old call sites / tests still work. The live
 // game passes a state-aware resolver so a risen star costs what they cost now.
 // `ctx` carries { illustrationSets } so a continue can be billed against the
-// kind of the group it is continuing. Optional — an old call site or the
-// harness bills off the draft, which is correct for an 'open'.
+// kind of the group it is continuing, and { upgrades } so a print partner or an
+// art department (upgrades.js) discounts the lines they touch. Optional — an
+// old call site or the harness bills off the draft at full price, which is
+// correct for an 'open' and for a studio that bought nothing.
 export function setCost(draft, artistOf = getArtist, ctx = {}) {
   // A booster richer than the Classic baseline costs more to manufacture; a
   // leaner one costs a touch less. Measured relative to Classic so the default
@@ -414,7 +420,8 @@ export function setCost(draft, artistOf = getArtist, ctx = {}) {
   // A bigger set needs more plates and sheets — a modest print-line premium on
   // top of the run size itself.
   const printCost = Math.round(
-    (20_000 + (draft.printRun / 100) * 180_000) * (1 + richness * 0.25) * (0.85 + 0.15 * size.lengthMul) * finishCostMul,
+    (20_000 + (draft.printRun / 100) * 180_000) * (1 + richness * 0.25) * (0.85 + 0.15 * size.lengthMul) * finishCostMul
+    * printBillMul(ctx.upgrades),
   )
   // Development scales with three things: the tier's floor, how hard THIS
   // gimmick is to design (a die-cut era costs real money; a plain themed era is
@@ -461,9 +468,10 @@ export function setCost(draft, artistOf = getArtist, ctx = {}) {
     if (!c.serialCap) return sum
     return sum + Math.round(4_000 + 60_000 / Math.max(1, c.serialCap))
   }, 0)
-  // An art director is a whole-set commission — double their card rate.
+  // An art director is a whole-set commission — double their card rate, less
+  // with an in-house art department (upgrades.js).
   const director = draft.artDirectorId ? artistOf(draft.artDirectorId) : null
-  const artDirection = director ? Math.round(director.cost * 2) : 0
+  const artDirection = director ? Math.round(director.cost * artDirectorRate(ctx.upgrades)) : 0
   const prerelease = draft.prerelease.enabled ? 15_000 : 0
   // A midnight launch pays for the event itself; a themed drop is a curated
   // presentation angle, not extra staffing — free.
@@ -915,7 +923,7 @@ export function releaseSet(state, draft) {
   // (and elevates a card) what they're worth now, not their seed value.
   const artistOf = (id) => currentArtist(state, id)
   const tier = getTier(draft.tier ?? 'major')
-  const cost = setCost(draft, artistOf, { illustrationSets: state.illustrationSets })
+  const cost = setCost(draft, artistOf, { illustrationSets: state.illustrationSets, upgrades: state.upgrades })
   // How this set's SIZE reads: event scale, chase density, and bloat.
   const size = sizeProfile(draft)
 
@@ -949,27 +957,32 @@ export function releaseSet(state, draft) {
   // generating cards, so the character exists (with a stable id) in time both for
   // its own fame lookup and the debut appearance recorded below.
   let characters = state.characters ?? []
-  const promotions = []
   const resolvedSigs = (draft.signatureCards ?? []).map((sig) => {
     if (sig.characterId || !sig.newCharacterName?.trim()) return sig
-    // A new character may be a PROMOTION of one already on the roster — Kell,
-    // Broken Boy becoming Kell, Royal Soldier. Refused if it would close a loop
-    // or run past the depth cap; the picker offers only legal parents, so this
-    // only bites a stale draft held open across a save load.
-    const parentId = sig.newCharacterPromotedFrom
-      && !wouldCycle(characters, null, sig.newCharacterPromotedFrom)
-      ? sig.newCharacterPromotedFrom
-      : null
-    const parent = parentId ? characters.find((c) => c.id === parentId) : null
-    const created = createCharacter(sig.newCharacterName, {
+    const identity = {
       archetypeId: sig.newCharacterArchetype,
       species: sig.newCharacterSpecies,
       hook: sig.newCharacterHook,
-      promotedFromId: parent ? parent.id : null,
-      _inheritFame: parent ? parent.fame : 0,
-    })
-    characters = [...characters, created]
-    if (parent) promotions.push({ childId: created.id, parentId: parent.id })
+    }
+    // A new character may grow out of one (or two) already on the roster —
+    // Kell, Broken Boy becoming Kell, Royal Soldier. The link is refused if it
+    // would close a loop, break the kind's archetype rule, or build on a retired
+    // character; the editor shows the same refusal, so this only bites a stale
+    // draft held open across a save load, and then the character still debuts —
+    // as a plain new one.
+    const parentIds = [sig.newCharacterPromotedFrom, sig.newCharacterSecondParent].filter(Boolean)
+    const kindId = sig.newCharacterLineageKind ?? (parentIds.length ? 'promotion' : null)
+    const linked = kindId
+      ? createLineageCharacter(characters, { name: sig.newCharacterName, identity, kindId, parentIds, week: state.week })
+      : null
+    let created
+    if (linked) {
+      characters = linked.characters
+      created = linked.child
+    } else {
+      created = createCharacter(sig.newCharacterName, identity)
+      characters = [...characters, created]
+    }
     return { ...sig, characterId: created.id, treatment: 'debut' }
   })
 
@@ -1006,14 +1019,6 @@ export function releaseSet(state, draft) {
       cardId: card.id, setId, treatment: card.treatment, popFactors: card.popFactors,
       week: state.week, setName: draft.name,
     })
-  }
-
-  // Promotion beats on both careers. Filed AFTER recordAppearance above, so the
-  // successor's pinned 'debut' beat leads its timeline and the promotion reads
-  // as the thing that happened next — filing it first put the character's story
-  // in the wrong order on its own detail sheet.
-  for (const p of promotions) {
-    characters = recordPromotion(characters, { ...p, week: state.week })
   }
 
   const set = {

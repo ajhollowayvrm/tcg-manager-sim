@@ -90,6 +90,16 @@ export function createInitialState(config) {
     // Grading-partner deals — third-party authentication services that
     // ambiently certify high-value singles each week. See grading.js.
     gradingPartners: [],
+    // Illustrator exclusives — see artists.js's contract section.
+    artistContracts: [],
+    // Brand-partner promo deals — see partners.js.
+    partnerDeals: [],
+    // The grassroots programme (a standing level, 0..1) and the discrete grants
+    // it has funded — see grassroots.js.
+    grassroots: { level: 0 },
+    grassrootsGrants: [],
+    // Purchased studio upgrades, id → level — see upgrades.js.
+    upgrades: {},
     // Weeks in which a live box break ran. Breaks saturate: too many in a short
     // window and the audience stops believing it's a moment. See breaks.js.
     breakHistory: [],

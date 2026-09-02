@@ -21,6 +21,8 @@
 // has a single number to log.
 
 import { clamp } from './simulation.js'
+import { weeklyContractFees } from './artists.js'
+import { warehouseMul, staffPerPlayerMul } from './upgrades.js'
 
 // ---- Sink A: studio overhead (the scale sink) ------------------------------
 
@@ -70,6 +72,10 @@ const BLOCK_UPKEEP_PER_TREATMENT = 2_800
 // go, and because it scales with the player base it never becomes trivial.
 const GOODWILL_MAX_PER_PLAYER = 0.55
 
+// $/week per player at full commitment to the grassroots programme. A fraction
+// of the goodwill rate: it buys word of mouth, not forgiveness.
+const GRASSROOTS_MAX_PER_PLAYER = 0.12
+
 // ---- Resolution -------------------------------------------------------------
 
 // Compute every recurring cost for the week. Pure: returns the breakdown, and
@@ -89,7 +95,8 @@ export function weeklyOverhead(state) {
   }
 
   const playerBase = state.playerBase ?? 0
-  const staff = STAFF_BASE + playerBase * STAFF_PER_PLAYER
+  // Upgrades (upgrades.js): a community team trims the per-player staff line.
+  const staff = STAFF_BASE + playerBase * STAFF_PER_PLAYER * staffPerPlayerMul(state)
   const lines = LINE_COST * Math.pow(liveSets.length, LINE_EXPONENT)
   const catalogue = CATALOGUE_PER_CARD * (liveCards + RETIRED_CARD_DISCOUNT * retiredCards)
   const prestigeMul = 1 + (state.franchise?.reputation ?? 0) / PRESTIGE_REFERENCE
@@ -112,7 +119,8 @@ export function weeklyOverhead(state) {
       warehouse += (unsold / 1000) * WAREHOUSE_PER_1K_UNITS * ramp
     }
   }
-  warehouse = Math.round(warehouse)
+  // Warehouse automation (upgrades.js) trims every unit's carrying cost.
+  warehouse = Math.round(warehouse * warehouseMul(state))
 
   // Era upkeep, charged only while a block still has product on the shelf.
   // Blocks coexist forever at zero cost today, which is part of why catalogue
@@ -131,8 +139,17 @@ export function weeklyOverhead(state) {
   // repair a soured community. You cannot purchase permission to gouge it.
   const goodwill = Math.round(clamp(state.goodwillSpend ?? 0, 0, 1) * playerBase * GOODWILL_MAX_PER_PLAYER)
 
-  const total = studio + warehouse + blocks + goodwill
-  return { staff: Math.round(staff), lines: Math.round(lines), catalogue: Math.round(catalogue), studio, warehouse, blocks, goodwill, total }
+  // ---- Sink E: illustrator retainers (artists.js) ----------------------------
+  // A standing commitment for the term of each exclusive. Zero with none signed.
+  const contracts = Math.round(weeklyContractFees(state))
+
+  // ---- Sink F: the grassroots programme (grassroots.js) ----------------------
+  // Grants to the people running events outside the game store: scales with
+  // the player base like goodwill does, at a fraction of the rate.
+  const grassroots = Math.round(clamp(state.grassroots?.level ?? 0, 0, 1) * playerBase * GRASSROOTS_MAX_PER_PLAYER)
+
+  const total = studio + warehouse + blocks + goodwill + contracts + grassroots
+  return { staff: Math.round(staff), lines: Math.round(lines), catalogue: Math.round(catalogue), studio, warehouse, blocks, goodwill, contracts, grassroots, total }
 }
 
 // Charge the week's recurring costs. Mutates `next` in place.

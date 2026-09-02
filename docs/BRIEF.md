@@ -142,10 +142,11 @@ which is about *packaging* where `scarcity` is about supply.
 Collectors also name runs the studio never planned — rarely, about one every
 forty weeks.
 
-**Character promotion.** A new character can be a later role or form of one
-already on the roster — Kell, Broken Boy into Kell, Royal Soldier. Two entries
-with their own archetypes and fame, linked by a lineage the cohesion scorer
-reads. The successor debuts already partly famous. Locks on debut.
+**Character lineage.** A new character can grow out of one (or two) already
+on the roster — Kell, Broken Boy into Kell, Royal Soldier. Two entries with
+their own archetypes and fame, linked by a lineage the cohesion scorer reads.
+The successor debuts already partly famous. Locks on debut. See "Lineage kinds"
+under The cast.
 
 ### Presentation
 
@@ -179,11 +180,45 @@ panel, and printed again and again.
 - **Story beats** record the turning points (debut, breakout, icon, fall,
   comeback), so a career reads as a narrative. The debut beat is pinned.
 
+### Lineage kinds
+
+Seven ways one character grows out of another (`content/lineages.js`), each
+borrowed from a real card game. A kind is data: the share of each parent's fame
+the child debuts with, an archetype rule, whether the predecessor retires, how
+many parents it takes.
+
+| Kind | Precedent | Inherits | Archetype | Predecessor |
+| --- | --- | --- | --- | --- |
+| Promotion | L5R "Experienced", Star Wars CCG titles | 35% | any | stays in print |
+| Evolution | Pokémon stages, Digimon levels | 45% | the same | stays in print |
+| Transformation | MTG transform, Dragon Ball awakenings | 50% | any | stays; fame linked weekly |
+| Fusion | Yu-Gi-Oh fusion, DNA digivolution | 25% of each of two parents | any | both stay |
+| Growth | Flesh and Blood young hero to adult | 55% | same category | retires |
+| Fall | Anakin to Vader, dark digivolution | 50% | an antagonist | retires |
+| Successor | a new hero takes the mantle | 40% | any | retires |
+
+The rule behind the numbers: a kind that retires the predecessor transfers
+more fame, because the audience moves over. A **retired** character takes no
+new printings and drops out of the hot-cast signal; its live cards keep selling
+and its fame keeps drifting off them. Every link is refused if it would close a
+loop, break the archetype rule, or build on a retired character. Links are made
+in the set builder (a new character's signature card) or directly in Studio ›
+Lineages. `promotedFromId` stays the primary parent on the record so every older
+reader keeps working; `lineageKindId`, `lineageParentIds` and `retiredWeek` are
+additive and normalise on load.
+
 Artists are the parallel system: a fixed 44-name roster with drifting cost and
 reach, so a cheap rising star is spottable before it blows up. They also carry
 **collector heat**, drifting off how their live cards actually perform — a
 sought-after illustrator's cards carry a premium and the community talks about
 the hand, not just the card.
+
+**Exclusive contracts** (`artists.js`). A signing fee (two card rates) and a
+weekly retainer (8% of the rate) for 26 or 52 weeks. The rate is frozen for the
+term — the reason to sign a rising star before they blow up — every commission
+with them costs 40% less, and their heat climbs 20% faster. At most three at
+once; ending early pays a quarter of the remaining fees. The retainer is an
+overhead line.
 
 ---
 
@@ -217,6 +252,14 @@ sponsor a tournament. Relationships decay if neglected, and a sponsored creator
 who sours hits harder for their reach. A standing community-goodwill programme
 buys back a soured room — but not permission to gouge it.
 
+**Grassroots** (`grassroots.js`). Money to the fans who run things outside the
+game store. A standing programme (0..1, up to $0.12 per player per week) lifts
+word of mouth by up to 35% and makes the good local-scene events likelier; it
+buys no forgiveness. Four one-off grants (`content/grassroots.js`) — a
+tournament series, a fan-art contest, campus club kits, a convention meetup —
+each bring a jolt of casual players, a taste-keyed sentiment bump and buzz on
+the hottest set, with a small chance the organiser makes a mess of it.
+
 ---
 
 ## Distribution and the shelf
@@ -230,6 +273,12 @@ buys back a soured room — but not permission to gouge it.
 - **Grading partners** (3) certify a slice of high-value singles weekly for a
   collector premium, carrying a scandal risk that cultivating the relationship
   halves.
+- **Brand partners** (6, `partners.js`) — a co-branded promo card with an
+  outside business, the McDonald's-Pokémon shape. A mass-market partner brings
+  casual players by the thousand, draws scalper heat, and makes the art crowd
+  sniff; a film studio brings few copies, prestige, and a reputation gate. The
+  promo can be fronted by a cast character (who logs a printing and lends their
+  fame) and drawn by a chosen artist. One deal per partner per cooldown.
 - **Regional staggered releases** — a major-only lever. A lead region drops first
   as a smaller wave and a hype channel; the player gets one read-the-room call
   before the wide release.
@@ -254,6 +303,11 @@ buys back a soured room — but not permission to gouge it.
   blockbuster, gated on reputation. Pitched, then they progress on their own to a
   hit, a flop, or fell-through. A hit grants a player injection plus two permanent
   buffs; a flop costs real cash and grants neither.
+- **Studio upgrades** (`upgrades.js`) — permanent-for-the-run investments
+  bought with cash, each a small multiplier on one cost or one risk: warehouse
+  automation, a print partner, a community team, an authentication lab, an art
+  department, plus the supply-chain capacity investment. Prices climb per level
+  and with reputation.
 - **Legacy** — 25 milestones, a scored retrospective, a voluntary retirement, and
   banked prestige that unlocks perks in future runs. This is **not** a win
   condition: nothing in the sim ever proposes retiring.
@@ -261,6 +315,26 @@ buys back a soured room — but not permission to gouge it.
   quiet.
 
 ---
+
+## Navigation
+
+One tabbed layout at every width; there is no desktop dashboard. Five tabs,
+organised around the studio's relationships, each with sub-tabs:
+
+| Tab | Sub-tabs |
+| --- | --- |
+| Studio | Overview, Sets, Cast, Lineages, Standards |
+| Business | Distribution, Grading, Illustrators, Partners, Ventures |
+| Community | Pulse, Voices, Programmes, Grassroots, News |
+| Stats | Money, Trends, Market, Cards, Scalp Watch |
+| Misc | Settings, Upgrades, Legacy |
+
+Every headed section is a collapsible `Section` (`components/nav/Section.jsx`);
+the open state, the active tab and the active sub-tab per tab persist in
+localStorage (`components/nav/uiPrefs.js`), separate from the run save. A slim
+sticky strip holds the studio name, the week, cash, Design a Set and Advance
+Week; the six health meters live in the tabs that own their numbers
+(`components/nav/Meter.jsx`).
 
 ## Architecture
 
@@ -302,7 +376,8 @@ GameState {
   cards: [ { id, setId, name, rarity, artistId, characterId, treatment,
              popFactors: {...}, sealedPrice, singlePrice, priceHistory: [...] } ],
   characters: [ { id, name, archetypeId, traits, hook, pronouns, fame,
-                  trajectory, appearances, beats, fameHistory } ],
+                  trajectory, appearances, beats, fameHistory,
+                  promotedFromId, lineageKindId, lineageParentIds, retiredWeek } ],
   illustrationSets: [ { id, kindId, name, plannedSize, status, cohesion,
                        members: [ { cardId, setId, week, artistId,
                                     characterId, valueTier } ] } ],
@@ -310,6 +385,10 @@ GameState {
   packFormats: [ { id, name, note, format: { preset, slots }, godPack, isDefault } ],
   blueprints:  [ { id, name, note, sheetId, formatId, isDefault } ],
   artists: [...], personas: [...], distributors: [...], gradingPartners: [...],
+  artistContracts: [ { artistId, signedWeek, endsWeek, weeklyFee, lockedCost, active } ],
+  partnerDeals: [ { partnerId, week, cardId, characterId } ],
+  grassroots: { level }, grassrootsGrants: [ { kindId, week, backfired } ],
+  upgrades: { [id]: level },
   merchLines: [...], mediaDeals: [...],
   goodwillSpend, lastOverhead, legacy, retirement, prestige,
   feedbackFeed: [...], eventsFeed: [...], clock: { reason }

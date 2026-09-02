@@ -562,12 +562,15 @@ body {
 @media (pointer: coarse) { .sec__toggle { min-height: 44px; } }
 
 /* Sub-tab bar: scrolls sideways instead of wrapping (nav/SubTabs.jsx). */
-.substabs--scroll {
+/* Doubled selector: the base .substabs rule (declared later, for the standards
+   panel) sets flex-wrap: wrap at the same specificity and would win. */
+.substabs.substabs--scroll {
   flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch;
   scrollbar-width: none; margin-bottom: var(--gap); padding-bottom: 2px;
 }
-.substabs--scroll::-webkit-scrollbar { display: none; }
-.substabs--scroll .substabs__btn { flex: 1 0 auto; white-space: nowrap; }
+.substabs.substabs--scroll::-webkit-scrollbar { display: none; }
+.substabs.substabs--scroll .substabs__btn { flex: 1 0 auto; white-space: nowrap; }
+.ledger__setrev.is-hot { color: var(--bad); }
 
 /* Studio overview brand card. */
 .brand { margin: 0 0 12px; display: grid; gap: 6px; }
@@ -579,6 +582,24 @@ body {
 /* The standards panel's inner kind switch, styled as chips so it never reads as
    a second sub-tab bar. */
 .std__kinds { margin-bottom: 12px; }
+
+/* Lineage tree (LineagesPanel). Each nested list indents one step. */
+.lineage { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.lineage .lineage { margin-top: 6px; padding-left: 14px; border-left: 1px solid var(--border); }
+.lineage__row {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px;
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2);
+}
+.lineage__row.is-retired { opacity: 0.6; }
+.lineage__name { font-weight: 700; }
+.lineage__meta { font-size: 0.72rem; color: var(--text-dim); }
+.lineage__kind {
+  margin-left: auto; font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;
+  color: var(--accent-2); border: 1px solid var(--accent-2); border-radius: 99px; padding: 1px 8px;
+}
+.roster__row.is-contracted .roster__name { color: var(--accent-2); }
+.roster__actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 10px 10px; }
+.lineage__rules { margin: 0; padding-left: 18px; font-size: 0.8rem; color: var(--text-dim); display: grid; gap: 2px; }
 
 /* Phone: the desktop-first layout works down to here, but a few dense spots
    need a stacked treatment so nothing crams or overlaps. (Audited live at

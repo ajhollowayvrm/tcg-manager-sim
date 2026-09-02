@@ -15,6 +15,7 @@
 import { makeRng, hashSeed, range } from './rng.js'
 import { clamp } from './simulation.js'
 import { getGradingPartner } from './content/grading.js'
+import { scandalRiskMul } from './upgrades.js'
 
 // ---- Sign / drop / cultivate -----------------------------------------------
 
@@ -85,7 +86,8 @@ export function applyGrading(next) {
     // A cultivated relationship tightens standards, halving scandal risk at
     // max warmth.
     const warmth = 1 - (deal.relationship ?? 0) / 100 * 0.5
-    if (!scandalCardId && alreadyGraded.length && rng() < partner.scandalRisk * warmth) {
+    // An authentication lab (upgrades.js) cuts the risk further.
+    if (!scandalCardId && alreadyGraded.length && rng() < partner.scandalRisk * warmth * scandalRiskMul(next)) {
       scandalCardId = alreadyGraded[Math.floor(rng() * alreadyGraded.length) % alreadyGraded.length].id
     }
   }

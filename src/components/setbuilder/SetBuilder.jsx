@@ -309,7 +309,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
   // Resolve artists to their live drifted record so the cost summary and editor
   // reflect current prices, not the static seed.
   const artistOf = (id) => artists?.find((a) => a.id === id) ?? null
-  const cost = setCost(draft, (id) => artistOf(id) ?? undefined, { illustrationSets })
+  const cost = setCost(draft, (id) => artistOf(id) ?? undefined, { illustrationSets, upgrades })
   const errors = validateDraft(draft, { blocks, isFirstSet, franchise, setsShipped: sets.length, perks, illustrationSets })
   // Cash can go negative (a loan), so affordability NO LONGER blocks release —
   // it only flags that you'll dip into debt. The only release gate is validity.

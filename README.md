@@ -32,9 +32,10 @@ legacy toward future runs, but nothing ever asks you to.
   a multiple of its linemates, the members move together on the ticker, and a run
   you announce and never finish goes stale, gets written off, and costs you the
   room's trust — after which nobody believes the next announcement either.
-- **The cast.** Characters you invent and print again and again. One can be
-  *promoted* into a later role — Kell, Broken Boy into Kell, Royal Soldier — a
-  second roster entry that debuts already partly famous and reads as one story. Each picks an
+- **The cast.** Characters you invent and print again and again. One can grow
+  out of another in seven ways borrowed from real card games — promotion,
+  evolution, transformation, fusion, growth, fall, successor — a second roster
+  entry that debuts already partly famous and reads as one story. Each picks an
   archetype from 12 — mascot, villain, legendary, trickster and the rest — which
   decides both which sets they suit and how their fame behaves: a mascot climbs
   fastest and bruises easiest, a villain grows on the heat that would sink one.
@@ -44,9 +45,15 @@ legacy toward future runs, but nothing ever asks you to.
   anti-correlated, so the loudest voices are systematically the least reliable.
   Comp them, sponsor them, invite them to a prerelease. Run a standing goodwill
   programme to buy back a soured room — but not permission to gouge it.
-- **Distribution.** Bulk-buyer deals for cash now at the price of a market flood
-  and rising scalper heat; grading partners; supply-chain capacity; purchase
-  limits and phantom stock as anti-scalping stances.
+- **Business.** Bulk-buyer deals for cash now at the price of a market flood
+  and rising scalper heat; grading partners; exclusive illustrator contracts
+  that freeze a rising star's rate; co-branded promo cards with outside brands,
+  from a burger chain to a film studio; purchase limits and phantom stock as
+  anti-scalping stances.
+- **Grassroots.** A standing programme and one-off grants to the fans who run
+  leagues, clubs and meetups outside the game store.
+- **Upgrades.** Cash investments that trim one cost or one risk each, for the
+  rest of the run.
 - **Ambition.** Merchandise lines and cross-media ventures from a mobile spinoff
   up to a theatrical blockbuster.
 - **A rival.** An ambient competitor that grows when your shelf goes quiet.
@@ -85,7 +92,8 @@ Node, and that `playtest.mjs` is the only automated check.
 ```
 src/
   main.jsx              # entry
-  App.jsx               # dashboard layout + mobile tabs
+  App.jsx               # the five tabs and their sub-tabs
+  components/nav/       # top strip, sub-tab bar, collapsible Section, meters, UI prefs
   game/
     initialState.js     # GameState shape — the source of truth
     reducer.js          # every player action; imported by useGame AND the harness
@@ -111,8 +119,11 @@ src/
     merch.js            # merchandise lines
     media.js            # cross-media ventures
     franchise.js        # franchise reputation + legacy multiplier
-    characters.js       # the cast: identity, fame drift, story beats
-    artists.js          # artist careers (cost/reach drift)
+    characters.js       # the cast: identity, fame drift, story beats, lineage
+    partners.js         # brand-partner promo deals
+    grassroots.js       # grassroots programme + grants
+    upgrades.js         # studio upgrades
+    artists.js          # artist careers (cost/reach drift) + exclusive contracts
     cadence.js          # release-pledge pressure, both directions
     rival.js            # ambient competing TCG
     segments.js         # player-segment drift + word of mouth

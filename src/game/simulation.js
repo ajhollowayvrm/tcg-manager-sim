@@ -11,7 +11,7 @@ import { resolveRevenue } from './revenue.js'
 import { rollEvent, applyEventEffects } from './events.js'
 import { applySegmentDrift, distributeNewPlayers } from './segments.js'
 import { clockDirective } from './clock.js'
-import { driftArtists } from './artists.js'
+import { driftArtists, expireArtistContracts } from './artists.js'
 import { driftCharacters } from './characters.js'
 import { updateFranchiseReputation } from './franchise.js'
 import { applyCadencePressure } from './cadence.js'
@@ -131,6 +131,9 @@ export function advanceWeek(state) {
   // graduate or blow up), fading names decline. Commissioning a cheap rising
   // star before they pop is a real budget bet.
   driftArtists(next)
+  // Exclusives whose term is up float free again. After the drift, so the
+  // last contracted week still holds the locked rate.
+  expireArtistContracts(next)
 
   // Sealed-product revenue: every live set sells packs (capped by its print
   // run). This is the income that funds the next set — or doesn't.
@@ -379,6 +382,8 @@ function recordLedger(next) {
     warehouse: oh.warehouse ?? 0,
     blocks: oh.blocks ?? 0,
     goodwill: oh.goodwill ?? 0,
+    contracts: oh.contracts ?? 0,
+    grassroots: oh.grassroots ?? 0,
     sponsorships: upkeep,
     interest,
     total: (oh.total ?? 0) + upkeep + interest,

@@ -25,6 +25,7 @@
 import { makeRng, hashSeed, range } from './rng.js'
 import { clamp } from './simulation.js'
 import { getArchetype } from './content/archetypes.js'
+import { getLineageKind, archetypeAllowed, archetypeRuleText } from './content/lineages.js'
 import { MAX_TRAITS } from './content/traits.js'
 
 // Weeks a trajectory must hold before it can graduate, so an arc unfolds over a
@@ -45,13 +46,7 @@ const MAX_BEATS = 12
 // hard ceiling on what one character costs the save.
 const FAME_HISTORY_WEEKS = 52
 
-// How much of a predecessor's fame a promoted character debuts with. A third is
-// enough that promoting an icon is visibly a head start, and little enough that
-// it is not simply better than building a new character — the successor still
-// has to earn the rest on its own cards.
-const PROMOTION_FAME_INHERIT = 0.35
-
-// How far a promotion chain may be walked. Guards a cycle smuggled in through an
+// How far a lineage chain may be walked. Guards a cycle smuggled in through an
 // imported save; the assignment path refuses to create one in the first place.
 export const MAX_PROMOTION_DEPTH = 5
 
@@ -134,17 +129,24 @@ export function createCharacter(name, opts = {}) {
     // see which of your characters got hot and then declare everyone descended
     // from them.
     promotedFromId: o.promotedFromId ?? null,
+    // The KIND of link (content/lineages.js) and every parent. promotedFromId
+    // stays the primary parent so every older reader keeps working; a fusion
+    // lists its second parent here only.
+    lineageKindId: o.lineageKindId ?? (o.promotedFromId ? 'promotion' : null),
+    lineageParentIds: o.lineageParentIds ?? (o.promotedFromId ? [o.promotedFromId] : []),
+    // Set when a lineage kind retires this character (growth, fall, successor):
+    // no new printings, but its live cards keep selling and its fame drifts on.
+    retiredWeek: null,
     debutSetId: null,
     debutWeek: null,
     appearances: [], // { cardId, setId, treatment }
-    // A promoted character arrives KNOWN. Kell, Royal Soldier is famous on day
+    // A linked character arrives KNOWN. Kell, Royal Soldier is famous on day
     // one because Kell, Broken Boy was, and a debut that starts from 12 would
-    // throw that away — the whole point of a promotion is that the audience
-    // already cares. A third of the predecessor's standing carries over, so a
-    // promotion off an icon is a real head start and one off a nobody is not.
-    // `_inheritFame` is passed by the promotion helper below, which is the only
-    // thing that knows the predecessor's current fame.
-    fame: clamp(12 + (o._inheritFame ?? 0) * PROMOTION_FAME_INHERIT, 0, 100),
+    // throw that away — the whole point of a lineage is that the audience
+    // already cares. `_inheritFame` is the fame already scaled by the kind's
+    // inherit share, passed by createLineageCharacter below, which is the only
+    // thing that knows the parents' current fame.
+    fame: clamp(12 + (o._inheritFame ?? 0), 0, 100),
     fameHistory: [], // rounded weekly samples, newest last, capped
     beats: [], // { week, kind, label } — the character's story so far
     trajectory: 'rising', // 'rising' | 'established' | 'fading' | 'icon'
@@ -174,6 +176,13 @@ export function normalizeCharacter(c) {
     species: c.species ?? '',
     debutWeek: c.debutWeek ?? null,
     promotedFromId: c.promotedFromId ?? null,
+    // Lineage fields are ADDITIVE too: a pre-catalogue promotion normalises onto
+    // the 'promotion' kind with its one parent, and behaves exactly as before.
+    lineageKindId: getLineageKind(c.lineageKindId)?.id ?? (c.promotedFromId ? 'promotion' : null),
+    lineageParentIds: Array.isArray(c.lineageParentIds) && c.lineageParentIds.length
+      ? c.lineageParentIds
+      : (c.promotedFromId ? [c.promotedFromId] : []),
+    retiredWeek: c.retiredWeek ?? null,
     appearances: c.appearances ?? [],
     fameHistory: c.fameHistory ?? [],
     beats: c.beats ?? [],
@@ -216,66 +225,154 @@ export function famePopBonus(fame, treatmentId = 'debut') {
   return clamp(fame * 0.28 * mul, 0, 45)
 }
 
-// ---- Promotion --------------------------------------------------------------
+// ---- Lineage ----------------------------------------------------------------
+// The ways one character grows out of another — promotion, evolution,
+// transformation, fusion, growth, fall, successor. The catalogue and what each
+// kind means live in content/lineages.js; this section is the mechanics.
 
-// Would making `childId` a promotion of `parentId` close a loop? Walks the chain
-// up from the proposed parent looking for the child. A cycle here would hang
-// every consumer that follows the chain — the cohesion scorer's ancestry index,
-// the Cast panel's lineage display — so it is refused at the point of creation
+// Every parent of a character. A fusion has two; every older record has the
+// one in promotedFromId.
+export function lineageParents(c) {
+  if (!c) return []
+  if (Array.isArray(c.lineageParentIds) && c.lineageParentIds.length) return c.lineageParentIds
+  return c.promotedFromId ? [c.promotedFromId] : []
+}
+
+// Would making `childId` a child of `parentId` close a loop? Walks every
+// ancestor of the proposed parent looking for the child. A cycle here would
+// hang every consumer that follows the chain — the cohesion scorer's ancestry
+// index, the Lineages panel's tree — so it is refused at the point of creation
 // rather than defended against everywhere afterwards.
 export function wouldCycle(characters, childId, parentId) {
   if (!parentId) return false
   if (childId && childId === parentId) return true
   const byId = new Map((characters ?? []).map((c) => [c.id, c]))
   const seen = new Set()
-  let cur = byId.get(parentId)
-  let depth = 0
-  while (cur && depth < MAX_PROMOTION_DEPTH + 2) {
-    if (cur.id === childId) return true
-    if (seen.has(cur.id)) return true // an existing cycle; refuse to extend it
-    seen.add(cur.id)
-    cur = byId.get(cur.promotedFromId)
-    depth++
+  // Depth-first over every parent, depth-capped like the single chain was.
+  const stack = [[parentId, 0]]
+  while (stack.length) {
+    const [id, depth] = stack.pop()
+    if (id === childId) return true
+    if (seen.has(id)) continue
+    seen.add(id)
+    if (depth >= MAX_PROMOTION_DEPTH) return true // too deep to allow another link
+    const cur = byId.get(id)
+    if (!cur) continue
+    for (const p of lineageParents(cur)) {
+      if (p === id) return true // an existing self-loop; refuse to extend it
+      stack.push([p, depth + 1])
+    }
   }
-  return depth >= MAX_PROMOTION_DEPTH
+  return false
 }
 
-// The whole promotion chain above a character, nearest ancestor first.
+// Every ancestor of a character, nearest first (breadth-first over parents),
+// capped at MAX_PROMOTION_DEPTH generations.
 export function promotionChain(characters, id) {
   const byId = new Map((characters ?? []).map((c) => [c.id, c]))
   const out = []
   const seen = new Set([id])
-  let cur = byId.get(byId.get(id)?.promotedFromId)
-  while (cur && !seen.has(cur.id) && out.length < MAX_PROMOTION_DEPTH) {
-    out.push(cur)
-    seen.add(cur.id)
-    cur = byId.get(cur.promotedFromId)
+  let frontier = lineageParents(byId.get(id))
+  let depth = 0
+  while (frontier.length && depth < MAX_PROMOTION_DEPTH) {
+    const next = []
+    for (const pid of frontier) {
+      const p = byId.get(pid)
+      if (!p || seen.has(pid)) continue
+      seen.add(pid)
+      out.push(p)
+      next.push(...lineageParents(p))
+    }
+    frontier = next
+    depth++
   }
   return out
 }
 
-// File the two story beats a promotion creates, so both careers read as one
-// story rather than two unrelated ones that happen to share a first name. The
-// successor gets a 'promotion' beat; the predecessor gets 'succeeded'.
+// Why a proposed link is not allowed, or null when it is. Read by the editors
+// (so the player is told before release) and by createLineageCharacter (so a
+// stale draft cannot smuggle one through).
+export function validateLineage(characters, { kindId, parentIds, archetypeId }) {
+  const kind = getLineageKind(kindId)
+  if (!kind) return 'Pick a kind of lineage.'
+  const ids = (parentIds ?? []).filter(Boolean)
+  if (ids.length !== kind.parents) {
+    return kind.parents === 2 ? 'A fusion needs two different parents.' : 'Pick the character this one grows out of.'
+  }
+  if (new Set(ids).size !== ids.length) return 'A fusion needs two different parents.'
+  const byId = new Map((characters ?? []).map((c) => [c.id, c]))
+  for (const pid of ids) {
+    const p = byId.get(pid)
+    if (!p) return 'That parent is no longer on the roster.'
+    if (p.retiredWeek) return `${p.name} has already stepped aside and cannot be built on.`
+    if (wouldCycle(characters, null, pid)) return `${p.name}'s line is already as long as a line can be.`
+  }
+  const primary = byId.get(ids[0])
+  if (!archetypeAllowed(kind, primary.archetypeId, archetypeId)) {
+    return `A ${kind.name.toLowerCase()} must take ${archetypeRuleText(kind)}.`
+  }
+  return null
+}
+
+// Mint a character that grows out of one or two others. Returns
+// { characters, child } with the child appended and the parents patched, or
+// null when validateLineage refuses — the caller decides what to do then.
 //
-// Neither is guarded by hasBeat: a character CAN be promoted more than once
-// across a long run (Broken Boy into Royal Soldier into Kingsguard), and each
-// step is a real turning point. The predecessor's beat repeats for the same
-// reason a `fall` does.
-export function recordPromotion(characters, { childId, parentId, week }) {
-  if (!childId || !parentId) return characters
+// Fame: 12 plus each parent's fame scaled by the kind's inherit share. Beats:
+// the child records the link; each parent records that it was succeeded or
+// stepped aside. Neither is guarded by hasBeat — a character can be built on
+// more than once across a long run (Broken Boy into Royal Soldier into
+// Kingsguard) and each step is a real turning point. A retiring kind stamps
+// retiredWeek on the parent, which the pickers read.
+export function createLineageCharacter(characters, { name, identity, kindId, parentIds, week }) {
+  const kind = getLineageKind(kindId)
+  const ids = (parentIds ?? []).filter(Boolean)
+  const o = identity ?? {}
+  if (validateLineage(characters, { kindId, parentIds: ids, archetypeId: o.archetypeId })) return null
   const byId = new Map(characters.map((c) => [c.id, c]))
-  const child = byId.get(childId)
-  const parent = byId.get(parentId)
-  if (!child || !parent) return characters
+  const parents = ids.map((id) => byId.get(id))
+  const inherit = parents.reduce((sum, p) => sum + (p.fame ?? 0) * kind.fameInherit, 0)
+  const child = createCharacter(name, {
+    ...o,
+    promotedFromId: ids[0],
+    lineageKindId: kind.id,
+    lineageParentIds: ids,
+    _inheritFame: inherit,
+  })
+  const parentNames = parents.map((p) => p.name).join(' and ')
+  const childLabel = kind.parents === 2 ? `Fused from ${parentNames}` : `Grew out of ${parentNames} (${kind.name.toLowerCase()})`
+  const linkedChild = { ...child, beats: withBeat(child, week ?? 0, kind.childBeat, childLabel) }
+  const patched = characters.map((c) => {
+    if (!ids.includes(c.id)) return c
+    if (kind.retiresParent) {
+      return { ...c, retiredWeek: week ?? 0, beats: withBeat(c, week ?? 0, 'retired', `Stepped aside for ${child.name}`) }
+    }
+    return { ...c, beats: withBeat(c, week ?? 0, 'succeeded', `${child.name} carries the story on`) }
+  })
+  return { characters: [...patched, linkedChild], child: linkedChild }
+}
+
+// A transformation is one being with two faces, so the two fames are pulled
+// toward each other a little every week. Applied after the ordinary drift.
+const LINKED_FAME_PULL = 0.1
+
+function linkTransformedFame(characters) {
+  const byId = new Map(characters.map((c) => [c.id, c]))
+  const fame = new Map(characters.map((c) => [c.id, c.fame]))
+  let touched = false
+  for (const c of characters) {
+    if (c.lineageKindId !== 'transformation') continue
+    const p = byId.get(lineageParents(c)[0])
+    if (!p) continue
+    const mean = (fame.get(c.id) + fame.get(p.id)) / 2
+    fame.set(c.id, fame.get(c.id) + (mean - fame.get(c.id)) * LINKED_FAME_PULL)
+    fame.set(p.id, fame.get(p.id) + (mean - fame.get(p.id)) * LINKED_FAME_PULL)
+    touched = true
+  }
+  if (!touched) return characters
   return characters.map((c) => {
-    if (c.id === childId) {
-      return { ...c, beats: withBeat(c, week, 'promotion', `Grew out of ${parent.name}`) }
-    }
-    if (c.id === parentId) {
-      return { ...c, beats: withBeat(c, week, 'succeeded', `${child.name} carries the story on`) }
-    }
-    return c
+    const f = Math.round(clamp(fame.get(c.id), 0, 100) * 10) / 10
+    return f === c.fame ? c : { ...c, fame: f }
   })
 }
 
@@ -297,9 +394,11 @@ export function recordAppearance(characters, id, { cardId, setId, treatment, pop
       debutWeek: c.debutWeek ?? week ?? null,
       appearances: [...(c.appearances ?? []), { cardId, setId, treatment }],
       fame: clamp(c.fame + bump, 0, 100),
-      // The first printing opens the character's story.
+      // The first printing opens the character's story. It goes FIRST even
+      // when a lineage beat was filed at creation, so a timeline always opens
+      // on the debut.
       beats: debuting
-        ? withBeat(c, week ?? 0, 'debut', setName ? `Debuted in ${setName}` : 'First printing')
+        ? [{ week: week ?? 0, kind: 'debut', label: setName ? `Debuted in ${setName}` : 'First printing' }, ...(c.beats ?? [])]
         : (c.beats ?? []),
     }
   })
@@ -426,11 +525,11 @@ function driftOne(c, signal, rng, week, archetype) {
 export function driftCharacters(next) {
   if (!next.characters?.length) return
   const rng = makeRng(hashSeed(`characters:${next.week}`))
-  next.characters = next.characters.map((c) => {
+  next.characters = linkTransformedFame(next.characters.map((c) => {
     // Resolved once per character per week and passed down, so performanceSignal
     // and driftOne can never disagree about which archetype they are reading.
     const archetype = getArchetype(c.archetypeId)
     const signal = performanceSignal(liveCardsFor(next, c.id), archetype)
     return driftOne(c, signal, rng, next.week, archetype)
-  })
+  }))
 }

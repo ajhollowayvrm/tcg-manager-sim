@@ -63,8 +63,10 @@ export function catalogBuzz(sets) {
 
 // Average fame of the top-3 characters — a "hot cast" signal for casual pull.
 // Also reused by merch.js/media.js as a "hot mascot" demand/odds signal.
+// A character a lineage kind retired (characters.js's retiredWeek) is out of
+// the conversation — its successor is the face now — so it does not count.
 export function hotCastSignal(characters) {
-  const top = [...(characters ?? [])].sort((a, b) => b.fame - a.fame).slice(0, 3)
+  const top = (characters ?? []).filter((c) => !c.retiredWeek).sort((a, b) => b.fame - a.fame).slice(0, 3)
   if (!top.length) return 0
   return top.reduce((s, c) => s + c.fame, 0) / top.length
 }
@@ -115,6 +117,9 @@ export function liveAvgBloat(sets) {
 // disliked catalog attracts few or none. New players distribute into segments
 // by the archetype's lean. Mutates seg in place; returns the total added.
 const WORD_OF_MOUTH_BASE = 450 // newcomers/week a healthy, in-print game can draw
+// The grassroots programme (grassroots.js) lifts discovery by up to this share
+// at full commitment: people who run leagues and clubs bring their friends.
+const GRASSROOTS_WOM_BONUS = 0.35
 
 function applyWordOfMouth(next, seg) {
   const liveSets = (next.sets ?? []).filter((s) => !s.rotated).length
@@ -139,8 +144,9 @@ function applyWordOfMouth(next, seg) {
   // discovery ceiling — the actual "massively expand the player base long-run"
   // mechanic. Additively stacking across multiple hits; defaults to 1 (no-op).
   const mediaMul = next.mediaWomMultiplier ?? 1
+  const grassrootsMul = 1 + clamp(Number(next.grassroots?.level) || 0, 0, 1) * GRASSROOTS_WOM_BONUS
 
-  const newcomers = Math.round(WORD_OF_MOUTH_BASE * health * communityBuzz * presence * mediaMul)
+  const newcomers = Math.round(WORD_OF_MOUTH_BASE * health * communityBuzz * presence * mediaMul * grassrootsMul)
   if (newcomers <= 0) return 0
 
   distributeNewPlayers(seg, next.segmentLean, newcomers)

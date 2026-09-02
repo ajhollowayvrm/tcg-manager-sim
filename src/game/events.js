@@ -12,6 +12,7 @@ import { makeRng, hashSeed, range } from './rng.js'
 import { getArtist } from './content/artists.js'
 import { clamp } from './simulation.js'
 import { blowUpArtist, breakoutCandidate } from './artists.js'
+import { grassrootsEventWeight, grassrootsLevel } from './grassroots.js'
 
 // Roughly how often something happens. ~0.28/week ≈ an event every 3–4 weeks,
 // so quiet stretches still exist (the clock can fast-forward through them).
@@ -364,10 +365,29 @@ export const EVENTS = [
     tone: 'good',
     weight: 0.8,
     condition: () => true,
+    // A funded grassroots programme makes the good local news likelier.
+    weightMul: (s) => grassrootsEventWeight(s),
     resolve: (s, rng) => ({
       text: `Local game stores report a great weekend of events around your game — grassroots goodwill ticks up.`,
       effects: {
         casualDelta: Math.round(range(rng, 100, 340)),
+      },
+    }),
+  },
+  {
+    // Only while the studio is funding the scene: the volunteers it pays for
+    // put on a weekend that gets talked about.
+    id: 'grassroots_showcase',
+    kind: 'community',
+    tone: 'good',
+    weight: 0.7,
+    condition: (s) => grassrootsLevel(s) > 0,
+    weightMul: (s) => grassrootsEventWeight(s),
+    resolve: (s, rng) => ({
+      text: `A volunteer-run showcase weekend, paid for out of your grassroots programme, fills a community hall — photos everywhere, and the people who organised it name you.`,
+      effects: {
+        casualDelta: Math.round(range(rng, 150, 400) * (0.5 + grassrootsLevel(s))),
+        personaSentimentDelta: { tasteKey: 'fun', floor: 0.4, amount: 2, ambientAmount: 0.5 },
       },
     }),
   },

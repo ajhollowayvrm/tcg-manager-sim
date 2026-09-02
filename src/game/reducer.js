@@ -26,7 +26,12 @@ import { signGradingPartner, dropGradingPartner, cultivateGradingPartner } from 
 import { launchMerchLine, refreshMerchLine, retireMerchLine } from './merch.js'
 import { pitchMediaDeal } from './media.js'
 import { runBreak } from './breaks.js'
-import { createCharacter, normalizeCharacter } from './characters.js'
+import { signArtistContract, endArtistContract } from './artists.js'
+import { signPartnerPromo } from './partners.js'
+import { fundGrant } from './grassroots.js'
+import { purchaseUpgrade } from './upgrades.js'
+import { createCharacter, createLineageCharacter, normalizeCharacter } from './characters.js'
+import { getLineageKind } from './content/lineages.js'
 import {
   STANDARD_KINDS,
   normalizeRaritySheetStandard,
@@ -320,6 +325,48 @@ export function reducer(state, action) {
         eventsFeed: [{ week: state.week, text: r.feed, kind: 'media' }, ...state.eventsFeed].slice(0, 60),
       }
     }
+    case 'SIGN_ARTIST_CONTRACT':
+    case 'END_ARTIST_CONTRACT': {
+      const r = action.type === 'SIGN_ARTIST_CONTRACT'
+        ? signArtistContract(state, action.artistId, action.termWeeks)
+        : endArtistContract(state, action.artistId)
+      if (!r) return state
+      return {
+        ...state,
+        artistContracts: r.artistContracts,
+        cash: state.cash + (r.cashDelta ?? 0),
+        personas: applySentimentBump(state.personas, r.personaSentimentBump),
+        eventsFeed: [{ week: state.week, text: r.feed, kind: 'artist' }, ...state.eventsFeed].slice(0, 60),
+      }
+    }
+    case 'SIGN_PARTNER_PROMO': {
+      const r = signPartnerPromo(state, action.partnerId, action.options)
+      if (!r) return state
+      return {
+        ...state,
+        cards: r.cards,
+        characters: r.characters,
+        partnerDeals: r.partnerDeals,
+        segments: r.segments,
+        playerBase: r.playerBase,
+        scalperHeat: r.scalperHeat,
+        franchise: r.franchise,
+        personas: r.personas,
+        cash: state.cash + r.cashDelta,
+        eventsFeed: [{ week: state.week, text: r.feed, kind: 'market' }, ...state.eventsFeed].slice(0, 60),
+        clock: { ...state.clock, reason: r.feed },
+      }
+    }
+    case 'PURCHASE_UPGRADE': {
+      const r = purchaseUpgrade(state, action.id)
+      if (!r) return state
+      return {
+        ...state,
+        upgrades: r.upgrades,
+        cash: state.cash + r.cashDelta,
+        eventsFeed: [{ week: state.week, text: r.feed, kind: 'market' }, ...state.eventsFeed].slice(0, 60),
+      }
+    }
     case 'UPGRADE_SUPPLY_CHAIN': {
       const r = upgradeSupplyChain(state)
       if (!r) return state
@@ -385,6 +432,28 @@ export function reducer(state, action) {
         eventsFeed: [{ week: state.week, text: r.feed, kind: 'community' }, ...state.eventsFeed].slice(0, 60),
       }
     }
+    case 'SET_GRASSROOTS': {
+      // The grassroots programme (overhead.js sink F): a standing weekly
+      // commitment, 0..1, like goodwill — but it buys word of mouth, not
+      // forgiveness. See grassroots.js.
+      const level = clamp(Number(action.level) || 0, 0, 1)
+      if (level === (state.grassroots?.level ?? 0)) return state
+      return { ...state, grassroots: { ...(state.grassroots ?? {}), level } }
+    }
+    case 'FUND_GRANT': {
+      const r = fundGrant(state, action.kindId)
+      if (!r) return state
+      return {
+        ...state,
+        grassrootsGrants: r.grassrootsGrants,
+        segments: r.segments,
+        playerBase: r.playerBase,
+        personas: r.personas,
+        sets: r.sets,
+        cash: state.cash + r.cashDelta,
+        eventsFeed: [{ week: state.week, text: r.feed, kind: 'community' }, ...state.eventsFeed].slice(0, 60),
+      }
+    }
     case 'SET_GOODWILL': {
       // The community-goodwill programme (overhead.js sink D): a standing
       // weekly commitment, 0..1, not a one-off purchase. This is where surplus
@@ -444,9 +513,30 @@ export function reducer(state, action) {
       // releaseSet) — just created directly, with no card attached yet, so a
       // fresh company can staff a roster before its first release.
       if (!action.name?.trim()) return state
+      const roster = state.characters ?? []
+      // A lineage from the Lineages panel: the same link a signature card's
+      // "grows out of" pick makes at release, made directly. Refused links
+      // (validateLineage) leave the state untouched — the panel shows why.
+      if (action.lineage?.kindId) {
+        const r = createLineageCharacter(roster, {
+          name: action.name, identity: action.identity,
+          kindId: action.lineage.kindId, parentIds: action.lineage.parentIds ?? [], week: state.week,
+        })
+        if (!r) return state
+        const kind = getLineageKind(action.lineage.kindId)
+        const parents = (action.lineage.parentIds ?? []).map((id) => roster.find((c) => c.id === id)?.name).filter(Boolean).join(' and ')
+        return {
+          ...state,
+          characters: r.characters,
+          eventsFeed: [{
+            week: state.week, kind: 'community',
+            text: `${r.child.name} joins the cast — a ${kind.name.toLowerCase()} of ${parents}.`,
+          }, ...state.eventsFeed].slice(0, 60),
+        }
+      }
       return {
         ...state,
-        characters: [...(state.characters ?? []), createCharacter(action.name, action.identity)],
+        characters: [...roster, createCharacter(action.name, action.identity)],
       }
     }
     case 'UPDATE_CHARACTER': {
@@ -465,9 +555,11 @@ export function reducer(state, action) {
       // the next set's theme, all at no cost in cash, weeks or reputation.
       //
       // Before a character is printed they are still a sketch, so the archetype
-      // is free to change. Once they have a debut set they are established in the
+      // is free to change. Once they have a printing they are established in the
       // world, and the choice is locked — which is also the honest reading: you
-      // cannot quietly retcon what a character IS after the cards are out.
+      // cannot quietly retcon what a character IS after the cards are out. The
+      // lock reads appearances rather than debutSetId because a partner promo
+      // (partners.js) is a printing with no set.
       const { id, patch } = action
       if (!id || !patch) return state
       const allowed = ['name', 'traits', 'hook', 'pronouns', 'species']
@@ -477,7 +569,7 @@ export function reducer(state, action) {
           if (c.id !== id) return c
           const next = { ...c }
           for (const k of allowed) if (k in patch) next[k] = patch[k]
-          if ('archetypeId' in patch && !c.debutSetId) next.archetypeId = patch.archetypeId
+          if ('archetypeId' in patch && !(c.appearances?.length)) next.archetypeId = patch.archetypeId
           // Run it through the same normaliser a loaded save uses, so an unknown
           // archetype or an over-long trait list can never reach the record.
           return normalizeCharacter({ ...next, name: next.name?.trim() || c.name })
