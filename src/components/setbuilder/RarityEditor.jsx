@@ -126,13 +126,18 @@ export default function RarityEditor({ sheet, counts, onChange }) {
                 placeholder="Value"
                 onCommit={(n) => update(r.id, { valueTier: n })}
               />
-              <input
-                className="rared__secret"
-                type="checkbox"
-                checked={r.secret}
-                onChange={(e) => update(r.id, { secret: e.target.checked })}
-                title="Secret rare (numbered above the set count)"
-              />
+              {/* Wrapped in a label so the whole grid cell is the tap target.
+                  A bare checkbox is 24px at most, and unlike the `check` rows
+                  elsewhere in the app there is no text beside it to hit —
+                  clicking near it did nothing at all on a phone. */}
+              <label className="rared__secretcell" title="Secret rare (numbered above the set count)">
+                <input
+                  className="rared__secret"
+                  type="checkbox"
+                  checked={r.secret}
+                  onChange={(e) => update(r.id, { secret: e.target.checked })}
+                />
+              </label>
               <button
                 className="btn btn--ghost rared__remove"
                 onClick={() => remove(r.id)}

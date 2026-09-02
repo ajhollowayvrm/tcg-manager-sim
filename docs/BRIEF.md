@@ -82,6 +82,30 @@ Blocks coexist. A new major never retires the old.
 | Product SKUs | Boosters plus optional bundles, collector boxes and tins, each with its own price, supply and segment appeal |
 | Channel mix | Each product's supply splits across direct/LGS/big-box/international, trading margin against reach and scalper exposure |
 
+### Studio standards
+
+Two of those dials are worth keeping between releases, so they can be named once
+and pulled into any set: a **rarity sheet** and a **booster format** (which
+carries the god-pack config, since its picks name rarities). A **blueprint**
+pins one of each, so starting a set from the usual pair is a single choice. They
+are authored in the Studio, saved from the set builder with one button, and one
+of each can be marked the default a new draft starts from.
+
+**An import copies; it never links.** A released set stores its own snapshot of
+the sheet and the pack it shipped with — `reprintAsUnlimited` rebuilds an entire
+card pool from nothing but that record — so editing a standard afterwards cannot
+reach a set already on shelves. This is the whole reason the two are deep-copied
+on release rather than assigned by reference.
+
+Four things name rarities by id: pack slots, god-pack picks, a signature card's
+rarity, and an anniversary reprint's upgrade target. Nothing validates that any
+of them resolve, and an unreconciled import does not error — it shows a
+plausible, wrong odds table. So importing a sheet that lacks something the set
+uses **reports what would move and where** before it moves it, and remaps each
+orphan to the surviving rarity closest in value tier rather than dropping it (a
+dropped slot with no rarities left cannot be released at all). Per-card unique
+rarities stay with their signature card and are never part of a shared sheet.
+
 ### Signature cards
 
 Hand-designed marquee cards: standout appeal, a printing finish (holo through
@@ -282,6 +306,9 @@ GameState {
   illustrationSets: [ { id, kindId, name, plannedSize, status, cohesion,
                        members: [ { cardId, setId, week, artistId,
                                     characterId, valueTier } ] } ],
+  raritySheets: [ { id, name, note, sheet: [...], isDefault } ],
+  packFormats: [ { id, name, note, format: { preset, slots }, godPack, isDefault } ],
+  blueprints:  [ { id, name, note, sheetId, formatId, isDefault } ],
   artists: [...], personas: [...], distributors: [...], gradingPartners: [...],
   merchLines: [...], mediaDeals: [...],
   goodwillSpend, lastOverhead, legacy, retirement, prestige,

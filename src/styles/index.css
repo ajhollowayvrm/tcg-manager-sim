@@ -838,7 +838,12 @@ body {
   border-radius: 6px; padding: 6px 8px; font: inherit; font-size: 0.85rem; width: 100%;
 }
 .rared__num { text-align: center; min-width: 0; }
-.rared__secret { justify-self: center; accent-color: var(--accent); width: 18px; height: 18px; }
+.rared__secret { accent-color: var(--accent); width: 18px; height: 18px; }
+/* The cell, not the box, is the tap target — see RarityEditor. */
+.rared__secretcell {
+  justify-self: center; display: flex; align-items: center; justify-content: center;
+  width: 100%; min-height: 24px; cursor: pointer;
+}
 
 /* Narrow phones: stack each rarity into two rows so the name AND the full
    numbers are readable. Name on its own line; pull/value/secret/remove below. */
@@ -2010,4 +2015,31 @@ button.tag--oddsobscured:hover { border-color: var(--accent-2); color: var(--tex
 .stdbar__confirmrow { display: flex; gap: 8px; justify-content: flex-end; }
 @media (pointer: coarse) {
   .stdbar__pick, .stdbar__name, .stdbar__save { min-height: 44px; }
+}
+
+/* Tap targets for the two surfaces added with studio standards, and for the
+   rarity editor they both host. Declared HERE rather than in the main
+   pointer:coarse block near the top of the file, because the base .rared__*
+   rules sit several hundred lines below it and at equal specificity the later
+   rule wins — up there these were simply overridden. */
+@media (pointer: coarse) {
+
+  /* The rarity editor's own rows, which the earlier sweep missed because it
+     only walked the dashboard panels and this lived inside the builder modal.
+     It now also hosts the Studio's saved rarity sheets, so it is a panel
+     control too. Same three fixes as above, picked per control:
+     the text and number inputs own their line and grow honestly; the finish
+     toggle is a secondary text button that has to stay small (it sits under a
+     rarity row and doubling it would push the next rarity off the fold), so it
+     grows only its hit area; and the `secret` checkbox has no label to hit at
+     all, so the box itself has to be the target. */
+  .rared__name, .rared__num, .rared__addvariant { min-height: 44px; }
+  .rared__secret { width: 24px; height: 24px; }
+  .rared__secretcell { min-height: 44px; }
+  .rared__finishtoggle { position: relative; }
+  .rared__finishtoggle::after {
+    content: ''; position: absolute; left: 0; right: 0;
+    top: 50%; height: 44px; transform: translateY(-50%);
+  }
+  .std__editor .field input, .std__open { min-height: 44px; }
 }

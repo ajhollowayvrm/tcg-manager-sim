@@ -167,9 +167,11 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
   // Seeded from the studio's default standards when the player has marked any —
   // a copy of them, never a link (see standards.js rule 1).
   const [draft, setDraft] = useState(() => createDraft(setNumber, 'major', blocks, standards))
-  // An import the player has been shown but not yet confirmed:
-  // { kind, standard, incoming, report }. Held rather than applied so the fit
-  // report and the change it describes can never disagree.
+  // A standard the player has picked but not yet confirmed:
+  // { kind, standard, incoming, from }. Deliberately holds NO report — that is
+  // recomputed from the live draft on every render below, so a player who edits
+  // a card between seeing the report and pressing Import gets a report that
+  // still describes what pressing Import will actually do.
   const [pendingImport, setPendingImport] = useState(null)
   const anniversaryGate = canUnlockAnniversary({ franchise, setsShipped: sets.length, perks })
   // The founding concept's naming style (creature vs. character) — flavor
@@ -341,8 +343,15 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
         : { format: std.format, godPack: std.godPack }
       from = { [kind]: std.id }
     }
-    setPendingImport({ kind, standard: std, incoming, from, report: checkStandardFit(draft, incoming) })
+    setPendingImport({ kind, standard: std, incoming, from })
   }
+
+  // Recomputed every render against the draft as it stands right now, which is
+  // what makes "what you were shown" and "what Import does" the same operation
+  // rather than two snapshots taken at different moments.
+  const pending = pendingImport
+    ? { ...pendingImport, report: checkStandardFit(draft, pendingImport.incoming) }
+    : null
 
   const confirmImport = () => {
     if (!pendingImport) return
@@ -513,7 +522,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
                   noun="blueprint"
                   standards={blueprints}
                   provenance={null}
-                  pending={pendingImport?.kind === 'blueprint' ? pendingImport : null}
+                  pending={pending?.kind === 'blueprint' ? pending : null}
                   onPick={(id) => pickStandard('blueprint', id)}
                   onConfirm={confirmImport}
                   onCancel={() => setPendingImport(null)}
@@ -659,7 +668,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
               noun="rarity sheet"
               standards={raritySheets}
               provenance={sheetFrom}
-              pending={pendingImport?.kind === 'raritySheet' ? pendingImport : null}
+              pending={pending?.kind === 'raritySheet' ? pending : null}
               onPick={(id) => pickStandard('raritySheet', id)}
               onConfirm={confirmImport}
               onCancel={() => setPendingImport(null)}
@@ -842,7 +851,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
               noun="booster format"
               standards={packFormats}
               provenance={formatFrom}
-              pending={pendingImport?.kind === 'packFormat' ? pendingImport : null}
+              pending={pending?.kind === 'packFormat' ? pending : null}
               onPick={(id) => pickStandard('packFormat', id)}
               onConfirm={confirmImport}
               onCancel={() => setPendingImport(null)}
