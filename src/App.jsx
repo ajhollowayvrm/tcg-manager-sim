@@ -233,7 +233,7 @@ export default function App() {
   return (
     <SectionPrefsProvider sections={prefs.sections} setSectionOpen={setSectionOpen}>
       <div className="app">
-        <TopStrip game={game} onDesignSet={() => goTo('studio', 'design')} />
+        <TopStrip game={game} />
 
         {/* A failed autosave used to be entirely silent, which is how a long run
             could stop saving without the player ever finding out. */}

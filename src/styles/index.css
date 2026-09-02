@@ -92,6 +92,28 @@ body {
 .topbar__cash.is-danger .topbar__cashval { color: var(--bad); }
 .topbar__cash.is-danger .topbar__cashdelta { color: var(--warn); }
 
+/* Quick week-to-week readouts (Players, Satisfaction, Top Card) — a glance
+   from any tab, replacing the Design a Set button that used to sit here (it's
+   a Studio sub-tab now, see App.jsx). */
+.topbar__quickstats { display: flex; align-items: center; width: 100%; font-variant-numeric: tabular-nums; }
+.topbar__quickstatgroup { display: flex; gap: 14px; }
+/* Fills the rest of the row after Players/Satisfaction, so Top Card centers
+   in the space between them and the strip's right edge instead of just
+   trailing after them. */
+.topbar__quickstatcenter { flex: 1 1 auto; display: flex; justify-content: center; }
+.topbar__quickstat { display: flex; flex-direction: column; align-items: center; line-height: 1.15; }
+.topbar__quickstatval { font-weight: 800; font-size: 0.95rem; }
+.topbar__quickstatlabel { font-size: 0.6rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+.topbar__quickstat.is-danger .topbar__quickstatval { color: var(--bad); }
+/* The mover's name replaces the fixed "Top Card" label once there is one, so
+   it needs its own cap — a chase card's name can run long. */
+.topbar__quickstat--card { max-width: 90px; }
+.topbar__quickstat--card .topbar__quickstatlabel {
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.topbar__quickstat--card.is-up .topbar__quickstatval { color: var(--good); }
+.topbar__quickstat--card.is-down .topbar__quickstatval { color: var(--bad); }
+
 /* Health meters. They used to fill a sticky banner; now each tab lays out the
    ones it owns in this grid (see nav/Meter.jsx). */
 .meters {
@@ -627,7 +649,6 @@ body {
   .sets__meta > :last-child { margin-left: auto; }
 
   .topbar__time { width: 100%; }
-  .topbar__time .btn--design { flex: 1 1 auto; text-align: center; }
   .topbar__time .btn--advance { flex: 1 1 auto; text-align: center; }
 
   /* Cap the status/game-over line so a long message (e.g. a wrapped loss
@@ -1980,7 +2001,7 @@ button.tag--oddsobscured:hover { border-color: var(--accent-2); color: var(--tex
 .panel__lede {
   margin: 0 0 10px; color: var(--text-dim); font-size: 0.82rem; line-height: 1.45;
 }
-.substabs { display: flex; gap: 4px; margin-bottom: 12px; flex-wrap: wrap; }
+.substabs { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
 .substabs__btn {
   flex: 1 1 auto; padding: 8px 10px; border-radius: 8px; cursor: pointer;
   border: 1px solid var(--border); background: transparent;
