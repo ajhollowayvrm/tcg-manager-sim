@@ -31,6 +31,7 @@ import { signPartnerPromo } from './partners.js'
 import { fundGrant } from './grassroots.js'
 import { purchaseUpgrade } from './upgrades.js'
 import { createCharacter, createLineageCharacter, normalizeCharacter } from './characters.js'
+import { derivePeople, normalizePerson } from './people.js'
 import { getLineageKind } from './content/lineages.js'
 import {
   STANDARD_KINDS,
@@ -54,6 +55,22 @@ function currentPrestige() {
 // 'TICK' to run one simulation week. There's no auto-timer — each week is a
 // deliberate step the player takes.
 
+// Re-derive the person layer after anything that adds or relinks a FORM.
+//
+// A character is one person printed in many forms (people.js), and which forms
+// belong to which person is DERIVED from the lineage links rather than stored —
+// the same contract hydrate() relies on to rebuild the layer with no save
+// migration. So every action that mints a form has to re-run the derivation, or
+// the new form carries a null personId and is invisible to recognition, favour
+// and every cast signal until the next reload.
+//
+// Cheap by construction: it is a walk over the roster, not the card pool, and a
+// roster is tens of records where the cards are thousands.
+function withPeople(state) {
+  const { people, characters } = derivePeople(state)
+  return { ...state, people, characters }
+}
+
 export function reducer(state, action) {
   switch (action.type) {
     case 'TICK': {
@@ -62,7 +79,7 @@ export function reducer(state, action) {
       return applyClockDirective(next)
     }
     case 'RELEASE_SET': {
-      const { set, existingSets, cards, cashDelta, printIntensity, softenedCards, releaseFeed, newPlayers, pendingWave, blocks, block, tier, characters, personaSentimentBump, scalperHeatDelta, illustrationSets } = releaseSet(state, action.draft)
+      const { set, existingSets, cards, cashDelta, printIntensity, softenedCards, releaseFeed, newPlayers, pendingWave, blocks, block, tier, characters, people, personaSentimentBump, scalperHeatDelta, illustrationSets } = releaseSet(state, action.draft)
       // If a card reprint softened existing originals, build from that patched
       // array; otherwise from the current one. Then append the new set's cards.
       const baseCards = softenedCards ?? state.cards
@@ -94,13 +111,17 @@ export function reducer(state, action) {
         ...(releaseFeed ? [{ week: state.week, text: releaseFeed }] : []),
         ...state.eventsFeed,
       ].slice(0, 60)
-      return {
+      // withPeople because a release can MINT a form: a signature card's "new
+      // character" request resolves at release time (sets.js), and a form with no
+      // person is invisible to recognition and every cast signal.
+      return withPeople({
         ...state,
         cash: state.cash + cashDelta,
         sets: [...(existingSets ?? state.sets), set],
         cards: [...baseCards, ...cards],
         blocks: blocks ?? state.blocks,
         characters: characters ?? state.characters,
+        people: people ?? state.people,
         illustrationSets: illustrationSets ?? state.illustrationSets,
         pendingWaves: pendingWave ? [...(state.pendingWaves ?? []), pendingWave] : state.pendingWaves,
         segments,
@@ -111,7 +132,7 @@ export function reducer(state, action) {
         cadence: resetCadence(state.cadence, state.week), // shipping resets the pledge clock
         eventsFeed: feed,
         clock: { ...state.clock, reason: `${set.name} released — advance the week to watch the market react.` },
-      }
+      })
     }
     case 'TOGGLE_ODDS_PUBLISHED': {
       // One-directional: obscured → published only (mirrors a real "we started
@@ -342,10 +363,11 @@ export function reducer(state, action) {
     case 'SIGN_PARTNER_PROMO': {
       const r = signPartnerPromo(state, action.partnerId, action.options)
       if (!r) return state
-      return {
+      return withPeople({
         ...state,
         cards: r.cards,
         characters: r.characters,
+        people: r.people ?? state.people,
         partnerDeals: r.partnerDeals,
         segments: r.segments,
         playerBase: r.playerBase,
@@ -355,7 +377,7 @@ export function reducer(state, action) {
         cash: state.cash + r.cashDelta,
         eventsFeed: [{ week: state.week, text: r.feed, kind: 'market' }, ...state.eventsFeed].slice(0, 60),
         clock: { ...state.clock, reason: r.feed },
-      }
+      })
     }
     case 'PURCHASE_UPGRADE': {
       const r = purchaseUpgrade(state, action.id)
@@ -521,23 +543,26 @@ export function reducer(state, action) {
         const r = createLineageCharacter(roster, {
           name: action.name, identity: action.identity,
           kindId: action.lineage.kindId, parentIds: action.lineage.parentIds ?? [], week: state.week,
+          // Passed so a new form can debut off the CHARACTER's recognition rather
+          // than only its parent form's fame — see createLineageCharacter.
+          people: state.people,
         })
         if (!r) return state
         const kind = getLineageKind(action.lineage.kindId)
         const parents = (action.lineage.parentIds ?? []).map((id) => roster.find((c) => c.id === id)?.name).filter(Boolean).join(' and ')
-        return {
+        return withPeople({
           ...state,
           characters: r.characters,
           eventsFeed: [{
             week: state.week, kind: 'community',
             text: `${r.child.name} joins the cast — a ${kind.name.toLowerCase()} of ${parents}.`,
           }, ...state.eventsFeed].slice(0, 60),
-        }
+        })
       }
-      return {
+      return withPeople({
         ...state,
         characters: [...roster, createCharacter(action.name, action.identity)],
-      }
+      })
     }
     case 'UPDATE_CHARACTER': {
       // A character is the player's own IP, so its identity is not a one-shot
@@ -562,7 +587,14 @@ export function reducer(state, action) {
       // (partners.js) is a printing with no set.
       const { id, patch } = action
       if (!id || !patch) return state
-      const allowed = ['name', 'traits', 'hook', 'pronouns', 'species']
+      // `formName`, `demeanorIds` and `carriesName` join the editable list.
+      // None is an exploit surface the way archetypeId is: the archetype locks on
+      // debut because it feeds the theme-cohesion bonus and the fame drift, so
+      // flipping it per set was free money. A demeanour feeds only continuity,
+      // which is scored against the LINEAGE KIND's expectation — and drifting to
+      // chase a better verdict is the player writing a more coherent character,
+      // which is the behaviour this whole feature is trying to buy.
+      const allowed = ['name', 'traits', 'hook', 'pronouns', 'species', 'formName', 'demeanorIds', 'carriesName']
       return {
         ...state,
         characters: (state.characters ?? []).map((c) => {
@@ -573,6 +605,35 @@ export function reducer(state, action) {
           // Run it through the same normaliser a loaded save uses, so an unknown
           // archetype or an over-long trait list can never reach the record.
           return normalizeCharacter({ ...next, name: next.name?.trim() || c.name })
+        }),
+      }
+    }
+    case 'UPDATE_PERSON': {
+      // The CHARACTER's own identity, as opposed to one form's. The name every
+      // form is recognised by, the pronouns, the throughline, and the core traits
+      // and demeanour that each form is read against for continuity.
+      //
+      // Everything here is authored, so all of it stays editable — a cast gets
+      // rewritten between eras and that is the point of the field. What is NOT
+      // here is everything EARNED: recognition, favour, saturation and beats are
+      // never patchable, exactly as a form's fame and trajectory are not.
+      //
+      // Structure is absent for a different reason: rootFormId and
+      // descendedFromIds are derived from the lineage links on every load, so
+      // writing them here would be overwritten by the next hydrate.
+      const { id, patch } = action
+      if (!id || !patch) return state
+      const allowed = ['name', 'pronouns', 'throughline', 'coreTraits', 'coreDemeanor']
+      return {
+        ...state,
+        people: (state.people ?? []).map((p) => {
+          if (p.id !== id) return p
+          const next = { ...p }
+          for (const k of allowed) if (k in patch) next[k] = patch[k]
+          // Through the same normaliser a loaded save uses, so an over-long trait
+          // list can never reach the record — the technique UPDATE_CHARACTER
+          // already relies on.
+          return normalizePerson({ ...next, name: next.name?.trim() || p.name })
         }),
       }
     }

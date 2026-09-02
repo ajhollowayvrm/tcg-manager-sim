@@ -17,6 +17,7 @@
 
 import { clamp, communitySentiment } from './simulation.js'
 import { PRINT_INTENSITY_NEUTRAL, PRINT_INTENSITY_SPAN } from './config.js'
+import { bestFormPerPerson } from './people.js'
 
 // The nostalgia-erosion level the CURRENT shelf sustains — a buzz-weighted mean
 // of every in-print set's own `printLevel` (see sets.js's releaseSet). This is
@@ -65,8 +66,23 @@ export function catalogBuzz(sets) {
 // Also reused by merch.js/media.js as a "hot mascot" demand/odds signal.
 // A character a lineage kind retired (characters.js's retiredWeek) is out of
 // the conversation — its successor is the face now — so it does not count.
+// How hot the cast is: the mean fame of the top three, which the casual segment
+// reads as "is there anyone here I recognise".
+//
+// COUNTS CHARACTERS, NOT PRINTINGS. A character is one person printed in many
+// forms (people.js), and this used to take the top three character RECORDS —
+// which are forms. So Aryla, Destined Trainee, Lost One Aryla and Royal Commander
+// Aryla would fill all three slots between them and lock the entire rest of the
+// cast out of the signal, while reporting a studio with one popular character as
+// though it had three. bestFormPerPerson collapses each character to its
+// strongest live form first.
+//
+// The signature is unchanged: the collapse reads `personId` off the forms
+// themselves, so no caller has to find the people array to get a correct answer.
 export function hotCastSignal(characters) {
-  const top = (characters ?? []).filter((c) => !c.retiredWeek).sort((a, b) => b.fame - a.fame).slice(0, 3)
+  const top = bestFormPerPerson(characters)
+    .sort((a, b) => b.fame - a.fame)
+    .slice(0, 3)
   if (!top.length) return 0
   return top.reduce((s, c) => s + c.fame, 0) / top.length
 }

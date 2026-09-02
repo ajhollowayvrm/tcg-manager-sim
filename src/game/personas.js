@@ -27,6 +27,7 @@ import { getArtist } from './content/artists.js'
 import { getTheme } from './content/themes.js'
 import { getArchetype } from './content/archetypes.js'
 import { traitNames } from './content/traits.js'
+import { bestFormPerPerson, SATURATION_THRESHOLD } from './people.js'
 
 const FEED_MAX = 60 // cap the feedback feed length
 
@@ -192,7 +193,7 @@ const ARTIST_HOT = 70
 // the loudest one so a take can be specific about what it's angry about.
 const GENRE_NORM_PRICE = 4.5 // the booster elasticity reference (products.js)
 
-export function setGrievances(set, cards = [], illustrationPressure = 0) {
+export function setGrievances(set, cards = [], illustrationPressure = 0, castPressure = 0) {
   if (!set) return { worst: null, score: 0, all: {} }
   const price = set.price ?? GENRE_NORM_PRICE
   const printRun = set.printRun ?? 50
@@ -247,13 +248,66 @@ export function setGrievances(set, cards = [], illustrationPressure = 0) {
   // perfectly coherent trio on every release forever.
   const manufactured = clamp(illustrationPressure, 0, 1) * 0.5
 
-  const all = { gouging, overprint, scarcity, stingy, gated, manufactured }
+  // Overexposure: the same CHARACTER, over and over, in set after set.
+  //
+  // This is the cost that lets a character's story branch freely. A retiring
+  // lineage kind used to lock the predecessor out of ever being built on again,
+  // which made an ordinary two-way story impossible (see characters.js's
+  // validateLineage). Removing that lock removed the only brake on printing one
+  // beloved character forever, so the brake moved here, where it belongs: the
+  // room notices, and says so.
+  //
+  // It has to be a GRIEVANCE and not only an appeal penalty, and the measurement
+  // proved why. With the appeal penalty alone, spamming one character came out
+  // slightly AHEAD in the playtest table — a less hyped chase card draws less
+  // scalper heat, which calms the community, which grows the player base by more
+  // than the lost card value costs. An overexposure mechanic that pays you is not
+  // a mechanic. Souring the room is what makes it a real trade.
+  //
+  // Capped at 0.55, just above `manufactured` (0.5), on the same reasoning: it
+  // can become the loudest complaint, but only at genuine spam.
+  const overexposed = clamp(castPressure, 0, 1) * 0.55
+
+  const all = { gouging, overprint, scarcity, stingy, gated, manufactured, overexposed }
   let worst = null
   let score = 0
   for (const [k, v] of Object.entries(all)) {
     if (v > score) { worst = k; score = v }
   }
   return { worst, score, all }
+}
+
+// How hard the studio is leaning on ONE character, 0..1, read off the characters
+// this set actually printed rather than off the whole roster.
+//
+// Reads the saturation people.js has been tracking all along: every printing of
+// any FORM of a character adds to it and it bleeds off weekly, so a studio that
+// spaces its Aryla sets out sits near zero and one that ships her every time
+// climbs. The set's own cast is what is scored, because the complaint is about
+// THIS release — a studio with a saturated character who sensibly sat this set
+// out has nothing to answer for.
+//
+// Below the threshold this returns 0 and the grievance never fires, so no
+// existing balance line moves for a studio that rotates its cast.
+function castOverusePressure(state, set) {
+  if (!set) return 0
+  const people = state.people ?? []
+  if (!people.length) return 0
+  const forms = new Map((state.characters ?? []).map((c) => [c.id, c]))
+  const printed = new Set()
+  for (const card of state.cards ?? []) {
+    if (card.setId !== set.id || !card.characterId) continue
+    const pid = forms.get(card.characterId)?.personId
+    if (pid) printed.add(pid)
+  }
+  if (!printed.size) return 0
+  let worst = 0
+  for (const p of people) {
+    if (!printed.has(p.id)) continue
+    const over = ((p.saturation ?? 0) - SATURATION_THRESHOLD) / (100 - SATURATION_THRESHOLD)
+    if (over > worst) worst = over
+  }
+  return clamp(worst, 0, 1)
 }
 
 // The lines the community reaches for, per grievance. Kept beside the data so
@@ -288,6 +342,11 @@ const GRIEVANCE_LINES = {
     (s) => `Every set now has a "run" with a capstone. ${s} is a spreadsheet, not an art department.`,
     (s) => `${s} ships another trio you're told to complete. At some point curation is just a checklist.`,
     (s) => `Half of what I own is one card short of something. ${s} does it again.`,
+  ],
+  overexposed: [
+    (s) => `Another ${s} card and it's the same face again. Give someone else a turn.`,
+    (s) => `${s} leans on one character so hard it's embarrassing. There is a whole cast.`,
+    (s) => `I like them as much as anyone but ${s} is the fourth set running. Enough.`,
   ],
   // Kept for the reviewer's own bloat branch, which reads set.bloat directly.
   bloat: [
@@ -449,15 +508,25 @@ const CHARACTER_LINES = {
 // and the standing cast line share every seed input (week, character, persona,
 // stance), so a week where the same persona hit the same stance for the same
 // character printed the SAME SENTENCE twice in one feed.
-function dressWithCharacter(take, character, set, week, personaId, source = 'take') {
+function dressWithCharacter(take, character, set, week, personaId, source = 'take', people = null) {
   if (!character) return take
   const voice = getArchetype(character.archetypeId).voice
   const pool = CHARACTER_LINES[voice]?.[take.stance]
   if (!pool?.length) return take // no line for this voice and stance — keep the card take
   const rng = makeRng(hashSeed(`castline:${source}:${week}:${character.id}:${personaId}:${take.stance}`))
+  // Traits, not demeanours, on purpose: a trait is the half of a personality
+  // written to be SAID (content/traits.js), and this is the saying of it.
   const names = traitNames(character.traits)
   const trait = names.length ? pick(rng, names) : (VOICE_FALLBACK_TRAIT[voice] ?? 'quiet')
-  return { ...take, text: pick(rng, pool)({ name: character.name, set: set?.name ?? 'the set', trait }) }
+  // WHAT THE ROOM CALLS THIS FORM. A form whose card face drops the character's
+  // name — The Divine Channel is still Aryla — is talked about by the name the
+  // audience knows, not the one printed on the card. Falling back to the form's
+  // own name keeps every pre-person-layer save reading exactly as it did.
+  const person = character.personId && people
+    ? people.find((p) => p.id === character.personId)
+    : null
+  const name = !character.carriesName && person ? person.name : character.name
+  return { ...take, text: pick(rng, pool)({ name, set: set?.name ?? 'the set', trait }) }
 }
 
 // ---- Take generation ------------------------------------------------------
@@ -882,7 +951,7 @@ export function reactPersonas(state) {
   // Collector heat per illustrator, indexed once for the week (artists.js).
   const artistHeat = new Map((state.artists ?? []).map((a) => [a.id, a.heat ?? 0]))
   const grievances = latestSet
-    ? setGrievances(latestSet, state.cards, illustrationOverusePressure(state))
+    ? setGrievances(latestSet, state.cards, illustrationOverusePressure(state), castOverusePressure(state, latestSet))
     : null
   const fieldAvg = liveCards.length
     ? liveCards.reduce((s, c) => s + c.popFactors.punch, 0) / liveCards.length
@@ -919,7 +988,7 @@ export function reactPersonas(state) {
     // gouged the room, the room is not talking about the cast.
     const take = base.grievance
       ? base
-      : dressWithCharacter(base, known, latestSet, state.week, persona.id)
+      : dressWithCharacter(base, known, latestSet, state.week, persona.id, 'take', state.people)
 
     // Reach drift: the community slowly learns who to listen to. A take that
     // tracks reality (perceived close to truth) earns reach; a loud, confidently
@@ -1013,7 +1082,16 @@ export function reactPersonas(state) {
 // none, so the balance table cannot move because of it. It runs on its own
 // derived rng for the same reason dressWithCharacter does.
 function castChatter(state) {
-  const famous = (state.characters ?? []).filter((c) => c.fame >= CAST_CHATTER_FAME)
+  // ONE ENTRY PER CHARACTER, NOT PER FORM. A character is one person printed in
+  // many forms (people.js). Filtering the character records directly would put
+  // Aryla, Destined Trainee, Lost One Aryla and Royal Commander Aryla into the
+  // pool as three separate famous names, so the room would talk about "three"
+  // beloved characters that are all the same woman — and a studio with one hit
+  // character would crowd its own feed. bestFormPerPerson collapses each
+  // character to the form doing best, which is also the one the room would
+  // actually be talking about.
+  const famous = bestFormPerPerson(state.characters)
+    .filter((c) => c.fame >= CAST_CHATTER_FAME)
   if (!famous.length || !state.personas?.length) return null
 
   const rng = makeRng(hashSeed(`castchatter:${state.week}`))
@@ -1028,7 +1106,7 @@ function castChatter(state) {
   const stance = character.trajectory === 'fading' ? 'pan'
     : character.trajectory === 'icon' ? 'hype'
     : 'neutral'
-  const dressed = dressWithCharacter({ stance, text: null }, character, latestSet, state.week, persona.id, 'cast')
+  const dressed = dressWithCharacter({ stance, text: null }, character, latestSet, state.week, persona.id, 'cast', state.people)
   if (!dressed.text) return null // this voice has no line for that stance
 
   return {

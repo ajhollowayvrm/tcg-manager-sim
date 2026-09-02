@@ -16,6 +16,7 @@
 // sustained community can slowly erode it.
 
 import { clamp, communitySentiment } from './simulation.js'
+import { bestFormPerPerson } from './people.js'
 
 // EWMA smoothing rates — small, so both trackers reflect a LONG window rather
 // than this week's blip (mirrors the "sustained, not spiky" framing).
@@ -71,9 +72,16 @@ export function updateFranchiseReputation(next) {
   const sentimentNow = communitySentiment(next.personas) ?? 0
   const sentimentEwma = f.sentimentEwma + (sentimentNow - f.sentimentEwma) * SENTIMENT_EWMA_ALPHA
 
-  const characters = next.characters ?? []
-  const icons = characters.filter((c) => c.trajectory === 'icon').length
-  const established = characters.filter((c) => c.trajectory === 'established').length
+  // PER CHARACTER, NOT PER PRINTING IDENTITY. A character is one person printed
+  // in many forms (people.js), and this used to count character RECORDS — which
+  // are forms. Aryla with five forms at icon trajectory collected five icon
+  // trickles, so a studio with one beloved character compounded reputation as
+  // fast as a studio with five. bestFormPerPerson collapses each character to its
+  // strongest live form, which also drops retired forms from the count: a form
+  // that takes no new printings should not keep paying a brand dividend.
+  const best = bestFormPerPerson(next.characters)
+  const icons = best.filter((c) => c.trajectory === 'icon').length
+  const established = best.filter((c) => c.trajectory === 'established').length
   const castTrickle = icons * ICON_TRICKLE_PER_CHAR + established * ESTABLISHED_TRICKLE_PER_CHAR
 
   // Growth needs BOTH a healthy cadence AND a happy-enough community to compound

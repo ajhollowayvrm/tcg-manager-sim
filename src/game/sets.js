@@ -22,6 +22,7 @@ import { printBillMul, artDirectorRate } from './upgrades.js'
 import { getTier, openBlock, refreshBlockWarp, mintTreatmentCards, mintAnniversaryCards, canUnlockAnniversary } from './blocks.js'
 import { getGimmick, NO_GIMMICK } from './content/gimmicks.js'
 import { createCharacter, famePopBonus, getTreatment, recordAppearance, createLineageCharacter } from './characters.js'
+import { derivePeople, recordPersonPrinting, favorMultiplier, saturationMultiplier, continuityVerdict } from './people.js'
 import { archetypeMatchesTheme } from './content/archetypes.js'
 import {
   getIllustrationKind,
@@ -685,7 +686,7 @@ function artNotesMatchTheme(notes, theme) {
   return theme.tags.some((t) => words.includes(t.toLowerCase()))
 }
 
-function popFactors(card, draft, theme, sheet, rng, artistOf = getArtist, characters = [], illustrationPop = 0) {
+function popFactors(card, draft, theme, sheet, rng, artistOf = getArtist, characters = [], illustrationPop = 0, people = []) {
   const standout = cardAppeal(card, sheet)
   const artist = card.artistId ? artistOf(card.artistId) : null
   const rarityTier = getRarity(sheet, card.rarity).valueTier
@@ -709,7 +710,27 @@ function popFactors(card, draft, theme, sheet, rng, artistOf = getArtist, charac
   // accumulated fame — "a new Pikachu card gets built-in demand no matter how
   // it's designed" — scaled up by a richer treatment tier.
   const character = card.characterId ? characters.find((c) => c.id === card.characterId) : null
-  const fameBonus = character ? famePopBonus(character.fame, card.treatment) : 0
+  // The FORM's own fame bonus, then the CHARACTER's three modifiers on top.
+  //
+  // famePopBonus itself is deliberately untouched. Layering on top of it keeps
+  // every historical balance number comparable: favorMultiplier returns exactly
+  // 1.0 for a character with one form, which is every character in every save
+  // that predates the person layer, and saturationMultiplier returns 1 below the
+  // threshold. A change INSIDE famePopBonus would move the whole playtest table
+  // at once and hide any real regression underneath it.
+  const person = character?.personId ? (people ?? []).find((p) => p.id === character.personId) : null
+  // Which form the fandom actually loves. Printing the newest Aryla when the
+  // room is still attached to the first one is a worse card than printing the
+  // one they want, and this is the term that says so.
+  const favorMul = person ? favorMultiplier(person, character.id) : 1
+  // Overexposure: too many forms of one character, too close together.
+  const satMul = person ? saturationMultiplier(person) : 1
+  const fameBonus = character ? famePopBonus(character.fame, card.treatment) * favorMul * satMul : 0
+  // Continuity: does this form still read as the character? Scored against what
+  // the LINEAGE KIND leads fans to expect, so a fall is meant to break her and a
+  // promotion is not. Sized against the +10 an on-theme archetype earns below,
+  // so it colours a printing without deciding it.
+  const continuity = person && character ? continuityVerdict(person, character).appealDelta : 0
   // A character whose ARCHETYPE matches the set's theme reads as a coherent
   // printing — a frost guardian in a Frostbound set, not a beach episode. The
   // same idea as the artist specialty match above, and deliberately smaller than
@@ -732,8 +753,8 @@ function popFactors(card, draft, theme, sheet, rng, artistOf = getArtist, charac
     // events.js read it.)
     punch: clamp(standout + range(rng, -10, 10), 0, 100),
     rarity: rarityTier, // 0–100 collector value tier from the set's sheet
-    artAppeal: clamp(artAppeal + fameBonus + archetypeMatch + illustrationPop, 0, 100),
-    hype: clamp(hype + fameBonus + archetypeMatch + illustrationPop, 0, 100),
+    artAppeal: clamp(artAppeal + fameBonus + archetypeMatch + illustrationPop + continuity, 0, 100),
+    hype: clamp(hype + fameBonus + archetypeMatch + illustrationPop + continuity, 0, 100),
   }
 }
 
@@ -755,8 +776,8 @@ export function cardAppeal(card, sheet) {
 
 // Build one market-ready card record from a "spec" (id/name/rarity/number + an
 // optional designed signature card behind it).
-function buildCard(spec, draft, theme, sheet, rng, artistOf, characters = [], lift = null) {
-  const factors = popFactors(spec, draft, theme, sheet, rng, artistOf, characters, lift?.pop ?? 0)
+function buildCard(spec, draft, theme, sheet, rng, artistOf, characters = [], lift = null, people = []) {
+  const factors = popFactors(spec, draft, theme, sheet, rng, artistOf, characters, lift?.pop ?? 0, people)
   // Initial price seeds off rarity + art + hype; the market moves it from here.
   const seed = factors.rarity * 0.25 + factors.artAppeal * 0.4 + factors.hype * 0.35
   const scarcity = 1 + (1 - draft.printRun / 100) * 1.5
@@ -804,7 +825,7 @@ function buildCard(spec, draft, theme, sheet, rng, artistOf, characters = [], li
 // `illustrationLift` maps a SPEC id ('c3') to the print-time lift its
 // illustration-set membership earns. Keyed by spec rather than card id because
 // card ids do not exist until the final map below.
-export function generateCards(draft, setId, week, artistOf = getArtist, characters = [], nameStyle = 'creature', illustrationLift = null) {
+export function generateCards(draft, setId, week, artistOf = getArtist, characters = [], nameStyle = 'creature', illustrationLift = null, people = []) {
   // getTheme returns null for an id it doesn't know (a stale save, a renamed
   // theme). popFactors reads theme.tags unguarded, so fall back the same way
   // blocks.js's mintTreatmentCards already does rather than crash generation.
@@ -895,7 +916,7 @@ export function generateCards(draft, setId, week, artistOf = getArtist, characte
     }
   }
 
-  return specs.map((spec) => buildCard(spec, draft, theme, sheet, rng, artistOf, characters, illustrationLift?.get(spec.id) ?? null))
+  return specs.map((spec) => buildCard(spec, draft, theme, sheet, rng, artistOf, characters, illustrationLift?.get(spec.id) ?? null, people))
 }
 
 // ---- Release effects ------------------------------------------------------
@@ -963,17 +984,31 @@ export function releaseSet(state, draft) {
       archetypeId: sig.newCharacterArchetype,
       species: sig.newCharacterSpecies,
       hook: sig.newCharacterHook,
+      // The form's own half: what this appearance of the character is called on
+      // the roster, how it carries itself, and whether the card face says the
+      // character's name at all. See people.js.
+      formName: sig.newFormName,
+      demeanorIds: sig.newFormDemeanor,
+      carriesName: sig.newFormCarriesName,
     }
     // A new character may grow out of one (or two) already on the roster —
     // Kell, Broken Boy becoming Kell, Royal Soldier. The link is refused if it
-    // would close a loop, break the kind's archetype rule, or build on a retired
-    // character; the editor shows the same refusal, so this only bites a stale
-    // draft held open across a save load, and then the character still debuts —
-    // as a plain new one.
+    // would close a loop or break the kind's archetype rule; the editor shows the
+    // same refusal, so this only bites a stale draft held open across a save
+    // load, and then the character still debuts — as a plain new one.
+    //
+    // Building on a RETIRED form is no longer refused. Retirement closes a path,
+    // not a character: a story that went two ways needs the second branch to grow
+    // out of the same form the first one did. See validateLineage.
     const parentIds = [sig.newCharacterPromotedFrom, sig.newCharacterSecondParent].filter(Boolean)
     const kindId = sig.newCharacterLineageKind ?? (parentIds.length ? 'promotion' : null)
     const linked = kindId
-      ? createLineageCharacter(characters, { name: sig.newCharacterName, identity, kindId, parentIds, week: state.week })
+      ? createLineageCharacter(characters, {
+          name: sig.newCharacterName, identity, kindId, parentIds, week: state.week,
+          // So the new form debuts off the CHARACTER's recognition, not only its
+          // parent form's fame — see createLineageCharacter.
+          people: state.people,
+        })
       : null
     let created
     if (linked) {
@@ -1008,17 +1043,43 @@ export function releaseSet(state, draft) {
   // resolved picks and rescores — and that score is the one that is frozen and
   // that the market reads.
   const ilPhaseA = provisionalIllustrationLift(state, draft, setId, characters)
-  const cards = generateCards(draft, setId, state.week, artistOf, characters, nameStyle, ilPhaseA.lift)
+  // The person layer for THIS release is derived before the cards are minted, so
+  // a character created moments ago upstairs already carries its favour and
+  // saturation into its own debut card's popFactors.
+  //
+  // BOTH halves of the result are taken, and that matters: derivePeople stamps
+  // `personId` onto the forms, and dropping the returned characters left a form
+  // minted seconds earlier with a null personId for the rest of the release. Its
+  // own debut printing was then charged to nobody, so a brand-new character's
+  // first appearance was invisible to saturation.
+  const derived = derivePeople({ ...state, characters })
+  const peopleAtMint = derived.people
+  characters = derived.characters
+  const cards = generateCards(draft, setId, state.week, artistOf, characters, nameStyle, ilPhaseA.lift, peopleAtMint)
 
   // Every signature card that features a character (new or existing) records a
   // new appearance — bumps fame, files the debut set on a first printing. Feeds
   // the set builder's next view of fame and, at high fame, the icon treatment slot.
+  // The person layer is re-derived first, so a form MINTED above already belongs
+  // to a character by the time a printing is recorded against it.
+  let people = peopleAtMint
+  const formPerson = new Map(characters.map((c) => [c.id, c.personId]))
+  const printedFor = new Set()
   for (const card of cards) {
     if (!card.characterId) continue
     characters = recordAppearance(characters, card.characterId, {
       cardId: card.id, setId, treatment: card.treatment, popFactors: card.popFactors,
       week: state.week, setName: draft.name,
     })
+    // Saturation is per CHARACTER per RELEASE, not per card. A set with three
+    // cards of Aryla is one appearance of Aryla to the room, and charging it
+    // three times would make an illustration line — the exact thing the game
+    // wants you to build — read as overexposure.
+    const pid = formPerson.get(card.characterId)
+    if (pid && !printedFor.has(pid)) {
+      printedFor.add(pid)
+      people = recordPersonPrinting(people, pid, { week: state.week })
+    }
   }
 
   const set = {
@@ -1372,6 +1433,7 @@ export function releaseSet(state, draft) {
     pendingWave, // a scheduled "wide release" wave from regional staggering, or null
     blocks: blocksPatch, // state.blocks after opening/refreshing this set's block
     characters, // state.characters after recording this release's appearances
+    people, // state.people after charging this release's printings to saturation
     block, // the block this set opened or rode (for feed text), null if none
     tier: tier.id,
     // Existing cards softened by card-reprints (null if none fired).
@@ -1744,7 +1806,7 @@ export function reprintAsUnlimited(state, originalSetId, printRun = 55) {
   }
   const artistOf = (id) => currentArtist(state, id)
   const nameStyle = getConcept(state.config?.conceptId).nameStyle
-  const reprintCards = generateCards(draft, newSetId, state.week, artistOf, state.characters ?? [], nameStyle).map((c) => ({
+  const reprintCards = generateCards(draft, newSetId, state.week, artistOf, state.characters ?? [], nameStyle, null, state.people ?? []).map((c) => ({
     ...c,
     // Reprints carry more supply → priced below the originals from the start.
     singlePrice: Math.round(c.singlePrice * 0.6 * 100) / 100,

@@ -64,7 +64,9 @@ export default function LineagesPanel({ state, onAddCharacter }) {
               <li>Inherits {Math.round(k.fameInherit * 100)}% of {k.parents === 2 ? 'each parent’s' : 'the parent’s'} fame</li>
               <li>Takes {archetypeRuleText(k)}</li>
               <li>{k.retiresParent ? 'The predecessor steps aside — no new printings' : 'Both stay in print'}</li>
-              {k.fameLinked && <li>Fame moves with the base form every week</li>}
+              {k.sameBeing
+                ? <li>Still the same character — the forms share one recognition</li>
+                : <li>A new character, descended from {k.parents === 2 ? 'both' : 'them'}</li>}
               {k.parents === 2 && <li>Needs two parents</li>}
             </ul>
           </Section>

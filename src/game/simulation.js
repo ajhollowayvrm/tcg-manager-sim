@@ -13,6 +13,7 @@ import { applySegmentDrift, distributeNewPlayers } from './segments.js'
 import { clockDirective } from './clock.js'
 import { driftArtists, expireArtistContracts } from './artists.js'
 import { driftCharacters } from './characters.js'
+import { driftPeople } from './people.js'
 import { updateFranchiseReputation } from './franchise.js'
 import { applyCadencePressure } from './cadence.js'
 import { applyRelationships } from './relationships.js'
@@ -245,6 +246,21 @@ export function advanceWeek(state) {
   // from any one printing. Runs after the market/personas have settled so it
   // reads this week's real numbers.
   driftCharacters(next)
+
+  // The people behind the forms. A character is one person printed in many forms
+  // (people.js), and this aggregates the forms that just drifted into the
+  // character's own standing: recognition, the fandom's split across the forms,
+  // and overexposure.
+  //
+  // ORDER IS LOAD-BEARING and it is the reason this sits here rather than
+  // anywhere tidier. It must run AFTER driftCharacters, because a person
+  // aggregates its forms and the forms have to have moved first — put it before
+  // and every character reads a week stale forever. Two systems earlier in this
+  // function do see last week's recognition (applyPersonaEffects, and
+  // applySegmentDrift through hotCastSignal); that is correct and already true
+  // of character fame, which they read the same way. Do not "fix" it by moving
+  // this call up.
+  driftPeople(next)
 
   // Grading partners: an active partner ambiently certifies a slice of the
   // market's highest-value eligible singles each week and carries its own

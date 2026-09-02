@@ -5,6 +5,7 @@
 // is always saved, and reloading the tab resumes exactly where you left off.
 
 import { normalizeCharacter } from './characters.js'
+import { derivePeople } from './people.js'
 import { normalizeIllustrationSet } from './illustrationsets.js'
 import {
   normalizeRaritySheetStandard,
@@ -286,6 +287,40 @@ export function serialize(state) {
     }
     return card
   })
+
+  // The person layer. STRUCTURE IS DERIVED AND IS NOT WRITTEN: `personId` on a
+  // form, and `rootFormId`/`descendedFromIds` on a person, are all rebuilt by
+  // derivePeople from the lineage links on the way back in. Only the AUTHORED
+  // text and the EARNED numbers are persisted.
+  //
+  // That is a size decision, not a tidiness one. A week-312 run already
+  // serialised to 4.07 MB against a ~5 MB quota and silently stopped saving,
+  // which is why the run save moved to IndexedDB at v18; a new top-level array
+  // carrying a 52-week history per record does not get to undo that work.
+  if (state.people?.length) {
+    out.people = state.people.map((p) => {
+      const person = { ...p }
+      delete person.rootFormId
+      delete person.descendedFromIds
+      person.recognition = round(p.recognition, 1)
+      person.saturation = round(p.saturation, 1)
+      person.recognitionHistory = (p.recognitionHistory ?? []).map((v) => Math.round(v))
+      if (p.favor) {
+        person.favor = Object.fromEntries(
+          Object.entries(p.favor).map(([k, v]) => [k, round(v, 3)]),
+        )
+      }
+      return person
+    })
+  }
+  if (state.characters?.length) {
+    out.characters = state.characters.map((c) => {
+      if (c.personId == null) return c
+      const form = { ...c }
+      delete form.personId
+      return form
+    })
+  }
   return out
 }
 
@@ -302,7 +337,7 @@ export function hydrate(state) {
   // that SURVIVED these two passes, not the ids that went into them.
   const sheets = onlyOneDefault((state.raritySheets ?? []).map(normalizeRaritySheetStandard).filter(Boolean))
   const formats = onlyOneDefault((state.packFormats ?? []).map(normalizePackFormatStandard).filter(Boolean))
-  return {
+  const next = {
     ...state,
     cards: state.cards.map((c) => ({ ...CARD_DEFAULTS, ...c })),
     // Characters gained an IDENTITY after they first entered the save at v8 —
@@ -357,6 +392,18 @@ export function hydrate(state) {
       }))
       .filter(Boolean),
   }
+  // The person layer LAST, because it reads the characters the pass above just
+  // normalised and writes back to both arrays.
+  //
+  // This is what lets the whole feature ship without a VERSION bump. A save from
+  // before the person layer arrives with no `people` at all; derivePeople walks
+  // the same-being lineage links and rebuilds one person per character, so a
+  // pre-lineage save lands on a roster of one-form people that behaves exactly as
+  // it did. It also repairs `personId` on every form, which serialize() strips on
+  // the way out — structure is derived, never stored. Same additive contract as
+  // normalizeCharacter above, one level up.
+  const { people, characters } = derivePeople(next)
+  return { ...next, people, characters }
 }
 
 // SAVE_STANDARD holds "exactly one default per library" by clearing the flag on

@@ -76,6 +76,12 @@ export function createInitialState(config) {
     // fame drifts each week off how their live cards are doing. See characters.js.
     // Empty until the player creates their first character in the set builder.
     characters: seedCharacters(),
+    // The people behind those forms (people.js). A character record in the array
+    // above is one FORM of a person; this array is the person. Empty for the same
+    // reason: every character is player-made. derivePeople rebuilds the links
+    // between the two arrays on every load, so nothing here has to stay in sync
+    // by hand.
+    people: [],
     // Personas carry mutable run state on top of their static identity:
     // sentiment (mood), relationship (how cultivated — decays if neglected),
     // and a sponsored flag (an ongoing creator deal).

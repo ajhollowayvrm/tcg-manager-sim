@@ -101,6 +101,78 @@ function buildDraft(setNumber, knobs, nameSalt, tier = 'major', blocks = []) {
   return d
 }
 
+// A CHARACTER WITH A STORY, as opposed to one form reprinted forever.
+//
+// `knobs.castLine` walks a character through the shape the person layer exists
+// for: Aryla, Destined Trainee is promoted to Royal Soldier, whose story then
+// goes two ways — a fall and a promotion — and the fallen form ascends. Five
+// forms, one character.
+//
+// It measures the half of people.js that attachCast cannot reach. attachCast
+// prints ONE form over and over, which exercises saturation and nothing else; a
+// branching line exercises recognition aggregating across forms, kin pull
+// lifting a cold sibling, favour dividing the fandom, and continuity being
+// scored against each link's expected drift. Without this, all of that ran
+// unmeasured across a 312-week sweep — exactly the gap attachCast itself was
+// written to close for characters.js.
+//
+// It also proves the thing the feature was built for: a branch after a RETIRING
+// lineage kind. The fall retires Royal Soldier, and Royal Commander still grows
+// out of him afterwards. If validateLineage ever refuses that again, this
+// strategy quietly collapses to a two-form line and the table moves.
+const CAST_LINE = [
+  { name: 'Aryla, Destined Trainee', archetypeId: 'starter', demeanorIds: ['cheerful', 'charming'], formName: 'Destined Trainee' },
+  { name: 'Aryla, Royal Soldier', archetypeId: 'mascot', demeanorIds: ['dutiful', 'earnest'], formName: 'Royal Soldier', kindId: 'promotion', parent: 0 },
+  { name: 'Lost One Aryla', archetypeId: 'villain', demeanorIds: ['hollow', 'cold'], formName: 'Lost One', kindId: 'fall', parent: 1 },
+  { name: 'Royal Commander Aryla', archetypeId: 'mascot', demeanorIds: ['focused', 'dutiful'], formName: 'Royal Commander', kindId: 'promotion', parent: 1 },
+  { name: 'The Divine Channel', archetypeId: 'legendary', demeanorIds: ['radiant', 'solemn'], formName: 'The Divine Channel', kindId: 'ascension', parent: 2, carriesName: false },
+]
+
+// Add the next form in the line, if this release is due one, and put whichever
+// form the fandom currently likes best on the card. Returns the draft.
+function attachCastLine(state, draft, knobs) {
+  if (!knobs.castLine || !draft.signatureCards?.length) return draft
+  const have = (i) => (state.characters ?? []).find((c) => c.name === CAST_LINE[i].name)
+  // One new form per release until the line is complete.
+  const nextIdx = CAST_LINE.findIndex((_, i) => !have(i))
+  const sigs = [...draft.signatureCards]
+
+  if (nextIdx === 0) {
+    const f = CAST_LINE[0]
+    sigs[0] = {
+      ...sigs[0],
+      newCharacterName: f.name, newCharacterArchetype: f.archetypeId,
+      newFormName: f.formName, newFormDemeanor: f.demeanorIds, newFormCarriesName: true,
+    }
+    return { ...draft, signatureCards: sigs }
+  }
+  if (nextIdx > 0) {
+    const f = CAST_LINE[nextIdx]
+    const parent = have(f.parent)
+    if (parent) {
+      sigs[0] = {
+        ...sigs[0],
+        newCharacterName: f.name, newCharacterArchetype: f.archetypeId,
+        newCharacterLineageKind: f.kindId, newCharacterPromotedFrom: parent.id,
+        newFormName: f.formName, newFormDemeanor: f.demeanorIds,
+        newFormCarriesName: f.carriesName !== false,
+      }
+      return { ...draft, signatureCards: sigs }
+    }
+  }
+  // The line is complete: print the form the fandom actually favours, which is
+  // the decision the favour split exists to create.
+  const person = (state.people ?? [])[0]
+  const printable = (state.characters ?? []).filter((c) => !c.retiredWeek)
+  if (!printable.length) return draft
+  const best = person
+    ? printable.reduce((a, b) => ((person.favor?.[b.id] ?? 0) > (person.favor?.[a.id] ?? 0) ? b : a))
+    : printable[0]
+  const treatment = best.trajectory === 'icon' ? 'icon' : best.trajectory === 'established' ? 'premium' : 'standard'
+  sigs[0] = { ...sigs[0], characterId: best.id, treatment }
+  return { ...draft, signatureCards: sigs, coverCharacterId: best.id }
+}
+
 // A RECURRING CAST. Until this existed, no strategy in the harness ever minted a
 // character, so the whole of characters.js — fame drift, trajectories, the
 // archetype bias, the theme-cohesion bonus and the icon treatment gate — ran
@@ -282,7 +354,7 @@ function makeStrategy({ name, cadence, knobs, rotateEvery, ignoreCash = false, m
       const weeksSinceMajor = lastMajor ? s.week - lastMajor.releasedWeek : Infinity
       const isMajorDue = s.sets.length === 0 || weeksSinceMajor >= cadence
       if (isMajorDue) {
-        const draft = attachIllustration(s, attachCast(s, buildDraft(s.sets.length + 1, knobs, ctx.salt, 'major'), knobs), knobs)
+        const draft = attachIllustration(s, attachCastLine(s, attachCast(s, buildDraft(s.sets.length + 1, knobs, ctx.salt, 'major'), knobs), knobs), knobs)
         if (ignoreCash || canFund(s, draft)) {
           s = applyRelease(s, draft)
           ctx.releases++
@@ -290,7 +362,7 @@ function makeStrategy({ name, cadence, knobs, rotateEvery, ignoreCash = false, m
       } else if (minorEvery && s.blocks?.length && weeksSinceAny >= minorEvery) {
         // Between majors: a rider riding the newest block. Alternate minor/micro.
         const tier = (ctx.riders % 2 === 0) ? 'minor' : 'micro'
-        const draft = attachIllustration(s, attachCast(s, buildDraft(s.sets.length + 1, knobs, ctx.salt, tier, s.blocks), knobs), knobs)
+        const draft = attachIllustration(s, attachCastLine(s, attachCast(s, buildDraft(s.sets.length + 1, knobs, ctx.salt, tier, s.blocks), knobs), knobs), knobs)
         if (ignoreCash || canFund(s, draft)) {
           s = applyRelease(s, draft)
           ctx.releases++
@@ -497,6 +569,13 @@ const STRATEGIES = [
   // cash — a real edge, not a runaway one. Note this on-theme villain scores
   // slightly BELOW the off-theme mascot: the mascot's faster fame climb outruns
   // a steady +10 art/hype, so "always match the theme" is not the dominant play.
+  // The person layer's own strategy: one character, five forms, a branch after a
+  // retiring link. Compare against 'Cast-led (mascot)', which prints ONE form
+  // forever — the difference between the two rows is what telling a story with a
+  // character buys you over reprinting them.
+  makeStrategy({ name: 'Cast line (5 forms)', cadence: 12, rotateEvery: 78,
+    knobs: { designLoudness: 55, printRun: 55, pricePoint: 4.5, chaseAppeal: 70, namePool: NAME_POOL, themes: THEMES, gimmicks: ['mega'],
+      castLine: true } }),
   makeStrategy({ name: 'Cast-led (villain, on-theme)', cadence: 14, minorEvery: 7, rotateEvery: null, maxLiveSets: 6,
     knobs: { designLoudness: 52, printRun: 50, pricePoint: 4.5, chaseAppeal: 72,
       namePool: NAME_POOL, themes: ['undead'], gimmicks: ['mega'],

@@ -27,6 +27,7 @@ import { clamp } from './simulation.js'
 import { getArchetype } from './content/archetypes.js'
 import { getLineageKind, archetypeAllowed, archetypeRuleText } from './content/lineages.js'
 import { MAX_TRAITS } from './content/traits.js'
+import { MAX_DEMEANORS } from './content/demeanors.js'
 
 // Weeks a trajectory must hold before it can graduate, so an arc unfolds over a
 // real run instead of flipping every card release.
@@ -115,6 +116,26 @@ export function createCharacter(name, opts = {}) {
     hook: (o.hook ?? '').trim(),
     pronouns: (o.pronouns ?? '').trim(),
     species: (o.species ?? '').trim(), // optional epithet — "the Ashen"
+    // ---- The form's half of the person/form split (see people.js) ----------
+    // A character record is a FORM of a person. `personId` is DERIVED — it is
+    // recomputed by derivePeople on every load and stripped from the save — so
+    // nothing here should ever treat it as authoritative before hydrate runs.
+    personId: o.personId ?? null,
+    // The roster label, separate from the card face. "Royal Commander" beside a
+    // card whose name is "Royal Commander Aryla", or beside one called "The
+    // Divine Channel" that never says Aryla at all.
+    formName: (o.formName ?? '').trim(),
+    // The measurable half of this form's personality (content/demeanors.js).
+    // Traits stay flavour; these carry the axes continuityDrift reads.
+    demeanorIds: (o.demeanorIds ?? []).slice(0, MAX_DEMEANORS),
+    // Does the card face carry the person's name? The Divine Channel does not,
+    // and the room takes a while to work out who she is — see recognisedWeek.
+    carriesName: o.carriesName ?? true,
+    recognisedWeek: null,
+    // The week this form was last printed. Read by people.js's favour drift, so
+    // a form that is still in rotation holds the fandom better than one that is
+    // not. Set by recordAppearance.
+    lastPrintedWeek: null,
     // PROMOTION. The character this one grew out of — "Kell, Broken Boy" into
     // "Kell, Royal Soldier". They are two separate roster entries on purpose:
     // the promoted form has its own archetype, its own fame curve and its own
@@ -183,6 +204,15 @@ export function normalizeCharacter(c) {
       ? c.lineageParentIds
       : (c.promotedFromId ? [c.promotedFromId] : []),
     retiredWeek: c.retiredWeek ?? null,
+    // Form fields, additive exactly as the lineage fields above are: a save that
+    // predates the person layer normalises onto a nameless, demeanourless form
+    // that carries its own name, which is what every character was.
+    personId: c.personId ?? null,
+    formName: c.formName ?? '',
+    demeanorIds: (c.demeanorIds ?? []).slice(0, MAX_DEMEANORS),
+    carriesName: c.carriesName ?? true,
+    recognisedWeek: c.recognisedWeek ?? null,
+    lastPrintedWeek: c.lastPrintedWeek ?? null,
     appearances: c.appearances ?? [],
     fameHistory: c.fameHistory ?? [],
     beats: c.beats ?? [],
@@ -304,7 +334,16 @@ export function validateLineage(characters, { kindId, parentIds, archetypeId }) 
   for (const pid of ids) {
     const p = byId.get(pid)
     if (!p) return 'That parent is no longer on the roster.'
-    if (p.retiredWeek) return `${p.name} has already stepped aside and cannot be built on.`
+    // A RETIRED FORM MAY STILL BE BUILT ON. This used to refuse the link, and
+    // that refusal made an ordinary story impossible: Aryla, Royal Soldier falls
+    // into Lost One Aryla, and Royal Commander Aryla can then never exist,
+    // because the fall retired the form they both grow out of. A character whose
+    // story went two ways is the normal case in this genre.
+    //
+    // Retirement now closes a PATH, not a person: the form takes no new
+    // printings (the pickers still filter on retiredWeek) and still takes new
+    // branches. The pressure retirement used to apply moved up to the person as
+    // saturation — see people.js.
     if (wouldCycle(characters, null, pid)) return `${p.name}'s line is already as long as a line can be.`
   }
   const primary = byId.get(ids[0])
@@ -324,14 +363,27 @@ export function validateLineage(characters, { kindId, parentIds, archetypeId }) 
 // more than once across a long run (Broken Boy into Royal Soldier into
 // Kingsguard) and each step is a real turning point. A retiring kind stamps
 // retiredWeek on the parent, which the pickers read.
-export function createLineageCharacter(characters, { name, identity, kindId, parentIds, week }) {
+export function createLineageCharacter(characters, { name, identity, kindId, parentIds, week, people }) {
   const kind = getLineageKind(kindId)
   const ids = (parentIds ?? []).filter(Boolean)
   const o = identity ?? {}
   if (validateLineage(characters, { kindId, parentIds: ids, archetypeId: o.archetypeId })) return null
   const byId = new Map(characters.map((c) => [c.id, c]))
   const parents = ids.map((id) => byId.get(id))
-  const inherit = parents.reduce((sum, p) => sum + (p.fame ?? 0) * kind.fameInherit, 0)
+  // A new form debuts off whichever is kinder: the parent forms' own fame, or
+  // the CHARACTER's standing with the audience.
+  //
+  // The second term is the point of the person layer. The Divine Channel grows
+  // out of Lost One Aryla, and if the Lost One's own cards happened to go cold
+  // the ascension would debut unknown — even though everyone knows Aryla. A
+  // character's audience does not reset because one form of her underperformed.
+  // Reading the person's recognition fixes that, and reading the MAX of the two
+  // means this can only ever help, so no existing balance line moves down.
+  const parentFame = parents.reduce((sum, p) => sum + (p.fame ?? 0) * kind.fameInherit, 0)
+  const person = kind.sameBeing && people
+    ? (people ?? []).find((x) => x.id === parents[0]?.personId)
+    : null
+  const inherit = Math.max(parentFame, (person?.recognition ?? 0) * kind.fameInherit)
   const child = createCharacter(name, {
     ...o,
     promotedFromId: ids[0],
@@ -352,29 +404,15 @@ export function createLineageCharacter(characters, { name, identity, kindId, par
   return { characters: [...patched, linkedChild], child: linkedChild }
 }
 
-// A transformation is one being with two faces, so the two fames are pulled
-// toward each other a little every week. Applied after the ordinary drift.
-const LINKED_FAME_PULL = 0.1
-
-function linkTransformedFame(characters) {
-  const byId = new Map(characters.map((c) => [c.id, c]))
-  const fame = new Map(characters.map((c) => [c.id, c.fame]))
-  let touched = false
-  for (const c of characters) {
-    if (c.lineageKindId !== 'transformation') continue
-    const p = byId.get(lineageParents(c)[0])
-    if (!p) continue
-    const mean = (fame.get(c.id) + fame.get(p.id)) / 2
-    fame.set(c.id, fame.get(c.id) + (mean - fame.get(c.id)) * LINKED_FAME_PULL)
-    fame.set(p.id, fame.get(p.id) + (mean - fame.get(p.id)) * LINKED_FAME_PULL)
-    touched = true
-  }
-  if (!touched) return characters
-  return characters.map((c) => {
-    const f = Math.round(clamp(fame.get(c.id), 0, 100) * 10) / 10
-    return f === c.fame ? c : { ...c, fame: f }
-  })
-}
+// Fame used to be linked here for the `transformation` kind alone: the child and
+// parent were pulled toward their shared mean every week, because they are one
+// being with two faces.
+//
+// That is now the general case rather than a special one. EVERY same-being link
+// pulls its form toward the person's recognition, at a strength the lineage kind
+// names (`kinPull`) — transformation simply keeps the strongest pull, at the
+// same 0.1 it always had, so its behaviour is unchanged. The mechanic lives in
+// people.js's driftPeople, which runs immediately after driftCharacters below.
 
 // Record a new appearance (called on set release for every signature card that
 // features an existing character). Bumps fame by how good a showing it was —
@@ -392,6 +430,9 @@ export function recordAppearance(characters, id, { cardId, setId, treatment, pop
       ...c,
       debutSetId: c.debutSetId ?? setId,
       debutWeek: c.debutWeek ?? week ?? null,
+      // Read by people.js's favour drift: a form still being printed holds the
+      // fandom better than one that is not.
+      lastPrintedWeek: week ?? c.lastPrintedWeek ?? null,
       appearances: [...(c.appearances ?? []), { cardId, setId, treatment }],
       fame: clamp(c.fame + bump, 0, 100),
       // The first printing opens the character's story. It goes FIRST even
@@ -525,11 +566,11 @@ function driftOne(c, signal, rng, week, archetype) {
 export function driftCharacters(next) {
   if (!next.characters?.length) return
   const rng = makeRng(hashSeed(`characters:${next.week}`))
-  next.characters = linkTransformedFame(next.characters.map((c) => {
+  next.characters = next.characters.map((c) => {
     // Resolved once per character per week and passed down, so performanceSignal
     // and driftOne can never disagree about which archetype they are reading.
     const archetype = getArchetype(c.archetypeId)
     const signal = performanceSignal(liveCardsFor(next, c.id), archetype)
     return driftOne(c, signal, rng, next.week, archetype)
-  }))
+  })
 }
