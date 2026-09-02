@@ -13,7 +13,8 @@
     "ios:icon": "node tools/ios/make-icon.mjs",
     "ios:sim": "node tools/ios/shell.mjs",
     "ios:device": "node tools/ios/device.mjs",
-    "playtest": "node tools/playtest.mjs"
+    "playtest": "node tools/playtest.mjs",
+    "uisweep": "node tools/uisweep.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

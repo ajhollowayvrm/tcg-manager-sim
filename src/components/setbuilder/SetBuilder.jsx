@@ -162,7 +162,7 @@ function BuilderNav({ active, onPick, summaries, tierName }) {
   )
 }
 
-export default function SetBuilder({ setNumber, cash, artists, characters = [], liveCards = [], sets = [], blocks = [], illustrationSets = [], standards = {}, week = 1, franchise, perks = [], conceptId, onSaveStandard, onRelease, onClose }) {
+export default function SetBuilder({ setNumber, cash, artists, characters = [], liveCards = [], sets = [], blocks = [], illustrationSets = [], standards = {}, upgrades = {}, week = 1, franchise, perks = [], conceptId, onSaveStandard, onRelease, onClose }) {
   // The first set you ever ship MUST be a major (it opens your first block); once
   // a block is live you can ship riders. Seed the tier accordingly.
   const isFirstSet = blocks.length === 0
