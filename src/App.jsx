@@ -203,6 +203,12 @@ export default function App() {
           sets={game.state.sets}
           blocks={game.state.blocks ?? []}
           illustrationSets={game.state.illustrationSets ?? []}
+        standards={{
+          raritySheets: game.state.raritySheets ?? [],
+          packFormats: game.state.packFormats ?? [],
+          blueprints: game.state.blueprints ?? [],
+        }}
+        onSaveStandard={game.saveStandard}
           week={game.state.week}
           franchise={game.state.franchise}
           perks={game.state.prestige?.perks ?? []}

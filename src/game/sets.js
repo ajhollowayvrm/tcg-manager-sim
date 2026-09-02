@@ -10,6 +10,7 @@ import { PRINT_INTENSITY_NEUTRAL } from './config.js'
 import { printRunUnits } from './revenue.js'
 import { currentArtist } from './artists.js'
 import { defaultRaritySheet, getRarity, pickRarity, validateRaritySheet, defaultPackFormat, validatePackFormat, packRichnessDelta, FINISHES, getFinish, combinedFinishEffect, expandRaritySheet, variantEntries, variantScarcityPremium } from './rarities.js'
+import { seedFromStandards, cloneSheet, cloneFormat } from './standards.js'
 
 // Re-exported for existing call sites (SignatureCardEditor.jsx etc.) — the
 // finish system now lives in rarities.js since a whole RARITY can carry
@@ -82,7 +83,13 @@ export function loudnessOf(x) {
 // `block` spec the player tunes); a MINOR/MICRO rides a live block (carries
 // `attachBlockId`). `liveBlocks` lets the builder seed a sensible attach target
 // and inherit theme — defaults keep the bare signature working for tests.
-export function createDraft(setNumber, tier = 'major', liveBlocks = []) {
+//
+// `standards` is the player's studio library (see standards.js). If they have
+// marked a default rarity sheet, booster format or blueprint, the draft starts
+// from a COPY of it instead of the built-ins. Optional and trailing so every
+// bare createDraft(n, tier, blocks) call — the playtest harness's included —
+// behaves exactly as it always has.
+export function createDraft(setNumber, tier = 'major', liveBlocks = [], standards = {}) {
   const t = getTier(tier)
   // Theme is a per-SET flavor motif, not locked to the block or the company —
   // Pokémon's Base Set era shipped Jungle, Fossil, and Team Rocket back to
@@ -208,6 +215,14 @@ export function createDraft(setNumber, tier = 'major', liveBlocks = []) {
       plannedSize: getIllustrationKind(DEFAULT_ILLUSTRATION_KIND_ID).defaultPlannedSize,
       picks: [],
     },
+
+    // The studio's own defaults, spread LAST so they win over the built-in sheet
+    // and Classic pack seeded above — `godPack` in particular is declared a few
+    // lines up, and in an object literal the later key wins, so seeding it from
+    // anywhere but here would be silently clobbered. Empty for a player who has
+    // saved no standards, which is what keeps a fresh company's first set (and
+    // every harness run) seeded exactly as it always was.
+    ...seedFromStandards(standards),
   }
 }
 
@@ -1013,8 +1028,17 @@ export function releaseSet(state, draft) {
     printRun: draft.printRun,
     price: draft.pricePoint,
     signatureCards: draft.signatureCards,
-    rarities: draft.rarities, // the set's rarity sheet (for pricing/packs/display)
-    packFormat: draft.packFormat, // booster structure (slots) for ripping/display
+    // DEEP COPIES, not the draft's own arrays. These two used to be assigned by
+    // reference, which was harmless only while every draft built its own sheet
+    // from scratch. Now a draft can be seeded from — or import — an entry in the
+    // studio's standards library, and a reference would make this set ALIAS that
+    // entry: renaming a rarity in the Studio afterwards would retroactively
+    // rewrite the pull odds, the print cost and the PUBLISHED ODDS of a set
+    // already on shelves. A released set is a historical fact, and
+    // reprintAsUnlimited proves it has to be — it rebuilds a whole card pool
+    // from nothing but this record, and it has to rebuild the set that shipped.
+    rarities: cloneSheet(draft.rarities), // the set's rarity sheet (for pricing/packs/display)
+    packFormat: cloneFormat(draft.packFormat), // booster structure (slots) for ripping/display
     setLength: draft.setLength,
     secretCount: draft.secretCount,
     // How this set's size reads to the world — persisted so the weekly
@@ -1701,8 +1725,13 @@ export function reprintAsUnlimited(state, originalSetId, printRun = 55) {
     pricePoint: original.price,
     setLength: original.setLength,
     secretCount: original.secretCount,
-    rarities: original.rarities,
-    packFormat: original.packFormat,
+    // Cloned, so the reprint's record and the original's are two independent
+    // snapshots rather than three aliases of one array (draft -> original set ->
+    // reprint set). Nothing edits a released set's sheet today, but an Unlimited
+    // run is supposed to be a printing of the set that shipped, and that is only
+    // true if it holds its own copy of what shipped.
+    rarities: cloneSheet(original.rarities),
+    packFormat: cloneFormat(original.packFormat),
     signatureCards: original.signatureCards ?? [],
     prerelease: { enabled: false, chasePullable: false },
   }
@@ -1726,8 +1755,13 @@ export function reprintAsUnlimited(state, originalSetId, printRun = 55) {
     printRun,
     price: original.price,
     signatureCards: original.signatureCards,
-    rarities: original.rarities,
-    packFormat: original.packFormat,
+    // Cloned, so the reprint's record and the original's are two independent
+    // snapshots rather than three aliases of one array (draft -> original set ->
+    // reprint set). Nothing edits a released set's sheet today, but an Unlimited
+    // run is supposed to be a printing of the set that shipped, and that is only
+    // true if it holds its own copy of what shipped.
+    rarities: cloneSheet(original.rarities),
+    packFormat: cloneFormat(original.packFormat),
     setLength: original.setLength,
     secretCount: original.secretCount,
     prerelease: { enabled: false, chasePullable: false },

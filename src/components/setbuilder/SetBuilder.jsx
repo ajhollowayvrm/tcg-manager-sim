@@ -11,7 +11,15 @@ import PackOddsPanel from './PackOddsPanel.jsx'
 import AccordionSection from './AccordionSection.jsx'
 import IllustrationSetEditor from './IllustrationSetEditor.jsx'
 import ProductLineupEditor from './ProductLineupEditor.jsx'
+import StandardsBar from './StandardsBar.jsx'
 import { packSize, PACK_PRESETS, syncFormatWithVariants, getRarity, pruneRarityFromFormat } from '../../game/rarities.js'
+import {
+  checkStandardFit,
+  applyStandard,
+  provenanceOf,
+  makeRaritySheetStandard,
+  makePackFormatStandard,
+} from '../../game/standards.js'
 import { SKU_TYPES } from '../../game/products.js'
 import {
   createDraft,
@@ -151,11 +159,17 @@ function BuilderNav({ active, onPick, summaries, tierName }) {
   )
 }
 
-export default function SetBuilder({ setNumber, cash, artists, characters = [], liveCards = [], sets = [], blocks = [], illustrationSets = [], week = 1, franchise, perks = [], conceptId, onRelease, onClose }) {
+export default function SetBuilder({ setNumber, cash, artists, characters = [], liveCards = [], sets = [], blocks = [], illustrationSets = [], standards = {}, week = 1, franchise, perks = [], conceptId, onSaveStandard, onRelease, onClose }) {
   // The first set you ever ship MUST be a major (it opens your first block); once
   // a block is live you can ship riders. Seed the tier accordingly.
   const isFirstSet = blocks.length === 0
-  const [draft, setDraft] = useState(() => createDraft(setNumber, 'major', blocks))
+  // Seeded from the studio's default standards when the player has marked any —
+  // a copy of them, never a link (see standards.js rule 1).
+  const [draft, setDraft] = useState(() => createDraft(setNumber, 'major', blocks, standards))
+  // An import the player has been shown but not yet confirmed:
+  // { kind, standard, incoming, report }. Held rather than applied so the fit
+  // report and the change it describes can never disagree.
+  const [pendingImport, setPendingImport] = useState(null)
   const anniversaryGate = canUnlockAnniversary({ franchise, setsShipped: sets.length, perks })
   // The founding concept's naming style (creature vs. character) — flavor
   // only, see content/concepts.js. Feeds the auto-fill preview below so it
@@ -231,7 +245,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
   // identity + slider work so they don't lose edits when toggling tiers.
   const changeTier = (nextTier) =>
     setDraft((d) => {
-      const seed = createDraft(setNumber, nextTier, blocks)
+      const seed = createDraft(setNumber, nextTier, blocks, standards)
       return {
         ...seed,
         name: d.name,
@@ -263,6 +277,10 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
         // with the kind, for a group that has nothing to do with the tier.
         godPack: d.godPack,
         illustrationSet: d.illustrationSet,
+        // Which studio standards this draft's sheet and pack came from, for the
+        // builder's own provenance line. Carried for the same reason as
+        // everything else here: the tier did not change where they came from.
+        standardFrom: d.standardFrom,
         // Theme is a per-set flavor pick, independent of tier — switching tier
         // shouldn't reset it out from under the player.
         themeId: d.themeId,
@@ -285,6 +303,48 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
   // it only flags that you'll dip into debt. The only release gate is validity.
   const goesIntoDebt = cash - cost.total < 0
   const canRelease = errors.length === 0
+
+  // ---- Studio standards -----------------------------------------------------
+  // Picking shows the fit report; only Import applies it. Both come from the
+  // same planning pass in standards.js, so what the player is shown and what
+  // they get can never describe different operations.
+  const raritySheets = standards.raritySheets ?? []
+  const packFormats = standards.packFormats ?? []
+  const sheetFrom = provenanceOf(draft, standards, 'raritySheet')
+  const formatFrom = provenanceOf(draft, standards, 'packFormat')
+
+  const pickStandard = (kind, id) => {
+    const std = (kind === 'raritySheet' ? raritySheets : packFormats).find((x) => x.id === id)
+    if (!std) return
+    const incoming = kind === 'raritySheet'
+      ? { sheet: std.sheet }
+      : { format: std.format, godPack: std.godPack }
+    setPendingImport({ kind, standard: std, incoming, report: checkStandardFit(draft, incoming) })
+  }
+
+  const confirmImport = () => {
+    if (!pendingImport) return
+    const { kind, incoming, standard } = pendingImport
+    setDraft((d) => ({
+      ...applyStandard(d, incoming),
+      standardFrom: { ...d.standardFrom, [kind]: standard.id },
+    }))
+    setPendingImport(null)
+  }
+
+  // Saving hands the library a copy of what the draft holds right now. The
+  // per-card `unique` rarities are dropped by makeRaritySheetStandard — they
+  // belong to one signature card and mean nothing in a shared sheet.
+  const saveStandard = (kind, name) => {
+    if (!onSaveStandard) return
+    const record = kind === 'raritySheet'
+      ? makeRaritySheetStandard(name || draft.name, draft.rarities, week)
+      : makePackFormatStandard(name || draft.name, draft.packFormat, draft.godPack, week)
+    onSaveStandard(kind, record)
+    // The draft now matches the standard it was just cut from, so the
+    // provenance line reads "unchanged" rather than nothing at all.
+    setDraft((d) => ({ ...d, standardFrom: { ...d.standardFrom, [kind]: record.id } }))
+  }
 
   const setCard = (idx, next) =>
     setDraft((d) => ({
@@ -547,6 +607,16 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
               {draft.secretCount > 0 && <> plus {draft.secretCount} secret rare{draft.secretCount > 1 ? 's' : ''} (e.g. {draft.setLength + 1}/{draft.setLength})</>}.
               Any card — even a humble common — can become a market darling.
             </span>
+            <StandardsBar
+              noun="rarity sheet"
+              standards={raritySheets}
+              provenance={sheetFrom}
+              pending={pendingImport?.kind === 'raritySheet' ? pendingImport : null}
+              onPick={(id) => pickStandard('raritySheet', id)}
+              onConfirm={confirmImport}
+              onCancel={() => setPendingImport(null)}
+              onSave={(name) => saveStandard('raritySheet', name)}
+            />
             <RarityEditor
               // Unique (per-signature-card) rarities are hidden here — each is
               // owned and edited from the signature card it belongs to, not
@@ -720,6 +790,16 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
               rarities each slot pulls. Hit-heavy boosters cost a little more to
               print and generate a little more buzz.
             </span>
+            <StandardsBar
+              noun="booster format"
+              standards={packFormats}
+              provenance={formatFrom}
+              pending={pendingImport?.kind === 'packFormat' ? pendingImport : null}
+              onPick={(id) => pickStandard('packFormat', id)}
+              onConfirm={confirmImport}
+              onCancel={() => setPendingImport(null)}
+              onSave={(name) => saveStandard('packFormat', name)}
+            />
             <PackFormatEditor
               format={draft.packFormat}
               // Unique (per-signature-card) rarities aren't manually assignable

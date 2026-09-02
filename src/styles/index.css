@@ -1978,3 +1978,36 @@ button.tag--oddsobscured:hover { border-color: var(--accent-2); color: var(--tex
 .std__new { margin-top: 8px; }
 .std__editor { display: flex; flex-direction: column; gap: 10px; }
 .std__actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+
+/* The set builder's link to the standards library (StandardsBar). Sits above
+   the rarity and booster editors, so it is deliberately quiet — a rule and a
+   row of controls, not a second panel competing with the editor below it. */
+.stdbar {
+  display: flex; flex-direction: column; gap: 6px;
+  padding-bottom: 10px; margin-bottom: 4px; border-bottom: 1px solid var(--border);
+}
+.stdbar__row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.stdbar__pick, .stdbar__name {
+  flex: 1 1 200px; min-width: 0; background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px; padding: 6px 9px;
+  font: inherit; font-size: 0.8rem;
+}
+.stdbar__from strong { color: var(--text); }
+.stdbar__confirm {
+  display: flex; flex-direction: column; gap: 8px;
+  border: 1px solid var(--accent); border-radius: 8px; padding: 10px;
+  background: var(--surface-2);
+}
+.stdbar__confirmhead { margin: 0; font-size: 0.82rem; line-height: 1.45; color: var(--text-dim); }
+.stdbar__confirmhead strong { color: var(--text); }
+.stdbar__group { display: flex; flex-direction: column; gap: 2px; }
+.stdbar__grouphead {
+  color: var(--text-dim); font-size: 0.68rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.stdbar__group ul { margin: 0; padding-left: 16px; }
+.stdbar__group li { color: var(--text); font-size: 0.78rem; line-height: 1.5; }
+.stdbar__confirmrow { display: flex; gap: 8px; justify-content: flex-end; }
+@media (pointer: coarse) {
+  .stdbar__pick, .stdbar__name, .stdbar__save { min-height: 44px; }
+}

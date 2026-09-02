@@ -278,7 +278,34 @@ export function seedFromStandards(standards = {}) {
     out.packFormat = cloneFormat(formatStd.format)
     out.godPack = cloneGodPack(formatStd.godPack)
   }
+  if (sheetStd || formatStd) {
+    out.standardFrom = { raritySheet: sheetStd?.id ?? null, packFormat: formatStd?.id ?? null }
+  }
   return out
+}
+
+// Which standard, if any, a draft's sheet or format came from, and whether the
+// player has since edited it. Drift is a deep compare rather than a dirty flag
+// because every edit path in the builder already writes the whole object —
+// a flag would have to be cleared by hand at each of them, and one missed site
+// would have the bar claiming a set matches a standard it no longer does.
+export function provenanceOf(draft, standards = {}, kind) {
+  const id = draft?.standardFrom?.[kind]
+  if (!id) return null
+  const list = kind === 'raritySheet' ? standards.raritySheets : standards.packFormats
+  const std = (list ?? []).find((s) => s.id === id)
+  if (!std) return null
+  const drifted = kind === 'raritySheet'
+    ? !same(cloneSheet((draft.rarities ?? []).filter((r) => !r.unique)), std.sheet)
+    : !same(cloneFormat(draft.packFormat), std.format)
+      || !same(cloneGodPack(draft.godPack), std.godPack)
+  return { standard: std, drifted }
+}
+
+// Both sides go through the cloners first, so this compares VALUES and never
+// trips on key order, an absent-vs-undefined field, or a stray extra key.
+function same(a, b) {
+  return JSON.stringify(a) === JSON.stringify(b)
 }
 
 // ---- Reconciliation --------------------------------------------------------
