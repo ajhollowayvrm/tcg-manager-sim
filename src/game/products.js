@@ -6,7 +6,7 @@
 // more revenue channels, but each costs its own print run up front.
 //
 // A product on a released set: { kind, name, price, printRun, supply, sold,
-// appeal:{casual,collectors}, demandMul, exclusivePromo? }.
+// appeal:{casual,collectors}, demandMul, exclusivePromo?, promoDesignId? }.
 // `appeal` weights how much each player segment buys this SKU; `demandMul` is a
 // flat volume multiplier vs. boosters (a $90 box moves far fewer units than a
 // $4.50 pack, before price elasticity).
@@ -113,7 +113,11 @@ export function finalizeProducts(draft) {
 export function makeProduct(kind) {
   const t = SKU_TYPES[kind]
   if (!t) return null
-  return { kind, name: t.name, price: t.defaultPrice, printRun: t.defaultPrintRun, exclusivePromo: false, channels: { ...DEFAULT_CHANNELS } }
+  // promoDesignId: which card from the studio's library ships in the box, or
+  // null to let the game mint one. Only meaningful on an spc with
+  // exclusivePromo set; read at release (sets.js) and not carried onto the
+  // finalised record, because by then the promo is a real card of its own.
+  return { kind, name: t.name, price: t.defaultPrice, printRun: t.defaultPrintRun, exclusivePromo: false, promoDesignId: null, channels: { ...DEFAULT_CHANNELS } }
 }
 
 // The print/manufacturing cost of one product line, scaled by its print run and

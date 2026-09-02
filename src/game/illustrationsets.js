@@ -51,6 +51,7 @@
 // makes with its own clampUnit.
 
 import { getRarity } from './rarities.js'
+import { castIdsOf } from './cast.js'
 import { getArtist } from './content/artists.js'
 import { makeRng, hashSeed } from './rng.js'
 import {
@@ -288,17 +289,25 @@ const SCORERS = {
   oneCharacter(members) {
     return modalShare(members, 'characterId')
   },
-  // Share of members whose character is related to the group's most common one.
+  // Share of members whose cast is related to the group's most common one.
   // Subsumes oneCharacter and additionally accepts a promotion chain.
+  //
+  // Reads the WHOLE cast on each card, not just its lead. That is the point of
+  // a many-per-card relationship: three cards that each star someone different
+  // but all feature Aryla in the background ARE a related run, and a collector
+  // pairs them for exactly that reason.
   relatedCast(members, ctx) {
     if (!members.length) return 0
     const chainOf = ctx.ancestry ?? new Map()
     let best = 0
     for (const anchor of members) {
-      if (!anchor.characterId) continue
-      let n = 0
-      for (const m of members) if (related(anchor.characterId, m.characterId, chainOf)) n++
-      best = Math.max(best, n)
+      for (const anchorId of castIdsOf(anchor)) {
+        let n = 0
+        for (const m of members) {
+          if (castIdsOf(m).some((id) => related(anchorId, id, chainOf))) n++
+        }
+        best = Math.max(best, n)
+      }
     }
     return best / members.length
   },
@@ -364,7 +373,8 @@ export function makeMember(card, { setId, week, valueTier, briefMatch }) {
     setId,
     week,
     artistId: card.artistId ?? null,
-    characterId: card.characterId ?? null,
+    characterId: card.characterId ?? null, // the LEAD, kept for every older reader
+    castIds: castIdsOf(card),
     valueTier,
     briefMatch: !!briefMatch,
   }

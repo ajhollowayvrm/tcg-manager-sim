@@ -56,6 +56,9 @@
 // tools/playtest.mjs imports the real reducer and its whole graph.
 
 import { clamp } from './simulation.js'
+// cast.js imports favorMultiplier/saturationMultiplier from here in turn; the
+// cycle is hoisted-functions-only on both sides, like the one with simulation.js.
+import { castIdsOf } from './cast.js'
 import { getLineageKind } from './content/lineages.js'
 import { MAX_TRAITS } from './content/traits.js'
 import { demeanorCentroid, centroidDistance, MAX_DEMEANORS } from './content/demeanors.js'
@@ -476,9 +479,13 @@ export function driftPeople(next) {
   // reads for fame drift.
   const liveCards = new Map()
   for (const card of next.cards ?? []) {
-    if (!card.characterId || card.banned || card.rotated) continue
-    if (!liveCards.has(card.characterId)) liveCards.set(card.characterId, [])
-    liveCards.get(card.characterId).push(card)
+    if (card.banned || card.rotated) continue
+    // Indexed by EVERY name on the card, not just the lead — same reason
+    // characters.js's liveCardsFor reads the whole cast.
+    for (const formId of castIdsOf(card)) {
+      if (!liveCards.has(formId)) liveCards.set(formId, [])
+      liveCards.get(formId).push(card)
+    }
   }
 
   const fameAdjust = new Map() // formId -> new fame

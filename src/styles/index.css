@@ -2155,3 +2155,16 @@ button.tag--oddsobscured:hover { border-color: var(--accent-2); color: var(--tex
   .builderview .builder--wide { overflow: visible; min-height: 0; }
   .builderview .builder__pane { overflow: visible; max-height: none; }
 }
+
+/* Studio > Cards — one library design and the actions under it. The editor
+   itself reuses .sigcard wholesale (it is the same card editor), so this is
+   only the row that wraps it and the footer that says where the design has
+   printed. */
+.librow { display: flex; flex-direction: column; gap: 0; margin-bottom: 10px; }
+.librow__foot {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 8px; padding: 8px 10px;
+  background: var(--surface-2); border-radius: 0 0 6px 6px;
+  border-top: 1px solid var(--border);
+  font-size: 0.75rem;
+}

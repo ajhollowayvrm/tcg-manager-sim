@@ -28,6 +28,10 @@ import { getArchetype } from './content/archetypes.js'
 import { getLineageKind, archetypeAllowed, archetypeRuleText } from './content/lineages.js'
 import { MAX_TRAITS } from './content/traits.js'
 import { MAX_DEMEANORS } from './content/demeanors.js'
+// cast.js imports famePopBonus from here in turn. The cycle is fine and matches
+// the one this file already has with simulation.js: both sides use only hoisted
+// function declarations, never a module-scope value from the other.
+import { cardFeaturesForm } from './cast.js'
 
 // Weeks a trajectory must hold before it can graduate, so an arc unfolds over a
 // real run instead of flipping every card release.
@@ -446,9 +450,13 @@ export function recordAppearance(characters, id, { cardId, setId, treatment, pop
 }
 
 // A character's live, unbanned/unrotated cards — the signal fame drift reads.
+// Membership goes through cardFeaturesForm, so a SUPPORTING credit counts: a
+// card you share with somebody else is still your card, and if this only read
+// the lead then naming a second character would cost them nothing and earn them
+// nothing, which would make the whole relationship decorative.
 function liveCardsFor(state, id) {
   return (state.cards ?? []).filter(
-    (c) => c.characterId === id && !c.banned && !c.rotated,
+    (c) => cardFeaturesForm(c, id) && !c.banned && !c.rotated,
   )
 }
 

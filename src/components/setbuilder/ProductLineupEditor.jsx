@@ -55,7 +55,7 @@ function ChannelSplitEditor({ channels, onChange }) {
   )
 }
 
-export default function ProductLineupEditor({ products, onChange, boosterChannels, onChangeBoosterChannels }) {
+export default function ProductLineupEditor({ products, onChange, boosterChannels, onChangeBoosterChannels, cardDesigns = [] }) {
   const byKind = new Map(products.map((p) => [p.kind, p]))
 
   const toggle = (kind) => {
@@ -109,15 +109,44 @@ export default function ProductLineupEditor({ products, onChange, boosterChannel
                 />
                 {/* Collector boxes can carry an exclusive, unpullable promo. */}
                 {kind === 'spc' && (
-                  <label className="check sku__promo">
-                    <input
-                      type="checkbox"
-                      checked={!!p.exclusivePromo}
-                      onChange={(e) => update(kind, { exclusivePromo: e.target.checked })}
-                    />
-                    Include an exclusive promo card
-                    <span className="muted"> (unpullable, scarce — a collector grail)</span>
-                  </label>
+                  <>
+                    <label className="check sku__promo">
+                      <input
+                        type="checkbox"
+                        checked={!!p.exclusivePromo}
+                        onChange={(e) => update(kind, {
+                          exclusivePromo: e.target.checked,
+                          // Unticking the box drops the named design too, or an
+                          // invisible pick would come back when it is reticked.
+                          promoDesignId: e.target.checked ? p.promoDesignId ?? null : null,
+                        })}
+                      />
+                      Include an exclusive promo card
+                      <span className="muted"> (unpullable, scarce — a collector grail)</span>
+                    </label>
+                    {/* The box's exclusive can be a card the studio DESIGNED
+                        (Studio > Cards) rather than one the game mints. Same
+                        doctrine as pulling a design into a set: it copies. */}
+                    {p.exclusivePromo && cardDesigns.length > 0 && (
+                      <label className="field field--full">
+                        <span>Which card</span>
+                        <select
+                          value={p.promoDesignId ?? ''}
+                          onChange={(e) => update(kind, { promoDesignId: e.target.value || null })}
+                        >
+                          <option value="">— Let the studio mint one —</option>
+                          {cardDesigns.map((d) => (
+                            <option key={d.id} value={d.id}>{d.name}</option>
+                          ))}
+                        </select>
+                        <span className="field__note">
+                          A design from your card library ships in the box. It is
+                          copied at release, so editing it afterwards will not
+                          reach the printed card.
+                        </span>
+                      </label>
+                    )}
+                  </>
                 )}
                 <ChannelSplitEditor channels={p.channels} onChange={(channels) => update(kind, { channels })} />
               </div>

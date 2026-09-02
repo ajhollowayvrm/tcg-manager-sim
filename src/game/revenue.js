@@ -114,13 +114,21 @@ function setAppeal(set, cards) {
   // as a long-awaited capstone revives interest in the product its predecessors
   // came in.
   const illustrationAppeal = set.illustrationAppeal ?? 0
+  // WHO is in this set, read fresh every week (cast.js's castAppealFor, written
+  // onto the set record by simulation.js). Same 0..0.12 band as the two above
+  // because it is an act of the same size — and it buys the thing a persistent
+  // cast is FOR: a set whose characters became household names two years later
+  // keeps moving product, and one whose cast went quiet stops. popFactors
+  // freezes a card's cast bonus at print, so without this term a character's
+  // whole career after her debut set was worth nothing to that set.
+  const castAppeal = set.castAppeal ?? 0
   // Rider fatigue (sets.js): the Nth consecutive rider since the last major
   // sells worse for its WHOLE LIFE, not just its launch week. Fatigue used to
   // scale only the discovery wave, so a studio shipping a cheap rider every
   // four weeks recruited badly but still moved packs at full appeal — which is
   // how rider spam became the highest-earning strategy in the game.
   const fatigue = set.riderFatigue ?? 1
-  return clamp((avgHype / 100) * (1 + richness * 0.12 + reprintBuzz + treatmentBuzz + spotlightAppeal + illustrationAppeal) * fatigue, 0.1, 1.5)
+  return clamp((avgHype / 100) * (1 + richness * 0.12 + reprintBuzz + treatmentBuzz + spotlightAppeal + illustrationAppeal + castAppeal) * fatigue, 0.1, 1.5)
 }
 
 // Weekly demand for ONE product SKU of a set, before its supply cap. Returns a
