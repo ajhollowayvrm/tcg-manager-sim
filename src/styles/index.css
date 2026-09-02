@@ -623,6 +623,41 @@ body {
 .roster__actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 10px 10px; }
 .lineage__rules { margin: 0; padding-left: 18px; font-size: 0.8rem; color: var(--text-dim); display: grid; gap: 2px; }
 
+/* A form row that is also a BUTTON — the character sheet makes the tree
+   clickable so a form opens its own sheet. Resets the button chrome the shared
+   .lineage__row rule does not expect, and keeps the row full width and
+   left-aligned so it is indistinguishable from the static version until it is
+   touched. */
+button.lineage__row {
+  width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer;
+  -webkit-appearance: none; appearance: none;
+}
+button.lineage__row:hover { border-color: var(--accent-2); }
+.lineage__row.is-active { border-color: var(--accent); }
+
+/* The fandom split: one bar per form, biggest share first. Deliberately the
+   same .bar/.bar__fill the roster rows already use, so a share reads at a glance
+   as the same kind of quantity as a fame or reach bar rather than as a new
+   chart the player has to learn. */
+.favour { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.favour__row { display: grid; grid-template-columns: minmax(0, 1fr) 2.5rem; align-items: center; gap: 4px 8px; }
+/* The shared .bar is a fixed 54px, which is right for the roster's inline "how
+   full is this" cue and far too small here, where the whole point is comparing
+   five shares against each other. Stretch it to the cell and thicken it enough
+   that a 7% share is still visible next to a 26% one. */
+.favour .bar { width: 100%; height: 8px; }
+.favour__name {
+  font-size: 0.8rem; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.favour__pct { font-size: 0.72rem; color: var(--text-dim); text-align: right; font-variant-numeric: tabular-nums; }
+
+/* The name takes its own line above the bar at every width. It is the part that
+   gets long — "Aryla — The Divine Channel" — and truncating a character's name
+   to keep a percentage on the same line is the wrong trade on a phone, which is
+   the only width this game is played at. */
+.favour__name { grid-column: 1 / -1; }
+
 /* Phone: the desktop-first layout works down to here, but a few dense spots
    need a stacked treatment so nothing crams or overlaps. (Audited live at
    375px — the set-builder footer was the main offender.) */

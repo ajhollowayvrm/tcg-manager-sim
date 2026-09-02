@@ -270,6 +270,13 @@ export function createSignatureCard(n, rarityId = 'rare') {
     newCharacterPromotedFrom: null,
     newCharacterLineageKind: null,
     newCharacterSecondParent: null,
+    // The FORM's half of a new character (see people.js): what to call this
+    // appearance on the roster, how it carries itself, and whether the card face
+    // says the character's name at all. Resolved at release beside the
+    // newCharacter* fields above.
+    newFormName: '',
+    newFormDemeanor: [],
+    newFormCarriesName: true,
     treatment: 'debut',
     // Optional: a hard-capped total copy count (10/25/50/99/1) independent of
     // the set's print run — a true serialized chase card. Once this many

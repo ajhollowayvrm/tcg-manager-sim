@@ -79,6 +79,8 @@ export function useGame() {
   // or two already on the roster — see characters.js's createLineageCharacter.
   const addCharacter = useCallback((name, identity, lineage) => dispatch({ type: 'ADD_CHARACTER', name, identity, lineage }), [])
   const updateCharacter = useCallback((id, patch) => dispatch({ type: 'UPDATE_CHARACTER', id, patch }), [])
+  // The CHARACTER's own identity, as opposed to one form's — see people.js.
+  const updatePerson = useCallback((id, patch) => dispatch({ type: 'UPDATE_PERSON', id, patch }), [])
   // A nonce so consecutive rips of the same set in the same week differ.
   const ripNonce = useRef(0)
   const rip = useCallback((setId) => dispatch({ type: 'RIP_PACK', setId, nonce: ripNonce.current++ }), [])
@@ -128,5 +130,5 @@ export function useGame() {
     return true
   }, [])
 
-  return { state, advanceWeek: advanceWeekAction, release, pull, reprint, adjustWave, reset, addCharacter, updateCharacter, rip, startGame, comp, sponsor, unsponsor, invitePrerelease: invitePrereleaseAction, sponsorTournament: sponsorTournamentAction, signDist, dropDist, cultivateDist, upgradeSupplyChain: upgradeSupplyChainAction, purchaseUpgrade: purchaseUpgradeAction, signArtist, endArtist, signPartner, signGrading, dropGrading, cultivateGrading, runBreak: runBreakAction, togglePurchaseLimits, togglePhantomStock, toggleOddsPublished, launchMerch, refreshMerch, retireMerch, pitchMedia, setGoodwill, setGrassroots, fundGrant: fundGrantAction, retire, saveStandard, deleteStandard, booting, saveError, exportRun, importRun }
+  return { state, advanceWeek: advanceWeekAction, release, pull, reprint, adjustWave, reset, addCharacter, updateCharacter, updatePerson, rip, startGame, comp, sponsor, unsponsor, invitePrerelease: invitePrereleaseAction, sponsorTournament: sponsorTournamentAction, signDist, dropDist, cultivateDist, upgradeSupplyChain: upgradeSupplyChainAction, purchaseUpgrade: purchaseUpgradeAction, signArtist, endArtist, signPartner, signGrading, dropGrading, cultivateGrading, runBreak: runBreakAction, togglePurchaseLimits, togglePhantomStock, toggleOddsPublished, launchMerch, refreshMerch, retireMerch, pitchMedia, setGoodwill, setGrassroots, fundGrant: fundGrantAction, retire, saveStandard, deleteStandard, booting, saveError, exportRun, importRun }
 }

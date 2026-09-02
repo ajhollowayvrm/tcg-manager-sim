@@ -1,7 +1,12 @@
-// Studio › Lineages — the ways a character can grow out of another, the lines
-// the cast has already formed, and a form to link a new character to one or two
-// existing ones without waiting for a signature card. See content/lineages.js
-// for the catalogue and characters.js for the mechanics.
+// Studio › Lineages — the ways one form of a character grows into another, the
+// lines the cast has already formed, and a form to link a new one without waiting
+// for a signature card. See content/lineages.js for the catalogue, characters.js
+// for the link mechanics, and people.js for what a line MEANS: a run of
+// same-being links is one character, and the tree drawn here is her story.
+//
+// A fusion or a successor is the exception — those start a NEW character who
+// descends from the old one, which is why the kinds reference below says so on
+// every card.
 
 import { useMemo, useState } from 'react'
 import { LINEAGE_KINDS, getLineageKind, archetypeRuleText, archetypeAllowed } from '../game/content/lineages.js'
@@ -9,52 +14,73 @@ import { getArchetype } from '../game/content/archetypes.js'
 import { MAX_TRAITS } from '../game/content/traits.js'
 import { lineageParents, validateLineage } from '../game/characters.js'
 import { ArchetypeSelect, TraitPicker } from './CharacterDetail.jsx'
+import { treeIndex, FormNode, DemeanorPicker, ContinuityNote } from './cast/FormTree.jsx'
 import Section from './nav/Section.jsx'
 
 export default function LineagesPanel({ state, onAddCharacter }) {
   const all = state.characters ?? []
+  const people = state.people ?? []
 
-  // Roots are characters with no parent; a tree hangs off each root that has
-  // at least one child. A fusion child appears under its primary parent and is
-  // marked with both names.
-  const { roots, childrenOf } = useMemo(() => {
-    const childrenOf = new Map()
+  // One tree per CHARACTER who has more than one form. Grouping by person rather
+  // than by root form is what makes a branching story read as one story: Aryla's
+  // fall and her promotion are two branches of one woman, not two lines that
+  // happen to share a parent.
+  const lines = useMemo(() => {
+    const byPerson = new Map()
     for (const c of all) {
-      const [primary] = lineageParents(c)
-      if (!primary) continue
-      if (!childrenOf.has(primary)) childrenOf.set(primary, [])
-      childrenOf.get(primary).push(c)
+      const key = c.personId ?? c.id
+      if (!byPerson.has(key)) byPerson.set(key, [])
+      byPerson.get(key).push(c)
     }
-    const roots = all.filter((c) => lineageParents(c).length === 0 && childrenOf.has(c.id))
-    return { roots, childrenOf }
-  }, [all])
+    return people
+      .map((p) => ({ person: p, forms: byPerson.get(p.id) ?? [] }))
+      .filter((l) => l.forms.length > 1)
+      .sort((a, b) => (b.person.recognition ?? 0) - (a.person.recognition ?? 0))
+  }, [all, people])
 
   return (
     <>
-      <Section id="studio.lineages.lines" title={`Lines (${roots.length})`} level={2}>
-        {roots.length === 0 ? (
+      <Section id="studio.lineages.lines" title={`Lines (${lines.length})`} level={2}>
+        {lines.length === 0 ? (
           <p className="panel__empty">
-            No character has grown out of another yet. Link one below, or pick
+            No character has grown into another form yet. Link one below, or pick
             “grows out of” on a new character's signature card in the set builder.
           </p>
         ) : (
-          <ul className="lineage">
-            {roots.map((r) => <LineageNode key={r.id} c={r} all={all} childrenOf={childrenOf} depth={0} />)}
-          </ul>
+          lines.map(({ person, forms }) => {
+            const { roots, childrenOf } = treeIndex(forms)
+            return (
+              <Section
+                key={person.id}
+                id={`studio.lineages.line.${person.id}`}
+                title={person.name}
+                level={3}
+                summary={`${forms.length} forms · recognition ${Math.round(person.recognition ?? 0)}`}
+              >
+                {person.throughline && <p className="charsheet__hook">“{person.throughline}”</p>}
+                <ul className="lineage">
+                  {roots.map((r) => (
+                    <FormNode key={r.id} form={r} all={forms} childrenOf={childrenOf} person={person} />
+                  ))}
+                </ul>
+              </Section>
+            )
+          })
         )}
       </Section>
 
       {onAddCharacter && all.length > 0 && (
-        <Section id="studio.lineages.link" title="Link a new character" level={2}>
-          <LinkForm all={all} onAdd={onAddCharacter} />
+        <Section id="studio.lineages.link" title="Link a new form" level={2}>
+          <LinkForm all={all} people={people} onAdd={onAddCharacter} />
         </Section>
       )}
 
       <Section id="studio.lineages.kinds" title="Kinds of lineage" level={2} defaultOpen={false}>
         <p className="panel__lede">
-          Seven shapes, each borrowed from a real card game. A kind that retires
+          Eight shapes, each borrowed from a real card game. A kind that retires
           the predecessor hands over more fame; one that keeps both prints hands
-          over less.
+          over less. Six of them continue the same character — the other two start
+          a new one.
         </p>
         {LINEAGE_KINDS.map((k) => (
           <Section key={k.id} id={`studio.lineages.kind.${k.id}`} title={k.name} level={3} defaultOpen={false} summary={k.short}>
@@ -63,10 +89,13 @@ export default function LineagesPanel({ state, onAddCharacter }) {
             <ul className="lineage__rules">
               <li>Inherits {Math.round(k.fameInherit * 100)}% of {k.parents === 2 ? 'each parent’s' : 'the parent’s'} fame</li>
               <li>Takes {archetypeRuleText(k)}</li>
-              <li>{k.retiresParent ? 'The predecessor steps aside — no new printings' : 'Both stay in print'}</li>
+              <li>{k.retiresParent
+                ? 'The predecessor takes no new printings — but the story can still branch from it'
+                : 'Both stay in print'}</li>
               {k.sameBeing
                 ? <li>Still the same character — the forms share one recognition</li>
                 : <li>A new character, descended from {k.parents === 2 ? 'both' : 'them'}</li>}
+              {k.sameBeing && <li>Fans expect the personality to move about {Math.round(k.expectedDrift * 100)}% on this link</li>}
               {k.parents === 2 && <li>Needs two parents</li>}
             </ul>
           </Section>
@@ -76,38 +105,10 @@ export default function LineagesPanel({ state, onAddCharacter }) {
   )
 }
 
-function LineageNode({ c, all, childrenOf, depth }) {
-  const kind = getLineageKind(c.lineageKindId)
-  const parents = lineageParents(c)
-  const other = parents.length > 1 ? all.find((x) => x.id === parents[1]) : null
-  const kids = childrenOf.get(c.id) ?? []
-  return (
-    <li className="lineage__node" style={{ '--depth': depth }}>
-      <div className={'lineage__row' + (c.retiredWeek ? ' is-retired' : '')}>
-        <span className="lineage__name">{c.name}</span>
-        <span className="lineage__meta">
-          {getArchetype(c.archetypeId).name} · fame {Math.round(c.fame)}
-          {c.retiredWeek ? ' · stepped aside' : ''}
-        </span>
-        {kind && (
-          <span className="lineage__kind" title={kind.short}>
-            {kind.name}{other ? ` with ${other.name}` : ''}
-          </span>
-        )}
-      </div>
-      {kids.length > 0 && (
-        <ul className="lineage">
-          {kids.map((k) => <LineageNode key={k.id} c={k} all={all} childrenOf={childrenOf} depth={depth + 1} />)}
-        </ul>
-      )}
-    </li>
-  )
-}
-
 // The link form: kind, parent(s), then the same identity fields the Cast
 // panel's form takes. The archetype picker is filtered by the kind's rule so
 // the player never picks one the reducer would refuse.
-function LinkForm({ all, onAdd }) {
+function LinkForm({ all, people, onAdd }) {
   const [kindId, setKindId] = useState('promotion')
   const [parentId, setParentId] = useState('')
   const [secondId, setSecondId] = useState('')
@@ -117,9 +118,17 @@ function LinkForm({ all, onAdd }) {
   const [hook, setHook] = useState('')
   const [pronouns, setPronouns] = useState('')
   const [species, setSpecies] = useState('')
+  const [demeanorIds, setDemeanorIds] = useState([])
+  const [formName, setFormName] = useState('')
+  const [carriesName, setCarriesName] = useState(true)
 
   const kind = getLineageKind(kindId)
-  const eligible = all.filter((c) => !c.retiredWeek)
+  // EVERY form is eligible as a parent, including a retired one. Retirement
+  // closes a path, not a character: a fall retires Royal Soldier, and Royal
+  // Commander still has to be able to grow out of him afterwards or a story that
+  // went two ways cannot be told at all. A retired form takes no new PRINTINGS —
+  // the set builder's picker still enforces that — and takes new branches.
+  const eligible = all
   const parent = all.find((c) => c.id === parentId)
   const parentIds = kind?.parents === 2 ? [parentId, secondId] : [parentId]
   const error = validateLineage(all, { kindId, parentIds, archetypeId })
@@ -139,13 +148,23 @@ function LinkForm({ all, onAdd }) {
   const toggleTrait = (id) => {
     setTraits((cur) => (cur.includes(id) ? cur.filter((t) => t !== id) : cur.length >= MAX_TRAITS ? cur : [...cur, id]))
   }
+  const toggleDemeanor = (id) => {
+    setDemeanorIds((cur) => (cur.includes(id) ? cur.filter((d) => d !== id) : cur.length >= 2 ? cur : [...cur, id]))
+  }
+
+  // The character this form will belong to, for the live continuity read below.
+  // Only meaningful for a same-being kind: a fusion or a successor starts a new
+  // character, who has no core to drift from yet.
+  const parentPerson = kind?.sameBeing && parent
+    ? (people ?? []).find((p) => p.id === parent.personId)
+    : null
 
   const submit = (e) => {
     e.preventDefault()
     if (!name.trim() || error) return
-    onAdd(name, { archetypeId, traits, hook, pronouns, species }, { kindId, parentIds })
+    onAdd(name, { archetypeId, traits, hook, pronouns, species, demeanorIds, formName, carriesName }, { kindId, parentIds })
     setName(''); setTraits([]); setHook(''); setPronouns(''); setSpecies('')
-    setParentId(''); setSecondId('')
+    setParentId(''); setSecondId(''); setDemeanorIds([]); setFormName(''); setCarriesName(true)
   }
 
   return (
@@ -165,7 +184,9 @@ function LinkForm({ all, onAdd }) {
         <select value={parentId} onChange={(e) => pickParent(e.target.value)}>
           <option value="">— pick a character —</option>
           {eligible.map((c) => (
-            <option key={c.id} value={c.id}>{c.name} ({getArchetype(c.archetypeId).name}, fame {Math.round(c.fame)})</option>
+            <option key={c.id} value={c.id}>
+              {c.name} ({getArchetype(c.archetypeId).name}, fame {Math.round(c.fame)}{c.retiredWeek ? ', retired' : ''})
+            </option>
           ))}
         </select>
       </label>
@@ -176,7 +197,9 @@ function LinkForm({ all, onAdd }) {
           <select value={secondId} onChange={(e) => setSecondId(e.target.value)}>
             <option value="">— pick a character —</option>
             {eligible.filter((c) => c.id !== parentId).map((c) => (
-              <option key={c.id} value={c.id}>{c.name} ({getArchetype(c.archetypeId).name}, fame {Math.round(c.fame)})</option>
+              <option key={c.id} value={c.id}>
+              {c.name} ({getArchetype(c.archetypeId).name}, fame {Math.round(c.fame)}{c.retiredWeek ? ', retired' : ''})
+            </option>
             ))}
           </select>
         </label>
@@ -191,6 +214,32 @@ function LinkForm({ all, onAdd }) {
 
       <ArchetypeSelect value={archetypeId} onChange={setArchetypeId} filter={archetypeFilter} />
       <TraitPicker traits={traits} onToggle={toggleTrait} archetypeId={archetypeId} />
+      <DemeanorPicker demeanors={demeanorIds} onToggle={toggleDemeanor} />
+
+      {parentPerson && (
+        <ContinuityNote
+          person={parentPerson}
+          form={{ demeanorIds }}
+          kindId={kindId}
+        />
+      )}
+
+      <div className="sigcard__row sigcard__controls">
+        <label className="field">
+          <span>Form name <span className="muted">(optional)</span></span>
+          <input value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="Royal Commander" />
+        </label>
+        <label className="check">
+          <input type="checkbox" checked={carriesName} onChange={(e) => setCarriesName(e.target.checked)} />
+          <span>The card face carries the character's name</span>
+        </label>
+      </div>
+      {!carriesName && parentPerson && (
+        <p className="field__note">
+          The room will take a while to work out this is {parentPerson.name}. When
+          they do, it lands as a moment.
+        </p>
+      )}
 
       <label className="field field--full">
         <span>Hook <span className="muted">(one line that says who they are)</span></span>
@@ -212,7 +261,7 @@ function LinkForm({ all, onAdd }) {
       {!error && parent && kind && (
         <p className="field__note">
           Debuts with about {Math.round(12 + parentIds.reduce((s, id) => s + (all.find((c) => c.id === id)?.fame ?? 0) * kind.fameInherit, 0))} fame.
-          {kind.retiresParent ? ` ${parent.name} steps aside.` : ''}
+          {kind.retiresParent ? ` ${parent.name} takes no new printings — the story can still branch from him.` : ''}
         </p>
       )}
 

@@ -113,7 +113,16 @@ const SATURATION_MAX_PENALTY = 0.18
 // How far a form's continuity may sit from what its lineage kind expects before
 // the room objects. Generous, because the demeanour axes are coarse by design
 // (see content/demeanors.js) and a narrow band would punish rounding.
-const CONTINUITY_TOLERANCE = 0.25
+//
+// BOUNDED BY WHAT THE ROSTER CAN ACTUALLY EXPRESS. The largest drift any two
+// demeanours in content/demeanors.js can produce is 0.735 (cheerful to cold), and
+// a two-pick centroid averages well below that. At a tolerance of 0.25 the
+// 'not-her' verdict needed a drift above 0.75 on a promotion, which no pick in
+// the table can reach — the branch was unreachable, so the loudest thing this
+// mechanic can say could never be said. At 0.20 it needs 0.65, which cheerful to
+// hollow-and-cold clears: reinventing a character on a promotion now reads as
+// somebody else, which is the whole point of scoring continuity at all.
+const CONTINUITY_TOLERANCE = 0.2
 
 // Same collision hazard as characters.js's characterId(): a fresh `person_1`
 // colliding with a saved one after a reload would silently re-point forms at the

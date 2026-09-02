@@ -11,11 +11,21 @@
 // player cannot browse is a cast they cannot get attached to, so it now uses the
 // filter/search/sort pattern PersonasPanel established (and CardBrowser already
 // copied), and every row opens the full sheet in CharacterDetail.
+//
+// IT LISTS CHARACTERS, NOT PRINTINGS. A character is one person printed in many
+// forms (people.js): Aryla, Destined Trainee and Royal Commander Aryla are one
+// woman. Listing the character RECORDS put five Arylas in the roster and no
+// Aryla, which reads as five unrelated people and is the exact confusion this
+// layer exists to remove. So a row is a character, its bar is recognition, and it
+// expands to the forms — each of which still opens its own sheet.
 
 import { useMemo, useState } from 'react'
 import { getArchetype } from '../game/content/archetypes.js'
 import { MAX_TRAITS } from '../game/content/traits.js'
 import CharacterDetail, { ArchetypeSelect, TraitPicker } from './CharacterDetail.jsx'
+import PersonDetail from './cast/PersonDetail.jsx'
+import { DemeanorPicker } from './cast/FormTree.jsx'
+import { formLabel, WIDELY_KNOWN_RECOGNITION } from '../game/people.js'
 import Section from './nav/Section.jsx'
 
 const CHAR_TRAJ_LABEL = { rising: 'Rising', established: 'Established', icon: 'Icon', fading: 'Fading' }
@@ -30,12 +40,6 @@ const CATEGORY_FILTERS = [
   { id: 'mythic', label: 'Mythic' },
   { id: 'supporting', label: 'Supporting' },
 ]
-
-const CHAR_SORTS = {
-  fame: (a, b) => b.fame - a.fame,
-  name: (a, b) => a.name.localeCompare(b.name),
-  recent: (a, b) => (b.appearances?.length ?? 0) - (a.appearances?.length ?? 0),
-}
 
 function trajClass(t) {
   if (t === 'icon' || t === 'established') return 'mood--good'
@@ -68,28 +72,62 @@ function CastRow({ name, sub, pct, pctTitle, trajectory, label, onOpen }) {
   )
 }
 
-export default function CastPanel({ state, onAddCharacter, onUpdateCharacter }) {
+export default function CastPanel({ state, onAddCharacter, onUpdateCharacter, onUpdatePerson }) {
   const [category, setCategory] = useState('all')
   const [sort, setSort] = useState('fame')
   const [query, setQuery] = useState('')
-  const [openId, setOpenId] = useState(null)
+  const [openPersonId, setOpenPersonId] = useState(null)
+  const [openFormId, setOpenFormId] = useState(null)
 
-  const all = state.characters ?? []
+  const forms = state.characters ?? []
+  const people = state.people ?? []
 
-  const characters = useMemo(() => {
+  // One row per CHARACTER, carrying its forms and the form doing best — which is
+  // the one whose archetype and trajectory the row should describe, because it is
+  // the one the audience is currently looking at.
+  const rows = useMemo(() => {
+    const byPerson = new Map()
+    for (const f of forms) {
+      const key = f.personId ?? f.id
+      if (!byPerson.has(key)) byPerson.set(key, [])
+      byPerson.get(key).push(f)
+    }
     const q = query.trim().toLowerCase()
-    return all
-      .filter((c) => category === 'all' || getArchetype(c.archetypeId).category === category)
-      .filter((c) => !q || c.name.toLowerCase().includes(q) || getArchetype(c.archetypeId).name.toLowerCase().includes(q))
-      .sort(CHAR_SORTS[sort])
-  }, [all, category, sort, query])
+    return people
+      .map((p) => {
+        const mine = byPerson.get(p.id) ?? []
+        const live = mine.filter((f) => !f.retiredWeek)
+        const best = (live.length ? live : mine).reduce(
+          (top, f) => ((f.fame ?? 0) > (top?.fame ?? -1) ? f : top), null,
+        )
+        return { person: p, forms: mine, best }
+      })
+      .filter((r) => r.best)
+      // The archetype filter reads the character's leading form: a filter that
+      // matched ANY form would put Aryla under every category she has ever taken,
+      // which is most of them by the end of a long line.
+      .filter((r) => category === 'all' || getArchetype(r.best.archetypeId).category === category)
+      // Search reaches every form's name, so typing "Divine" still finds Aryla
+      // even though the character is not called that.
+      .filter((r) => !q
+        || r.person.name.toLowerCase().includes(q)
+        || r.forms.some((f) => f.name.toLowerCase().includes(q))
+        || getArchetype(r.best.archetypeId).name.toLowerCase().includes(q))
+      .sort(
+        sort === 'name' ? (a, b) => a.person.name.localeCompare(b.person.name)
+          : sort === 'recent' ? (a, b) => b.forms.reduce((n, f) => n + (f.appearances?.length ?? 0), 0)
+              - a.forms.reduce((n, f) => n + (f.appearances?.length ?? 0), 0)
+          : (a, b) => (b.person.recognition ?? 0) - (a.person.recognition ?? 0),
+      )
+  }, [forms, people, category, sort, query])
 
-  const open = openId ? all.find((c) => c.id === openId) : null
+  const openPerson = openPersonId ? people.find((p) => p.id === openPersonId) : null
+  const openForm = openFormId ? forms.find((c) => c.id === openFormId) : null
 
   return (
-    <Section id="studio.cast" title={`Cast (${all.length})`} level={2}>
+    <Section id="studio.cast" title={`Cast (${people.length})`} level={2}>
 
-      {all.length > 1 && (
+      {people.length > 1 && (
         <div className="roster__controls">
           <div className="roster__filters">
             {CATEGORY_FILTERS.map((f) => (
@@ -110,7 +148,7 @@ export default function CastPanel({ state, onAddCharacter, onUpdateCharacter }) 
               placeholder="Search cast…"
             />
             <select className="roster__sort" value={sort} onChange={(e) => setSort(e.target.value)}>
-              <option value="fame">Fame</option>
+              <option value="fame">Recognition</option>
               <option value="name">Name</option>
               <option value="recent">Printings</option>
             </select>
@@ -118,27 +156,33 @@ export default function CastPanel({ state, onAddCharacter, onUpdateCharacter }) 
         </div>
       )}
 
-      {all.length > 0 && characters.length === 0 && (
+      {people.length > 0 && rows.length === 0 && (
         <p className="panel__empty">No characters match.</p>
       )}
 
-      {characters.length > 0 && (
+      {rows.length > 0 && (
         <ul className="roster">
-          {characters.map((c) => {
-            const archetype = getArchetype(c.archetypeId)
-            // The archetype is the identity now; the old free-text epithet rides
-            // behind it when the player kept one.
-            const sub = c.species ? `${archetype.name} · ${c.species}` : archetype.name
+          {rows.map(({ person, forms: mine, best }) => {
+            const archetype = getArchetype(best.archetypeId)
+            const known = (person.recognition ?? 0) >= WIDELY_KNOWN_RECOGNITION
+            // "best known as", not "currently": `best` is the form with the
+            // highest fame, which is the one the audience has in mind — not
+            // necessarily the one printed most recently.
+            const sub = mine.length > 1
+              ? `${mine.length} forms · best known as ${best.formName || formLabel(person, best)}`
+              : (best.species ? `${archetype.name} · ${best.species}` : archetype.name)
             return (
               <CastRow
-                key={c.id}
-                name={c.name}
+                key={person.id}
+                name={person.name}
                 sub={sub}
-                pct={c.fame}
-                pctTitle={`Fame ${Math.round(c.fame)}`}
-                trajectory={c.trajectory}
-                label={CHAR_TRAJ_LABEL[c.trajectory] ?? c.trajectory}
-                onOpen={() => setOpenId(c.id)}
+                pct={person.recognition}
+                pctTitle={`Recognition ${Math.round(person.recognition ?? 0)}`}
+                trajectory={known ? 'established' : best.trajectory}
+                label={mine.length > 1
+                  ? (known ? 'Known' : 'Building')
+                  : (CHAR_TRAJ_LABEL[best.trajectory] ?? best.trajectory)}
+                onOpen={() => setOpenPersonId(person.id)}
               />
             )
           })}
@@ -147,11 +191,24 @@ export default function CastPanel({ state, onAddCharacter, onUpdateCharacter }) 
 
       {onAddCharacter && <NewCharacterForm onAdd={onAddCharacter} />}
 
-      {open && (
-        <CharacterDetail
-          character={open}
+      {openPerson && (
+        <PersonDetail
+          person={openPerson}
           state={state}
-          onClose={() => setOpenId(null)}
+          onClose={() => setOpenPersonId(null)}
+          onUpdatePerson={onUpdatePerson}
+          onOpenForm={(id) => setOpenFormId(id)}
+        />
+      )}
+
+      {/* A form's own sheet sits ON TOP of the character's, rather than
+          replacing it: the character sheet is where you came from and where
+          closing this should put you back. */}
+      {openForm && (
+        <CharacterDetail
+          character={openForm}
+          state={state}
+          onClose={() => setOpenFormId(null)}
           onUpdate={onUpdateCharacter}
         />
       )}
@@ -172,21 +229,26 @@ function NewCharacterForm({ onAdd }) {
   const [hook, setHook] = useState('')
   const [pronouns, setPronouns] = useState('')
   const [species, setSpecies] = useState('')
+  const [demeanorIds, setDemeanorIds] = useState([])
 
   const toggleTrait = (id) => {
     setTraits((cur) => (cur.includes(id) ? cur.filter((t) => t !== id) : cur.length >= MAX_TRAITS ? cur : [...cur, id]))
+  }
+  const toggleDemeanor = (id) => {
+    setDemeanorIds((cur) => (cur.includes(id) ? cur.filter((d) => d !== id) : cur.length >= 2 ? cur : [...cur, id]))
   }
 
   const submit = (e) => {
     e.preventDefault()
     if (!name.trim()) return
-    onAdd(name, { archetypeId, traits, hook, pronouns, species })
+    onAdd(name, { archetypeId, traits, hook, pronouns, species, demeanorIds })
     setName('')
     setArchetypeId('unaligned')
     setTraits([])
     setHook('')
     setPronouns('')
     setSpecies('')
+    setDemeanorIds([])
   }
 
   return (
@@ -195,13 +257,24 @@ function NewCharacterForm({ onAdd }) {
         className="roster__addinput"
         value={name}
         onChange={(e) => setName(e.target.value)}
-        placeholder="New character name"
+        placeholder="New character name, e.g. Aryla, Destined Trainee"
       />
 
       {name.trim() && (
         <>
+          {/* The name above is the CARD's. The character's name is taken from the
+              half before the comma, the way this genre has always written a card
+              face: "Aryla, Destined Trainee" is Aryla. Rename the character on
+              her own sheet afterwards if the guess is wrong. */}
+          {name.includes(',') && (
+            <p className="field__note">
+              The character will be called <strong>{name.split(',')[0].trim()}</strong>,
+              and this card is her <strong>{name.split(',').slice(1).join(',').trim()}</strong> form.
+            </p>
+          )}
           <ArchetypeSelect value={archetypeId} onChange={setArchetypeId} />
           <TraitPicker traits={traits} onToggle={toggleTrait} archetypeId={archetypeId} />
+          <DemeanorPicker demeanors={demeanorIds} onToggle={toggleDemeanor} />
 
           <label className="field field--full">
             <span>Hook <span className="muted">(one line that says who they are)</span></span>

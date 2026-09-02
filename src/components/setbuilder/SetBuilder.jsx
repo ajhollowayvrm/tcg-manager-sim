@@ -6,7 +6,7 @@
 // this component's state and stepping over to Standards must not throw a
 // half-built set away.
 
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import Slider from './Slider.jsx'
 import SignatureCardEditor from './SignatureCardEditor.jsx'
 import RarityEditor from './RarityEditor.jsx'
@@ -166,10 +166,26 @@ function BuilderNav({ active, onPick, summaries, tierName }) {
   )
 }
 
-export default function SetBuilder({ setNumber, cash, artists, characters = [], liveCards = [], sets = [], blocks = [], illustrationSets = [], standards = {}, upgrades = {}, week = 1, franchise, perks = [], conceptId, onSaveStandard, onRelease }) {
+export default function SetBuilder({ setNumber, cash, artists, characters = [], people = [], liveCards = [], sets = [], blocks = [], illustrationSets = [], standards = {}, upgrades = {}, week = 1, franchise, perks = [], conceptId, onSaveStandard, onRelease }) {
   // The first set you ever ship MUST be a major (it opens your first block); once
   // a block is live you can ship riders. Seed the tier accordingly.
   const isFirstSet = blocks.length === 0
+  // The cast, grouped by the CHARACTER each form belongs to, most recognised
+  // first — for the cover picker below. A form whose character has not been
+  // derived yet falls into an ungrouped bucket rather than vanishing.
+  const coverGroups = useMemo(() => {
+    const groups = new Map()
+    const loose = []
+    for (const c of [...characters].sort((a, b) => (b.fame ?? 0) - (a.fame ?? 0))) {
+      const p = c.personId ? people.find((x) => x.id === c.personId) : null
+      if (!p) { loose.push(c); continue }
+      if (!groups.has(p.id)) groups.set(p.id, { person: p, forms: [] })
+      groups.get(p.id).forms.push(c)
+    }
+    const out = [...groups.values()].sort((a, b) => (b.person.recognition ?? 0) - (a.person.recognition ?? 0))
+    if (loose.length) out.push({ person: null, forms: loose })
+    return out
+  }, [characters, people])
   // Seeded from the studio's default standards when the player has marked any —
   // a copy of them, never a link (see standards.js rule 1).
   const [draft, setDraft] = useState(() => createDraft(setNumber, 'major', blocks, standards))
@@ -602,20 +618,32 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
                   onChange={(e) => patch({ coverCharacterId: e.target.value || null })}
                 >
                   <option value="">No cover character</option>
-                  {[...characters]
-                    .sort((a, b) => (b.fame ?? 0) - (a.fame ?? 0))
-                    .map((c) => (
+                  {/* GROUPED BY CHARACTER. A flat list put five Arylas in a row
+                      with nothing to say they were one woman — the exact
+                      confusion the person layer exists to remove (people.js).
+                      Retired forms stay offered: fronting the box is marketing,
+                      not a printing, and a beloved old form is often the most
+                      recognisable face the studio has. */}
+                  {coverGroups.map(({ person, forms: group }) => {
+                    const options = group.map((c) => (
                       <option key={c.id} value={c.id}>
-                        {c.name} · {getArchetype(c.archetypeId).name} — fame {Math.round(c.fame ?? 0)}
+                        {person ? (c.formName || c.name) : c.name} · {getArchetype(c.archetypeId).name} — fame {Math.round(c.fame ?? 0)}
+                        {person && Object.keys(person.favor ?? {}).length > 1
+                          ? ` · ${Math.round((person.favor[c.id] ?? 0) * 100)}% of the fandom` : ''}
                         {theme && archetypeMatchesTheme(c.archetypeId, theme.tags) ? ' ★' : ''}
                       </option>
-                    ))}
+                    ))
+                    return person
+                      ? <optgroup key={person.id} label={person.name}>{options}</optgroup>
+                      : <Fragment key="loose">{options}</Fragment>
+                  })}
                 </select>
                 <span className="field__note">
                   Putting a known face on the box lends the set that character's
                   accumulated fame. A newcomer lends almost nothing. A ★ marks a
                   face whose archetype suits this set's theme — it sells the box a
-                  little harder.
+                  little harder. Where a character has several forms, pick the one
+                  the fandom is actually attached to.
                 </span>
               </label>
             )}
@@ -789,6 +817,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
                   theme={theme}
                   artists={artists}
                   characters={characters}
+                  people={people}
                   rarities={draft.rarities}
                   packFormat={draft.packFormat}
                   open={openCards.has(card.id)}

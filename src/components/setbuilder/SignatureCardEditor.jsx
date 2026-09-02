@@ -9,6 +9,8 @@ import {
 import { TREATMENTS, getTreatment } from '../../game/characters.js'
 import { getArchetype, archetypeMatchesTheme, archetypesByCategory } from '../../game/content/archetypes.js'
 import { LINEAGE_KINDS, getLineageKind } from '../../game/content/lineages.js'
+import { DemeanorPicker, ContinuityNote } from '../cast/FormTree.jsx'
+import { formLabel, SATURATION_THRESHOLD } from '../../game/people.js'
 import { validateLineage } from '../../game/characters.js'
 import { FINISHES, getFinish, cardAppeal } from '../../game/sets.js'
 import SetSymbol from '../SetSymbol.jsx'
@@ -81,7 +83,7 @@ const CHAR_TREND = {
 }
 
 export default function SignatureCardEditor({
-  card, theme, artists, characters = [], rarities, packFormat,
+  card, theme, artists, characters = [], people = [], rarities, packFormat,
   open = true, onToggleOpen,
   onChange, onRaritiesChange, onPackFormatChange, onRemove,
 }) {
@@ -348,7 +350,7 @@ export default function SignatureCardEditor({
         </select>
       </label>
 
-      <CharacterPicker card={card} characters={characters} set={set} theme={theme} />
+      <CharacterPicker card={card} characters={characters} people={people} set={set} theme={theme} />
         </div>
       </div>
     </div>
@@ -378,7 +380,7 @@ function summarise(card, sheet, artist, characters) {
 // Feature a character on this card instead of a one-off: mint a brand-new one
 // (a debut appearance, no fame to draw on yet) or pull in an existing roster
 // entry (its fame bumps the card's appeal, scaled by the chosen treatment).
-function CharacterPicker({ card, characters, set, theme }) {
+function CharacterPicker({ card, characters, people = [], set, theme }) {
   const mode = card.characterId ? 'existing' : card.newCharacterName ? 'new' : 'none'
   const selected = card.characterId ? characters.find((c) => c.id === card.characterId) : null
   // A character a lineage kind retired takes no new printings.
@@ -397,6 +399,38 @@ function CharacterPicker({ card, characters, set, theme }) {
   // it's a reward for a character blowing up, not a day-one purchase option.
   const treatmentOptions = TREATMENTS.filter((t) => !t.requiresIcon || selected?.trajectory === 'icon')
 
+  // The character behind the selected form, and which of her forms the fandom
+  // currently likes best — the decision the favour split exists to create.
+  const selectedPerson = selected?.personId ? people.find((p) => p.id === selected.personId) : null
+  const favouriteForm = selectedPerson
+    ? characters
+        .filter((c) => c.personId === selectedPerson.id)
+        .reduce((top, c) => ((selectedPerson.favor?.[c.id] ?? 0) > (selectedPerson.favor?.[top?.id] ?? -1) ? c : top), null)
+    : null
+
+  // Printable forms, grouped under the character they belong to. A form with no
+  // character (a save mid-hydrate, or an imported partial) falls into a single
+  // ungrouped bucket rather than vanishing from the picker.
+  const groupedForms = (() => {
+    const groups = new Map()
+    const loose = []
+    for (const c of printable) {
+      const p = c.personId ? people.find((x) => x.id === c.personId) : null
+      if (!p) { loose.push(c); continue }
+      if (!groups.has(p.id)) groups.set(p.id, { person: p, forms: [] })
+      groups.get(p.id).forms.push(c)
+    }
+    const out = [...groups.values()].sort((a, b) => (b.person.recognition ?? 0) - (a.person.recognition ?? 0))
+    if (loose.length) out.push({ person: null, forms: loose })
+    return out
+  })()
+
+  // The character a NEW form would join, for the live continuity read. Only a
+  // same-being kind joins one: a fusion or a successor starts a new character.
+  const lineagePerson = lineageKind?.sameBeing && card.newCharacterPromotedFrom
+    ? people.find((p) => p.id === characters.find((c) => c.id === card.newCharacterPromotedFrom)?.personId)
+    : null
+
   return (
     <div className="field field--full counter">
       <span>
@@ -405,7 +439,7 @@ function CharacterPicker({ card, characters, set, theme }) {
       </span>
       <div className="toggle toggle--counter">
         <button className={'toggle__opt' + (mode === 'none' ? ' is-active' : '')}
-          onClick={() => set({ characterId: null, newCharacterName: '', newCharacterArchetype: 'unaligned', newCharacterSpecies: '', newCharacterHook: '', newCharacterPromotedFrom: null, newCharacterLineageKind: null, newCharacterSecondParent: null, treatment: 'debut' })}>
+          onClick={() => set({ characterId: null, newCharacterName: '', newCharacterArchetype: 'unaligned', newCharacterSpecies: '', newCharacterHook: '', newCharacterPromotedFrom: null, newCharacterLineageKind: null, newCharacterSecondParent: null, newFormName: '', newFormDemeanor: [], newFormCarriesName: true, treatment: 'debut' })}>
           One-off
         </button>
         <button className={'toggle__opt' + (mode === 'new' ? ' is-active' : '')}
@@ -501,9 +535,15 @@ function CharacterPicker({ card, characters, set, theme }) {
                     onChange={(e) => set({ newCharacterPromotedFrom: e.target.value || null })}
                   >
                     <option value="">{lineageKind.parents === 2 ? '— First parent —' : '— Grows out of —'}</option>
-                    {printable.map((c) => (
+                    {/* EVERY form, retired ones included. Retirement closes a
+                        path, not a character: a fall retires Royal Soldier, and
+                        Royal Commander still has to grow out of him afterwards or
+                        a story that went two ways cannot be told. A retired form
+                        takes no new printings — it is absent from the picker
+                        above — and it still takes new branches. */}
+                    {characters.map((c) => (
                       <option key={c.id} value={c.id}>
-                        {c.name} ({getArchetype(c.archetypeId).name}, fame {Math.round(c.fame)})
+                        {c.name} ({getArchetype(c.archetypeId).name}, fame {Math.round(c.fame)}{c.retiredWeek ? ', retired' : ''})
                       </option>
                     ))}
                   </select>
@@ -514,9 +554,9 @@ function CharacterPicker({ card, characters, set, theme }) {
                       onChange={(e) => set({ newCharacterSecondParent: e.target.value || null })}
                     >
                       <option value="">— Second parent —</option>
-                      {printable.filter((c) => c.id !== card.newCharacterPromotedFrom).map((c) => (
+                      {characters.filter((c) => c.id !== card.newCharacterPromotedFrom).map((c) => (
                         <option key={c.id} value={c.id}>
-                          {c.name} ({getArchetype(c.archetypeId).name}, fame {Math.round(c.fame)})
+                          {c.name} ({getArchetype(c.archetypeId).name}, fame {Math.round(c.fame)}{c.retiredWeek ? ', retired' : ''})
                         </option>
                       ))}
                     </select>
@@ -526,13 +566,63 @@ function CharacterPicker({ card, characters, set, theme }) {
                   )}
                   {!lineageError && card.newCharacterPromotedFrom && (
                     <span className="field__note">
-                      Debuts already known — carries over {Math.round(lineageKind.fameInherit * 100)}% of{' '}
-                      {lineageParentIds.map((id) => printable.find((c) => c.id === id)?.name).join(' and ')}'s
-                      fame, and every career records the moment.
-                      {lineageKind.retiresParent ? ' The predecessor steps aside.' : ''}
+                      {lineagePerson
+                        ? <>Another form of <strong>{lineagePerson.name}</strong>. She debuts already
+                            known, off the {Math.round(lineagePerson.recognition ?? 0)} recognition
+                            the character has earned across every form — not just off this one's fame.</>
+                        : <>Debuts already known — carries over {Math.round(lineageKind.fameInherit * 100)}% of{' '}
+                            {lineageParentIds.map((id) => characters.find((c) => c.id === id)?.name).join(' and ')}'s fame.</>}
+                      {lineageKind.retiresParent
+                        ? ' The predecessor takes no new printings — the story can still branch from it later.'
+                        : ''}
                     </span>
                   )}
                 </>
+              )}
+            </>
+          )}
+          {/* THE FORM's own half: what to call this appearance on the roster,
+              how it carries itself, and whether the card face even says the
+              character's name. See people.js. */}
+          <DemeanorPicker
+            demeanors={card.newFormDemeanor ?? []}
+            onToggle={(id) => {
+              const cur = card.newFormDemeanor ?? []
+              const next = cur.includes(id) ? cur.filter((d) => d !== id) : cur.length >= 2 ? cur : [...cur, id]
+              set({ newFormDemeanor: next })
+            }}
+          />
+          {/* The live read on whether this still scans as her — in the same words
+              the community will use after release, so the player is never
+              surprised by the verdict. Silent until there is something to judge. */}
+          {lineagePerson && (
+            <ContinuityNote
+              person={lineagePerson}
+              form={{ demeanorIds: card.newFormDemeanor ?? [] }}
+              kindId={lineageKind?.id}
+            />
+          )}
+          {lineageKind?.sameBeing && (
+            <>
+              <input
+                className="counter__target"
+                value={card.newFormName ?? ''}
+                onChange={(e) => set({ newFormName: e.target.value })}
+                placeholder="Form name (optional, e.g. 'Royal Commander')"
+              />
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={card.newFormCarriesName !== false}
+                  onChange={(e) => set({ newFormCarriesName: e.target.checked })}
+                />
+                <span>The card face carries the character's name</span>
+              </label>
+              {card.newFormCarriesName === false && lineagePerson && (
+                <span className="field__note">
+                  The card will not say {lineagePerson.name}. The room still works
+                  out who she is, and the studio's own lists keep her attached.
+                </span>
               )}
             </>
           )}
@@ -548,16 +638,27 @@ function CharacterPicker({ card, characters, set, theme }) {
 
       {mode === 'existing' && (
         <>
+          {/* GROUPED BY CHARACTER, and listing only PRINTABLE forms.
+              A flat list put five Arylas side by side with no indication they
+              were one woman, which is the confusion the person layer exists to
+              remove — and it offered retired forms, which take no new printings
+              and would silently debut as a plain new character at release. */}
           <select
             className="counter__target"
             value={card.characterId ?? ''}
             onChange={(e) => set({ characterId: e.target.value || null })}
           >
-            {characters.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name} · {getArchetype(c.archetypeId).name} · fame {Math.round(c.fame)} {CHAR_TREND[c.trajectory]?.icon ?? ''} {CHAR_TREND[c.trajectory]?.label ?? c.trajectory}
-                {theme && archetypeMatchesTheme(c.archetypeId, theme.tags) ? ' ★' : ''}
-              </option>
+            {groupedForms.map(({ person, forms }) => (
+              <optgroup key={person?.id ?? 'loose'} label={person ? person.name : 'Cast'}>
+                {forms.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {person ? formLabel(person, c) : c.name} · fame {Math.round(c.fame)}
+                    {person && Object.keys(person.favor ?? {}).length > 1
+                      ? ` · ${Math.round((person.favor[c.id] ?? 0) * 100)}% of the fandom` : ''}
+                    {theme && archetypeMatchesTheme(c.archetypeId, theme.tags) ? ' ★' : ''}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
           {selected && (
@@ -565,6 +666,20 @@ function CharacterPicker({ card, characters, set, theme }) {
               {CHAR_TREND[selected.trajectory]?.icon} {selected.name} is {CHAR_TREND[selected.trajectory]?.label ?? selected.trajectory}
               {selected.trajectory === 'icon' && ' — icon treatment unlocked'}
               {selectedMatch && ` ★ on-theme for a ${theme.name} set`}
+            </span>
+          )}
+          {/* Which form the room is actually attached to. Printing the newest
+              form when they still love the first one is a worse card, and this
+              is the only place the player can see that before committing. */}
+          {selectedPerson && Object.keys(selectedPerson.favor ?? {}).length > 1 && (
+            <span className="field__note">
+              {Math.round((selectedPerson.favor[selected.id] ?? 0) * 100)}% of {selectedPerson.name}'s
+              fandom favours this form
+              {favouriteForm && favouriteForm.id !== selected.id && (
+                <> — their favourite is <strong>{formLabel(selectedPerson, favouriteForm)}</strong></>
+              )}.
+              {selectedPerson.saturation > SATURATION_THRESHOLD
+                && ' She is in too much right now; the room has started to say so.'}
             </span>
           )}
           <select

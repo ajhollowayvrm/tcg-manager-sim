@@ -160,7 +160,7 @@ export default function App() {
         <PackRipper state={state} onRip={game.rip} />
       </>
     ),
-    'studio.cast': <CastPanel state={state} onAddCharacter={game.addCharacter} onUpdateCharacter={game.updateCharacter} />,
+    'studio.cast': <CastPanel state={state} onAddCharacter={game.addCharacter} onUpdateCharacter={game.updateCharacter} onUpdatePerson={game.updatePerson} />,
     'studio.lineages': <LineagesPanel state={state} onAddCharacter={game.addCharacter} />,
     'studio.standards': <StandardsPanel state={state} onSave={game.saveStandard} onDelete={game.deleteStandard} />,
 
@@ -284,6 +284,7 @@ export default function App() {
                   cash={state.cash}
                   artists={state.artists}
                   characters={state.characters ?? []}
+                  people={state.people ?? []}
                   liveCards={state.cards.filter((c) => !c.banned && !c.rotated)}
                   sets={state.sets}
                   blocks={state.blocks ?? []}

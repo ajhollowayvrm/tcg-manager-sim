@@ -142,11 +142,12 @@ which is about *packaging* where `scarcity` is about supply.
 Collectors also name runs the studio never planned — rarely, about one every
 forty weeks.
 
-**Character lineage.** A new character can grow out of one (or two) already
-on the roster — Kell, Broken Boy into Kell, Royal Soldier. Two entries with
-their own archetypes and fame, linked by a lineage the cohesion scorer reads.
-The successor debuts already partly famous. Locks on debut. See "Lineage kinds"
-under The cast.
+**Character lineage.** A new form can grow out of one (or two) already on the
+roster — Kell, Broken Boy into Kell, Royal Soldier. Two entries with their own
+archetypes and fame, linked by a lineage the cohesion scorer reads, and (for a
+same-being kind) belonging to one character. The new form debuts already famous,
+off the character's recognition rather than only its parent's fame. Locks on
+debut. See "Lineage kinds" under The cast.
 
 ### Presentation
 
@@ -165,6 +166,66 @@ under The cast.
 Characters are the player's own IP: invented in the set builder or the Cast
 panel, and printed again and again.
 
+### A character is one person, printed in many forms
+
+Aryla, Destined Trainee is promoted to Aryla, Royal Soldier, whose story goes two
+ways — Lost One Aryla and Royal Commander Aryla — and the Lost One ascends into
+The Divine Channel, whose card face never says her name. Five cards, five
+personalities, one Aryla. Fans recognise her in all of them and keep a favourite
+among them.
+
+**Naming, in the code and on screen.** `state.characters` holds the **forms** and
+`card.characterId` points at one; renaming that field would orphan every card in
+every save. `state.people` holds the **people** (`game/people.js`). Every
+user-facing string says "character" for a person and "form" for a record.
+
+A person owns four things no single form can:
+
+- **Recognition** (0–100) — how well the audience knows this character, an EWMA
+  over the forms' fame weighted by favour. A new form debuts off *this*, so The
+  Divine Channel arrives famous because Aryla is famous rather than because its
+  parent form was hot. Past 60 the room knows her by name.
+- **Favour** — how the fandom divides across the forms, shifting weekly with
+  what you print and how it performs. A form out of print decays toward a floor
+  rather than to zero, so the form people grew up with stays their favourite.
+  Every fame bonus is multiplied by the form's share; an even share is exactly
+  1.0, so a one-form character is unaffected.
+- **Saturation** — overexposure. Every printing of any form adds 22 and it bleeds
+  off 1 a week, so printing one character in every set climbs to ~86 at the
+  default cadence and ~0 at every other release. Past 55 it costs appeal and
+  draws the `overexposed` grievance.
+- **Continuity** — a throughline, core traits and a **core demeanour** every form
+  is read against.
+
+**Kin pull.** Each form's fame is drawn toward its character's recognition every
+week, at a strength its lineage kind names. A hot form lifts its siblings. This
+generalises the fame link `transformation` used to have alone, which keeps its
+0.1 and so behaves exactly as before.
+
+### Demeanours and continuity
+
+`content/demeanors.js` — 17 demeanours on three axes (`warmth`, `resolve`,
+`shadow`). Traits stay flavour by the explicit decision in `content/traits.js`, so
+the *measurable* half of a personality lives on its own field.
+
+A form's drift from the character's core is scored against what its **lineage
+kind expects**, not against zero. Drifting is not the fault; drifting the wrong
+amount for the story is:
+
+| Verdict | When | Appeal |
+| --- | --- | --- |
+| `true-to-her` | within 0.2 of the kind's expected drift | +6 |
+| `a-stretch` | within 0.4 | 0 |
+| `not-her` | far more change than the link earns | −8 |
+| `toothless` | far less change than the link promised | −4 |
+
+Hollow and cold reads `true-to-her` on a **fall** and `not-her` on a
+**promotion**. A fall that stays cheerful is `toothless`.
+
+The tolerance is 0.2 rather than 0.25 because the largest drift any two
+demeanours can express is 0.735 — at 0.25 the `not-her` verdict needed a drift
+above 0.75 on a promotion and could never fire at all.
+
 - **Archetype** — 12 across 4 categories (`content/archetypes.js`). The one
   identity field the sim reads. It carries theme tags, so an on-theme character
   earns +10 art appeal and +10 hype, beside the artist specialty match and
@@ -182,30 +243,38 @@ panel, and printed again and again.
 
 ### Lineage kinds
 
-Seven ways one character grows out of another (`content/lineages.js`), each
-borrowed from a real card game. A kind is data: the share of each parent's fame
-the child debuts with, an archetype rule, whether the predecessor retires, how
-many parents it takes.
+Eight ways one form grows into another (`content/lineages.js`), each borrowed
+from a real card game. A kind is data: the share of each parent's fame the child
+debuts with, an archetype rule, whether the predecessor retires, how many parents
+it takes, whether it is **the same character**, and how far fans expect the
+personality to move.
 
-| Kind | Precedent | Inherits | Archetype | Predecessor |
-| --- | --- | --- | --- | --- |
-| Promotion | L5R "Experienced", Star Wars CCG titles | 35% | any | stays in print |
-| Evolution | Pokémon stages, Digimon levels | 45% | the same | stays in print |
-| Transformation | MTG transform, Dragon Ball awakenings | 50% | any | stays; fame linked weekly |
-| Fusion | Yu-Gi-Oh fusion, DNA digivolution | 25% of each of two parents | any | both stay |
-| Growth | Flesh and Blood young hero to adult | 55% | same category | retires |
-| Fall | Anakin to Vader, dark digivolution | 50% | an antagonist | retires |
-| Successor | a new hero takes the mantle | 40% | any | retires |
+| Kind | Precedent | Inherits | Archetype | Same character | Expected drift |
+| --- | --- | --- | --- | --- | --- |
+| Promotion | L5R "Experienced", Star Wars CCG titles | 35% | any | yes | 0.25 |
+| Evolution | Pokémon stages, Digimon levels | 45% | the same | yes | 0.30 |
+| Transformation | MTG transform, Dragon Ball awakenings | 50% | any | yes | 0.55 |
+| Growth | Flesh and Blood young hero to adult | 55% | same category | yes, retires | 0.40 |
+| Fall | Anakin to Vader, dark digivolution | 50% | an antagonist | yes, retires | 0.85 |
+| Ascension | a mortal becomes a god | 60% | mythic | yes | 0.70 |
+| Fusion | Yu-Gi-Oh fusion, DNA digivolution | 25% of each of two | any | **no** — a new character | — |
+| Successor | a new hero takes the mantle | 40% | any | **no** — a new character, retires | — |
 
-The rule behind the numbers: a kind that retires the predecessor transfers
-more fame, because the audience moves over. A **retired** character takes no
-new printings and drops out of the hot-cast signal; its live cards keep selling
-and its fame keeps drifting off them. Every link is refused if it would close a
-loop, break the archetype rule, or build on a retired character. Links are made
-in the set builder (a new character's signature card) or directly in Studio ›
-Lineages. `promotedFromId` stays the primary parent on the record so every older
-reader keeps working; `lineageKindId`, `lineageParentIds` and `retiredWeek` are
-additive and normalise on load.
+The rule behind the fame numbers: a kind that retires the predecessor transfers
+more, because the audience moves over.
+
+**Retirement closes a path, not a character.** A retired form takes no new
+printings and drops out of the hot-cast signal; its live cards keep selling, its
+fame keeps drifting, and **it can still be built on**. Refusing that made an
+ordinary story impossible: the fall retires Aryla, Royal Soldier, so Royal
+Commander Aryla could never exist. The pressure retirement used to apply moved up
+to the character as saturation.
+
+A link is still refused if it would close a loop or break the archetype rule.
+Links are made in the set builder (a new character's signature card) or directly
+in Studio › Lineages. `promotedFromId` stays the primary parent on the record so
+every older reader keeps working; `lineageKindId`, `lineageParentIds` and
+`retiredWeek` are additive and normalise on load.
 
 Artists are the parallel system: a fixed 44-name roster with drifting cost and
 reach, so a cheap rising star is spottable before it blows up. They also carry
@@ -324,6 +393,12 @@ organised around the studio's relationships, each with sub-tabs:
 | Tab | Sub-tabs |
 | --- | --- |
 | Studio | Overview, Design, Sets, Cast, Lineages, Standards |
+
+Studio › **Cast** lists **characters**, not printings — one row per person, with
+their recognition and the form they are best known as; opening one shows the
+throughline, the recognition history, the fandom's split across the forms, and
+the tree, and each form drills through to its own sheet. Studio › **Lineages**
+draws the same tree grouped by character.
 | Business | Distribution, Grading, Illustrators, Partners, Ventures |
 | Community | Pulse, Voices, Programmes, Grassroots, News |
 | Stats | Money, Trends, Market, Cards, Scalp Watch |
@@ -332,11 +407,11 @@ organised around the studio's relationships, each with sub-tabs:
 Every headed section is a collapsible `Section` (`components/nav/Section.jsx`);
 the open state, the active tab and the active sub-tab per tab persist in
 localStorage (`components/nav/uiPrefs.js`), separate from the run save. A slim
-sticky strip holds the studio name, the week, cash, Design a Set and Advance
-Week; the six health meters live in the tabs that own their numbers
-(`components/nav/Meter.jsx`). Design a Set navigates to Studio › Design rather
-than opening anything — the set builder is a sub-tab, not a modal, so it stands
-next to the standards it imports.
+sticky strip holds the studio name, the week, cash and Advance Week; the six
+health meters live in the tabs that own their numbers
+(`components/nav/Meter.jsx`). There is **no Design a Set button** — the set
+builder is a sub-tab, not a modal, so it stands next to the standards it imports
+and you reach it at Studio › Design like anything else.
 
 The builder is the one view App keeps **mounted while you are elsewhere**,
 hidden rather than unmounted. Its draft lives in component state, so unmounting
@@ -376,7 +451,9 @@ TypeScript. One immutable `GameState` in a `useReducer`.
    state. Measure a sim change by diffing its table.
    `tools/uisweep.mjs` is the only check that the app RENDERS: it opens the
    build in a browser and visits every tab crossed with every sub-tab, failing
-   if a panel throws or comes up empty. It exists because vite compiles a free
+   if a panel throws or comes up empty. Note what it CANNOT see: it runs on a
+   fresh save, so every roster is empty and no cast, lineage or set-builder
+   picker is exercised with real data. Check those by hand. It exists because vite compiles a free
    identifier without a word — SetBuilder read `upgrades` without receiving it,
    threw on every render, and with no error boundary anywhere React unmounted
    the whole root. The builder was unreachable for two commits and every other
@@ -393,9 +470,13 @@ GameState {
   blocks: [...], pendingWaves: [...],
   cards: [ { id, setId, name, rarity, artistId, characterId, treatment,
              popFactors: {...}, sealedPrice, singlePrice, priceHistory: [...] } ],
-  characters: [ { id, name, archetypeId, traits, hook, pronouns, fame,
+  characters: [ { id, name, archetypeId, traits, hook, pronouns, fame,      // FORMS
                   trajectory, appearances, beats, fameHistory,
-                  promotedFromId, lineageKindId, lineageParentIds, retiredWeek } ],
+                  promotedFromId, lineageKindId, lineageParentIds, retiredWeek,
+                  personId, formName, demeanorIds, carriesName, lastPrintedWeek } ],
+  people: [ { id, name, pronouns, throughline, coreTraits, coreDemeanor,     // CHARACTERS
+              rootFormId, descendedFromIds, recognition, recognitionHistory,
+              favor: { [formId]: 0..1 }, saturation, beats } ],
   illustrationSets: [ { id, kindId, name, plannedSize, status, cohesion,
                        members: [ { cardId, setId, week, artistId,
                                     characterId, valueTier } ] } ],
