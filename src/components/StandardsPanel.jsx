@@ -29,6 +29,7 @@ import {
   makeRaritySheetStandard,
   makePackFormatStandard,
   makeBlueprint,
+  reconcileFormatToSheet,
   MAX_STANDARD_NAME,
   MAX_STANDARD_NOTE,
 } from '../game/standards.js'
@@ -245,12 +246,26 @@ function FormatEditor({ draft, setDraft, sheets }) {
   const context = sheets.find((s) => s.id === contextId)?.sheet ?? defaultRaritySheet()
   const godPack = draft.godPack ?? { enabled: true, rarityIds: [] }
 
+  // Keep the format expressible in the sheet it is being designed against.
+  // PACK_PRESETS hardcode the eight built-in rarity ids, so applying "Premium"
+  // here would otherwise leave slots naming rarities a custom context sheet has
+  // never had — invisible in this editor (the chips just do not light) and only
+  // surfacing as a pile of remaps the first time the format is imported. Also
+  // run on a context switch, since the chips shown are the ones a slot should be
+  // able to name. Idempotent, so it never fights a chip the player is toggling.
+  const fit = (format) => reconcileFormatToSheet(format, context)
+  const useContext = (id) => {
+    setContextId(id)
+    const next = sheets.find((s) => s.id === id)?.sheet ?? defaultRaritySheet()
+    setDraft({ ...draft, format: reconcileFormatToSheet(draft.format, next) })
+  }
+
   return (
     <>
       {sheets.length > 0 && (
         <label className="field field--full">
           <span>Show slots against <span className="muted">(which rarities to pick from while editing)</span></span>
-          <select value={contextId} onChange={(e) => setContextId(e.target.value)}>
+          <select value={contextId} onChange={(e) => useContext(e.target.value)}>
             <option value="">The built-in default sheet</option>
             {sheets.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
@@ -259,7 +274,7 @@ function FormatEditor({ draft, setDraft, sheets }) {
       <PackFormatEditor
         format={draft.format}
         sheet={context}
-        onChange={(format) => setDraft({ ...draft, format })}
+        onChange={(format) => setDraft({ ...draft, format: fit(format) })}
       />
       <h3 className="builder__h3">God pack</h3>
       <label className="check">

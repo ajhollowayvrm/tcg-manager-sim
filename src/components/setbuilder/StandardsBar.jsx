@@ -43,7 +43,7 @@ export default function StandardsBar({
             ))}
           </select>
         )}
-        {naming ? (
+        {!onSave ? null : naming ? (
           <>
             <input
               className="stdbar__name"

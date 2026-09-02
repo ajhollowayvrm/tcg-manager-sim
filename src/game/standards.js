@@ -335,6 +335,46 @@ export function nearestRarityId(entry, toSheet) {
   return best?.id ?? null
 }
 
+// Rewrite a format's slots so every id resolves against `sheet`, remapping what
+// does not by the same nearest-value-tier rule the import uses.
+//
+// Needed because PACK_PRESETS hardcode the eight default rarity ids: applying
+// "Premium" to a format being authored against a custom sheet yields slots
+// naming rarities that sheet has never had. Left alone, that is invisible in the
+// Studio (the chips simply do not light) and only surfaces as a pile of remaps
+// the first time the format is imported anywhere. Reconciling as the format is
+// edited keeps a saved booster expressible in the sheet it was designed against,
+// which is what lets a blueprint pairing the two report nothing to move.
+//
+// Idempotent: an id already in the sheet is left exactly as it is, so this can
+// run on every keystroke without fighting the player.
+export function reconcileFormatToSheet(format, sheet) {
+  const shared = (sheet ?? []).filter((r) => !r.unique)
+  if (!shared.length) return format
+  const live = new Set(expandRaritySheet(sheet ?? []).map((r) => r.id))
+  // An id being replaced has to be looked up somewhere that still KNOWS it, or
+  // getRarity hands back its neutral stub at value tier 40 and every orphan
+  // lands mid-ladder regardless of what it was. The sheet being reconciled to is
+  // by definition the wrong place to ask. The built-in sheet is the right one:
+  // its eight ids are permanent content ids with fixed meanings, and they are
+  // exactly what the presets hardcode, so 'sir' resolves at 88 and moves to the
+  // top of the new sheet rather than to its middle.
+  const reference = [...shared, ...defaultRaritySheet().filter((d) => !live.has(d.id))]
+  let changed = false
+  const slots = (format?.slots ?? []).map((slot) => {
+    const next = []
+    for (const id of slot.rarityIds ?? []) {
+      const keep = live.has(id) ? id : nearestRarityId(getRarity(reference, id), shared)
+      if (keep !== id) changed = true
+      // Two orphans can land on the same survivor, or on one the slot already
+      // holds; a slot listing a rarity twice would weight it twice in the draw.
+      if (keep && !next.includes(keep)) next.push(keep)
+    }
+    return { ...slot, rarityIds: next }
+  })
+  return changed ? { ...format, slots } : format
+}
+
 // Work out what importing `incoming` into `draft` would do, and do it. One
 // function for both, so the report the player confirms and the draft they get
 // can never describe different operations.

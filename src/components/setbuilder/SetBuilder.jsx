@@ -17,6 +17,7 @@ import {
   checkStandardFit,
   applyStandard,
   provenanceOf,
+  resolveBlueprint,
   makeRaritySheetStandard,
   makePackFormatStandard,
 } from '../../game/standards.js'
@@ -310,24 +311,51 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
   // they get can never describe different operations.
   const raritySheets = standards.raritySheets ?? []
   const packFormats = standards.packFormats ?? []
+  const blueprints = standards.blueprints ?? []
   const sheetFrom = provenanceOf(draft, standards, 'raritySheet')
   const formatFrom = provenanceOf(draft, standards, 'packFormat')
 
   const pickStandard = (kind, id) => {
-    const std = (kind === 'raritySheet' ? raritySheets : packFormats).find((x) => x.id === id)
+    const list = kind === 'raritySheet' ? raritySheets : kind === 'packFormat' ? packFormats : blueprints
+    const std = list.find((x) => x.id === id)
     if (!std) return
-    const incoming = kind === 'raritySheet'
-      ? { sheet: std.sheet }
-      : { format: std.format, godPack: std.godPack }
-    setPendingImport({ kind, standard: std, incoming, report: checkStandardFit(draft, incoming) })
+    // A blueprint brings BOTH halves in one operation, which is the whole point
+    // of it. A booster saved in the Studio is kept expressible in the sheet it
+    // was designed against, so a blueprint pairing those two has nothing to
+    // remap and imports silently — the mismatch report is there for the case
+    // where the player deliberately crosses a sheet with an unrelated pack.
+    // Either half may be missing (never set, or deleted since), and what a
+    // blueprint omits the draft simply keeps.
+    let incoming
+    let from
+    if (kind === 'blueprint') {
+      const { sheetStandard, formatStandard } = resolveBlueprint(std, standards)
+      incoming = {
+        ...(sheetStandard ? { sheet: sheetStandard.sheet } : {}),
+        ...(formatStandard ? { format: formatStandard.format, godPack: formatStandard.godPack } : {}),
+      }
+      from = { raritySheet: sheetStandard?.id, packFormat: formatStandard?.id }
+    } else {
+      incoming = kind === 'raritySheet'
+        ? { sheet: std.sheet }
+        : { format: std.format, godPack: std.godPack }
+      from = { [kind]: std.id }
+    }
+    setPendingImport({ kind, standard: std, incoming, from, report: checkStandardFit(draft, incoming) })
   }
 
   const confirmImport = () => {
     if (!pendingImport) return
-    const { kind, incoming, standard } = pendingImport
+    const { incoming, from } = pendingImport
     setDraft((d) => ({
       ...applyStandard(d, incoming),
-      standardFrom: { ...d.standardFrom, [kind]: standard.id },
+      // Provenance follows the halves that actually moved, so a blueprint that
+      // pins only a booster leaves the sheet's own provenance line alone.
+      standardFrom: {
+        ...d.standardFrom,
+        ...(from.raritySheet ? { raritySheet: from.raritySheet } : {}),
+        ...(from.packFormat ? { packFormat: from.packFormat } : {}),
+      },
     }))
     setPendingImport(null)
   }
@@ -472,7 +500,27 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
               modal opens on, so the first decision is still the first thing you
               see — it just stops occupying 150px forever once it is made. */}
           {(!wide || active === 'tier') && (
-            <TierPicker tier={draft.tier} isFirstSet={isFirstSet} anniversaryGate={anniversaryGate} onChange={onTierChange} />
+            <>
+              <TierPicker tier={draft.tier} isFirstSet={isFirstSet} anniversaryGate={anniversaryGate} onChange={onTierChange} />
+              {/* Blueprints sit with the tier because "start this set from my
+                  usual setup" is a first decision, not a pack decision — and
+                  because a blueprint moves BOTH the rarity sheet and the
+                  booster, so it belongs to neither section's own bar. Hidden
+                  until the player has saved one; there is nothing to explain
+                  to somebody who has none. */}
+              {blueprints.length > 0 && (
+                <StandardsBar
+                  noun="blueprint"
+                  standards={blueprints}
+                  provenance={null}
+                  pending={pendingImport?.kind === 'blueprint' ? pendingImport : null}
+                  onPick={(id) => pickStandard('blueprint', id)}
+                  onConfirm={confirmImport}
+                  onCancel={() => setPendingImport(null)}
+                  onSave={null}
+                />
+              )}
+            </>
           )}
 
 
