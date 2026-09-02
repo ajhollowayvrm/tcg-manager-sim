@@ -33,8 +33,12 @@ const H = Number(process.argv[4] ?? 956)
 const MIN_CHARS = 25
 
 const browser = await chromium.launch({
-  // Preinstalled in this environment; playwright would otherwise download one.
-  executablePath: process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium',
+  // CHROMIUM_PATH wins where a browser is preinstalled (CI images put one at
+  // /opt/pw-browsers/chromium). Undefined otherwise, so playwright falls back to
+  // the browser it downloaded into its own cache — which is what a developer
+  // machine has. This used to hard-code the CI path, so the sweep could not
+  // launch at all off CI.
+  executablePath: process.env.CHROMIUM_PATH || undefined,
 })
 const ctx = await browser.newContext({
   viewport: { width: W, height: H },
@@ -86,12 +90,23 @@ for (let t = 0; t < tabs.length; t++) {
   }
 }
 
-// The set builder is a Studio sub-tab now, so the loop above already visited it.
-// This second visit goes through the top strip's "Design a Set" button, which is
-// the other way in and the one that navigates rather than renders.
-console.log('\n  the set builder, via the top strip')
+// The set builder gets a second, DEEPER look than the loop above gives it.
+//
+// The loop reads `main`, which is the whole sub-tab panel. The builder is the
+// one view App keeps MOUNTED WHILE YOU ARE ELSEWHERE (hidden, not unmounted, so
+// a half-built draft survives a trip to Standards) — so `main` can carry text
+// from the builder while the builder itself is broken, or the other way round.
+// This block navigates back to Studio > Design and reads `.builderview`, the
+// builder's own root, so a throw inside it cannot hide behind its neighbours.
+//
+// It used to click a "Design a Set" button in the top strip. That button was
+// removed when the builder became a sub-tab, and the stale locator timed out —
+// which meant this check could not pass at all.
+console.log('\n  the set builder, on its own selector')
 const before = errors.length
-await page.locator('button', { hasText: /Design a Set/i }).first().click()
+await page.locator('.tabbar__btn', { hasText: /Studio/i }).first().click()
+await page.waitForTimeout(350)
+await page.locator('.substabs__btn', { hasText: /Design/i }).first().click()
 await page.waitForTimeout(900)
 const chars = (await page.locator('.builderview').first().innerText().catch(() => '')).trim().length
 if (errors.length > before) {
@@ -99,7 +114,7 @@ if (errors.length > before) {
   console.log(`      THREW: ${errors[before].slice(0, 200)}`)
 } else if (chars < MIN_CHARS) {
   bad++
-  console.log('      <<< EMPTY')
+  console.log('      <<< EMPTY — .builderview did not render')
 } else {
   console.log(`      ${chars} chars, no errors`)
 }
