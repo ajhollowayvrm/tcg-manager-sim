@@ -6,6 +6,8 @@
 
 import { normalizeCharacter } from './characters.js'
 import { derivePeople } from './people.js'
+import { withCast } from './cast.js'
+import { normalizeCardDesign } from './carddesigns.js'
 import { normalizeIllustrationSet } from './illustrationsets.js'
 import {
   normalizeRaritySheetStandard,
@@ -285,6 +287,15 @@ export function serialize(state) {
     for (const [k, def] of Object.entries(CARD_DEFAULTS)) {
       if (card[k] === def || card[k] === undefined) delete card[k]
     }
+    // castIds is an ARRAY, so the identity comparison above can never match a
+    // fresh empty one and every card in the game would carry a `"castIds":[]`.
+    // That is precisely the per-card bloat the move to IndexedDB at v18 was
+    // fighting, so it is handled explicitly. A single-name cast is dropped too:
+    // it is exactly `[characterId]`, which is already on the record, and
+    // hydrate rebuilds it — so only a genuine multi-cast card costs anything.
+    if (!card.castIds?.length || (card.castIds.length === 1 && card.castIds[0] === c.characterId)) {
+      delete card.castIds
+    }
     return card
   })
 
@@ -339,7 +350,11 @@ export function hydrate(state) {
   const formats = onlyOneDefault((state.packFormats ?? []).map(normalizePackFormatStandard).filter(Boolean))
   const next = {
     ...state,
-    cards: state.cards.map((c) => ({ ...CARD_DEFAULTS, ...c })),
+    // withCast reconciles the two cast fields in both directions: a card saved
+    // before multi-cast has only `characterId` and gains the matching list, and
+    // a multi-cast card whose list serialize() shortened gets it back. Neither
+    // needs a VERSION bump — the lead is unchanged and the list is derived.
+    cards: state.cards.map((c) => withCast({ ...CARD_DEFAULTS, ...c })),
     // Characters gained an IDENTITY after they first entered the save at v8 —
     // an archetype, traits, a hook, pronouns, story beats and a fame history.
     // That change is purely ADDITIVE, so it deliberately does NOT bump VERSION
@@ -371,6 +386,12 @@ export function hydrate(state) {
     grassroots: { level: Math.min(1, Math.max(0, Number(state.grassroots?.level) || 0)) },
     grassrootsGrants: Array.isArray(state.grassrootsGrants) ? state.grassrootsGrants : [],
     upgrades: state.upgrades && typeof state.upgrades === 'object' ? state.upgrades : {},
+    // The card library (Studio > Cards). Additive on the same terms as
+    // everything above: a save from before it has none and lands on an empty
+    // shelf. filter(Boolean) is load-bearing for the same reason it is on
+    // characters — normalizeCardDesign returns null for a record it cannot
+    // make sound, and one null in the array throws in the panel that renders it.
+    cardDesigns: (state.cardDesigns ?? []).map(normalizeCardDesign).filter(Boolean),
     illustrationSets: (state.illustrationSets ?? [])
       .map((g) => normalizeIllustrationSet(g, liveCardIds))
       .filter(Boolean),

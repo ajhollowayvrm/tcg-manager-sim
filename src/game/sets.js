@@ -21,8 +21,10 @@ import { makePromoCard } from './promos.js'
 import { printBillMul, artDirectorRate } from './upgrades.js'
 import { getTier, openBlock, refreshBlockWarp, mintTreatmentCards, mintAnniversaryCards, canUnlockAnniversary } from './blocks.js'
 import { getGimmick, NO_GIMMICK } from './content/gimmicks.js'
-import { createCharacter, famePopBonus, getTreatment, recordAppearance, createLineageCharacter } from './characters.js'
-import { derivePeople, recordPersonPrinting, favorMultiplier, saturationMultiplier, continuityVerdict } from './people.js'
+import { createCharacter, getTreatment, recordAppearance, createLineageCharacter } from './characters.js'
+import { derivePeople, recordPersonPrinting, continuityVerdict } from './people.js'
+import { castIdsOf, castMembers, castPopBonus, withCast } from './cast.js'
+import { recordPrinting } from './carddesigns.js'
 import { archetypeMatchesTheme } from './content/archetypes.js'
 import {
   getIllustrationKind,
@@ -139,10 +141,18 @@ export function createDraft(setNumber, tier = 'major', liveBlocks = [], standard
     // regional re-titling) — only meaningful when regionalStagger is on.
     leadRegionName: '',
 
-    // The full set: `setLength` numbered cards generated across the rarity sheet,
-    // plus `secretCount` secret rares numbered ABOVE the count (e.g. 151/150).
+    // The full set: `setLength` numbered cards generated across the rarity
+    // sheet, plus the cards you hand-designed, numbered ABOVE the count
+    // (e.g. 151/150).
+    //
+    // There used to be a second slider here — `secretCount` — for how many
+    // cards sat above the count, filled with themed-random chase. It is gone.
+    // The cards above the count are the ones the player DESIGNED, and their
+    // number is however many they designed; a dial that padded that band with
+    // procedural cards was asking the player to buy chase they had not
+    // authored. Released sets keep whatever `secretCount` they shipped with, so
+    // an in-flight save reprints exactly as it printed (see reprintAsUnlimited).
     setLength: t.defaultLength,
-    secretCount: t.ridesBlock ? 3 : 2, // riders are chase-dense → more secrets
     // Editable per-set rarity sheet (add/remove/rename; pick which a set has).
     rarities: defaultRaritySheet(),
     // Booster structure: how a pack is built from the sheet (slot counts + which
@@ -448,13 +458,16 @@ export function setCost(draft, artistOf = getArtist, ctx = {}) {
   // art direction across the whole set. Anchored at 1.0 for the default
   // loudness of 50, so this doesn't silently reprice every existing set.
   const loudnessMul = 0.85 + (loudnessOf(draft) / 100) * 0.3
-  // Secret rares are extra cards to design and extra plates to print. They used
-  // to be entirely free — and, being excluded from sizeProfile, couldn't even
-  // create bloat, so the dial was pure upside. Charged RELATIVE to the tier's
-  // own default, so a stock set is unchanged and only padding costs extra.
+  // The cards numbered above the count are extra cards to design and extra
+  // plates to print. That band used to be a slider with a per-tier default, and
+  // the multiplier was anchored on that default; the band is the signature
+  // highlights now and it is genuinely OPTIONAL, so it anchors at zero. A set
+  // with no designed cards pays the tier's floor and each one you design adds
+  // 2%. Anchoring on the retired seed instead made a stock set 4-6% CHEAPER
+  // than it had ever been, quietly, which is not a repricing anyone asked for.
   const tierDef = getTier(draft.tier ?? 'major')
-  const secretBase = tierDef.ridesBlock ? 3 : 2 // mirrors createDraft's seed
-  const secretMul = 1 + (clamp(draft.secretCount ?? 0, 0, MAX_SECRET_CARDS) - secretBase) * 0.02
+  const aboveCount = clamp((draft.signatureCards ?? []).length, 0, MAX_SIGNATURE_CARDS)
+  const secretMul = 1 + aboveCount * 0.02
   const dev = Math.round(
     tierDef.devCostFloor
     * gimmickMul * chaseMul * loudnessMul * secretMul
@@ -651,10 +664,11 @@ export function validateDraft(draft, ctx = {}) {
 export function expectedRarityCounts(draft) {
   const sheet = draft.rarities ?? defaultRaritySheet()
   const length = clamp(Math.round(draft.setLength ?? 60), MIN_SET_LENGTH, MAX_SET_LENGTH)
-  const secretCount = clamp(Math.round(draft.secretCount ?? 0), 0, MAX_SECRET_CARDS)
-  const sigs = (draft.signatureCards ?? []).slice(0, length)
+  const sigs = (draft.signatureCards ?? []).slice(0, MAX_SIGNATURE_CARDS)
 
   const counts = new Map(sheet.map((r) => [r.id, 0]))
+  // The hand-designed cards sit ABOVE the numbered set now, so they no longer
+  // consume body slots: the bulk fill is the whole of `setLength`.
   for (const sig of sigs) counts.set(sig.rarity, (counts.get(sig.rarity) ?? 0) + 1)
 
   // Unique rarities are excluded from the bulk-fill share — each belongs to
@@ -662,18 +676,9 @@ export function expectedRarityCounts(draft) {
   // (or is diluted by) the expected count of a shared rarity.
   const nonSecret = sheet.filter((r) => !r.secret && !r.unique && Math.max(0, r.pullWeight) > 0)
   const total = nonSecret.reduce((sum, r) => sum + Math.max(0, r.pullWeight), 0)
-  const bulk = Math.max(0, length - sigs.length)
   if (total > 0) {
     for (const r of nonSecret) {
-      counts.set(r.id, (counts.get(r.id) ?? 0) + bulk * (Math.max(0, r.pullWeight) / total))
-    }
-  }
-
-  const secretRarities = sheet.filter((r) => r.secret && !r.unique)
-  if (secretRarities.length) {
-    for (let i = 0; i < secretCount; i++) {
-      const r = secretRarities[i % secretRarities.length]
-      counts.set(r.id, (counts.get(r.id) ?? 0) + 1)
+      counts.set(r.id, (counts.get(r.id) ?? 0) + length * (Math.max(0, r.pullWeight) / total))
     }
   }
   return counts
@@ -691,6 +696,22 @@ function artNotesMatchTheme(notes, theme) {
   if (!notes?.trim() || !theme?.tags?.length) return false
   const words = notes.toLowerCase().split(/[^a-z]+/).filter(Boolean)
   return theme.tags.some((t) => words.includes(t.toLowerCase()))
+}
+
+// Fold a per-member appeal term over a card's cast: the LEAD in full, every
+// supporting member at half, and the whole thing CLAMPED. The card is ABOUT its
+// lead — a crowded card is not allowed to farm a flat bonus per name — but a
+// supporting credit still has to count for something or naming a second
+// character is free and meaningless.
+//
+// The clamp is the load-bearing half and it was missing: at half a head with no
+// ceiling, a card naming fifteen on-theme characters collected +80 art appeal
+// and +80 hype, which is exactly the farming the paragraph above forbids.
+// castPopBonus was capped from the start; this is the same discipline.
+function castWeighted(cast, valueOf, lo, hi) {
+  let sum = 0
+  cast.forEach((member, i) => { sum += valueOf(member) * (i === 0 ? 1 : 0.5) })
+  return clamp(sum, lo, hi)
 }
 
 function popFactors(card, draft, theme, sheet, rng, artistOf = getArtist, characters = [], illustrationPop = 0, people = []) {
@@ -713,36 +734,45 @@ function popFactors(card, draft, theme, sheet, rng, artistOf = getArtist, charac
   const artAppeal = clamp(baseArt + themeMatch + notesMatch + range(rng, -8, 8), 0, 100)
   const hype = clamp((standout + artAppeal) / 2 + range(rng, -12, 12), 0, 100)
 
-  // Featuring an existing character bolts on a baseline draw from its
-  // accumulated fame — "a new Pikachu card gets built-in demand no matter how
-  // it's designed" — scaled up by a richer treatment tier.
-  const character = card.characterId ? characters.find((c) => c.id === card.characterId) : null
-  // The FORM's own fame bonus, then the CHARACTER's three modifiers on top.
+  // Featuring a character bolts on a baseline draw from its accumulated fame —
+  // "a new Pikachu card gets built-in demand no matter how it's designed" —
+  // scaled up by a richer treatment tier.
   //
-  // famePopBonus itself is deliberately untouched. Layering on top of it keeps
-  // every historical balance number comparable: favorMultiplier returns exactly
-  // 1.0 for a character with one form, which is every character in every save
-  // that predates the person layer, and saturationMultiplier returns 1 below the
-  // threshold. A change INSIDE famePopBonus would move the whole playtest table
-  // at once and hide any real regression underneath it.
-  const person = character?.personId ? (people ?? []).find((p) => p.id === character.personId) : null
-  // Which form the fandom actually loves. Printing the newest Aryla when the
-  // room is still attached to the first one is a worse card than printing the
-  // one they want, and this is the term that says so.
-  const favorMul = person ? favorMultiplier(person, character.id) : 1
-  // Overexposure: too many forms of one character, too close together.
-  const satMul = person ? saturationMultiplier(person) : 1
-  const fameBonus = character ? famePopBonus(character.fame, card.treatment) * favorMul * satMul : 0
+  // The whole CAST, not one name. `castIds` is lead-first and falls back to the
+  // legacy `characterId`, so a card designed before multi-cast reads exactly as
+  // it always did (see cast.js).
+  //
+  // famePopBonus itself is deliberately untouched, and so are favorMultiplier
+  // and saturationMultiplier — castStanding layers on top of all three. That
+  // keeps every historical balance number comparable: both multipliers return
+  // exactly 1.0 for a character with one form, which is every character in
+  // every save that predates the person layer. A change INSIDE famePopBonus
+  // would move the whole playtest table at once and hide any real regression
+  // underneath it.
+  const cast = castMembers(card, characters, people ?? [])
+  // Full sum, hard-capped: a genuine team-up out-pulls a solo icon, and five
+  // icons on one card still cannot stack into something unbeatable.
+  const fameBonus = castPopBonus(cast, card.treatment)
   // Continuity: does this form still read as the character? Scored against what
   // the LINEAGE KIND leads fans to expect, so a fall is meant to break her and a
   // promotion is not. Sized against the +10 an on-theme archetype earns below,
   // so it colours a printing without deciding it.
-  const continuity = person && character ? continuityVerdict(person, character).appealDelta : 0
+  // Clamped to a little over one member's own range (-8..+6): a supporting
+  // credit colours the read, a crowd of them cannot decide it.
+  const continuity = castWeighted(cast, ({ form, person }) => (
+    person && form ? continuityVerdict(person, form).appealDelta : 0
+  ), -12, 10)
   // A character whose ARCHETYPE matches the set's theme reads as a coherent
   // printing — a frost guardian in a Frostbound set, not a beach episode. The
   // same idea as the artist specialty match above, and deliberately smaller than
   // it (+10 against +20): who is on the card matters less than who drew it.
-  const archetypeMatch = character && archetypeMatchesTheme(character.archetypeId, tags) ? 10 : 0
+  // Clamped at 15: an on-theme lead is worth +10, a second on-theme name is
+  // worth half of one more, and that is the end of it. Still comfortably under
+  // the artist specialty match's +20, which is the band the comment above
+  // describes.
+  const archetypeMatch = castWeighted(cast, ({ form }) => (
+    archetypeMatchesTheme(form.archetypeId, tags) ? 10 : 0
+  ), 0, 15)
 
   // Belonging to a coherent illustration set is worth roughly what an on-theme
   // character is (+10) and rather less than the artist who drew it (+20). It has
@@ -781,6 +811,12 @@ export function cardAppeal(card, sheet) {
   return clamp(base + ownFinish + rarityFinish + flavor, 0, 100)
 }
 
+// The cast fields for a card record, from whichever of the two a spec set.
+function castOf(spec) {
+  const { characterId, castIds } = withCast(spec)
+  return { characterId, castIds }
+}
+
 // Build one market-ready card record from a "spec" (id/name/rarity/number + an
 // optional designed signature card behind it).
 function buildCard(spec, draft, theme, sheet, rng, artistOf, characters = [], lift = null, people = []) {
@@ -806,7 +842,9 @@ function buildCard(spec, draft, theme, sheet, rng, artistOf, characters = [], li
     // has to resolve against the finished card records.
     variantOf: spec.variantOf ? `${draft._setId}_${spec.variantOf}` : null,
     artistId: spec.artistId ?? null,
-    characterId: spec.characterId ?? null,
+    // The cast. `characterId` stays the LEAD and `castIds` is lead-first —
+    // withCast keeps the two consistent so no reader has to know which was set.
+    ...castOf(spec),
     treatment: spec.treatment ?? null,
     serialCap: spec.serialCap ?? null,
     serialIssued: 0,
@@ -825,10 +863,21 @@ function buildCard(spec, draft, theme, sheet, rng, artistOf, characters = [], li
 }
 
 // Generate the WHOLE set: `setLength` numbered cards distributed across the
-// non-secret rarity sheet by pull weight, plus `secretCount` secret rares
-// numbered above the count. Signature highlights are slotted in as the top cards
-// (keeping their designed name/rarity/art/power); the rest are themed-random, so
-// any of them — even a humble common — can later become a market darling.
+// non-secret rarity sheet by pull weight, then the hand-designed signature
+// highlights numbered ABOVE the count (keeping their designed name/rarity/art/
+// power) — the chase band a real set puts its marquee cards in. Every numbered
+// card in the body is themed-random, so any of them — even a humble common —
+// can later become a market darling.
+//
+// The body used to start with the signature cards at 1/N and a separate
+// `secretCount` dial padded the above-count band with procedural chase. That
+// dial is gone: the cards above the count are the cards the player designed.
+// `draft.secretCount` is still READ for a set already on shelves, because
+// reprintAsUnlimited rebuilds an entire card pool from the record a released
+// set kept — it must reproduce what shipped, not what the builder would make
+// today.
+// Spec ids: `b1..bN` the numbered body, `s1..sN` any legacy secrets, `c1..cN`
+// the hand-designed cards (that prefix is load-bearing — see below).
 // `illustrationLift` maps a SPEC id ('c3') to the print-time lift its
 // illustration-set membership earns. Keyed by spec rather than card id because
 // card ids do not exist until the final map below.
@@ -842,7 +891,6 @@ export function generateCards(draft, setId, week, artistOf = getArtist, characte
   draft = { ...draft, _setId: setId } // buildCard reads _setId
 
   const length = clamp(Math.round(draft.setLength ?? 60), MIN_SET_LENGTH, MAX_SET_LENGTH)
-  const secretCount = clamp(Math.round(draft.secretCount ?? 0), 0, MAX_SECRET_CARDS)
   const sigs = draft.signatureCards ?? []
   // Unique rarities are excluded from bulk/secret fill — each belongs to
   // exactly the one signature card it was spun off for (see rarities.js's
@@ -852,42 +900,55 @@ export function generateCards(draft, setId, week, artistOf = getArtist, characte
 
   const specs = []
 
-  // 1) Signature highlights take the first numbers (they're the marquee cards).
-  sigs.slice(0, length).forEach((sig, i) => {
-    specs.push({
-      id: `c${i + 1}`, name: sig.name, rarity: sig.rarity, number: `${i + 1}/${length}`,
-      artistId: sig.artistId,
-      appeal: sig.appeal ?? sig.power, finish: sig.finish, flavorText: sig.flavorText, artNotes: sig.artNotes,
-      characterId: sig.characterId ?? null, treatment: sig.treatment ?? 'debut',
-      serialCap: sig.serialCap ?? null,
-      signature: true,
-    })
-  })
-
-  // 2) Fill the rest of the numbered set with themed-random cards, rarity by the
-  //    set's pull weights. Bulk cards get a modest random punch so a
-  //    sleeper can still spike, but they don't track the loudness dial.
-  for (let i = specs.length; i < length; i++) {
+  // 1) The numbered set: themed-random cards, rarity by the set's pull weights.
+  //    Bulk cards get a modest random punch so a sleeper can still spike, but
+  //    they don't track the loudness dial.
+  for (let i = 0; i < length; i++) {
     const rarityId = nonSecret.length ? pickRarity(nonSecret, rng) : (sheet[0]?.id ?? 'common')
     specs.push({
-      id: `c${i + 1}`, name: randomCardName(theme, rng, nameStyle), rarity: rarityId,
+      // `b` for body. The `c` prefix is RESERVED for the hand-designed cards
+      // below: three separate readers resolve a signature card by its index
+      // through `${setId}_c${i + 1}` — the spotlight picker, the illustration-set
+      // picks, and the art-notes map — and the body no longer starts at 1/N, so
+      // sharing the prefix would collide every body card with a signature.
+      id: `b${i + 1}`, name: randomCardName(theme, rng, nameStyle), rarity: rarityId,
       number: `${i + 1}/${length}`,
       appeal: clamp(Math.round(range(rng, 15, 70)), 0, 100), // bulk: low-to-mid, sleepers possible
     })
   }
 
-  // 3) Secret rares: numbered ABOVE the count, scarcest chase.
-  for (let s = 0; s < secretCount; s++) {
+  // 2) Legacy secret rares. Only a set RELEASED before the secret dial was
+  //    retired carries a secretCount, and reprintAsUnlimited replays its record
+  //    verbatim — so this reproduces what shipped and mints nothing for a set
+  //    designed today.
+  const legacySecrets = clamp(Math.round(draft.secretCount ?? 0), 0, MAX_SECRET_CARDS)
+  for (let s = 0; s < legacySecrets; s++) {
     const rarityId = secretRarities.length
       ? secretRarities[s % secretRarities.length].id
       : (nonSecret[nonSecret.length - 1]?.id ?? 'rare')
-    const num = length + s + 1
     specs.push({
       id: `s${s + 1}`, name: randomCardName(theme, rng, nameStyle), rarity: rarityId,
-      number: `${num}/${length}`, secret: true,
+      number: `${length + s + 1}/${length}`, secret: true,
       appeal: clamp(Math.round(range(rng, 20, 80)), 0, 100),
     })
   }
+
+  // 3) The hand-designed cards, numbered ABOVE the count — the marquee chase
+  //    band. `secret: true` because that is what the flag means everywhere else
+  //    in the sim: numbered past the set's own count, and chased for it
+  //    (revenue.js's cardWeight and market.js both read it that way).
+  sigs.slice(0, MAX_SIGNATURE_CARDS).forEach((sig, i) => {
+    specs.push({
+      id: `c${i + 1}`, name: sig.name, rarity: sig.rarity,
+      number: `${length + legacySecrets + i + 1}/${length}`,
+      artistId: sig.artistId,
+      appeal: sig.appeal ?? sig.power, finish: sig.finish, flavorText: sig.flavorText, artNotes: sig.artNotes,
+      characterId: sig.characterId ?? null, castIds: castIdsOf(sig), treatment: sig.treatment ?? 'debut',
+      serialCap: sig.serialCap ?? null,
+      signature: true,
+      secret: true,
+    })
+  })
 
   // 4) Variant printings. A variant is a SECOND card of one the set already
   //    has — same name, same character, same artist — printed with the
@@ -895,7 +956,7 @@ export function generateCards(draft, setId, week, artistOf = getArtist, characte
   //    It reprints the rarity's MARQUEE cards (signature highlights first, then
   //    the highest-appeal bulk), because that is which card a real set gives an
   //    alt art to. A variant whose parent rarity drew no cards prints nothing.
-  let above = length + secretCount
+  let above = length + legacySecrets + Math.min(sigs.length, MAX_SIGNATURE_CARDS)
   for (const { parent, entry } of variantEntries(sheet)) {
     const pool = [...specs.filter((sp) => sp.rarity === parent.id)].sort(
       (a, b) => (b.signature ? 1 : 0) - (a.signature ? 1 : 0) || (b.appeal ?? 0) - (a.appeal ?? 0),
@@ -914,6 +975,7 @@ export function generateCards(draft, setId, week, artistOf = getArtist, characte
         appeal: base.appeal,
         artistId: base.artistId ?? null,
         characterId: base.characterId ?? null,
+        castIds: castIdsOf(base),
         flavorText: base.flavorText,
         artNotes: base.artNotes,
         // NOT `finish`: a variant's treatment comes from the variant's own
@@ -1025,7 +1087,9 @@ export function releaseSet(state, draft) {
       created = createCharacter(sig.newCharacterName, identity)
       characters = [...characters, created]
     }
-    return { ...sig, characterId: created.id, treatment: 'debut' }
+    // The new character LEADS the card; any cast the player already named on it
+    // stays on as support behind her.
+    return { ...sig, characterId: created.id, castIds: [created.id, ...castIdsOf(sig).filter((id) => id !== created.id)], treatment: 'debut' }
   })
 
   draft = { ...draft, signatureCards: resolvedSigs }
@@ -1064,6 +1128,41 @@ export function releaseSet(state, draft) {
   characters = derived.characters
   const cards = generateCards(draft, setId, state.week, artistOf, characters, nameStyle, ilPhaseA.lift, peopleAtMint)
 
+  // SPC exclusive promo: if the collector-box SKU carries an exclusive promo,
+  // mint an SPC-only promo card (unpullable, scarce) that ships with that box.
+  //
+  // MINTED HERE, before the appearance loop, and not further down beside the
+  // treatment cards where it used to sit. It can now carry a CAST (from a
+  // library design named on the SKU), and a cast that collects the market
+  // premium and the sales lift has to record the printing and be charged the
+  // saturation like any other. Minted after the loop, it did neither — which
+  // made a collector box the one place you could print your icon every single
+  // set and never have the room notice.
+  const spc = (draft.products ?? []).find((p) => p.kind === 'spc' && p.exclusivePromo)
+  // The box's exclusive can be a card the studio DESIGNED (Studio > Cards,
+  // named on the SKU) rather than an auto-minted one. Same doctrine as a pull
+  // into a set: this COPIES the design, so editing the library afterwards
+  // cannot reach a box already on shelves.
+  const spcDesign = spc?.promoDesignId
+    ? (state.cardDesigns ?? []).find((d) => d.id === spc.promoDesignId)
+    : null
+  const promoCards = spc
+    ? [makePromoCard(state, {
+        label: 'SPC Exclusive', prestige: 0.7, themeId: draft.themeId, nonce: `${setId}_spc`,
+        ...(spcDesign ? {
+          name: spcDesign.name,
+          castIds: castIdsOf(spcDesign),
+          artistId: spcDesign.artistId,
+          appeal: spcDesign.appeal,
+          flavorText: spcDesign.flavorText,
+          artNotes: spcDesign.artNotes,
+          serialCap: spcDesign.serialCap,
+          treatment: spcDesign.treatment,
+          fameBonus: castPopBonus(castMembers(spcDesign, characters, peopleAtMint), spcDesign.treatment),
+        } : {}),
+      })]
+    : []
+
   // Every signature card that features a character (new or existing) records a
   // new appearance — bumps fame, files the debut set on a first printing. Feeds
   // the set builder's next view of fame and, at high fame, the icon treatment slot.
@@ -1072,20 +1171,25 @@ export function releaseSet(state, draft) {
   let people = peopleAtMint
   const formPerson = new Map(characters.map((c) => [c.id, c.personId]))
   const printedFor = new Set()
-  for (const card of cards) {
-    if (!card.characterId) continue
-    characters = recordAppearance(characters, card.characterId, {
-      cardId: card.id, setId, treatment: card.treatment, popFactors: card.popFactors,
-      week: state.week, setName: draft.name,
-    })
-    // Saturation is per CHARACTER per RELEASE, not per card. A set with three
-    // cards of Aryla is one appearance of Aryla to the room, and charging it
-    // three times would make an illustration line — the exact thing the game
-    // wants you to build — read as overexposure.
-    const pid = formPerson.get(card.characterId)
-    if (pid && !printedFor.has(pid)) {
-      printedFor.add(pid)
-      people = recordPersonPrinting(people, pid, { week: state.week })
+  for (const card of [...cards, ...promoCards]) {
+    // EVERY name on the card, not just the lead. A supporting credit is a real
+    // printing of that character — it is what makes a shared appearance worth
+    // designing — so it bumps their fame and counts toward their saturation
+    // exactly like a solo card does.
+    for (const formId of castIdsOf(card)) {
+      characters = recordAppearance(characters, formId, {
+        cardId: card.id, setId, treatment: card.treatment, popFactors: card.popFactors,
+        week: state.week, setName: draft.name,
+      })
+      // Saturation is per CHARACTER per RELEASE, not per card. A set with three
+      // cards of Aryla is one appearance of Aryla to the room, and charging it
+      // three times would make an illustration line — the exact thing the game
+      // wants you to build — read as overexposure.
+      const pid = formPerson.get(formId)
+      if (pid && !printedFor.has(pid)) {
+        printedFor.add(pid)
+        people = recordPersonPrinting(people, pid, { week: state.week })
+      }
     }
   }
 
@@ -1113,7 +1217,9 @@ export function releaseSet(state, draft) {
     rarities: cloneSheet(draft.rarities), // the set's rarity sheet (for pricing/packs/display)
     packFormat: cloneFormat(draft.packFormat), // booster structure (slots) for ripping/display
     setLength: draft.setLength,
-    secretCount: draft.secretCount,
+    // 0 for a set designed today; only a save's older sets carry a number, and
+    // reprintAsUnlimited needs it to reproduce what actually shipped.
+    secretCount: draft.secretCount ?? 0,
     // How this set's size reads to the world — persisted so the weekly
     // reaction engines (personas/segments/events) can judge it long after
     // release without re-deriving it from the tier band.
@@ -1178,13 +1284,6 @@ export function releaseSet(state, draft) {
   // Set buzz lift from reprinting fan-favorite cards (carried on the set record
   // so revenue/market can read it).
   set.reprintBuzz = reprintResult.buzzLift
-
-  // SPC exclusive promo: if the collector-box SKU carries an exclusive promo,
-  // mint an SPC-only promo card (unpullable, scarce) that ships with that box.
-  const spc = (draft.products ?? []).find((p) => p.kind === 'spc' && p.exclusivePromo)
-  const promoCards = spc
-    ? [makePromoCard(state, { label: 'SPC Exclusive', prestige: 0.7, themeId: draft.themeId, nonce: `${setId}_spc` })]
-    : []
 
   // Treatment cards: the block gimmick's signature chase cards (Mega/Ascended/
   // Phantasmal). Every set in a block can print them; count + appeal scale with
@@ -1429,8 +1528,24 @@ export function releaseSet(state, draft) {
     ? { tasteKey: 'fairness', floor: 0.4, amount: 3, ambientAmount: 1 }
     : null
 
+  // The card library's printing log (carddesigns.js). Display only — every
+  // placement above already COPIED the design, so nothing here feeds a card.
+  let cardDesigns = state.cardDesigns ?? []
+  ;(draft.signatureCards ?? []).forEach((sig, i) => {
+    if (!sig.fromDesignId) return
+    cardDesigns = recordPrinting(cardDesigns, sig.fromDesignId, {
+      cardId: `${setId}_c${i + 1}`, setId, week: state.week, how: 'set',
+    })
+  })
+  if (spcDesign && promoCards[0]) {
+    cardDesigns = recordPrinting(cardDesigns, spcDesign.id, {
+      cardId: promoCards[0].id, setId, week: state.week, how: 'product',
+    })
+  }
+
   return {
     set,
+    cardDesigns, // state.cardDesigns after logging where each pulled design printed
     existingSets, // state.sets BEFORE appending this release (siblings may be buzz-bumped)
     // The new set's generated cards PLUS treatment chase, reprint instances, SPC promo.
     cards: [...hypedNewCards, ...reprintResult.reprintCards, ...promoCards],
@@ -1456,8 +1571,8 @@ export function releaseSet(state, draft) {
 
 // Resolve spotlight picks to concrete card ids in the freshly-minted pool.
 // A pick is { kind, ref }:
-//   signature — ref is the index into the draft's signatureCards (they take the
-//               set's first collector numbers, so `c${ref+1}`)
+//   signature — ref is the index into the draft's signatureCards (spec ids are
+//               `c${ref+1}`; they are numbered above the set's count)
 //   treatment — ref is the index into the block's minted treatment cards
 //   reprint   — ref is the index into the resolved reprint instances
 // Picks that don't resolve (a signature removed after being spotlit, a
@@ -1518,16 +1633,16 @@ function provisionalIllustrationLift(state, draft, setId, characters) {
   // signature removed after being picked) is dropped, exactly as a spotlight
   // pick with no card is.
   //
-  // Bounded by the SET LENGTH as well as the signature count, because
-  // generateCards does `sigs.slice(0, length)` — a micro set with a 15-card
-  // floor and more signatures than that simply never prints the overflow. Left
-  // unbounded, phase A scored and lifted a card that phase B would then find
-  // missing, so a group could collect a permanent print-time bonus and then
-  // fail to exist at all.
-  const printable = Math.min(
-    sigs.length,
-    clamp(Math.round(draft.setLength ?? sigs.length), MIN_SET_LENGTH, MAX_SET_LENGTH),
-  )
+  // Bounded by the same cap generateCards slices to, because a signature past
+  // it simply never prints. Left unbounded, phase A scored and lifted a card
+  // that phase B would then find missing, so a group could collect a permanent
+  // print-time bonus and then fail to exist at all.
+  //
+  // That bound used to be the SET LENGTH, back when the signatures took the
+  // set's first numbers and a micro set's 15-card floor could cut them off.
+  // They are numbered above the count now, so the only thing that can drop one
+  // is MAX_SIGNATURE_CARDS.
+  const printable = Math.min(sigs.length, MAX_SIGNATURE_CARDS)
   const picked = []
   for (const pick of draft.illustrationSet?.picks ?? []) {
     if (pick?.kind !== 'signature') continue
@@ -1542,6 +1657,11 @@ function provisionalIllustrationLift(state, draft, setId, characters) {
         week: state.week,
         artistId: sig.artistId ?? null,
         characterId: sig.characterId ?? null,
+        // The whole cast, matching what makeMember records at release. Without
+        // it phase A scores relatedCast off the lead alone while the FROZEN
+        // group scores it off everyone, so the print-time lift is billed
+        // against a cohesion the recorded group does not have.
+        castIds: castIdsOf(sig),
         valueTier: getRarity(sheet, sig.rarity).valueTier ?? 0,
         briefMatch: briefMatches(sig.artNotes, group.artBrief),
       },
@@ -1600,10 +1720,9 @@ function resolveIllustrationSet(state, draft, setId, group, pools, characters) {
   // phase B files three, one of them a randomly generated card the player never
   // picked. (resolveCardPicks itself is left alone — spotlight has always
   // behaved this way and changing it is a separate decision.)
-  const sigCount = Math.min(
-    (draft.signatureCards ?? []).length,
-    clamp(Math.round(draft.setLength ?? 0), MIN_SET_LENGTH, MAX_SET_LENGTH),
-  )
+  // Same bound as provisionalIllustrationLift's `printable`, and for the same
+  // reason: a pick past what generateCards prints resolves to nothing.
+  const sigCount = Math.min((draft.signatureCards ?? []).length, MAX_SIGNATURE_CARDS)
   const usable = (spec.picks ?? []).filter(
     (p) => p?.kind !== 'signature' || (Number.isInteger(Number(p.ref)) && Number(p.ref) >= 0 && Number(p.ref) < sigCount),
   )
@@ -1616,7 +1735,7 @@ function resolveIllustrationSet(state, draft, setId, group, pools, characters) {
   // artNotes is authored on the DRAFT and never copied onto the card record
   // (buildCard returns twenty-one fields and that is not one of them), so the
   // brief match has to be read back through the signature index. Signature i
-  // takes collector number i+1 and therefore card id `${setId}_c${i+1}` — an
+  // takes spec id `c${i+1}` and therefore card id `${setId}_c${i+1}` — an
   // exact mapping, unlike matching on name, which a variant printing duplicates.
   const notesByCardId = new Map(
     (draft.signatureCards ?? []).map((sig, i) => [`${setId}_c${i + 1}`, sig.artNotes]),

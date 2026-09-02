@@ -30,8 +30,12 @@ import { signArtistContract, endArtistContract } from './artists.js'
 import { signPartnerPromo } from './partners.js'
 import { fundGrant } from './grassroots.js'
 import { purchaseUpgrade } from './upgrades.js'
-import { createCharacter, createLineageCharacter, normalizeCharacter } from './characters.js'
-import { derivePeople, normalizePerson } from './people.js'
+import { createCharacter, createLineageCharacter, normalizeCharacter, recordAppearance, getTreatment } from './characters.js'
+import { derivePeople, normalizePerson, recordPersonPrinting } from './people.js'
+import { castIdsOf, castMembers, castPopBonus } from './cast.js'
+import { createCardDesign, applyDesignPatch, standaloneCost, recordPrinting } from './carddesigns.js'
+import { makePromoCard } from './promos.js'
+import { currentArtist } from './artists.js'
 import { getLineageKind } from './content/lineages.js'
 import {
   STANDARD_KINDS,
@@ -79,7 +83,7 @@ export function reducer(state, action) {
       return applyClockDirective(next)
     }
     case 'RELEASE_SET': {
-      const { set, existingSets, cards, cashDelta, printIntensity, softenedCards, releaseFeed, newPlayers, pendingWave, blocks, block, tier, characters, people, personaSentimentBump, scalperHeatDelta, illustrationSets } = releaseSet(state, action.draft)
+      const { set, existingSets, cards, cashDelta, printIntensity, softenedCards, releaseFeed, newPlayers, pendingWave, blocks, block, tier, characters, people, personaSentimentBump, scalperHeatDelta, illustrationSets, cardDesigns } = releaseSet(state, action.draft)
       // If a card reprint softened existing originals, build from that patched
       // array; otherwise from the current one. Then append the new set's cards.
       const baseCards = softenedCards ?? state.cards
@@ -123,6 +127,7 @@ export function reducer(state, action) {
         characters: characters ?? state.characters,
         people: people ?? state.people,
         illustrationSets: illustrationSets ?? state.illustrationSets,
+        cardDesigns: cardDesigns ?? state.cardDesigns,
         pendingWaves: pendingWave ? [...(state.pendingWaves ?? []), pendingWave] : state.pendingWaves,
         segments,
         playerBase,
@@ -529,6 +534,94 @@ export function reducer(state, action) {
       // their own keys and survive this deliberately — see persistence.js.
       clearSave()
       return createInitialState({ prestige: currentPrestige() })
+    case 'ADD_CARD_DESIGN': {
+      // Studio > Cards. A card the studio has designed and not yet placed — see
+      // carddesigns.js for why a design is deliberately not owned by a release.
+      return {
+        ...state,
+        cardDesigns: [...(state.cardDesigns ?? []), createCardDesign(state.week, action.design ?? {})],
+      }
+    }
+    case 'UPDATE_CARD_DESIGN': {
+      // applyDesignPatch takes an explicit field allow-list, the same technique
+      // UPDATE_CHARACTER uses: a malformed patch can never reach the record's
+      // own bookkeeping (its id, when it was authored, where it has printed).
+      return {
+        ...state,
+        cardDesigns: (state.cardDesigns ?? []).map((d) => (
+          d.id === action.id ? applyDesignPatch(d, action.patch ?? {}) : d
+        )),
+      }
+    }
+    case 'REMOVE_CARD_DESIGN': {
+      // Removing a design cannot un-print anything. A pull COPIES (see
+      // carddesigns.js), so every card this design already became is untouched
+      // and keeps selling — only the shelf entry goes.
+      return { ...state, cardDesigns: (state.cardDesigns ?? []).filter((d) => d.id !== action.id) }
+    }
+    case 'PRINT_CARD_DESIGN': {
+      // Print one on its own: a promo, so it belongs to no set and can never be
+      // pulled from a booster (packs.js excludes it). Refused if the studio
+      // cannot pay — a design is free to author and only costs at the press.
+      const design = (state.cardDesigns ?? []).find((d) => d.id === action.id)
+      if (!design) return state
+      const cost = standaloneCost(design, (id) => currentArtist(state, id), getTreatment(design.treatment).costMul)
+      if (state.cash < cost) return state
+
+      const card = makePromoCard(state, {
+        label: 'Studio',
+        // Below the 0.7 an SPC exclusive carries: a promo the studio simply
+        // decided to print is not the prize for buying a collector box.
+        prestige: 0.55,
+        themeId: [...(state.sets ?? [])].reverse().find((s) => !s.rotated)?.themeId ?? null,
+        // The print ORDINAL, not just the design id: makePromoCard builds
+        // `promo_${week}_${nonce}`, so printing the same design twice in one
+        // week minted two cards with an identical id. `printings` is appended
+        // by recordPrinting below, so the second print of a week differs.
+        nonce: `design_${design.id}_${design.printings?.length ?? 0}`,
+        name: design.name,
+        castIds: castIdsOf(design),
+        artistId: design.artistId,
+        appeal: design.appeal,
+        flavorText: design.flavorText,
+        artNotes: design.artNotes,
+        serialCap: design.serialCap,
+        treatment: design.treatment,
+        fameBonus: castPopBonus(castMembers(design, state.characters ?? [], state.people ?? []), design.treatment),
+      })
+
+      // A printing is a printing: it bumps every named character's fame and
+      // charges their saturation exactly as a card in a set would.
+      let characters = state.characters ?? []
+      let people = state.people ?? []
+      const printedFor = new Set()
+      for (const formId of castIdsOf(design)) {
+        characters = recordAppearance(characters, formId, {
+          cardId: card.id, setId: null, treatment: design.treatment, popFactors: card.popFactors,
+          week: state.week, setName: 'a studio promo',
+        })
+        const pid = characters.find((c) => c.id === formId)?.personId
+        if (pid && !printedFor.has(pid)) {
+          printedFor.add(pid)
+          people = recordPersonPrinting(people, pid, { week: state.week })
+        }
+      }
+
+      return withPeople({
+        ...state,
+        cash: Math.round((state.cash - cost) * 100) / 100,
+        cards: [...state.cards, card],
+        characters,
+        people,
+        cardDesigns: recordPrinting(state.cardDesigns, design.id, {
+          cardId: card.id, setId: null, week: state.week, how: 'standalone',
+        }),
+        eventsFeed: [{
+          week: state.week, kind: 'community',
+          text: `${design.name} goes to press as a studio promo — a small run, no set, straight to the collectors.`,
+        }, ...state.eventsFeed].slice(0, 60),
+      })
+    }
     case 'ADD_CHARACTER': {
       // Pre-builds your cast ahead of a card, the same record a signature
       // card's "new character" request would mint at release (see sets.js's

@@ -14,6 +14,7 @@ import { clockDirective } from './clock.js'
 import { driftArtists, expireArtistContracts } from './artists.js'
 import { driftCharacters } from './characters.js'
 import { driftPeople } from './people.js'
+import { refreshCastAppeal } from './cast.js'
 import { updateFranchiseReputation } from './franchise.js'
 import { applyCadencePressure } from './cadence.js'
 import { applyRelationships } from './relationships.js'
@@ -261,6 +262,16 @@ export function advanceWeek(state) {
   // of character fame, which they read the same way. Do not "fix" it by moving
   // this call up.
   driftPeople(next)
+
+  // Cast pull, per set, refreshed off the standing that just moved. A card's
+  // cast bonus is frozen into its popFactors at print (sets.js), so this is the
+  // ONLY way a character's later career reaches the sets she is already in —
+  // read by revenue.js's setAppeal every week from here on.
+  //
+  // ORDER, for the same reason driftPeople sits after driftCharacters: this
+  // aggregates recognition, so recognition has to have moved first. It is a
+  // pure recompute over live cards, so re-running it is always safe.
+  refreshCastAppeal(next)
 
   // Grading partners: an active partner ambiently certifies a slice of the
   // market's highest-value eligible singles each week and carries its own

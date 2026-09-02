@@ -14,6 +14,7 @@
 // see the UPDATE_CHARACTER case in reducer.js, which enforces exactly that split.
 
 import { useState } from 'react'
+import { cardFeaturesForm, castIdsOf } from '../game/cast.js'
 import { useModal } from './useModal.js'
 import Section from './nav/Section.jsx'
 import Chart from './Chart.jsx'
@@ -59,12 +60,30 @@ export default function CharacterDetail({ character, state, onClose, onUpdate })
   if (!character) return null
 
   const archetype = getArchetype(character.archetypeId)
-  const cards = (state.cards ?? []).filter((c) => c.characterId === character.id)
+  // Every card they are ON, lead or supporting — cardFeaturesForm, not a
+  // `characterId` comparison, or their supporting credits would be missing from
+  // their own sheet while still moving their fame (see cast.js).
+  const cards = (state.cards ?? []).filter((c) => cardFeaturesForm(c, character.id))
   const setName = (id) => (state.sets ?? []).find((s) => s.id === id)?.name ?? 'an unreleased set'
   const debutSet = character.debutSetId ? setName(character.debutSetId) : null
 
   // The card that actually made them, by what the market says today.
   const best = cards.reduce((top, c) => ((c.singlePrice ?? 0) > (top?.singlePrice ?? 0) ? c : top), null)
+
+  // Everyone else printed alongside them, by how often.
+  const costars = (() => {
+    const counts = new Map()
+    for (const c of cards) {
+      for (const id of castIdsOf(c)) {
+        if (id === character.id) continue
+        counts.set(id, (counts.get(id) ?? 0) + 1)
+      }
+    }
+    return [...counts.entries()]
+      .map(([id, n]) => ({ name: (state.characters ?? []).find((x) => x.id === id)?.name, n }))
+      .filter((x) => x.name)
+      .sort((a, b) => b.n - a.n)
+  })()
 
   // Which sets still in print suit this archetype — the actionable half of the
   // theme-cohesion bonus, told as "where they belong" rather than as a number.
@@ -198,6 +217,16 @@ export default function CharacterDetail({ character, state, onClose, onUpdate })
             {best && (
               <p className="field__note">
                 Their best card is <strong>{best.name}</strong>, at {money(best.singlePrice ?? 0)}.
+              </p>
+            )}
+            {/* Who they share cards with. Two cards naming the same pair are
+                two cards collectors chase together, so this is the shape of the
+                relationship the cast layer is for — and it is invisible
+                anywhere else in the game. */}
+            {costars.length > 0 && (
+              <p className="field__note">
+                Shares a card with{' '}
+                {costars.map(({ name, n }) => `${name}${n > 1 ? ` (${n})` : ''}`).join(', ')}.
               </p>
             )}
             {(character.appearances ?? []).length === 0 ? (

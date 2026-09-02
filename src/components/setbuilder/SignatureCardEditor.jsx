@@ -1,7 +1,15 @@
 // Editor for a single signature card: rarity, printing finish, artist
-// commission, standout appeal, and the card's flavor + art-direction copy.
+// commission, standout appeal, the card's flavor + art-direction copy, and who
+// is on it.
+//
+// The half of that which is NOT set-scoped now lives in components/cards/,
+// shared with the card library (Studio > Cards): the card frame preview
+// (CardFrame.jsx), the craft fields (CardCraftFields.jsx) and the supporting
+// cast list (CastPicker.jsx). What stays here is exactly what needs a set: the
+// rarity picked off this set's sheet, the unique-rarity spin-off that edits
+// that sheet, and the new-character/lineage path, which is resolved at release
+// against the roster the release is minting into.
 
-import { ARTISTS, getArtist } from '../../game/content/artists.js'
 import {
   getRarity, visualTier, defaultRaritySheet,
   makeUniqueRarity, syncFormatWithUniqueRarity, pruneRarityFromFormat,
@@ -13,74 +21,13 @@ import { DemeanorPicker, ContinuityNote } from '../cast/FormTree.jsx'
 import { formLabel, SATURATION_THRESHOLD } from '../../game/people.js'
 import { validateLineage } from '../../game/characters.js'
 import { FINISHES, getFinish, cardAppeal } from '../../game/sets.js'
-import SetSymbol from '../SetSymbol.jsx'
+import { castIdsOf } from '../../game/cast.js'
+import { CardFramePreview, CHAR_TREND } from '../cards/CardFrame.jsx'
+import CardCraftFields, { makeArtistOf } from '../cards/CardCraftFields.jsx'
+import CastPicker, { groupForms } from '../cards/CastPicker.jsx'
 import NumberField from './NumberField.jsx'
 
 const PICKABLE_FINISHES = FINISHES.filter((f) => f.id !== 'standard')
-
-function formatCash(n) {
-  return '$' + n.toLocaleString('en-US')
-}
-
-// A deterministic two-tone art gradient per theme, so the preview's "art box"
-// reads as themed placeholder art rather than a flat panel. Hue derived from the
-// theme id so each theme has a consistent look.
-function artGradient(themeId) {
-  let h = 0
-  for (let i = 0; i < (themeId?.length ?? 0); i++) h = (h * 31 + themeId.charCodeAt(i)) % 360
-  return `linear-gradient(135deg, hsl(${h} 45% 28%), hsl(${(h + 40) % 360} 55% 16%))`
-}
-
-// A live trading-card preview of the card being designed: rarity-foiled frame,
-// themed art placeholder with the set symbol, name plate, type/finish line,
-// flavor box, and an artist/set-symbol footer. This is the brief's "real
-// card-frame styling in the card editor".
-function CardFramePreview({ card, theme, sheet, artist }) {
-  const finish = getFinish(card.finish)
-  const tier = visualTier(sheet, card.rarity) // common/uncommon/rare/mythic foil
-  const rarityName = getRarity(sheet, card.rarity).name
-  return (
-    <div className={`cardframe cardframe--${tier} cardframe--finish-${finish.id}`} aria-hidden="true">
-      <div className="cardframe__titlebar">
-        <span className="cardframe__name">{card.name || 'Unnamed Card'}</span>
-        <span className={`cardframe__gem gem--${tier}`} title={rarityName} />
-      </div>
-      <div className="cardframe__art" style={{ background: artGradient(theme?.id) }}>
-        {theme && <SetSymbol themeId={theme.id} tier={tier} size={48} />}
-      </div>
-      <div className="cardframe__typeline">
-        <span>{theme ? theme.name : 'Set'} · {rarityName}</span>
-        {finish.id !== 'standard' && <span className="cardframe__finish">{finish.name}</span>}
-      </div>
-      <div className="cardframe__text cardframe__text--flavor">
-        {card.flavorText?.trim() || 'Flavor text…'}
-      </div>
-      <div className="cardframe__footer">
-        <span className="cardframe__artist">
-          {artist ? `🖌 ${artist.name}` : 'Uncommissioned art'}
-        </span>
-        {theme && <SetSymbol themeId={theme.id} tier={tier} size={14} />}
-      </div>
-    </div>
-  )
-}
-
-// A short trend cue for an artist's current trajectory, so the player can spot a
-// cheap rising star before it blows up (or avoid an overpriced fading name).
-const TREND = {
-  rising: { icon: '↑', cls: 'trend--up', label: 'rising' },
-  established: { icon: '◆', cls: 'trend--est', label: 'established' },
-  fading: { icon: '↓', cls: 'trend--down', label: 'fading' },
-  steady: { icon: '→', cls: 'trend--flat', label: 'steady' },
-}
-
-// Fame trajectory cues, mirroring the artist TREND badges above.
-const CHAR_TREND = {
-  rising: { icon: '↑', cls: 'trend--up', label: 'rising' },
-  established: { icon: '◆', cls: 'trend--est', label: 'established' },
-  fading: { icon: '↓', cls: 'trend--down', label: 'fading' },
-  icon: { icon: '★', cls: 'trend--est', label: 'icon' },
-}
 
 export default function SignatureCardEditor({
   card, theme, artists, characters = [], people = [], rarities, packFormat,
@@ -118,14 +65,7 @@ export default function SignatureCardEditor({
         : [...(rarityEntry.finishes ?? []), finishId],
     })
   }
-  // Merge static identity (name/specialty) with the live drifted career so the
-  // displayed cost/reach and trend reflect the current week.
-  const artistOf = (id) => {
-    const base = getArtist(id)
-    if (!base) return null
-    const live = artists?.find((a) => a.id === id)
-    return live ? { ...base, cost: live.cost, reach: live.reach, trajectory: live.trajectory } : base
-  }
+  const artistOf = makeArtistOf(artists)
   const artist = card.artistId ? artistOf(card.artistId) : null
 
   // COLLAPSED, a card is one row: enough to recognise it and pick the one to
@@ -247,110 +187,13 @@ export default function SignatureCardEditor({
         </div>
       )}
 
-      <div className="sigcard__row sigcard__controls">
-        <label className="field" title="A hard-capped total copy count, independent of the set's print run — a true numbered chase card. Once this many are pulled, ever, it's gone.">
-          <span>Serial numbered</span>
-          <select
-            value={card.serialCap ?? ''}
-            onChange={(e) => set({ serialCap: e.target.value ? Number(e.target.value) : null })}
-          >
-            <option value="">None</option>
-            <option value="99">/99</option>
-            <option value="50">/50</option>
-            <option value="25">/25</option>
-            <option value="10">/10</option>
-            <option value="1">1-of-1</option>
-          </select>
-        </label>
-
-        <label className="field">
-          <span>Finish</span>
-          <select value={card.finish ?? 'standard'} onChange={(e) => set({ finish: e.target.value })}>
-            {FINISHES.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.name}{f.costMul !== 1 ? ` — ×${f.costMul} art` : ''}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-
-      <label className="field field--full">
-        <span>
-          Standout appeal: {card.appeal}
-          {cardAppeal(card, rarities) !== card.appeal && (
-            <span className="muted"> → {cardAppeal(card, rarities)} with finish &amp; flavor</span>
-          )}
-        </span>
-        <input
-          type="range"
-          min="0"
-          max="100"
-          value={card.appeal}
-          onChange={(e) => set({ appeal: Number(e.target.value) })}
-        />
-        <span className="field__note">
-          How much this card is meant to stand out on a shelf — the marquee pull
-          of the set, not a strength rating.
-        </span>
-      </label>
-
-      <label className="field field--full">
-        <span>Flavor text <span className="muted">(the italic line under the art)</span></span>
-        <textarea
-          rows="2"
-          value={card.flavorText ?? ''}
-          onChange={(e) => set({ flavorText: e.target.value })}
-          placeholder="e.g. It has never once been seen in daylight."
-        />
-      </label>
-
-      <label className="field field--full">
-        <span>Art direction <span className="muted">(brief for the commission)</span></span>
-        <input
-          value={card.artNotes ?? ''}
-          onChange={(e) => set({ artNotes: e.target.value })}
-          placeholder="e.g. stormy cliffside, backlit, low angle"
-        />
-        <span className="field__note">
-          A brief that leans into the set's theme reads as a more cohesive
-          commission — worth a little extra appeal.
-        </span>
-      </label>
-
-      <label className="field field--full">
-        <span>
-          Artist{' '}
-          {artist ? (
-            <>
-              — {formatCash(artist.cost)}, reach {Math.round(artist.reach)}{' '}
-              <span className={'trend ' + (TREND[artist.trajectory]?.cls ?? '')}>
-                {TREND[artist.trajectory]?.icon} {TREND[artist.trajectory]?.label}
-              </span>
-            </>
-          ) : (
-            '(uncommissioned)'
-          )}
-        </span>
-        <select
-          value={card.artistId ?? ''}
-          onChange={(e) => set({ artistId: e.target.value || null })}
-        >
-          <option value="">— No artist —</option>
-          {ARTISTS.map((base) => {
-            const a = artistOf(base.id)
-            const match = theme && base.specialty.some((s) => theme.tags.includes(s))
-            const trend = TREND[a.trajectory]?.icon ?? ''
-            return (
-              <option key={base.id} value={base.id}>
-                {base.name} · {formatCash(a.cost)} {trend}{match ? ' ★' : ''}
-              </option>
-            )
-          })}
-        </select>
-      </label>
+      <CardCraftFields card={card} set={set} artists={artists} theme={theme} rarities={sheet} />
 
       <CharacterPicker card={card} characters={characters} people={people} set={set} theme={theme} />
+      {/* The rest of the cast. The picker above names the LEAD (and is the only
+          place that can mint a brand-new character); this adds everyone else
+          who appears on the card. See cast.js. */}
+      <CastPicker card={card} characters={characters} people={people} theme={theme} set={set} />
         </div>
       </div>
     </div>
@@ -369,9 +212,10 @@ function summarise(card, sheet, artist, characters) {
   const finish = getFinish(card.finish)
   if (finish.id !== 'standard') parts.push(finish.name)
   if (artist) parts.push(artist.name)
-  const who = card.characterId
-    ? characters.find((c) => c.id === card.characterId)?.name
-    : (card.newCharacterName?.trim() || null)
+  // The whole cast, not just the lead — two names on a card is the thing that
+  // distinguishes it from its shelfmates, so the collapsed row has to say so.
+  const cast = castIdsOf(card).map((id) => characters.find((c) => c.id === id)?.name).filter(Boolean)
+  const who = cast.length ? cast.join(' & ') : (card.newCharacterName?.trim() || null)
   if (who) parts.push(`🎭 ${who}`)
   parts.push(`appeal ${cardAppeal(card, sheet)}`)
   return parts.join(' · ')
@@ -381,10 +225,22 @@ function summarise(card, sheet, artist, characters) {
 // (a debut appearance, no fame to draw on yet) or pull in an existing roster
 // entry (its fame bumps the card's appeal, scaled by the chosen treatment).
 function CharacterPicker({ card, characters, people = [], set, theme }) {
+  // Changing the LEAD has to rewrite the cast list, not just `characterId`:
+  // castIdsOf prefers the list when it has entries, so writing the id alone
+  // would leave the old lead in place and silently drop the player's pick.
+  // Passing null makes the card a one-off and takes the old lead off it,
+  // leaving whatever supporting cast was named.
+  const setLead = (id, patch = {}) => {
+    const rest = castIdsOf(card).filter((x) => x !== id && x !== card.characterId)
+    set({ ...patch, characterId: id, castIds: id ? [id, ...rest] : rest })
+  }
   const mode = card.characterId ? 'existing' : card.newCharacterName ? 'new' : 'none'
   const selected = card.characterId ? characters.find((c) => c.id === card.characterId) : null
   // A character a lineage kind retired takes no new printings.
-  const printable = characters.filter((c) => !c.retiredWeek)
+  // Supporting cast picked in CastPicker must not be offered as the lead here,
+  // or the same character lands on the card twice.
+  const printable = characters.filter((c) => !c.retiredWeek
+    && !castIdsOf(card).slice(1).includes(c.id))
   const lineageKind = getLineageKind(card.newCharacterLineageKind)
   const lineageParentIds = [card.newCharacterPromotedFrom, card.newCharacterSecondParent].filter(Boolean)
   const lineageError = lineageKind
@@ -411,19 +267,7 @@ function CharacterPicker({ card, characters, people = [], set, theme }) {
   // Printable forms, grouped under the character they belong to. A form with no
   // character (a save mid-hydrate, or an imported partial) falls into a single
   // ungrouped bucket rather than vanishing from the picker.
-  const groupedForms = (() => {
-    const groups = new Map()
-    const loose = []
-    for (const c of printable) {
-      const p = c.personId ? people.find((x) => x.id === c.personId) : null
-      if (!p) { loose.push(c); continue }
-      if (!groups.has(p.id)) groups.set(p.id, { person: p, forms: [] })
-      groups.get(p.id).forms.push(c)
-    }
-    const out = [...groups.values()].sort((a, b) => (b.person.recognition ?? 0) - (a.person.recognition ?? 0))
-    if (loose.length) out.push({ person: null, forms: loose })
-    return out
-  })()
+  const groupedForms = groupForms(printable, people)
 
   // The character a NEW form would join, for the live continuity read. Only a
   // same-being kind joins one: a fusion or a successor starts a new character.
@@ -439,24 +283,24 @@ function CharacterPicker({ card, characters, people = [], set, theme }) {
       </span>
       <div className="toggle toggle--counter">
         <button className={'toggle__opt' + (mode === 'none' ? ' is-active' : '')}
-          onClick={() => set({ characterId: null, newCharacterName: '', newCharacterArchetype: 'unaligned', newCharacterSpecies: '', newCharacterHook: '', newCharacterPromotedFrom: null, newCharacterLineageKind: null, newCharacterSecondParent: null, newFormName: '', newFormDemeanor: [], newFormCarriesName: true, treatment: 'debut' })}>
+          onClick={() => setLead(null, { newCharacterName: '', newCharacterArchetype: 'unaligned', newCharacterSpecies: '', newCharacterHook: '', newCharacterPromotedFrom: null, newCharacterLineageKind: null, newCharacterSecondParent: null, newFormName: '', newFormDemeanor: [], newFormCarriesName: true, treatment: 'debut' })}>
           One-off
         </button>
         <button className={'toggle__opt' + (mode === 'new' ? ' is-active' : '')}
-          onClick={() => set({ characterId: null, newCharacterName: card.name || '', newCharacterArchetype: card.newCharacterArchetype ?? 'unaligned', treatment: 'debut' })}>
+          onClick={() => setLead(null, { newCharacterName: card.name || '', newCharacterArchetype: card.newCharacterArchetype ?? 'unaligned', treatment: 'debut' })}>
           New character
         </button>
         <button className={'toggle__opt' + (mode === 'existing' ? ' is-active' : '')}
           disabled={printable.length === 0}
           title={printable.length === 0 ? 'No characters yet — create one first.' : undefined}
-          onClick={() => set({
+          onClick={() => setLead(printable[0]?.id ?? null, {
             // The archetype is KEPT, matching the "New character" branch above:
             // glancing at the existing roster and coming back must not silently
             // reset the player's pick to Unaligned, which would quietly drop both
             // the theme-cohesion bonus and the fame-drift bias.
             newCharacterName: '', newCharacterSpecies: '', newCharacterHook: '', newCharacterPromotedFrom: null,
             newCharacterLineageKind: null, newCharacterSecondParent: null,
-            characterId: printable[0]?.id ?? null, treatment: 'debut',
+            treatment: 'debut',
           })}>
           Existing character
         </button>
@@ -646,7 +490,7 @@ function CharacterPicker({ card, characters, people = [], set, theme }) {
           <select
             className="counter__target"
             value={card.characterId ?? ''}
-            onChange={(e) => set({ characterId: e.target.value || null })}
+            onChange={(e) => setLead(e.target.value || null)}
           >
             {groupedForms.map(({ person, forms }) => (
               <optgroup key={person?.id ?? 'loose'} label={person ? person.name : 'Cast'}>

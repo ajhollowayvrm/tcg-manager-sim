@@ -39,10 +39,11 @@ import {
   MAX_SIGNATURE_CARDS,
   MIN_SET_LENGTH,
   MAX_SET_LENGTH,
-  MAX_SECRET_CARDS,
   MAX_SPOTLIGHT_PICKS,
   maxReprintedCards,
 } from '../../game/sets.js'
+import { designToSignatureCard } from '../../game/carddesigns.js'
+import { castIdsOf } from '../../game/cast.js'
 import { THEMES, getTheme } from '../../game/content/themes.js'
 import { getConcept } from '../../game/content/concepts.js'
 import { ARTISTS } from '../../game/content/artists.js'
@@ -166,7 +167,7 @@ function BuilderNav({ active, onPick, summaries, tierName }) {
   )
 }
 
-export default function SetBuilder({ setNumber, cash, artists, characters = [], people = [], liveCards = [], sets = [], blocks = [], illustrationSets = [], standards = {}, upgrades = {}, week = 1, franchise, perks = [], conceptId, onSaveStandard, onRelease }) {
+export default function SetBuilder({ setNumber, cash, artists, characters = [], people = [], liveCards = [], sets = [], blocks = [], illustrationSets = [], cardDesigns = [], standards = {}, upgrades = {}, week = 1, franchise, perks = [], conceptId, onSaveStandard, onRelease }) {
   // The first set you ever ship MUST be a major (it opens your first block); once
   // a block is live you can ship riders. Seed the tier accordingly.
   const isFirstSet = blocks.length === 0
@@ -437,6 +438,23 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
       return { ...d, signatureCards: [...d.signatureCards, made] }
     })
 
+  // Pull one in from the studio's card library (Studio > Cards). It COPIES —
+  // never links — for the same reason importing a studio standard does: editing
+  // the library afterwards must not be able to reach a set on shelves. The
+  // design has no rarity of its own (a rarity belongs to a sheet), so it takes
+  // the set's default one and the player retunes it here like any other card.
+  const pullDesign = (designId) =>
+    setDraft((d) => {
+      if (d.signatureCards.length >= MAX_SIGNATURE_CARDS) return d
+      const design = cardDesigns.find((x) => x.id === designId)
+      if (!design) return d
+      const rarityId = (d.rarities ?? []).find((r) => !r.unique && !r.secret)?.id
+        ?? d.rarities?.[0]?.id ?? 'rare'
+      const made = designToSignatureCard(design, nextId(d.signatureCards), rarityId)
+      setOpenCards((o) => new Set(o).add(made.id))
+      return { ...d, signatureCards: [...d.signatureCards, made] }
+    })
+
   // Add one themed-random highlight (capped at the max), using the set's sheet.
   // A random card arrives finished, so it does NOT auto-expand — the point of
   // the button is to fill the list without reading each one. Add several and you
@@ -487,7 +505,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
       : 'No block to ride'
   const summaries = {
     block: blockSummary,
-    composition: `${draft.setLength} cards, ${draft.rarities.filter((r) => !r.unique).length} rarities${draft.secretCount ? `, ${draft.secretCount} secret` : ''}`,
+    composition: `${draft.setLength} cards, ${draft.rarities.filter((r) => !r.unique).length} rarities`,
     booster: `${packSize(draft.packFormat)}-card ${presetName}`,
     odds: draft.oddsPublished ? 'Published' : 'Obscured',
     godPack: !(draft.godPack?.enabled ?? true)
@@ -706,17 +724,13 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
                   ? `A tight ${draft.setLength} cards — dense and completable, which set-collectors love, but a smaller growth event.`
                   : `A balanced ${tier.name.toLowerCase()} at ${draft.setLength} cards. Bigger reads as more of an event; smaller reads as more collectible.`}
             </span>
-            <Slider
-              label="Secret rares (numbered above the count)"
-              value={draft.secretCount}
-              min={0} max={MAX_SECRET_CARDS} step={1}
-              onChange={(v) => patch({ secretCount: v })}
-              left="0" right={`${MAX_SECRET_CARDS}`}
-            />
             <span className="field__note">
-              The full {draft.setLength}-card set auto-generates across your rarities
-              {draft.secretCount > 0 && <> plus {draft.secretCount} secret rare{draft.secretCount > 1 ? 's' : ''} (e.g. {draft.setLength + 1}/{draft.setLength})</>}.
+              The full {draft.setLength}-card set auto-generates across your rarities.
               Any card — even a humble common — can become a market darling.
+              {draft.signatureCards.length > 0
+                ? <> Your {draft.signatureCards.length} designed card{draft.signatureCards.length > 1 ? 's' : ''} {draft.signatureCards.length > 1 ? 'are' : 'is'} numbered above the count
+                    (e.g. {draft.setLength + 1}/{draft.setLength}) — that band is whatever you design, not a dial.</>
+                : <> Anything you design under Signature highlights is numbered above the count.</>}
             </span>
             <StandardsBar
               noun="rarity sheet"
@@ -809,6 +823,30 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
                 </button>
               </div>
             </div>
+            {cardDesigns.length > 0 && (
+              <label className="field field--full">
+                <span>Pull from the card library</span>
+                <select
+                  value=""
+                  disabled={draft.signatureCards.length >= MAX_SIGNATURE_CARDS}
+                  onChange={(e) => { if (e.target.value) pullDesign(e.target.value) }}
+                >
+                  <option value="">— Pick a design from Studio › Cards —</option>
+                  {cardDesigns.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                      {castIdsOf(d).length ? ` · 🎭 ${castIdsOf(d).length}` : ''}
+                      {d.printings?.length ? ` · printed ${d.printings.length}×` : ''}
+                    </option>
+                  ))}
+                </select>
+                <span className="field__note">
+                  Copies the design in as a highlight and gives it one of this
+                  set's rarities. It is a copy — editing the library afterwards
+                  will not reach this set.
+                </span>
+              </label>
+            )}
             <div className="sigcards">
               {draft.signatureCards.map((card, i) => (
                 <SignatureCardEditor
@@ -1019,6 +1057,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
               print run up front.
             </span>
             <ProductLineupEditor
+              cardDesigns={cardDesigns}
               products={draft.products ?? []}
               onChange={(products) => patch({ products })}
               boosterChannels={draft.boosterChannels}

@@ -5,6 +5,7 @@
 
 import { makeRng, hashSeed, range } from './rng.js'
 import { clamp } from './simulation.js'
+import { liveCastStandingIndexed, CAST_HEAT_PREMIUM } from './cast.js'
 import { legacyMultiplier } from './franchise.js'
 import { COLLECTOR_MARKET_TILT } from './config.js'
 import { illustrationContext, completionPremium, HALO_MAX } from './illustrationsets.js'
@@ -36,7 +37,7 @@ const PROMO_SUPPLY_MAX = 5150
 // `legacyMul` (default 1, from franchise.js's legacyMultiplier) lifts old
 // vintage cards for reasons independent of any one card's own stats — a
 // franchise's growing reputation makes the whole back-catalog worth more.
-export function fairValue(card, set, legacyMul = 1, groupPremium = 1, artistHeat = 0) {
+export function fairValue(card, set, legacyMul = 1, groupPremium = 1, artistHeat = 0, castStanding = 0) {
   const f = card.popFactors
 
   // Under-printed sets keep singles scarce and pricey; over-print drags them.
@@ -93,7 +94,14 @@ export function fairValue(card, set, legacyMul = 1, groupPremium = 1, artistHeat
   // 1.25x as a block-gimmick treatment card: being by the illustrator of the
   // moment is worth about what being an era's chase subtype is.
   const artistLift = 1 + clamp(artistHeat / 100, 0, 1) * ARTIST_HEAT_PREMIUM
-  const collectorLift = (set.collectorMul ?? 1) * (card.treatment ? 1.25 : 1) * serialLift * gradedLift * chaseLift * groupPremium * artistLift
+  // WHO is on it, read fresh every week rather than frozen at print. popFactors
+  // banks a card's cast bonus the moment it is printed, so without this a
+  // character who becomes a household name three years later does nothing for
+  // the cards she is already on — and "this is an Aryla card" is precisely the
+  // sentence a collector prices off. Same 0.25 band as the illustrator premium
+  // above: the hand and the face are worth about the same.
+  const castLift = 1 + clamp(castStanding / 100, 0, 1) * CAST_HEAT_PREMIUM
+  const collectorLift = (set.collectorMul ?? 1) * (card.treatment ? 1.25 : 1) * serialLift * gradedLift * chaseLift * groupPremium * artistLift * castLift
   const collectorVal = collectorBase * scarcity * 0.6 * collectorLift * legacyMul * COLLECTOR_MARKET_TILT
 
   return clamp(collectorVal, 0.25, 12000)
@@ -103,8 +111,8 @@ export function fairValue(card, set, legacyMul = 1, groupPremium = 1, artistHeat
 
 // Mutates a card-market record in place for one week and returns a "mover"
 // descriptor if the move is big enough to surface on the ticker.
-function stepCard(card, set, rng, legacyMul = 1, groupPremium = 1, artistHeat = 0) {
-  const fair = fairValue(card, set, legacyMul, groupPremium, artistHeat)
+function stepCard(card, set, rng, legacyMul = 1, groupPremium = 1, artistHeat = 0, castStanding = 0) {
+  const fair = fairValue(card, set, legacyMul, groupPremium, artistHeat, castStanding)
   const prev = card.singlePrice
 
   // Hype is a self-reinforcing bubble term that decays. While elevated it
@@ -181,6 +189,11 @@ export function resolveMarket(state) {
   const groups = illustrationContext(state)
   // Artist collector heat, indexed once for the same reason.
   const heatById = new Map((state.artists ?? []).map((a) => [a.id, a.heat ?? 0]))
+  // And the cast, for the same reason again: liveCastStanding walks a card's
+  // whole cast, and a `.find()` per member over a late-run roster inside the
+  // per-card loop would be O(cards x roster x cast) every single week.
+  const formById = new Map((state.characters ?? []).map((c) => [c.id, c]))
+  const personById = new Map((state.people ?? []).map((p) => [p.id, p]))
 
   const movers = []
   const cards = state.cards.map((orig) => {
@@ -199,7 +212,13 @@ export function resolveMarket(state) {
       // a mass-issued one bleeds. Anchored on promos.js's own output band
       // (~150 copies at prestige 1, ~5,150 at prestige 0).
       const scarcity = clamp((PROMO_SUPPLY_MAX - (card.promoSupply ?? 2000)) / PROMO_SUPPLY_MAX, 0, 1)
-      const drift = range(rng, -0.02 + scarcity * 0.02, 0.01 + scarcity * 0.035) + spike
+      // A promo has no set behind it, so fairValue's castLift never reaches it —
+      // and a promo is exactly the card a cast sells. A standalone print of a
+      // household-name character appreciates; a nobody's bleeds like any other.
+      // Sized as a fraction of the scarcity drift so it colours the curve
+      // rather than replacing it, and 0 for a promo with no cast.
+      const castTilt = (liveCastStandingIndexed(card, formById, personById) / 100) * 0.02
+      const drift = range(rng, -0.02 + scarcity * 0.02, 0.01 + scarcity * 0.035) + spike + castTilt
       const next = Math.round(Math.max(1, prev * (1 + drift)) * 100) / 100
       card.singlePrice = next
       card.priceHistory = [...card.priceHistory, next].slice(-PRICE_HISTORY_LEN)
@@ -229,6 +248,7 @@ export function resolveMarket(state) {
       card, set, rng, legacyMul,
       completionPremium(groups.get(card.id)),
       card.artistId ? (heatById.get(card.artistId) ?? 0) : 0,
+      liveCastStandingIndexed(card, formById, personById),
     )
     card.sealedPrice = sealedPrice(set, ageWeeks)
     // A rough dollar estimate of how much of this week's price is the franchise-

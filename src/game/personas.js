@@ -26,6 +26,7 @@ import { getIllustrationKind } from './content/illustrationsets.js'
 import { getArtist } from './content/artists.js'
 import { getTheme } from './content/themes.js'
 import { getArchetype } from './content/archetypes.js'
+import { castIdsOf } from './cast.js'
 import { traitNames } from './content/traits.js'
 import { bestFormPerPerson, SATURATION_THRESHOLD } from './people.js'
 
@@ -296,9 +297,13 @@ function castOverusePressure(state, set) {
   const forms = new Map((state.characters ?? []).map((c) => [c.id, c]))
   const printed = new Set()
   for (const card of state.cards ?? []) {
-    if (card.setId !== set.id || !card.characterId) continue
-    const pid = forms.get(card.characterId)?.personId
-    if (pid) printed.add(pid)
+    if (card.setId !== set.id) continue
+    // Every name on the card: a supporting credit is a printing of that
+    // character too, so it counts toward the room's overexposure read.
+    for (const formId of castIdsOf(card)) {
+      const pid = forms.get(formId)?.personId
+      if (pid) printed.add(pid)
+    }
   }
   if (!printed.size) return 0
   let worst = 0
@@ -971,8 +976,13 @@ export function reactPersonas(state) {
     // Once a featured character is famous enough, the community talks about
     // THEM rather than the specific printing — "Charflare is the chase of Set
     // 2" instead of "Emberwing Charflare is...".
-    const character = card?.characterId ? state.characters?.find((ch) => ch.id === card.characterId) : null
-    const known = character && character.fame >= CHARACTER_KNOWN_FAME ? character : null
+    // Whoever on the card the room knows best — not necessarily the lead. If a
+    // set's chase card credits a rookie ahead of a household name, the room
+    // still talks about the household name.
+    const known = (castIdsOf(card ?? {}))
+      .map((id) => state.characters?.find((ch) => ch.id === id))
+      .filter((ch) => ch && ch.fame >= CHARACTER_KNOWN_FAME)
+      .sort((a, b) => (b.fame ?? 0) - (a.fame ?? 0))[0] ?? null
     const displayName = known ? known.name : undefined
     const variant = card ? variants.get(card.id) : null
     const group = card ? groups.get(card.id) : null

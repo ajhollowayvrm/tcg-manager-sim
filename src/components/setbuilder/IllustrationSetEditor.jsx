@@ -13,6 +13,7 @@
 // the failing rows as instructions: "One illustrator ⚠" tells you what to fix.
 
 import { useMemo } from 'react'
+import { castIdsOf } from '../../game/cast.js'
 import {
   ILLUSTRATION_KINDS, getIllustrationKind, REQUIREMENT_LABELS,
 } from '../../game/content/illustrationsets.js'
@@ -57,6 +58,11 @@ export default function IllustrationSetEditor({
               week,
               artistId: sig.artistId ?? null,
               characterId: sig.characterId ?? null,
+              // The whole cast, matching what illustrationsets.js's makeMember
+              // records at release — otherwise this live preview scores
+              // relatedCast off the lead alone and shows a cohesion the shipped
+              // group will not have.
+              castIds: castIdsOf(sig),
               valueTier: getRarity(rarities, sig.rarity).valueTier ?? 0,
               briefMatch: briefMatches(sig.artNotes, brief),
             }

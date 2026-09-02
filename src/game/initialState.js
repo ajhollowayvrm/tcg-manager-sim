@@ -156,6 +156,13 @@ export function createInitialState(config) {
     // later. Empty until the player authors one in the set builder.
     illustrationSets: [],
 
+    // The card library — Studio > Cards. Cards the studio has DESIGNED but not
+    // necessarily printed. Like illustration sets, they live here rather than on
+    // a set record because a design is deliberately not owned by a release: it
+    // can be pulled into a set, printed on its own as a promo, or shipped in a
+    // product's box. See carddesigns.js. Empty until the player authors one.
+    cardDesigns: [],
+
     // Studio standards — the rarity sheets and booster formats the player names
     // once and imports into any set, plus blueprints pinning a known-good pair
     // of the two. See standards.js. They live here rather than on a set record

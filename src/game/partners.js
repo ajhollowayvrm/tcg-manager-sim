@@ -18,6 +18,8 @@ import { getBrandPartner } from './content/partners.js'
 import { makePromoCard } from './promos.js'
 import { famePopBonus, recordAppearance } from './characters.js'
 import { distributeNewPlayers } from './segments.js'
+import { personOfForm } from './people.js'
+import { castStanding } from './cast.js'
 import { clamp } from './simulation.js'
 
 // A tie-in audience is overwhelmingly casual — nobody buys a kids' meal for
@@ -53,7 +55,10 @@ export function signPartnerPromo(state, partnerId, { characterId = null, artistI
     nonce,
     characterId: character?.id ?? null,
     artistId,
-    fameBonus: character ? famePopBonus(character.fame, 'standard') : 0,
+    // Read through castStanding for the same reason every other printing does:
+    // a fresh form of a household-name character fronts a tie-in on the
+    // character's recognition, not on the form's own thin fame. See cast.js.
+    fameBonus: character ? famePopBonus(castStanding(character, personOfForm(state, character.id)), 'standard') : 0,
   })
   if (character) card.name = `${character.name} (${partner.promoLabel} Promo)`
 

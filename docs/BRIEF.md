@@ -74,7 +74,7 @@ Blocks coexist. A new major never retires the old.
 | Dial | What it does |
 | --- | --- |
 | Design loudness | How hard the set is pushed to outshine what came before. Drives nostalgia erosion. A presentation dial, never a strength dial |
-| Set length | Read as event scale, with a bloat penalty past ~⅔ of the tier band. Normalised so a default-length set is exactly balance-neutral |
+| Set length | The numbered body, read as event scale, with a bloat penalty past ~⅔ of the tier band. Normalised so a default-length set is exactly balance-neutral. The cards **above** the count are the ones you designed, and there is no dial for them |
 | Rarity sheet | How chase-heavy against accessible the set runs |
 | Print run | Supply. Under-print for scarcity and lost sales; over-print for bargain bins |
 | Price point | MSRP of sealed product |
@@ -110,10 +110,35 @@ rarities stay with their signature card and are never part of a shared sheet.
 
 Hand-designed marquee cards: standout appeal, a printing finish (holo through
 gold etch), flavour text, art-direction notes, an optional serial cap
-(10/25/50/99/1-of-1), and an artist commission.
+(10/25/50/99/1-of-1), an artist commission, and a **cast**.
+
+They are numbered **above the set count** — 121/120 — because that is what the
+band above the count is for. There used to be a second slider there, filling it
+with procedural "secret rares"; it is gone. The cards above the count are the
+cards you designed, and their number is however many you designed. A set already
+on shelves keeps the `secretCount` it shipped with, because `reprintAsUnlimited`
+rebuilds a whole card pool from that stored record.
 
 There is deliberately **no rules text and no mechanical mode**. Nothing is
 designed around what a card *does*, only around how much it is wanted.
+
+### The card library
+
+Studio › **Cards** is the same act without the set. A design is a card the
+studio has authored and not placed: a name, a look, a hand, a cast — everything
+a signature card carries except a rarity, which belongs to a set's own sheet.
+
+It becomes a real card exactly three ways, and each of them **copies** it, the
+same doctrine studio standards follow — editing a design afterwards can never
+reach a card already on shelves:
+
+- **pulled into a set** you are designing, as a signature highlight;
+- **shipped in a collector box**, as that SKU's exclusive promo, named on the
+  SKU instead of letting the game mint one;
+- **printed on its own**, from the Cards panel: a promo, no set, tiny supply,
+  costing the artist's commission plus a flat print bill.
+
+Each design records where it printed. That log is the only tie back.
 
 ### Illustration sets
 
@@ -128,7 +153,9 @@ several cards, and a flat themed cycle. Kinds differ in their coherence
 saying how hard the payoff concentrates on the rarest member.
 
 **Cohesion** (0–1) scores a group against its kind's requirements: an escalating
-rarity ladder, one illustrator, a related cast, a shared art brief, breadth. It
+rarity ladder, one illustrator, a related cast (read across each card's whole
+cast, not just its lead — three cards that all feature Aryla in the background
+are a related run), a shared art brief, breadth. It
 is frozen when members change. The set builder shows the per-requirement
 breakdown live, because otherwise it is a hidden number.
 
@@ -163,8 +190,45 @@ debut. See "Lineage kinds" under The cast.
 
 ## The cast
 
-Characters are the player's own IP: invented in the set builder or the Cast
-panel, and printed again and again.
+Characters are the player's own IP: invented in the set builder, the Cards panel
+or the Cast panel, and printed again and again.
+
+### A card names a cast, not a character
+
+`card.castIds` is a list, lead first, and `card.characterId` is that lead —
+the field is load-bearing in every save and is never renamed. **Any** card can
+name several characters, and each of them is really on it: every name records a
+printing, bumps that character's fame off how the card performs, and is charged
+for the saturation. Naming the same characters on two cards is the whole point —
+it is what makes a collector chase the pair.
+
+Their pull is the **full sum, hard-capped** (`cast.js`): a genuine team-up
+out-pulls a solo icon, five icons on one card cannot stack into something
+unbeatable. The terms that read one character — continuity, the on-theme
+archetype — read the lead in full and everyone else at half, and that fold is
+capped too, so a crowded card cannot farm a flat bonus per name. **Six names is
+the most a card may carry**, enforced in the picker rather than on load: past
+that nobody on the card reads as its subject, and every bonus is capped anyway.
+
+### Standing
+
+What one cast member is worth right now, and the number every card is priced
+off. **Recognition is the floor**, the form's own fame and the fandom's favour
+move it: a fresh form of a household name is never worth nothing, and a form
+that has out-earned its character keeps every point it earned. Overexposure
+still drags it down.
+
+Standing reaches a card in three places, and the third is what makes a cast
+worth *building* rather than printing once:
+
+| Where | What it does | Frozen? |
+| --- | --- | --- |
+| `popFactors` (`sets.js`) | the summed, capped appeal and hype bonus at print | yes, at print |
+| `castLift` (`market.js`) | a value premium, capped at 1.25× like the illustrator's | no — read weekly |
+| `set.castAppeal` (`revenue.js`) | a 0–0.12 sales lift on the whole set | no — refreshed weekly |
+
+A character who becomes a household name three years later lifts the price and
+the sales of the sets she is already in; one who goes quiet stops.
 
 ### A character is one person, printed in many forms
 
@@ -235,7 +299,8 @@ above 0.75 on a promotion and could never fire at all.
 - **Traits** — up to 2 from 27 (`content/traits.js`). Flavour only. They exist to
   be said: the community names them in the feed.
 - **Fame** (0–100) drifts weekly off how the character's live cards perform, not
-  on a random walk. A character with no live cards idles.
+  on a random walk. A character with no live cards idles. A card they merely
+  *support* on is one of their live cards.
 - **Trajectory** — rising → established → icon, with falls and comebacks. Icon
   status unlocks a reserved icon-tier treatment and its pack slot.
 - **Story beats** record the turning points (debut, breakout, icon, fall,
@@ -392,9 +457,10 @@ organised around the studio's relationships, each with sub-tabs:
 
 | Tab | Sub-tabs |
 | --- | --- |
-| Studio | Overview, Design, Sets, Cast, Lineages, Standards |
+| Studio | Overview, Design, Sets, Cards, Cast, Lineages, Standards |
 
-Studio › **Cast** lists **characters**, not printings — one row per person, with
+Studio › **Cards** is the card library — designs owned by no set (see "The card
+library"). Studio › **Cast** lists **characters**, not printings — one row per person, with
 their recognition and the form they are best known as; opening one shows the
 throughline, the recognition history, the fandom's split across the forms, and
 the tree, and each form drills through to its own sheet. Studio › **Lineages**
@@ -433,6 +499,8 @@ TypeScript. One immutable `GameState` in a `useReducer`.
 | `game/useGame.js` | The React binding only: the hook, autosave, callbacks |
 | `game/persistence.js` | IndexedDB run save, localStorage prestige and hall of fame |
 | `game/rng.js` | Seeded RNG. Never use `Math.random` in the sim |
+| `game/cast.js` | Which characters are on a card, and what that is worth |
+| `game/carddesigns.js` | The card library — designs, and how one becomes a card |
 | `game/content/` | Static rosters. Ids are load-bearing — they reach the save |
 
 ### Rules that are load-bearing
@@ -466,10 +534,15 @@ GameState {
   week, cash, playerBase, segments: { casual, collectors }, segmentLean,
   printIntensity, franchise, scalperHeat, rival, supplyChainCapacity,
   sets: [ { id, name, tier, blockId, themeId, designLoudness, printRun, price,
-            products: [...], buzz, printLevel, riderFatigue, releasedWeek } ],
+            products: [...], buzz, printLevel, riderFatigue, castAppeal,
+            releasedWeek } ],
   blocks: [...], pendingWaves: [...],
-  cards: [ { id, setId, name, rarity, artistId, characterId, treatment,
-             popFactors: {...}, sealedPrice, singlePrice, priceHistory: [...] } ],
+  cards: [ { id, setId, name, rarity, artistId, characterId, castIds: [...],
+             treatment, popFactors: {...}, sealedPrice, singlePrice,
+             priceHistory: [...] } ],
+  cardDesigns: [ { id, name, appeal, finish, flavorText, artNotes, artistId,
+                   characterId, castIds, treatment, serialCap, createdWeek,
+                   printings: [ { cardId, setId, week, how } ] } ],
   characters: [ { id, name, archetypeId, traits, hook, pronouns, fame,      // FORMS
                   trajectory, appearances, beats, fameHistory,
                   promotedFromId, lineageKindId, lineageParentIds, retiredWeek,

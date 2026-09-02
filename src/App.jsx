@@ -10,6 +10,7 @@ import FeedbackFeed from './components/FeedbackFeed.jsx'
 import EventsFeed from './components/EventsFeed.jsx'
 import PersonasPanel from './components/PersonasPanel.jsx'
 import CastPanel from './components/CastPanel.jsx'
+import CardsPanel from './components/CardsPanel.jsx'
 import LineagesPanel from './components/LineagesPanel.jsx'
 import StandardsPanel from './components/StandardsPanel.jsx'
 import SetsPanel from './components/SetsPanel.jsx'
@@ -47,6 +48,7 @@ const TABS = [
       { id: 'overview', label: 'Overview' },
       { id: 'design', label: 'Design' },
       { id: 'sets', label: 'Sets' },
+      { id: 'cards', label: 'Cards' },
       { id: 'cast', label: 'Cast' },
       { id: 'lineages', label: 'Lineages' },
       { id: 'standards', label: 'Standards' },
@@ -160,6 +162,13 @@ export default function App() {
         <PackRipper state={state} onRip={game.rip} />
       </>
     ),
+    'studio.cards': <CardsPanel
+      state={state}
+      onAddDesign={game.addCardDesign}
+      onUpdateDesign={game.updateCardDesign}
+      onRemoveDesign={game.removeCardDesign}
+      onPrintDesign={game.printCardDesign}
+    />,
     'studio.cast': <CastPanel state={state} onAddCharacter={game.addCharacter} onUpdateCharacter={game.updateCharacter} onUpdatePerson={game.updatePerson} />,
     'studio.lineages': <LineagesPanel state={state} onAddCharacter={game.addCharacter} />,
     'studio.standards': <StandardsPanel state={state} onSave={game.saveStandard} onDelete={game.deleteStandard} />,
@@ -289,6 +298,7 @@ export default function App() {
                   sets={state.sets}
                   blocks={state.blocks ?? []}
                   illustrationSets={state.illustrationSets ?? []}
+                  cardDesigns={state.cardDesigns ?? []}
                   standards={{
                     raritySheets: state.raritySheets ?? [],
                     packFormats: state.packFormats ?? [],
