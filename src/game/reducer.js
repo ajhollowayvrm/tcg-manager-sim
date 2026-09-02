@@ -574,7 +574,11 @@ export function reducer(state, action) {
         // decided to print is not the prize for buying a collector box.
         prestige: 0.55,
         themeId: [...(state.sets ?? [])].reverse().find((s) => !s.rotated)?.themeId ?? null,
-        nonce: `design_${design.id}`,
+        // The print ORDINAL, not just the design id: makePromoCard builds
+        // `promo_${week}_${nonce}`, so printing the same design twice in one
+        // week minted two cards with an identical id. `printings` is appended
+        // by recordPrinting below, so the second print of a week differs.
+        nonce: `design_${design.id}_${design.printings?.length ?? 0}`,
         name: design.name,
         castIds: castIdsOf(design),
         artistId: design.artistId,

@@ -35,6 +35,14 @@ import { favorMultiplier, saturationMultiplier } from './people.js'
 // recognition keeps its own number.
 export const RECOGNITION_FLOOR = 0.75
 
+// How many names one card may carry. Not a technical limit — past about six
+// nobody on the card reads as its subject, and the appeal a crowd earns is
+// capped anyway (see CAST_POP_CAP and castWeighted in sets.js). Enforced in the
+// PICKER, deliberately not in withCast: that runs on every load, and silently
+// dropping a name out of a save someone already has is worse than an
+// over-crowded card.
+export const MAX_CAST_PER_CARD = 6
+
 // The ceiling on the summed cast bonus. One member already caps at 45
 // (famePopBonus), so a genuine team-up can out-pull a solo icon — but five
 // icons on one card cannot stack into something unbeatable.
@@ -170,33 +178,48 @@ export function liveCastStandingIndexed(card, formById, personById) {
 //
 // Takes prebuilt indexes rather than the raw rosters: this runs over every card
 // in the game once per set, every week.
-export function castAppealFor(setId, cards, formById, personById) {
-  let sum = 0
-  let weight = 0
+// One pass over every card, accumulating { sum, weight } per set. ONE pass:
+// scoring set by set walked the whole card array once per set, which on a late
+// run (~40 sets, several thousand cards) is a few hundred thousand visits a
+// week, each with a cast walk inside it.
+export function castWeightBySet(cards, formById, personById) {
+  const acc = new Map()
   for (const card of cards) {
-    if (card.setId !== setId || card.banned || card.rotated) continue
-    const ids = castIdsOf(card)
-    if (!ids.length) continue
+    if (!card.setId || card.banned || card.rotated) continue
+    if (!castIdsOf(card).length) continue
     const w = card.signature || card.secret || card.treatment ? 1.6 : 1
-    sum += liveCastStandingIndexed(card, formById, personById) * w
-    weight += w
+    const entry = acc.get(card.setId) ?? { sum: 0, weight: 0 }
+    entry.sum += liveCastStandingIndexed(card, formById, personById) * w
+    entry.weight += w
+    acc.set(card.setId, entry)
   }
-  if (weight <= 0) return 0
+  return acc
+}
+
+// Turn one set's accumulated { sum, weight } into its appeal term.
+export function castAppealOf(entry) {
+  if (!entry || entry.weight <= 0) return 0
   // A set whose chase cards average a 60-recognition cast earns about half the
   // band; only a shelf of genuine icons reaches the top of it.
-  const mean = sum / weight
+  const mean = entry.sum / entry.weight
   return Math.round(clamp((mean / 100) * CAST_APPEAL_MAX * 1.4, 0, CAST_APPEAL_MAX) * 1000) / 1000
+}
+
+// One set's term, for a caller that wants exactly one. refreshCastAppeal does
+// NOT go through here — it wants the whole map and pays for the pass once.
+export function castAppealFor(setId, cards, formById, personById) {
+  return castAppealOf(castWeightBySet(cards, formById, personById).get(setId))
 }
 
 // Write this week's cast pull onto every set, in place, mirroring
 // illustrationsets.js's refresh of `illustrationAppeal`. Skips the write when
 // the number has not moved, so a quiet week allocates nothing.
 export function refreshCastAppeal(next) {
-  const cards = next.cards ?? []
   const formById = new Map((next.characters ?? []).map((c) => [c.id, c]))
   const personById = new Map((next.people ?? []).map((p) => [p.id, p]))
+  const bySet = castWeightBySet(next.cards ?? [], formById, personById)
   next.sets = (next.sets ?? []).map((s) => {
-    const appeal = castAppealFor(s.id, cards, formById, personById)
+    const appeal = castAppealOf(bySet.get(s.id))
     if ((s.castAppeal ?? 0) === appeal) return s
     return { ...s, castAppeal: appeal }
   })

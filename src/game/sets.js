@@ -459,14 +459,15 @@ export function setCost(draft, artistOf = getArtist, ctx = {}) {
   // loudness of 50, so this doesn't silently reprice every existing set.
   const loudnessMul = 0.85 + (loudnessOf(draft) / 100) * 0.3
   // The cards numbered above the count are extra cards to design and extra
-  // plates to print. That band used to be a free slider; now it is exactly the
-  // signature highlights, and it is charged the same way — RELATIVE to the
-  // tier's old default, so a set with the stock number of chase cards costs
-  // what it always did and only a padded one costs extra.
+  // plates to print. That band used to be a slider with a per-tier default, and
+  // the multiplier was anchored on that default; the band is the signature
+  // highlights now and it is genuinely OPTIONAL, so it anchors at zero. A set
+  // with no designed cards pays the tier's floor and each one you design adds
+  // 2%. Anchoring on the retired seed instead made a stock set 4-6% CHEAPER
+  // than it had ever been, quietly, which is not a repricing anyone asked for.
   const tierDef = getTier(draft.tier ?? 'major')
-  const chaseBase = tierDef.ridesBlock ? 3 : 2 // the old per-tier secret seed
-  const aboveCount = (draft.signatureCards ?? []).length
-  const secretMul = 1 + (clamp(aboveCount, 0, MAX_SIGNATURE_CARDS) - chaseBase) * 0.02
+  const aboveCount = clamp((draft.signatureCards ?? []).length, 0, MAX_SIGNATURE_CARDS)
+  const secretMul = 1 + aboveCount * 0.02
   const dev = Math.round(
     tierDef.devCostFloor
     * gimmickMul * chaseMul * loudnessMul * secretMul
@@ -698,13 +699,19 @@ function artNotesMatchTheme(notes, theme) {
 }
 
 // Fold a per-member appeal term over a card's cast: the LEAD in full, every
-// supporting member at half. The card is ABOUT its lead — a crowded card is not
-// allowed to farm a flat +10 per name — but a supporting credit still has to
-// count for something or naming a second character is free and meaningless.
-function castWeighted(cast, valueOf) {
+// supporting member at half, and the whole thing CLAMPED. The card is ABOUT its
+// lead — a crowded card is not allowed to farm a flat bonus per name — but a
+// supporting credit still has to count for something or naming a second
+// character is free and meaningless.
+//
+// The clamp is the load-bearing half and it was missing: at half a head with no
+// ceiling, a card naming fifteen on-theme characters collected +80 art appeal
+// and +80 hype, which is exactly the farming the paragraph above forbids.
+// castPopBonus was capped from the start; this is the same discipline.
+function castWeighted(cast, valueOf, lo, hi) {
   let sum = 0
   cast.forEach((member, i) => { sum += valueOf(member) * (i === 0 ? 1 : 0.5) })
-  return sum
+  return clamp(sum, lo, hi)
 }
 
 function popFactors(card, draft, theme, sheet, rng, artistOf = getArtist, characters = [], illustrationPop = 0, people = []) {
@@ -750,16 +757,22 @@ function popFactors(card, draft, theme, sheet, rng, artistOf = getArtist, charac
   // the LINEAGE KIND leads fans to expect, so a fall is meant to break her and a
   // promotion is not. Sized against the +10 an on-theme archetype earns below,
   // so it colours a printing without deciding it.
+  // Clamped to a little over one member's own range (-8..+6): a supporting
+  // credit colours the read, a crowd of them cannot decide it.
   const continuity = castWeighted(cast, ({ form, person }) => (
     person && form ? continuityVerdict(person, form).appealDelta : 0
-  ))
+  ), -12, 10)
   // A character whose ARCHETYPE matches the set's theme reads as a coherent
   // printing — a frost guardian in a Frostbound set, not a beach episode. The
   // same idea as the artist specialty match above, and deliberately smaller than
   // it (+10 against +20): who is on the card matters less than who drew it.
+  // Clamped at 15: an on-theme lead is worth +10, a second on-theme name is
+  // worth half of one more, and that is the end of it. Still comfortably under
+  // the artist specialty match's +20, which is the band the comment above
+  // describes.
   const archetypeMatch = castWeighted(cast, ({ form }) => (
     archetypeMatchesTheme(form.archetypeId, tags) ? 10 : 0
-  ))
+  ), 0, 15)
 
   // Belonging to a coherent illustration set is worth roughly what an on-theme
   // character is (+10) and rather less than the artist who drew it (+20). It has
@@ -1115,6 +1128,41 @@ export function releaseSet(state, draft) {
   characters = derived.characters
   const cards = generateCards(draft, setId, state.week, artistOf, characters, nameStyle, ilPhaseA.lift, peopleAtMint)
 
+  // SPC exclusive promo: if the collector-box SKU carries an exclusive promo,
+  // mint an SPC-only promo card (unpullable, scarce) that ships with that box.
+  //
+  // MINTED HERE, before the appearance loop, and not further down beside the
+  // treatment cards where it used to sit. It can now carry a CAST (from a
+  // library design named on the SKU), and a cast that collects the market
+  // premium and the sales lift has to record the printing and be charged the
+  // saturation like any other. Minted after the loop, it did neither — which
+  // made a collector box the one place you could print your icon every single
+  // set and never have the room notice.
+  const spc = (draft.products ?? []).find((p) => p.kind === 'spc' && p.exclusivePromo)
+  // The box's exclusive can be a card the studio DESIGNED (Studio > Cards,
+  // named on the SKU) rather than an auto-minted one. Same doctrine as a pull
+  // into a set: this COPIES the design, so editing the library afterwards
+  // cannot reach a box already on shelves.
+  const spcDesign = spc?.promoDesignId
+    ? (state.cardDesigns ?? []).find((d) => d.id === spc.promoDesignId)
+    : null
+  const promoCards = spc
+    ? [makePromoCard(state, {
+        label: 'SPC Exclusive', prestige: 0.7, themeId: draft.themeId, nonce: `${setId}_spc`,
+        ...(spcDesign ? {
+          name: spcDesign.name,
+          castIds: castIdsOf(spcDesign),
+          artistId: spcDesign.artistId,
+          appeal: spcDesign.appeal,
+          flavorText: spcDesign.flavorText,
+          artNotes: spcDesign.artNotes,
+          serialCap: spcDesign.serialCap,
+          treatment: spcDesign.treatment,
+          fameBonus: castPopBonus(castMembers(spcDesign, characters, peopleAtMint), spcDesign.treatment),
+        } : {}),
+      })]
+    : []
+
   // Every signature card that features a character (new or existing) records a
   // new appearance — bumps fame, files the debut set on a first printing. Feeds
   // the set builder's next view of fame and, at high fame, the icon treatment slot.
@@ -1123,7 +1171,7 @@ export function releaseSet(state, draft) {
   let people = peopleAtMint
   const formPerson = new Map(characters.map((c) => [c.id, c.personId]))
   const printedFor = new Set()
-  for (const card of cards) {
+  for (const card of [...cards, ...promoCards]) {
     // EVERY name on the card, not just the lead. A supporting credit is a real
     // printing of that character — it is what makes a shared appearance worth
     // designing — so it bumps their fame and counts toward their saturation
@@ -1236,33 +1284,6 @@ export function releaseSet(state, draft) {
   // Set buzz lift from reprinting fan-favorite cards (carried on the set record
   // so revenue/market can read it).
   set.reprintBuzz = reprintResult.buzzLift
-
-  // SPC exclusive promo: if the collector-box SKU carries an exclusive promo,
-  // mint an SPC-only promo card (unpullable, scarce) that ships with that box.
-  const spc = (draft.products ?? []).find((p) => p.kind === 'spc' && p.exclusivePromo)
-  // The box's exclusive can be a card the studio DESIGNED (Studio > Cards,
-  // named on the SKU) rather than an auto-minted one. Same doctrine as a pull
-  // into a set: this COPIES the design, so editing the library afterwards
-  // cannot reach a box already on shelves.
-  const spcDesign = spc?.promoDesignId
-    ? (state.cardDesigns ?? []).find((d) => d.id === spc.promoDesignId)
-    : null
-  const promoCards = spc
-    ? [makePromoCard(state, {
-        label: 'SPC Exclusive', prestige: 0.7, themeId: draft.themeId, nonce: `${setId}_spc`,
-        ...(spcDesign ? {
-          name: spcDesign.name,
-          castIds: castIdsOf(spcDesign),
-          artistId: spcDesign.artistId,
-          appeal: spcDesign.appeal,
-          flavorText: spcDesign.flavorText,
-          artNotes: spcDesign.artNotes,
-          serialCap: spcDesign.serialCap,
-          treatment: spcDesign.treatment,
-          fameBonus: castPopBonus(castMembers(spcDesign, characters, peopleAtMint), spcDesign.treatment),
-        } : {}),
-      })]
-    : []
 
   // Treatment cards: the block gimmick's signature chase cards (Mega/Ascended/
   // Phantasmal). Every set in a block can print them; count + appeal scale with
@@ -1636,6 +1657,11 @@ function provisionalIllustrationLift(state, draft, setId, characters) {
         week: state.week,
         artistId: sig.artistId ?? null,
         characterId: sig.characterId ?? null,
+        // The whole cast, matching what makeMember records at release. Without
+        // it phase A scores relatedCast off the lead alone while the FROZEN
+        // group scores it off everyone, so the print-time lift is billed
+        // against a cohesion the recorded group does not have.
+        castIds: castIdsOf(sig),
         valueTier: getRarity(sheet, sig.rarity).valueTier ?? 0,
         briefMatch: briefMatches(sig.artNotes, group.artBrief),
       },

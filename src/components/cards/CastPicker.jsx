@@ -17,7 +17,7 @@
 // fame and the fandom's favour. That is the number the card is actually priced
 // off, so it is the number the picker shows.
 
-import { castIdsOf, castStanding } from '../../game/cast.js'
+import { castIdsOf, castStanding, MAX_CAST_PER_CARD } from '../../game/cast.js'
 import { formLabel } from '../../game/people.js'
 import { archetypeMatchesTheme } from '../../game/content/archetypes.js'
 
@@ -58,11 +58,26 @@ export default function CastPicker({ card, characters, people = [], theme, set, 
   const available = printable.filter((c) => !chosen.has(c.id))
   const grouped = groupForms(available, people)
 
-  // Write the list back lead-first. The reducer and cast.js's withCast both
-  // reconcile `characterId` with it, so this only has to keep the order right.
-  const commit = (nextIds) => set({ castIds: nextIds, characterId: nextIds[0] ?? null })
+  const atCap = ids.length >= MAX_CAST_PER_CARD
 
-  const add = (id) => { if (id) commit([...ids, id]) }
+  // Writing the list back.
+  //
+  // WHEN THIS PICKER OWNS THE LEAD (the library editor) the first entry is the
+  // lead and `characterId` follows it.
+  //
+  // WHEN IT DOES NOT (the set builder, where CharacterPicker owns the lead) it
+  // must never write `characterId`. It used to, and that was a real bug: adding
+  // a supporting name to a card in "New character" mode wrote that name into
+  // `characterId`, and releaseSet short-circuits on a set `characterId` — so
+  // the character the player had just typed was silently never minted. Two
+  // controls writing one field is what caused it.
+  const commit = (nextIds) => {
+    if (includeLead) return set({ castIds: nextIds, characterId: nextIds[0] ?? null })
+    const support = nextIds.filter((x) => x !== card.characterId)
+    set({ castIds: card.characterId ? [card.characterId, ...support] : support })
+  }
+
+  const add = (id) => { if (id && !atCap) commit([...ids, id]) }
   const remove = (id) => commit(ids.filter((x) => x !== id))
   const promote = (id) => commit([id, ...ids.filter((x) => x !== id)])
 
@@ -106,7 +121,11 @@ export default function CastPicker({ card, characters, people = [], theme, set, 
                     </span>
                   </div>
                   <div className="roster__actions">
-                    {!isLead && (
+                    {/* Only where this picker owns the lead. In the set
+                        builder CharacterPicker does, and a second control
+                        writing `characterId` is what broke the new-character
+                        path — see commit above. */}
+                    {includeLead && !isLead && (
                       <button
                         type="button"
                         className="btn btn--ghost"
@@ -135,11 +154,13 @@ export default function CastPicker({ card, characters, people = [], theme, set, 
       <select
         className="counter__target"
         value=""
-        disabled={available.length === 0}
+        disabled={available.length === 0 || atCap}
         onChange={(e) => add(e.target.value)}
       >
         <option value="">
-          {available.length === 0 ? '— No other characters available —' : '+ Add a cast member…'}
+          {atCap
+            ? `— ${MAX_CAST_PER_CARD} is a full card —`
+            : available.length === 0 ? '— No other characters available —' : '+ Add a cast member…'}
         </option>
         {grouped.map(({ person, forms }) => (
           <optgroup key={person?.id ?? 'loose'} label={person ? person.name : 'Cast'}>
@@ -152,6 +173,14 @@ export default function CastPicker({ card, characters, people = [], theme, set, 
           </optgroup>
         ))}
       </select>
+
+      {atCap && (
+        <span className="field__note">
+          {MAX_CAST_PER_CARD} names is as crowded as a card gets. Past that
+          nobody on it reads as the subject, and the appeal it earns is capped
+          anyway.
+        </span>
+      )}
 
       {support.length > 1 && (
         <span className="field__note">

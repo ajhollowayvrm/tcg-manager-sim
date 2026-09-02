@@ -205,8 +205,10 @@ it is what makes a collector chase the pair.
 Their pull is the **full sum, hard-capped** (`cast.js`): a genuine team-up
 out-pulls a solo icon, five icons on one card cannot stack into something
 unbeatable. The terms that read one character — continuity, the on-theme
-archetype — read the lead in full and everyone else at half, so a crowded card
-cannot farm a flat bonus per name.
+archetype — read the lead in full and everyone else at half, and that fold is
+capped too, so a crowded card cannot farm a flat bonus per name. **Six names is
+the most a card may carry**, enforced in the picker rather than on load: past
+that nobody on the card reads as its subject, and every bonus is capped anyway.
 
 ### Standing
 
