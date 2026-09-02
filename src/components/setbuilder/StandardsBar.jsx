@@ -14,7 +14,7 @@
 import { useState } from 'react'
 
 export default function StandardsBar({
-  noun, standards, provenance, pending, onPick, onConfirm, onCancel, onSave,
+  noun, standards, provenance, pending, refused, onPick, onConfirm, onCancel, onSave,
 }) {
   const [naming, setNaming] = useState(false)
   const [name, setName] = useState('')
@@ -63,6 +63,13 @@ export default function StandardsBar({
         )}
       </div>
 
+      {refused && (
+        <span className="field__note is-warn">
+          This {noun} can't be saved as it stands — fix the errors below the
+          section first, then try again.
+        </span>
+      )}
+
       {provenance && (
         <span className="field__note stdbar__from">
           From <strong>{provenance.standard.name}</strong>
@@ -85,11 +92,17 @@ export default function StandardsBar({
 // the surviving rarity closest in value tier, and every one of them is listed.
 function FitReport({ pending, onConfirm, onCancel }) {
   const { standard, report } = pending
+  // Keyed by position, not by text: two reprints upgrading from the same rarity,
+  // or two unnamed signature cards at the same one, produce identical lines.
   const groups = [
     ['Pack slots', report.slots.map((e) => `slot ${e.slotIndex + 1}: ${e.fromName} → ${e.toName}`)],
     ['God pack', report.godPack.map((e) => `${e.fromName} → ${e.toName}`)],
     ['Signature cards', report.signatureCards.map((e) => `${e.cardName || 'unnamed card'}: ${e.fromName} → ${e.toName}`)],
     ['Reprint upgrades', report.reprintUpgrades.map((e) => `${e.fromName} → ${e.toName}`)],
+    // Not a remap: a variant the incoming sheet brings joins the slots its
+    // parent is already in, so it is actually chaseable. Still a change to what
+    // a pack contains, so it is listed rather than done quietly.
+    ['Added to the pack', (report.variantsAdded ?? []).map((e) => `slot ${e.slotIndex + 1}: ${e.name}`)],
   ].filter(([, lines]) => lines.length)
 
   return (
@@ -103,7 +116,7 @@ function FitReport({ pending, onConfirm, onCancel }) {
       {groups.map(([label, lines]) => (
         <div key={label} className="stdbar__group">
           <span className="stdbar__grouphead">{label}</span>
-          <ul>{lines.map((l) => <li key={l}>{l}</li>)}</ul>
+          <ul>{lines.map((l, i) => <li key={i}>{l}</li>)}</ul>
         </div>
       ))}
       {report.uniquesKept > 0 && (

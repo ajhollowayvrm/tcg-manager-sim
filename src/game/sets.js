@@ -10,7 +10,7 @@ import { PRINT_INTENSITY_NEUTRAL } from './config.js'
 import { printRunUnits } from './revenue.js'
 import { currentArtist } from './artists.js'
 import { defaultRaritySheet, getRarity, pickRarity, validateRaritySheet, defaultPackFormat, validatePackFormat, packRichnessDelta, FINISHES, getFinish, combinedFinishEffect, expandRaritySheet, variantEntries, variantScarcityPremium } from './rarities.js'
-import { seedFromStandards, cloneSheet, cloneFormat } from './standards.js'
+import { seedFromStandards, cloneSheet, cloneFormat, cloneGodPack } from './standards.js'
 
 // Re-exported for existing call sites (SignatureCardEditor.jsx etc.) — the
 // finish system now lives in rarities.js since a whole RARITY can carry
@@ -1063,7 +1063,9 @@ export function releaseSet(state, draft) {
     // drawGodPack. Falls back to the pre-feature default (on, auto top-tier)
     // via the same shape createDraft seeds, so this is never missing on a
     // freshly-released set.
-    godPack: draft.godPack ?? { enabled: true, rarityIds: [] },
+    // Copied for the same reason as the two above: its rarityIds are keys into
+    // this set's sheet, so it is part of the same snapshot.
+    godPack: cloneGodPack(draft.godPack),
   }
 
   // Design loudness → the nostalgia-erosion level THIS set sustains while it
@@ -1762,6 +1764,14 @@ export function reprintAsUnlimited(state, originalSetId, printRun = 55) {
     // true if it holds its own copy of what shipped.
     rarities: cloneSheet(original.rarities),
     packFormat: cloneFormat(original.packFormat),
+    // The god pack travels with them. It was simply absent before, and packs.js
+    // reads `set.godPack ?? { enabled: true, rarityIds: [] }` for the benefit of
+    // sets released before the feature existed — so an Unlimited run of a set
+    // the player deliberately shipped with god packs OFF could roll them, and
+    // one with a hand-picked combination reverted to "auto: top tier". An
+    // Unlimited run is a printing of the set that shipped, and what a god pack
+    // of that set contains is part of what shipped.
+    godPack: cloneGodPack(original.godPack ?? { enabled: true, rarityIds: [] }),
     setLength: original.setLength,
     secretCount: original.secretCount,
     prerelease: { enabled: false, chasePullable: false },

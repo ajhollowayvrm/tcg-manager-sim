@@ -29,7 +29,7 @@ import {
   makeRaritySheetStandard,
   makePackFormatStandard,
   makeBlueprint,
-  reconcileFormatToSheet,
+  fitToSheet,
   MAX_STANDARD_NAME,
   MAX_STANDARD_NOTE,
 } from '../game/standards.js'
@@ -42,9 +42,13 @@ const SUBTABS = [
 
 // RarityEditor's `counts` drives its variant-yield advisory ("only ~2 cards to
 // reprint"), which is answered by a set's length and signature cards. A standard
-// has no set, so there is no honest number to give — an empty Map makes the
-// advisory stand down rather than invent one.
-const NO_COUNTS = new Map()
+// has no set, so there is no honest number to give and the advisory has to stand
+// down. Its guard is `counts && ...` — so this must be undefined, NOT an empty
+// Map: a Map is truthy, and counts.get() returning undefined made every variant
+// on every saved sheet read "no cards to reprint — prints nothing" in the
+// warning styling, which is both false and the likeliest reason someone would
+// delete a variant they should keep.
+const NO_COUNTS = undefined
 
 export default function StandardsPanel({ state, onSave, onDelete }) {
   const [tab, setTab] = useState('sheets')
@@ -250,14 +254,25 @@ function FormatEditor({ draft, setDraft, sheets }) {
   // PACK_PRESETS hardcode the eight built-in rarity ids, so applying "Premium"
   // here would otherwise leave slots naming rarities a custom context sheet has
   // never had — invisible in this editor (the chips just do not light) and only
-  // surfacing as a pile of remaps the first time the format is imported. Also
-  // run on a context switch, since the chips shown are the ones a slot should be
-  // able to name. Idempotent, so it never fights a chip the player is toggling.
-  const fit = (format) => reconcileFormatToSheet(format, context)
+  // surfacing as a pile of remaps the first time the format is imported.
+  // Idempotent, so it never fights a chip the player is toggling.
+  const fit = (format) => {
+    const next = fitToSheet({ format, godPack }, context)
+    return next.changed ? next : { format, godPack }
+  }
+  // A context switch reconciles too, since the chips on screen are the ones a
+  // slot ought to be able to name — and it MUST pass the outgoing sheet as the
+  // reference. Without it, a custom rarity's id is unknown to both sheets, so
+  // getRarity hands back its neutral stub at value tier 40 and a "Prismatic
+  // Chase" at tier 95 is silently demoted to Rare — by a dropdown that reads as
+  // though it only changes what is displayed. The god pack moves with it for the
+  // same reason: its picks are ids into the same sheet, and left behind they
+  // stop lighting up while still being stored.
   const useContext = (id) => {
-    setContextId(id)
     const next = sheets.find((s) => s.id === id)?.sheet ?? defaultRaritySheet()
-    setDraft({ ...draft, format: reconcileFormatToSheet(draft.format, next) })
+    const fitted = fitToSheet({ format: draft.format, godPack }, next, context)
+    setContextId(id)
+    setDraft({ ...draft, format: fitted.format, godPack: fitted.godPack })
   }
 
   return (
@@ -274,7 +289,10 @@ function FormatEditor({ draft, setDraft, sheets }) {
       <PackFormatEditor
         format={draft.format}
         sheet={context}
-        onChange={(format) => setDraft({ ...draft, format: fit(format) })}
+        onChange={(next) => {
+          const fitted = fit(next)
+          setDraft({ ...draft, format: fitted.format, godPack: fitted.godPack })
+        }}
       />
       <h3 className="builder__h3">God pack</h3>
       <label className="check">

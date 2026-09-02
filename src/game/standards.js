@@ -81,21 +81,26 @@ export const MAX_STANDARD_NOTE = 160
 // no guard at all, so a rarity that reached it without a name would throw on the
 // release button rather than fail validation.
 export function cloneSheet(sheet) {
-  return (sheet ?? []).filter(Boolean).map((r) => {
+  // Array.isArray rather than `?? []`: hydrate runs inside loadState's try, so a
+  // corrupt record that THROWS here discards the entire save instead of the one
+  // bad entry — the exact opposite of what the normalisers' filter(Boolean) is
+  // for. Same reasoning for `finishes` and `variants` below.
+  if (!Array.isArray(sheet)) return []
+  return sheet.filter(Boolean).map((r) => {
     const out = {
       id: String(r.id ?? rid('rar')),
       name: String(r.name ?? ''),
       pullWeight: Number(r.pullWeight) || 0,
       valueTier: Number(r.valueTier) || 0,
       secret: !!r.secret,
-      finishes: [...(r.finishes ?? [])].map(String),
-      variants: (r.variants ?? []).filter(Boolean).map((v) => ({
+      finishes: (Array.isArray(r.finishes) ? r.finishes : []).map(String),
+      variants: (Array.isArray(r.variants) ? r.variants : []).filter(Boolean).map((v) => ({
         id: String(v.id ?? rid('var')),
         name: String(v.name ?? ''),
         pullWeight: Number(v.pullWeight) || 0,
         valueTier: Number(v.valueTier) || 0,
         count: Math.max(0, Math.round(Number(v.count) || 0)),
-        finishes: [...(v.finishes ?? [])].map(String),
+        finishes: (Array.isArray(v.finishes) ? v.finishes : []).map(String),
       })),
     }
     // Carried only when present, so a shared sheet never grows the two keys that
@@ -111,10 +116,11 @@ export function cloneSheet(sheet) {
 }
 
 export function cloneFormat(format) {
-  const slots = (format?.slots ?? []).filter(Boolean).map((s) => ({
+  const raw = Array.isArray(format?.slots) ? format.slots : []
+  const slots = raw.filter(Boolean).map((s) => ({
     id: String(s.id ?? rid('slot')),
     count: Math.max(0, Math.round(Number(s.count) || 0)),
-    rarityIds: [...new Set((s.rarityIds ?? []).map(String))],
+    rarityIds: [...new Set((Array.isArray(s.rarityIds) ? s.rarityIds : []).map(String))],
     escalate: !!s.escalate,
     iconOnly: !!s.iconOnly,
   }))
@@ -124,7 +130,7 @@ export function cloneFormat(format) {
 export function cloneGodPack(godPack) {
   return {
     enabled: godPack?.enabled ?? true,
-    rarityIds: [...new Set((godPack?.rarityIds ?? []).map(String))],
+    rarityIds: [...new Set((Array.isArray(godPack?.rarityIds) ? godPack.rarityIds : []).map(String))],
   }
 }
 
@@ -142,7 +148,7 @@ export function makeRaritySheetStandard(name, sheet, week = 1) {
     name: cleanName(name, 'Rarity sheet'),
     note: '',
     // Uniques are per-card and never travel with a shared sheet — rule 4.
-    sheet: cloneSheet((sheet ?? defaultRaritySheet()).filter((r) => !r.unique)),
+    sheet: cloneSheet(sheet ?? defaultRaritySheet()).filter((r) => !r.unique),
     createdWeek: week,
     isDefault: false,
   }
@@ -153,7 +159,7 @@ export function makePackFormatStandard(name, format, godPack, week = 1) {
     id: rid('pfmt'),
     name: cleanName(name, 'Booster format'),
     note: '',
-    format: cloneFormat(withSlotIds(format ?? defaultPackFormat())),
+    format: withSlotIds(cloneFormat(format ?? defaultPackFormat())),
     // The god pack rides HERE rather than standing on its own: its `rarityIds`
     // are foreign keys into a sheet, and "what fills a god pack" is meaningless
     // apart from the pack it is a god version of.
@@ -189,7 +195,7 @@ function cleanName(name, fallback) {
 
 export function normalizeRaritySheetStandard(std) {
   if (!std?.id) return null
-  const sheet = cloneSheet((std.sheet ?? []).filter((r) => !r.unique))
+  const sheet = cloneSheet(std.sheet).filter((r) => !r.unique)
   // A sheet the game would refuse to release is worse than no sheet: it would
   // sit in the library looking importable and then block the release button.
   if (validateRaritySheet(sheet).length) return null
@@ -208,7 +214,7 @@ export function normalizePackFormatStandard(std) {
   // withSlotIds is what gives a slot authored before ids existed (a preset, an
   // older save) the stable React key the editor needs. It was exported and
   // called nowhere; this is the load-time normaliser it was written for.
-  const format = cloneFormat(withSlotIds(std.format))
+  const format = withSlotIds(cloneFormat(std.format))
   if (validatePackFormat(format).length) return null
   return {
     id: String(std.id),
@@ -270,17 +276,35 @@ export function seedFromStandards(standards = {}) {
   const resolved = bp ? resolveBlueprint(bp, standards) : null
   const sheetStd = resolved?.sheetStandard ?? defaultOf(standards.raritySheets)
   const formatStd = resolved?.formatStandard ?? defaultOf(standards.packFormats)
+  if (!sheetStd && !formatStd) return {}
   const out = {}
   // Cloned on the way out — rule 1. Without this a fresh draft would edit the
   // library entry in place, and the player's "default" would drift every set.
-  if (sheetStd) out.rarities = cloneSheet(sheetStd.sheet)
-  if (formatStd) {
-    out.packFormat = cloneFormat(formatStd.format)
-    out.godPack = cloneGodPack(formatStd.godPack)
+  const rarities = sheetStd ? cloneSheet(sheetStd.sheet) : defaultRaritySheet()
+  const format = formatStd ? cloneFormat(formatStd.format) : defaultPackFormat()
+  const godPack = formatStd ? cloneGodPack(formatStd.godPack) : { enabled: true, rarityIds: [] }
+
+  // AND RECONCILED, because nothing forces these two to have been authored
+  // against each other. Marking a custom sheet as the default without a matching
+  // booster pairs it with the Classic preset, whose slots hardcode the eight
+  // built-in ids; a blueprint lets you pin any sheet to any booster. Seeded
+  // unreconciled, every slot would name ids the sheet has never had — which does
+  // not error anywhere: drawSlotRarity falls back to "any rarity present", so a
+  // "7 x common" slot becomes a weighted draw over the whole sheet and a 10-card
+  // pack quietly has ten hit slots. computePackOdds applies the same fallback,
+  // so the published odds agree with the draw and nothing looks wrong.
+  //
+  // This is the only import path with no confirmation dialog in front of it, so
+  // it is the one that most needs to be right by construction.
+  const fitted = fitToSheet({ format, godPack }, rarities)
+  if (sheetStd) out.rarities = rarities
+  if (formatStd || fitted.changed) {
+    // A variant the sheet introduces joins the slots its parent is already in,
+    // so a chase printing the standard carries is actually chaseable.
+    out.packFormat = syncFormatWithVariants(fitted.format, rarities)
+    out.godPack = fitted.godPack
   }
-  if (sheetStd || formatStd) {
-    out.standardFrom = { raritySheet: sheetStd?.id ?? null, packFormat: formatStd?.id ?? null }
-  }
+  out.standardFrom = { raritySheet: sheetStd?.id ?? null, packFormat: formatStd?.id ?? null }
   return out
 }
 
@@ -348,31 +372,63 @@ export function nearestRarityId(entry, toSheet) {
 //
 // Idempotent: an id already in the sheet is left exactly as it is, so this can
 // run on every keystroke without fighting the player.
-export function reconcileFormatToSheet(format, sheet) {
+// Rewrite a format's slots and a god pack's picks so every id resolves against
+// `sheet`, remapping what does not by the nearest-value-tier rule above.
+//
+// Needed because PACK_PRESETS hardcode the eight default rarity ids: applying
+// "Premium" to a format being authored against a custom sheet yields slots
+// naming rarities that sheet has never had. Left alone, that is invisible in the
+// Studio (the chips simply do not light) and only surfaces as a pile of remaps
+// the first time the format is imported anywhere.
+//
+// `fromSheet` is where a DEPARTING id is looked up, and passing the right one is
+// what makes the remap mean anything. The destination sheet by definition has no
+// answer for it, so asked there getRarity returns its neutral stub at value tier
+// 40 and every orphan lands mid-ladder regardless of what it was — a custom
+// "Prismatic Chase" at tier 95 demoted to Rare. Callers that know the sheet the
+// format was previously expressed in (a context switch in the editor) must pass
+// it. What is left over falls back to the BUILT-IN sheet, whose eight permanent
+// content ids are exactly what the presets hardcode, so 'sir' still resolves at
+// 88 and moves to the top of the new sheet rather than to its middle.
+//
+// Idempotent: an id already in the sheet is left exactly as it is, so this can
+// run on every keystroke without fighting the player.
+export function fitToSheet({ format, godPack }, sheet, fromSheet = null) {
   const shared = (sheet ?? []).filter((r) => !r.unique)
-  if (!shared.length) return format
+  if (!shared.length) return { format, godPack, changed: false }
   const live = new Set(expandRaritySheet(sheet ?? []).map((r) => r.id))
-  // An id being replaced has to be looked up somewhere that still KNOWS it, or
-  // getRarity hands back its neutral stub at value tier 40 and every orphan
-  // lands mid-ladder regardless of what it was. The sheet being reconciled to is
-  // by definition the wrong place to ask. The built-in sheet is the right one:
-  // its eight ids are permanent content ids with fixed meanings, and they are
-  // exactly what the presets hardcode, so 'sir' resolves at 88 and moves to the
-  // top of the new sheet rather than to its middle.
-  const reference = [...shared, ...defaultRaritySheet().filter((d) => !live.has(d.id))]
+  const reference = [
+    ...(fromSheet ?? []),
+    ...shared,
+    ...defaultRaritySheet().filter((d) => !live.has(d.id)),
+  ]
   let changed = false
-  const slots = (format?.slots ?? []).map((slot) => {
-    const next = []
-    for (const id of slot.rarityIds ?? []) {
-      const keep = live.has(id) ? id : nearestRarityId(getRarity(reference, id), shared)
-      if (keep !== id) changed = true
-      // Two orphans can land on the same survivor, or on one the slot already
-      // holds; a slot listing a rarity twice would weight it twice in the draw.
-      if (keep && !next.includes(keep)) next.push(keep)
+  const move = (id) => {
+    if (live.has(id)) return id
+    changed = true
+    return nearestRarityId(getRarity(reference, id), shared)
+  }
+  // Two orphans can land on the same survivor, or on one the list already holds;
+  // a slot naming a rarity twice would weight it twice in the draw.
+  const mapIds = (ids) => {
+    const out = []
+    for (const id of ids ?? []) {
+      const keep = move(id)
+      if (keep && !out.includes(keep)) out.push(keep)
     }
-    return { ...slot, rarityIds: next }
-  })
-  return changed ? { ...format, slots } : format
+    return out
+  }
+  const slots = (format?.slots ?? []).map((slot) => ({ ...slot, rarityIds: mapIds(slot.rarityIds) }))
+  const picks = mapIds(godPack?.rarityIds)
+  if (!changed) return { format, godPack, changed: false }
+  return {
+    // Slots that no longer name the preset's rarities are no longer that preset,
+    // so the record of where the shape came from has to go with them — the same
+    // honesty the editor's own mutators enforce.
+    format: { ...format, preset: null, slots },
+    godPack: godPack ? { ...godPack, rarityIds: picks } : godPack,
+    changed: true,
+  }
 }
 
 // Work out what importing `incoming` into `draft` would do, and do it. One
@@ -394,13 +450,13 @@ function planImport(draft, incoming = {}) {
   // every slot was dead and strip them — silently unpicking each signature card
   // the player had made individually pullable.
   const merged = [...shared, ...uniques]
-  const format = cloneFormat(withSlotIds(incoming.format ?? draft.packFormat))
+  const format = withSlotIds(cloneFormat(incoming.format ?? draft.packFormat))
   const godPack = cloneGodPack(incoming.godPack ?? draft.godPack)
 
   // Variant ids are pullable in their own right, so a slot may legitimately name
   // one; the expanded sheet is the real universe of ids a reference can resolve to.
   const live = new Set(expandRaritySheet(merged).map((r) => r.id))
-  const report = { slots: [], godPack: [], signatureCards: [], reprintUpgrades: [] }
+  const report = { slots: [], godPack: [], signatureCards: [], reprintUpgrades: [], variantsAdded: [] }
 
   // Resolve a stale id against the sheet it CAME from, so the report can name it
   // ("Illustration Rare", not `ir`) and so the remap is by the tier the player
@@ -427,6 +483,10 @@ function planImport(draft, incoming = {}) {
     }
     return { ...slot, rarityIds: next }
   })
+  // Preset provenance goes with the slots, exactly as fitToSheet and the
+  // editor's own mutators do: slots remapped off a preset's rarities are not
+  // that preset any more.
+  const nextPreset = report.slots.length ? null : format.preset
 
   const gpIds = []
   for (const id of godPack.rarityIds) {
@@ -462,19 +522,32 @@ function planImport(draft, incoming = {}) {
   report.count = report.slots.length + report.godPack.length
     + report.signatureCards.length + report.reprintUpgrades.length
   report.uniquesKept = nextUniques.length
-  report.sheetChanged = !!incoming.sheet
-  report.formatChanged = !!incoming.format
+
+  // The standing reconciliation pass, LAST and against the merged sheet: it puts
+  // a variant the incoming sheet introduced into the slots its parent is already
+  // in, so a chase printing the player is importing is actually chaseable
+  // without a second trip to the booster section.
+  const before = { ...format, preset: nextPreset, slots }
+  const packFormat = syncFormatWithVariants(before, rarities)
+  // Which is a real change to what a pack contains, so it has to be REPORTED.
+  // Without this the dialog could say "everything still resolves, nothing else
+  // changes" and then add an Alt Art to the hit slot — and the provenance line
+  // would immediately flip to "edited since" with the player having touched
+  // nothing.
+  packFormat.slots.forEach((slot, slotIndex) => {
+    const had = new Set(before.slots[slotIndex]?.rarityIds ?? [])
+    for (const id of slot.rarityIds ?? []) {
+      if (!had.has(id)) report.variantsAdded.push({ slotIndex, name: getRarity(rarities, id).name })
+    }
+  })
+  report.count += report.variantsAdded.length
 
   return {
     report,
     draft: {
       ...draft,
       rarities,
-      // The standing reconciliation pass, LAST and against the merged sheet: it
-      // puts a variant the incoming sheet introduced into the slots its parent
-      // is already in, so a chase printing the player is importing is actually
-      // chaseable without a second trip to the booster section.
-      packFormat: syncFormatWithVariants({ ...format, slots }, rarities),
+      packFormat,
       godPack: { ...godPack, rarityIds: gpIds },
       signatureCards,
       reprintedCards,
@@ -482,7 +555,9 @@ function planImport(draft, incoming = {}) {
   }
 }
 
-// What importing would change, for the confirmation the player sees. Pure.
+// What importing would change, for the confirmation the player sees. Does not
+// touch the draft — the only write it can make is minting a slot id on a format
+// that has none, which the normalisers already rule out for anything stored.
 export function checkStandardFit(draft, incoming) {
   return planImport(draft, incoming).report
 }

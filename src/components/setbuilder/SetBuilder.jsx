@@ -20,6 +20,8 @@ import {
   resolveBlueprint,
   makeRaritySheetStandard,
   makePackFormatStandard,
+  normalizeRaritySheetStandard,
+  normalizePackFormatStandard,
 } from '../../game/standards.js'
 import { SKU_TYPES } from '../../game/products.js'
 import {
@@ -173,6 +175,9 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
   // a card between seeing the report and pressing Import gets a report that
   // still describes what pressing Import will actually do.
   const [pendingImport, setPendingImport] = useState(null)
+  // Which section's "save as a standard" was refused, so the bar can say so
+  // rather than appearing to do nothing.
+  const [saveError, setSaveError] = useState(null)
   const anniversaryGate = canUnlockAnniversary({ franchise, setsShipped: sets.length, perks })
   // The founding concept's naming style (creature vs. character) — flavor
   // only, see content/concepts.js. Feeds the auto-fill preview below so it
@@ -230,9 +235,13 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
     if (paneRef.current) paneRef.current.scrollTop = 0
   }, [active])
   const isOpen = (id) => (wide ? active === id : !!open[id])
+  // Leaving a section drops anything it had pending. On the wide layout the
+  // standards bar is unmounted with its section, so an unconfirmed import there
+  // would be neither visible nor cancellable until the player navigated back.
+  const leaveSection = () => { setPendingImport(null); setSaveError(null) }
   const onSection = (id) => (wide
-    ? () => setActive(id)
-    : () => toggle(id))
+    ? () => { leaveSection(); setActive(id) }
+    : () => { leaveSection(); toggle(id) })
 
   const patch = (p) => setDraft((d) => ({ ...d, ...p }))
   const tier = getTier(draft.tier)
@@ -377,6 +386,17 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
     const record = kind === 'raritySheet'
       ? makeRaritySheetStandard(name || draft.name, draft.rarities, week)
       : makePackFormatStandard(name || draft.name, draft.packFormat, draft.godPack, week)
+    // The reducer runs every write through the same normaliser and DROPS what it
+    // refuses, so a draft mid-edit into an invalid state (no rarities named yet,
+    // an empty pack slot) would save nothing at all. Checking here first means
+    // the provenance line below is never set to an id that was never stored —
+    // which would have been the player's only feedback that the button worked.
+    const normalize = kind === 'raritySheet' ? normalizeRaritySheetStandard : normalizePackFormatStandard
+    if (!normalize(record)) {
+      setSaveError(kind)
+      return
+    }
+    setSaveError(null)
     onSaveStandard(kind, record)
     // The draft now matches the standard it was just cut from, so the
     // provenance line reads "unchanged" rather than nothing at all.
@@ -668,6 +688,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
               noun="rarity sheet"
               standards={raritySheets}
               provenance={sheetFrom}
+              refused={saveError === 'raritySheet'}
               pending={pending?.kind === 'raritySheet' ? pending : null}
               onPick={(id) => pickStandard('raritySheet', id)}
               onConfirm={confirmImport}
@@ -851,6 +872,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
               noun="booster format"
               standards={packFormats}
               provenance={formatFrom}
+              refused={saveError === 'packFormat'}
               pending={pending?.kind === 'packFormat' ? pending : null}
               onPick={(id) => pickStandard('packFormat', id)}
               onConfirm={confirmImport}

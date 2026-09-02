@@ -300,8 +300,8 @@ export function hydrate(state) {
   const liveCardIds = new Set(state.cards.map((c) => c.id))
   // Hoisted for the same reason: the blueprint normaliser below needs the ids
   // that SURVIVED these two passes, not the ids that went into them.
-  const sheets = (state.raritySheets ?? []).map(normalizeRaritySheetStandard).filter(Boolean)
-  const formats = (state.packFormats ?? []).map(normalizePackFormatStandard).filter(Boolean)
+  const sheets = onlyOneDefault((state.raritySheets ?? []).map(normalizeRaritySheetStandard).filter(Boolean))
+  const formats = onlyOneDefault((state.packFormats ?? []).map(normalizePackFormatStandard).filter(Boolean))
   return {
     ...state,
     cards: state.cards.map((c) => ({ ...CARD_DEFAULTS, ...c })),
@@ -349,6 +349,21 @@ export function hydrate(state) {
       }))
       .filter(Boolean),
   }
+}
+
+// SAVE_STANDARD holds "exactly one default per library" by clearing the flag on
+// every other record as it writes, so it can only be violated by a save that did
+// not come from this game — an imported or hand-edited one. defaultOf silently
+// takes the first, which is a quiet lie about which standard a new set will use,
+// so the extras are cleared on the way in instead.
+function onlyOneDefault(list) {
+  let seen = false
+  return list.map((s) => {
+    if (!s.isDefault) return s
+    if (seen) return { ...s, isDefault: false }
+    seen = true
+    return s
+  })
 }
 
 // True only where a real localStorage exists. Guards SSR / the headless
