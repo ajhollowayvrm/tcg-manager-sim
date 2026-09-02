@@ -1,8 +1,12 @@
-// The set-creation flow. A modal over the dashboard holding the slider layer,
-// signature card editor, prerelease toggle, a live cost summary, and Release.
+// The set-creation flow: Studio > Design. Holds the slider layer, the signature
+// card editor, the prerelease toggle, a live cost summary, and Release.
+//
+// It was a modal until it moved here, next to the standards it imports. App
+// keeps it MOUNTED while you are elsewhere in Studio, because the draft lives in
+// this component's state and stepping over to Standards must not throw a
+// half-built set away.
 
 import { useEffect, useRef, useState } from 'react'
-import { useModal } from '../useModal.js'
 import Slider from './Slider.jsx'
 import SignatureCardEditor from './SignatureCardEditor.jsx'
 import RarityEditor from './RarityEditor.jsx'
@@ -162,7 +166,7 @@ function BuilderNav({ active, onPick, summaries, tierName }) {
   )
 }
 
-export default function SetBuilder({ setNumber, cash, artists, characters = [], liveCards = [], sets = [], blocks = [], illustrationSets = [], standards = {}, upgrades = {}, week = 1, franchise, perks = [], conceptId, onSaveStandard, onRelease, onClose }) {
+export default function SetBuilder({ setNumber, cash, artists, characters = [], liveCards = [], sets = [], blocks = [], illustrationSets = [], standards = {}, upgrades = {}, week = 1, franchise, perks = [], conceptId, onSaveStandard, onRelease }) {
   // The first set you ever ship MUST be a major (it opens your first block); once
   // a block is live you can ship riders. Seed the tier accordingly.
   const isFirstSet = blocks.length === 0
@@ -192,9 +196,8 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
   )
 
   // Accordion: sections toggle independently (multi-open). Identity is open by
-  // default; everything else starts collapsed so the modal opens short and
+  // default; everything else starts collapsed so the view opens short and
   // scannable. Each collapsed header shows a one-line summary of its contents.
-  const modalRef = useModal(onClose)
   // WIDE layout is a two-pane form: a nav rail on the left, one section's
   // controls on the right. NARROW keeps the accordion, which is the right
   // control for a phone and was never the problem.
@@ -499,15 +502,18 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
     })(),
   }
 
+  // A Studio sub-tab, not a dialog. No backdrop, no focus trap, no close button:
+  // leaving is navigating, and the draft survives it because App keeps this
+  // mounted. The cost summary and Release stay pinned to the bottom of the
+  // viewport instead of to the bottom of a sheet — with thirteen sections above
+  // it, it is the one control that must never require a scroll to reach.
   return (
-    <div className="modal" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal__sheet" ref={modalRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="builder-title">
-        <header className="modal__head">
-          <h2 id="builder-title">Design a {tier.name}</h2>
-          <button className="btn btn--ghost" onClick={onClose}>✕</button>
-        </header>
+    <section className="builderview" aria-labelledby="builder-title">
+      <header className="builderview__head">
+        <h2 id="builder-title">Design a {tier.name}</h2>
+      </header>
 
-        <div className={'modal__body builder' + (wide ? ' builder--wide' : '')}>
+        <div className={'builderview__body builder' + (wide ? ' builder--wide' : '')}>
           {wide && (
             <BuilderNav
               active={active}
@@ -526,7 +532,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
           {/* Release tier — the first decision. A major opens a block; a minor/
               micro rides a live one. Drives the whole set's scale & effects.
               On the wide layout it is the rail's first row and the section the
-              modal opens on, so the first decision is still the first thing you
+              view opens on, so the first decision is still the first thing you
               see — it just stops occupying 150px forever once it is made. */}
           {(!wide || active === 'tier') && (
             <>
@@ -1078,7 +1084,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
         </div>
 
         {/* Cost summary + release */}
-        <footer className="modal__foot">
+        <footer className="builderview__foot">
           <div className="costs">
             <div className="costs__items">
             <CostLine label="Development" value={cost.dev} />
@@ -1112,14 +1118,13 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
             <button
               className="btn btn--release"
               disabled={!canRelease}
-              onClick={() => { onRelease(draft); onClose() }}
+              onClick={() => onRelease(draft)}
             >
               Release {draft.name} — {formatCash(cost.total)}
             </button>
           </div>
         </footer>
-      </div>
-    </div>
+    </section>
   )
 }
 

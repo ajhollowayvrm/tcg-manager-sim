@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useGame } from './game/useGame.js'
 import TopStrip from './components/nav/TopStrip.jsx'
 import SubTabs from './components/nav/SubTabs.jsx'
@@ -45,6 +45,7 @@ const TABS = [
     id: 'studio', label: 'Studio', icon: '🏛️',
     subtabs: [
       { id: 'overview', label: 'Overview' },
+      { id: 'design', label: 'Design' },
       { id: 'sets', label: 'Sets' },
       { id: 'cast', label: 'Cast' },
       { id: 'lineages', label: 'Lineages' },
@@ -100,7 +101,12 @@ function tabById(id) {
 export default function App() {
   const game = useGame()
   const { prefs, setTab, setSubtab, setSectionOpen } = useUiPrefs()
-  const [building, setBuilding] = useState(false)
+  // The set builder is a Studio sub-tab, not a modal. `designOpen` keeps it
+  // MOUNTED once it has been opened, so a half-built set survives a trip to
+  // Standards and back — see where it renders below. `designSeq` is bumped on
+  // release to throw the finished draft away and seed a fresh one.
+  const [designOpen, setDesignOpen] = useState(false)
+  const [designSeq, setDesignSeq] = useState(0)
   const [retireConfirm, setRetireConfirm] = useState(false)
   const tabRefs = useRef([])
 
@@ -112,6 +118,13 @@ export default function App() {
     setTab(tabId)
     if (subtabId) setSubtab(tabId, subtabId)
   }
+
+  // Studio > Design shows the set builder. Latch it open on the first visit so
+  // it stays mounted afterwards (see where it renders).
+  const isDesign = tab.id === 'studio' && subtab === 'design'
+  useEffect(() => {
+    if (isDesign && !designOpen) setDesignOpen(true)
+  }, [isDesign, designOpen])
 
   // Arrow-key navigation between tabs, per the ARIA tabs pattern: the tablist
   // is one tab stop and the arrows move within it.
@@ -220,7 +233,7 @@ export default function App() {
   return (
     <SectionPrefsProvider sections={prefs.sections} setSectionOpen={setSectionOpen}>
       <div className="app">
-        <TopStrip game={game} onDesignSet={() => setBuilding(true)} />
+        <TopStrip game={game} onDesignSet={() => goTo('studio', 'design')} />
 
         {/* A failed autosave used to be entirely silent, which is how a long run
             could stop saving without the player ever finding out. */}
@@ -251,7 +264,52 @@ export default function App() {
             role="tabpanel"
             aria-labelledby={`${tab.id}-tab-${subtab}`}
           >
-            {views[`${tab.id}.${subtab}`]}
+            {!isDesign && views[`${tab.id}.${subtab}`]}
+            {/* The set builder is HIDDEN rather than unmounted when you leave
+                it. Its draft lives in component state, so unmounting would
+                throw away a half-built set the moment you stepped over to
+                Standards — and standing next to the standards it imports is the
+                whole reason it moved here. `hidden` sits on this wrapper rather
+                than the builder itself because .builder--wide sets `display:
+                grid`, which would beat the [hidden] default.
+
+                It mounts on the first visit and stays mounted, so the draft is
+                seeded after the save has hydrated rather than from the empty
+                state App holds while booting. */}
+            {(designOpen || isDesign) && (
+              <div hidden={!isDesign}>
+                <SetBuilder
+                  key={designSeq}
+                  setNumber={state.sets.length + 1}
+                  cash={state.cash}
+                  artists={state.artists}
+                  characters={state.characters ?? []}
+                  liveCards={state.cards.filter((c) => !c.banned && !c.rotated)}
+                  sets={state.sets}
+                  blocks={state.blocks ?? []}
+                  illustrationSets={state.illustrationSets ?? []}
+                  standards={{
+                    raritySheets: state.raritySheets ?? [],
+                    packFormats: state.packFormats ?? [],
+                    blueprints: state.blueprints ?? [],
+                  }}
+                  onSaveStandard={game.saveStandard}
+                  upgrades={state.upgrades ?? {}}
+                  week={state.week}
+                  franchise={state.franchise}
+                  perks={state.prestige?.perks ?? []}
+                  conceptId={state.config?.conceptId}
+                  onRelease={(draft) => {
+                    game.release(draft)
+                    // Throw the shipped draft away and land on the set you just
+                    // made, rather than on an empty builder that looks as though
+                    // nothing happened.
+                    setDesignSeq((n) => n + 1)
+                    goTo('studio', 'sets')
+                  }}
+                />
+              </div>
+            )}
           </div>
         </main>
 
@@ -281,31 +339,6 @@ export default function App() {
           <RetrospectivePanel state={state} onReset={game.reset} />
         )}
 
-        {building && (
-          <SetBuilder
-            setNumber={state.sets.length + 1}
-            cash={state.cash}
-            artists={state.artists}
-            characters={state.characters ?? []}
-            liveCards={state.cards.filter((c) => !c.banned && !c.rotated)}
-            sets={state.sets}
-            blocks={state.blocks ?? []}
-            illustrationSets={state.illustrationSets ?? []}
-            standards={{
-              raritySheets: state.raritySheets ?? [],
-              packFormats: state.packFormats ?? [],
-              blueprints: state.blueprints ?? [],
-            }}
-            onSaveStandard={game.saveStandard}
-            upgrades={state.upgrades ?? {}}
-            week={state.week}
-            franchise={state.franchise}
-            perks={state.prestige?.perks ?? []}
-            conceptId={state.config?.conceptId}
-            onRelease={game.release}
-            onClose={() => setBuilding(false)}
-          />
-        )}
       </div>
     </SectionPrefsProvider>
   )

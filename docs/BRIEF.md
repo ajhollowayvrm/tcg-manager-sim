@@ -323,7 +323,7 @@ organised around the studio's relationships, each with sub-tabs:
 
 | Tab | Sub-tabs |
 | --- | --- |
-| Studio | Overview, Sets, Cast, Lineages, Standards |
+| Studio | Overview, Design, Sets, Cast, Lineages, Standards |
 | Business | Distribution, Grading, Illustrators, Partners, Ventures |
 | Community | Pulse, Voices, Programmes, Grassroots, News |
 | Stats | Money, Trends, Market, Cards, Scalp Watch |
@@ -334,7 +334,16 @@ the open state, the active tab and the active sub-tab per tab persist in
 localStorage (`components/nav/uiPrefs.js`), separate from the run save. A slim
 sticky strip holds the studio name, the week, cash, Design a Set and Advance
 Week; the six health meters live in the tabs that own their numbers
-(`components/nav/Meter.jsx`).
+(`components/nav/Meter.jsx`). Design a Set navigates to Studio › Design rather
+than opening anything — the set builder is a sub-tab, not a modal, so it stands
+next to the standards it imports.
+
+The builder is the one view App keeps **mounted while you are elsewhere**,
+hidden rather than unmounted. Its draft lives in component state, so unmounting
+it would throw a half-built set away the moment you stepped over to Standards to
+tweak a rarity sheet — which is exactly the trip putting it here invites. It
+resets only on release, which also lands you on Studio › Sets so you see what
+you just shipped.
 
 ## Architecture
 
@@ -360,9 +369,18 @@ TypeScript. One immutable `GameState` in a `useReducer`.
    normalised on load. Current version: **18**.
 3. **Content ids are permanent.** They are stored in saves. Renaming one orphans
    every record that references it.
-4. **`tools/playtest.mjs` is the only automated check.** There is no test runner.
-   It drives the real reducer, because a hand-mirrored copy once drifted and
-   silently dropped state. Measure a sim change by diffing its table.
+4. **Two automated checks, covering different halves.** There is no test runner,
+   no linter and no typecheck.
+   `tools/playtest.mjs` is the only check on the SIMULATION: it drives the real
+   reducer, because a hand-mirrored copy once drifted and silently dropped
+   state. Measure a sim change by diffing its table.
+   `tools/uisweep.mjs` is the only check that the app RENDERS: it opens the
+   build in a browser and visits every tab crossed with every sub-tab, failing
+   if a panel throws or comes up empty. It exists because vite compiles a free
+   identifier without a word — SetBuilder read `upgrades` without receiving it,
+   threw on every render, and with no error boundary anywhere React unmounted
+   the whole root. The builder was unreachable for two commits and every other
+   check was green.
 
 ### State shape
 

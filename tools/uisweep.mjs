@@ -86,13 +86,14 @@ for (let t = 0; t < tabs.length; t++) {
   }
 }
 
-// The set builder is not a tab, so it needs its own visit — and it is the thing
-// this sweep was written for.
-console.log('\n  the set builder')
+// The set builder is a Studio sub-tab now, so the loop above already visited it.
+// This second visit goes through the top strip's "Design a Set" button, which is
+// the other way in and the one that navigates rather than renders.
+console.log('\n  the set builder, via the top strip')
 const before = errors.length
 await page.locator('button', { hasText: /Design a Set/i }).first().click()
 await page.waitForTimeout(900)
-const chars = (await page.locator('.modal__sheet, .builder').first().innerText().catch(() => '')).trim().length
+const chars = (await page.locator('.builderview').first().innerText().catch(() => '')).trim().length
 if (errors.length > before) {
   bad++
   console.log(`      THREW: ${errors[before].slice(0, 200)}`)

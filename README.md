@@ -73,6 +73,8 @@ npm run dev       # start the dev server
 npm run build     # production build
 npm run preview   # preview the build
 npm run playtest  # headless balance sweep (--fast, --strategy=, --trace, --help)
+npm run uisweep   # every tab x sub-tab in a browser; fails if a panel throws
+                  #   (needs a build served somewhere: node tools/uisweep.mjs PORT)
 ```
 
 Vite + React, no backend. State lives in one immutable `GameState` and autosaves
@@ -84,8 +86,17 @@ There is also an iOS shell — a WKWebView wrapper around the same build. See
 it on the simulator or a device.
 
 **Before changing the sim, read the load-bearing rules in `docs/BRIEF.md`** —
-notably that the save has no migrations, that `reducer.js` must import in plain
-Node, and that `playtest.mjs` is the only automated check.
+notably that the save has no migrations, and that `reducer.js` must import in
+plain Node.
+
+There are two automated checks and they cover different halves.
+`playtest.mjs` drives the real reducer and is the only check on the
+SIMULATION — measure a sim change by diffing its table. `uisweep.mjs` opens the
+built app in a browser and visits every tab crossed with every sub-tab, failing
+if a panel throws or renders empty. It exists because there is no test runner,
+no linter and no typecheck here, so a component reading an undefined variable
+builds green and blanks the screen at runtime — which is exactly how the set
+builder was unreachable for two commits.
 
 ## Structure
 

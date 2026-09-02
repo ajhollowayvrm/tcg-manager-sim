@@ -2074,3 +2074,28 @@ button.tag--oddsobscured:hover { border-color: var(--accent-2); color: var(--tex
   }
   .std__editor .field input, .std__open { min-height: 44px; }
 }
+
+/* ---- The set builder as a Studio sub-tab -------------------------------- */
+/* It was a modal, so it used to inherit .modal__sheet's fixed height and scroll
+   its own pane inside it. In a tab it is page flow: the page scrolls, and the
+   builder does not get a scroll area inside a scroll area. The cost summary and
+   Release stick to the bottom of the VIEWPORT instead of the bottom of a sheet —
+   with thirteen sections above it, that is the one control that must never need
+   a scroll to reach. */
+.builderview { display: flex; flex-direction: column; gap: 12px; }
+.builderview__head h2 { margin: 0; font-size: 1.05rem; font-weight: 700; }
+.builderview__body { display: flex; flex-direction: column; gap: 10px; }
+.builderview__foot {
+  position: sticky; bottom: 0; z-index: 2;
+  margin: 4px -16px -16px; padding: 12px 16px;
+  background: linear-gradient(180deg, rgba(21,21,31,0.92), var(--surface));
+  border-top: 1px solid var(--border);
+  backdrop-filter: blur(6px);
+}
+/* The wide two-pane layout keeps its rail, but the pane no longer scrolls on its
+   own — .builder--wide capped it against the sheet's height, and there is no
+   sheet now. */
+@media (min-width: 1024px) {
+  .builderview .builder--wide { overflow: visible; min-height: 0; }
+  .builderview .builder__pane { overflow: visible; max-height: none; }
+}
