@@ -1,11 +1,10 @@
-// Cast & Artists — the persistent character roster and the artist roster's
-// live career drift, both invisible everywhere else in the shipped UI even
-// though they drift every week and feed straight into set design: fame gates
-// icon-treatment eligibility (see characters.js's famePopBonus/TREATMENTS) and
-// an artist's live cost/reach changes what a new signature card actually costs
-// (see artists.js's currentArtist). Characters can also be created here
-// directly (no card required), so a fresh company can staff a roster before its
-// first release instead of only minting one mid-signature-card in the builder.
+// Cast — the persistent character roster, invisible everywhere else in the
+// shipped UI even though fame drifts every week and feeds straight into set
+// design: it gates icon-treatment eligibility (see characters.js's
+// famePopBonus/TREATMENTS). Characters can also be created here directly (no
+// card required), so a fresh company can staff a roster before its first
+// release instead of only minting one mid-signature-card in the builder. The
+// artist roster moved to Business › Illustrators (IllustratorsPanel).
 //
 // The character half used to show the top FIVE by fame and nothing else — no
 // search, no filter, and no way to click through to a character. A cast the
@@ -14,14 +13,12 @@
 // copied), and every row opens the full sheet in CharacterDetail.
 
 import { useMemo, useState } from 'react'
-import { getArtist } from '../game/content/artists.js'
 import { getArchetype } from '../game/content/archetypes.js'
 import { MAX_TRAITS } from '../game/content/traits.js'
 import CharacterDetail, { ArchetypeSelect, TraitPicker } from './CharacterDetail.jsx'
+import Section from './nav/Section.jsx'
 
 const CHAR_TRAJ_LABEL = { rising: 'Rising', established: 'Established', icon: 'Icon', fading: 'Fading' }
-const ARTIST_TRAJ_LABEL = { rising: 'Rising', steady: 'Steady', established: 'Established', fading: 'Fading' }
-const MAX_ROWS = 5
 
 // Filter chips: All, then each archetype category, so twelve archetypes stay
 // scannable without twelve chips. 'unaligned' is reachable through its own
@@ -87,18 +84,10 @@ export default function CastPanel({ state, onAddCharacter, onUpdateCharacter }) 
       .sort(CHAR_SORTS[sort])
   }, [all, category, sort, query])
 
-  const artists = [...(state.artists ?? [])]
-    .map((a) => ({ ...a, name: getArtist(a.id)?.name ?? a.id }))
-    .sort((a, b) => b.reach - a.reach)
-    .slice(0, MAX_ROWS)
-
   const open = openId ? all.find((c) => c.id === openId) : null
 
   return (
-    <div className="panel">
-      <h2 className="panel__title">Cast &amp; Artists</h2>
-
-      <h3 className="panel__subtitle">Characters ({all.length})</h3>
+    <Section id="studio.cast" title={`Cast (${all.length})`} level={2}>
 
       {all.length > 1 && (
         <div className="roster__controls">
@@ -158,24 +147,6 @@ export default function CastPanel({ state, onAddCharacter, onUpdateCharacter }) 
 
       {onAddCharacter && <NewCharacterForm onAdd={onAddCharacter} />}
 
-      {artists.length > 0 && (
-        <>
-          <h3 className="panel__subtitle">Artists, by reach</h3>
-          <ul className="roster">
-            {artists.map((a) => (
-              <CastRow
-                key={a.id}
-                name={a.name}
-                pct={a.reach}
-                pctTitle={`Reach ${Math.round(a.reach)}`}
-                trajectory={a.trajectory}
-                label={ARTIST_TRAJ_LABEL[a.trajectory] ?? a.trajectory}
-              />
-            ))}
-          </ul>
-        </>
-      )}
-
       {open && (
         <CharacterDetail
           character={open}
@@ -184,7 +155,7 @@ export default function CastPanel({ state, onAddCharacter, onUpdateCharacter }) 
           onUpdate={onUpdateCharacter}
         />
       )}
-    </div>
+    </Section>
   )
 }
 

@@ -15,6 +15,7 @@
 
 import { useState } from 'react'
 import { useModal } from './useModal.js'
+import Section from './nav/Section.jsx'
 import Chart from './Chart.jsx'
 import { getArchetype, archetypeMatchesTheme, archetypesByCategory } from '../game/content/archetypes.js'
 import { promotionChain } from '../game/characters.js'
@@ -132,8 +133,7 @@ export default function CharacterDetail({ character, state, onClose, onUpdate })
           )}
 
           {/* ---- Fame history ------------------------------------------ */}
-          <div className="builder__section">
-            <h3 className="builder__h3">Fame</h3>
+          <Section id="charsheet.fame" title="Fame" level={3} flat>
             {history.length > 1 ? (
               <Chart
                 series={[{ key: 'fame', label: 'Fame', color: 'var(--pop)', points: history }]}
@@ -143,11 +143,10 @@ export default function CharacterDetail({ character, state, onClose, onUpdate })
             ) : (
               <p className="panel__empty">No history yet — advance a few weeks.</p>
             )}
-          </div>
+          </Section>
 
           {/* ---- The story --------------------------------------------- */}
-          <div className="builder__section">
-            <h3 className="builder__h3">Story</h3>
+          <Section id="charsheet.story" title="Story" level={3} flat>
             {(character.beats ?? []).length === 0 ? (
               <p className="panel__empty">
                 Nothing has happened to {character.name} yet. Print them and see.
@@ -166,11 +165,10 @@ export default function CharacterDetail({ character, state, onClose, onUpdate })
                 })}
               </ul>
             )}
-          </div>
+          </Section>
 
           {/* ---- Printings --------------------------------------------- */}
-          <div className="builder__section">
-            <h3 className="builder__h3">Printings ({(character.appearances ?? []).length})</h3>
+          <Section id="charsheet.printings" title={`Printings (${(character.appearances ?? []).length})`} level={3} flat>
             {debutSet && (
               <p className="field__note">
                 Debuted in {debutSet}
@@ -202,12 +200,11 @@ export default function CharacterDetail({ character, state, onClose, onUpdate })
                 })}
               </ul>
             )}
-          </div>
+          </Section>
 
           {/* ---- Where they belong ------------------------------------- */}
           {archetype.tags.length > 0 && (
-            <div className="builder__section">
-              <h3 className="builder__h3">Where they fit</h3>
+            <Section id="charsheet.fit" title="Where they fit" level={3} flat>
               <p className="field__note">
                 A {archetype.name.toLowerCase()} reads as an on-theme printing in a set themed around{' '}
                 {archetype.tags.join(', ')} — worth a real bump to a card's appeal.
@@ -215,7 +212,7 @@ export default function CharacterDetail({ character, state, onClose, onUpdate })
               {onThemeSets.length > 0 && (
                 <p className="field__note">Currently in print and on-theme: {onThemeSets.join(', ')}.</p>
               )}
-            </div>
+            </Section>
           )}
         </div>
       </div>

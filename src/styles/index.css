@@ -38,7 +38,7 @@ body {
   padding: var(--gap);
 }
 
-/* ---- Top bar ---- */
+/* ---- Top strip (nav/TopStrip.jsx) ---- */
 .topbar {
   display: flex;
   align-items: center;
@@ -82,8 +82,22 @@ body {
   -webkit-text-fill-color: var(--text-dim); /* opt out of the brand gradient clip */
 }
 
-/* Studio health — the three death-spiral meters, always visible. */
-.health { display: flex; gap: 10px; margin-left: auto; flex-wrap: wrap; }
+/* The cash figure on the strip — the one number every tab needs. */
+.topbar__cash {
+  display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15;
+  margin-left: auto; font-variant-numeric: tabular-nums;
+}
+.topbar__cashval { font-weight: 800; font-size: 0.95rem; }
+.topbar__cashdelta { font-size: 0.62rem; color: var(--good); font-weight: 700; min-height: 0.8em; }
+.topbar__cash.is-danger .topbar__cashval { color: var(--bad); }
+.topbar__cash.is-danger .topbar__cashdelta { color: var(--warn); }
+
+/* Health meters. They used to fill a sticky banner; now each tab lays out the
+   ones it owns in this grid (see nav/Meter.jsx). */
+.meters {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px; margin-bottom: var(--gap);
+}
 .meter {
   min-width: 132px; background: var(--surface-2); border: 1px solid var(--border);
   border-radius: 8px; padding: 6px 10px; display: flex; flex-direction: column; gap: 4px;
@@ -487,50 +501,84 @@ body {
 .builder__debt { margin: 0; color: var(--warn); font-size: 0.78rem; text-align: right; line-height: 1.35; }
 
 /* ---- Dashboard layout ---- */
-.dashboard {
-  display: grid;
-  grid-template-columns: 2fr 1fr;
-  gap: var(--gap);
-  margin-top: var(--gap);
-}
+/* One column at every width: the active tab's sub-tab bar, then its panels.
+   There is no desktop grid any more (see App.jsx). */
+.dashboard { margin-top: var(--gap); }
 .col { display: flex; flex-direction: column; gap: var(--gap); }
 
-/* The mobile tabbed view and the bottom tab bar are desktop-hidden by default;
-   the breakpoint below swaps which layout is shown. */
-.dashboard--mobile { display: none; }
-.tabbar { display: none; }
+/* Leave room so the fixed tab bar never covers the last panel. The tab bar's own bottom padding
+   grows by the home-indicator inset (below), so this has to grow with it too. */
+.app { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
 
-/* Tablet & below: hide the desktop dashboard and show the tabbed mobile view
-   with a floating bottom tab bar. */
-@media (max-width: 800px) {
-  .dashboard--desktop { display: none; }
-  .dashboard--mobile { display: block; margin-top: var(--gap); }
-
-  /* Leave room so the fixed tab bar never covers the last panel. The tab bar's own bottom padding
-     grows by the home-indicator inset (below), so this has to grow with it too. */
-  .app { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
-
-  .tabbar {
-    display: flex;
-    position: fixed;
-    left: 0; right: 0; bottom: 0;
-    z-index: 40;
-    background: rgba(21, 21, 31, 0.92);
-    backdrop-filter: blur(8px);
-    border-top: 1px solid var(--border);
-    padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
-  }
-  .tabbar__btn {
-    flex: 1;
-    display: flex; flex-direction: column; align-items: center; gap: 2px;
-    background: none; border: none; cursor: pointer;
-    color: var(--text-dim); font: inherit; font-size: 0.7rem; font-weight: 600;
-    padding: 6px 4px; border-radius: 8px;
-  }
-  .tabbar__btn.is-active { color: var(--text); background: var(--surface-2); }
-  .tabbar__btn.is-active .tabbar__icon { transform: translateY(-1px); }
-  .tabbar__icon { font-size: 1.2rem; line-height: 1; }
+/* The bottom tab bar, always fixed. Its own bottom padding grows by the
+   home-indicator inset so it sits flush at bottom: 0 on an edge-to-edge phone. */
+.tabbar {
+  display: flex;
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 40;
+  background: rgba(21, 21, 31, 0.92);
+  backdrop-filter: blur(8px);
+  border-top: 1px solid var(--border);
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
 }
+.tabbar__btn {
+  flex: 1;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  background: none; border: none; cursor: pointer;
+  color: var(--text-dim); font: inherit; font-size: 0.7rem; font-weight: 600;
+  padding: 6px 4px; border-radius: 8px;
+  min-height: 44px;
+}
+.tabbar__btn.is-active { color: var(--text); background: var(--surface-2); }
+.tabbar__btn.is-active .tabbar__icon { transform: translateY(-1px); }
+.tabbar__icon { font-size: 1.2rem; line-height: 1; }
+
+/* ---- Collapsible sections (nav/Section.jsx) ---- */
+/* The heading IS the toggle. A level-2 section is the panel card itself; a
+   level-3 one is a sub-section inside it. The body stays mounted while hidden. */
+.sec__title { position: relative; }
+.sec__toggle {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  background: none; border: none; padding: 0; margin: 0; cursor: pointer;
+  color: inherit; font: inherit; text-align: left; letter-spacing: inherit;
+  min-height: 32px;
+}
+.sec__toggle:hover .sec__label { color: var(--accent-2); }
+.sec__label { flex: 1 1 auto; min-width: 0; }
+.sec__summary {
+  font-size: 0.72rem; font-weight: 500; color: var(--text-dim); text-transform: none;
+  letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 50%;
+}
+.sec__chevron { color: var(--text-dim); font-size: 0.8rem; width: 12px; flex: none; text-align: right; }
+.sec--closed > .sec__title.panel__title { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
+.sec--closed > .sec__title.panel__subtitle { margin-bottom: 0; }
+.sec--sub > .sec__title { margin-top: 16px; }
+.sec--sub:first-child > .sec__title { margin-top: 0; }
+.sec--sub > .sec__body { display: flex; flex-direction: column; gap: 10px; }
+.sec--sub > .sec__body[hidden] { display: none; }
+.sec--flat > .sec__title.builder__h3 { margin-bottom: 0; }
+.sec--flat.sec--open > .sec__title.builder__h3 { margin-bottom: 8px; }
+@media (pointer: coarse) { .sec__toggle { min-height: 44px; } }
+
+/* Sub-tab bar: scrolls sideways instead of wrapping (nav/SubTabs.jsx). */
+.substabs--scroll {
+  flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch;
+  scrollbar-width: none; margin-bottom: var(--gap); padding-bottom: 2px;
+}
+.substabs--scroll::-webkit-scrollbar { display: none; }
+.substabs--scroll .substabs__btn { flex: 1 0 auto; white-space: nowrap; }
+
+/* Studio overview brand card. */
+.brand { margin: 0 0 12px; display: grid; gap: 6px; }
+.brand__row { display: flex; justify-content: space-between; gap: 12px; font-size: 0.85rem; }
+.brand__row dt { color: var(--text-dim); flex: none; }
+.brand__row dd { margin: 0; text-align: right; }
+.brand__overdue { color: var(--warn); font-weight: 700; }
+
+/* The standards panel's inner kind switch, styled as chips so it never reads as
+   a second sub-tab bar. */
+.std__kinds { margin-bottom: 12px; }
 
 /* Phone: the desktop-first layout works down to here, but a few dense spots
    need a stacked treatment so nothing crams or overlaps. (Audited live at
@@ -544,51 +592,13 @@ body {
      special-casing here: .topbar (see above) owns its own Dynamic Island clearance directly. */
   .app { padding: 12px; padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
 
-  /* The header is the single biggest fixed cost on a phone (every tab pays it),
-     so keep it compact: tighter padding/gaps. The three health meters wrap to
-     fill the row; the time controls share a full-width row below them.
-     top is re-pinned to the smaller --gap here. */
-  .topbar { gap: 8px 10px; padding: 10px 12px; padding-top: calc(10px + env(safe-area-inset-top)); }
-  .health { width: 100%; margin-left: 0; gap: 6px; }
-  .meter { flex: 1 1 30%; min-width: 96px; }
-
-  /* THE HEADER WAS 55% OF THE SCREEN. Measured on a 440x956 phone the six
-     meters plus their captions ran ~530px before a single panel appeared, on
-     every tab, so the Community feed showed four lines and the sets list showed
-     two rows. Three things were paying for that and all three are cheap here:
-
-     1. The caption under each meter ("brand prestige — no ceiling, lifts old
-        sets' value") wraps to three lines at this width. It is already the
-        meter's title attribute, so nothing is lost by hiding it — EXCEPT when
-        the meter is in danger, which is exactly when the player needs to be
-        told what the number means, so that case keeps it.
-     2. label-beside-value put "FRANCHISE REP" and "14" in a ~112px box, so the
-        label wrapped to two lines. Stacked, the label gets the full width and
-        the value gets to be the big number it should be on a phone.
-     3. The bar, the delta and the padding were all sized for a desktop row.
-
-     Net: ~530px down to ~215px. */
-  .meter { padding: 7px 8px; }
-  .meter__top { display: block; }
-  .meter__label { display: block; font-size: 0.58rem; line-height: 1.25; }
-  .meter__value { display: block; font-size: 1.02rem; line-height: 1.2; margin-top: 1px; }
-  .meter__track { margin-top: 5px; }
-  .meter__foot { font-size: 0.58rem; margin-top: 3px; }
-  .meter__loss { display: none; }
-  /* ...but say what the threshold is at the moment it starts to matter. */
-  .meter--danger .meter__loss { display: inline; }
-  .meter__delta { line-height: 1.2; }
-
-  /* The three context stats (reputation, scalper heat, rival) share one short
-     strip instead of taking a second full row of cards. Label and value sit
-     inline, the bar thins to a rule underneath. */
-  .meter--minor { flex: 1 1 30%; padding: 5px 8px; }
-  .meter--minor .meter__top { display: flex; align-items: baseline; gap: 6px; }
-  .meter--minor .meter__label { font-size: 0.55rem; }
-  .meter--minor .meter__value { font-size: 0.8rem; margin: 0 0 0 auto; }
-  .meter--minor .meter__track { height: 3px; margin-top: 4px; }
-  .meter--minor .meter__foot { display: none; }
-  .meter--minor.meter--danger .meter__foot { display: flex; margin-top: 2px; }
+  /* The strip is the one fixed cost every tab pays on a phone, so keep it
+     compact: tighter padding and gaps, brand and cash on the first row, the two
+     actions sharing a full-width row below. top is re-pinned to the smaller
+     --gap here. */
+  .topbar { gap: 8px 10px; padding: 8px 12px; padding-top: calc(8px + env(safe-area-inset-top)); }
+  .topbar__brand { font-size: 1rem; }
+  .meters { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; }
 
   /* The pull/reprint control gets its own line rather than sitting beside a
      stat line that wraps to two rows next to it. */

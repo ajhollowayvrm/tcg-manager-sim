@@ -2,6 +2,8 @@
 // system notices (releases/bans/rotations, no kind/tone) or rolled events that
 // carry a category tag and a good/bad/neutral tone for color.
 
+import Section from './nav/Section.jsx'
+
 const KIND_LABEL = {
   scandal: 'SCANDAL',
   market: 'MARKET',
@@ -12,14 +14,15 @@ const KIND_LABEL = {
   community: 'COMMUNITY',
   merch: 'MERCH',
   media: 'MEDIA',
+  legacy: 'LEGACY',
+  illustration: 'ART',
 }
 
 export default function EventsFeed({ state }) {
   const feed = state.eventsFeed
 
   return (
-    <div className="panel">
-      <h2 className="panel__title">Events</h2>
+    <Section id="community.news" title="News" level={2}>
       {feed.length > 0 ? (
         <ul className="feed">
           {feed.map((item, i) => {
@@ -40,6 +43,6 @@ export default function EventsFeed({ state }) {
       ) : (
         <p className="panel__empty">Nothing in the headlines yet.</p>
       )}
-    </div>
+    </Section>
   )
 }

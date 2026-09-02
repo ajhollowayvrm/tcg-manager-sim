@@ -10,6 +10,7 @@
 
 import { useState } from 'react'
 import Chart from './Chart.jsx'
+import Section from './nav/Section.jsx'
 
 const RANGES = [
   { id: 26, label: '6 months' },
@@ -27,19 +28,16 @@ export default function HistoryPanel({ state }) {
 
   if (rows.length < 4) {
     return (
-      <div className="panel">
-        <h2 className="panel__title">Trends</h2>
+      <Section id="stats.trends" title="Trends" level={2}>
         <p className="panel__empty">Advance a few weeks to build a history.</p>
-      </div>
+      </Section>
     )
   }
 
   const labels = rows.map((h) => h.w)
 
   return (
-    <div className="panel">
-      <h2 className="panel__title">Trends</h2>
-
+    <Section id="stats.trends" title="Trends" level={2}>
       <div className="roster__filters">
         {RANGES.map((r) => (
           <button
@@ -53,40 +51,43 @@ export default function HistoryPanel({ state }) {
         ))}
       </div>
 
-      <h3 className="panel__subtitle">Player base</h3>
-      <Chart
-        labels={labels}
-        format={compact}
-        series={[
-          { key: 'casual', label: 'Casual', color: 'var(--accent-2)', points: rows.map((h) => h.casual) },
-          { key: 'collectors', label: 'Collectors', color: 'var(--illustration)', points: rows.map((h) => h.collectors) },
-        ]}
-      />
+      <Section id="stats.trends.players" title="Player base" level={3}>
+        <Chart
+          labels={labels}
+          format={compact}
+          series={[
+            { key: 'casual', label: 'Casual', color: 'var(--accent-2)', points: rows.map((h) => h.casual) },
+            { key: 'collectors', label: 'Collectors', color: 'var(--illustration)', points: rows.map((h) => h.collectors) },
+          ]}
+        />
+      </Section>
 
-      <h3 className="panel__subtitle">Standing</h3>
-      <Chart
-        labels={labels}
-        zeroLine
-        series={[
-          { key: 'sentiment', label: 'Sentiment', color: 'var(--good)', points: rows.map((h) => h.sentiment) },
-          { key: 'reputation', label: 'Reputation', color: 'var(--pop)', points: rows.map((h) => h.reputation) },
-        ]}
-      />
+      <Section id="stats.trends.standing" title="Standing" level={3}>
+        <Chart
+          labels={labels}
+          zeroLine
+          series={[
+            { key: 'sentiment', label: 'Sentiment', color: 'var(--good)', points: rows.map((h) => h.sentiment) },
+            { key: 'reputation', label: 'Reputation', color: 'var(--pop)', points: rows.map((h) => h.reputation) },
+          ]}
+        />
+      </Section>
 
-      <h3 className="panel__subtitle">Shelf &amp; heat</h3>
-      <Chart
-        labels={labels}
-        height={110}
-        series={[
-          { key: 'live', label: 'Sets in print', color: 'var(--silver)', points: rows.map((h) => h.live) },
-          { key: 'heat', label: 'Scalper heat', color: 'var(--bad)', points: rows.map((h) => h.heat) },
-        ]}
-      />
-      <p className="field__note">
-        Recurring costs scale steeply with the number of sets you keep in print
-        (overhead rises faster than the count does), so the grey line is the one
-        that quietly decides whether the studio is solvent.
-      </p>
-    </div>
+      <Section id="stats.trends.shelf" title="Shelf & heat" level={3}>
+        <Chart
+          labels={labels}
+          height={110}
+          series={[
+            { key: 'live', label: 'Sets in print', color: 'var(--silver)', points: rows.map((h) => h.live) },
+            { key: 'heat', label: 'Scalper heat', color: 'var(--bad)', points: rows.map((h) => h.heat) },
+          ]}
+        />
+        <p className="field__note">
+          Recurring costs scale steeply with the number of sets you keep in print
+          (overhead rises faster than the count does), so the grey line is the one
+          that quietly decides whether the studio is solvent.
+        </p>
+      </Section>
+    </Section>
   )
 }

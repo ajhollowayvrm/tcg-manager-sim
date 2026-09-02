@@ -9,6 +9,7 @@
 import { MILESTONES } from '../game/content/milestones.js'
 import { PRESTIGE_PERKS } from '../game/legacy.js'
 import { loadHallOfFame } from '../game/persistence.js'
+import Section from './nav/Section.jsx'
 
 const PART_LABEL = {
   endurance: 'Endurance',
@@ -67,74 +68,75 @@ export default function RetrospectivePanel({ state, onReset }) {
             )}
           </div>
 
-          <h3 className="panel__subtitle">Where the score came from</h3>
-          <div className="costs">
-            {Object.entries(r.parts).map(([k, v]) => (
-              <div key={k} className="costs__line">
-                <span>{PART_LABEL[k] ?? k} <span className="muted">— {PART_BLURB[k]}</span></span>
-                <span>{num(v)}</span>
+          <Section id="retro.parts" title="Where the score came from" level={3}>
+            <div className="costs">
+              {Object.entries(r.parts).map(([k, v]) => (
+                <div key={k} className="costs__line">
+                  <span>{PART_LABEL[k] ?? k} <span className="muted">— {PART_BLURB[k]}</span></span>
+                  <span>{num(v)}</span>
+                </div>
+              ))}
+              <div className="costs__line costs__line--total">
+                <span>Total</span><span>{num(r.total)}</span>
               </div>
-            ))}
-            <div className="costs__line costs__line--total">
-              <span>Total</span><span>{num(r.total)}</span>
             </div>
-          </div>
+          </Section>
 
-          <h3 className="panel__subtitle">Peaks</h3>
-          <div className="costs">
-            <div className="costs__line"><span>Players</span><span>{num(L.peak.players)}</span></div>
-            <div className="costs__line"><span>Franchise reputation</span><span>{num(L.peak.reputation)}</span></div>
-            <div className="costs__line"><span>Priciest single</span><span>${num(L.peak.cardPrice)}</span></div>
-            <div className="costs__line"><span>Best week's revenue</span><span>${num(L.peak.weeklyRevenue)}</span></div>
-            <div className="costs__line"><span>Lifetime revenue</span><span>${num(L.totals.grossRevenue)}</span></div>
-            <div className="costs__line"><span>Sets shipped</span><span>{num(L.totals.setsShipped)}</span></div>
-          </div>
+          <Section id="retro.peaks" title="Peaks" level={3}>
+            <div className="costs">
+              <div className="costs__line"><span>Players</span><span>{num(L.peak.players)}</span></div>
+              <div className="costs__line"><span>Franchise reputation</span><span>{num(L.peak.reputation)}</span></div>
+              <div className="costs__line"><span>Priciest single</span><span>${num(L.peak.cardPrice)}</span></div>
+              <div className="costs__line"><span>Best week's revenue</span><span>${num(L.peak.weeklyRevenue)}</span></div>
+              <div className="costs__line"><span>Lifetime revenue</span><span>${num(L.totals.grossRevenue)}</span></div>
+              <div className="costs__line"><span>Sets shipped</span><span>{num(L.totals.setsShipped)}</span></div>
+            </div>
+          </Section>
 
-          <h3 className="panel__subtitle">
-            Milestones ({earned.size}/{MILESTONES.length})
-          </h3>
-          <ul className="retro__milestones">
-            {MILESTONES.map((m) => {
-              const hit = earned.get(m.id)
-              return (
-                <li key={m.id} className={'retro__ms' + (hit ? ' is-earned' : '')}>
-                  <span className="retro__msmark" aria-hidden="true">{hit ? '🏆' : '·'}</span>
-                  <span className="retro__msname">{m.name}</span>
-                  <span className="retro__msblurb">{m.blurb}</span>
-                  <span className="retro__mspts">{hit ? `wk ${hit.week}` : `${m.points}`}</span>
-                </li>
-              )
-            })}
-          </ul>
+          <Section id="retro.milestones" title={`Milestones (${earned.size}/${MILESTONES.length})`} level={3}>
+            <ul className="retro__milestones">
+              {MILESTONES.map((m) => {
+                const hit = earned.get(m.id)
+                return (
+                  <li key={m.id} className={'retro__ms' + (hit ? ' is-earned' : '')}>
+                    <span className="retro__msmark" aria-hidden="true">{hit ? '🏆' : '·'}</span>
+                    <span className="retro__msname">{m.name}</span>
+                    <span className="retro__msblurb">{m.blurb}</span>
+                    <span className="retro__mspts">{hit ? `wk ${hit.week}` : `${m.points}`}</span>
+                  </li>
+                )
+              })}
+            </ul>
+          </Section>
 
-          <h3 className="panel__subtitle">Career</h3>
-          <p className="field__note">
-            {retired
-              ? `Banked ${num(r.total)} legacy toward your career — ${num(bankedAfter)} across ${(state.prestige?.runs ?? 0) + 1} retired studios.`
-              : `A studio that folds banks nothing. Your career total stays at ${num(banked)}.`}
-          </p>
-          <ul className="retro__perks">
-            {PRESTIGE_PERKS.map((p) => {
-              const has = bankedAfter >= p.at
-              return (
-                <li key={p.id} className={'retro__perk' + (has ? ' is-earned' : '')}>
-                  <span className="retro__msmark" aria-hidden="true">{has ? '✓' : '🔒'}</span>
-                  <span className="retro__msname">{p.name}</span>
-                  <span className="retro__msblurb">{p.blurb}</span>
-                  <span className="retro__mspts">{has ? 'unlocked' : num(p.at)}</span>
-                </li>
-              )
-            })}
-          </ul>
-          {nextPerk && (
+          <Section id="retro.career" title="Career" level={3}>
             <p className="field__note">
-              {num(nextPerk.at - bankedAfter)} more legacy unlocks “{nextPerk.name}”.
+              {retired
+                ? `Banked ${num(r.total)} legacy toward your career — ${num(bankedAfter)} across ${(state.prestige?.runs ?? 0) + 1} retired studios.`
+                : `A studio that folds banks nothing. Your career total stays at ${num(banked)}.`}
             </p>
-          )}
+            <ul className="retro__perks">
+              {PRESTIGE_PERKS.map((p) => {
+                const has = bankedAfter >= p.at
+                return (
+                  <li key={p.id} className={'retro__perk' + (has ? ' is-earned' : '')}>
+                    <span className="retro__msmark" aria-hidden="true">{has ? '✓' : '🔒'}</span>
+                    <span className="retro__msname">{p.name}</span>
+                    <span className="retro__msblurb">{p.blurb}</span>
+                    <span className="retro__mspts">{has ? 'unlocked' : num(p.at)}</span>
+                  </li>
+                )
+              })}
+            </ul>
+            {nextPerk && (
+              <p className="field__note">
+                {num(nextPerk.at - bankedAfter)} more legacy unlocks “{nextPerk.name}”.
+              </p>
+            )}
+          </Section>
 
           {hof.length > 0 && (
-            <>
-              <h3 className="panel__subtitle">Hall of fame</h3>
+            <Section id="retro.hof" title="Hall of fame" level={3}>
               <ul className="feed">
                 {hof.slice(0, 8).map((h, i) => (
                   <li key={i} className="feed__item">
@@ -142,7 +144,7 @@ export default function RetrospectivePanel({ state, onReset }) {
                   </li>
                 ))}
               </ul>
-            </>
+            </Section>
           )}
         </div>
 
@@ -156,7 +158,7 @@ export default function RetrospectivePanel({ state, onReset }) {
   )
 }
 
-// The retire control, shown in the Ambition panel. Deliberately a plain,
+// The retire control, shown in Misc › Legacy. Deliberately a plain,
 // always-available button behind a two-step confirm: nothing in the game ever
 // PROPOSES retiring, because the moment it does the run acquires a ceiling and
 // stops being open-ended.

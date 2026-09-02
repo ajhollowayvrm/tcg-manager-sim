@@ -1,17 +1,17 @@
 // Profit and loss.
 //
-// TopBar showed gross revenue and nothing else — `lastUpkeep`,
+// The old banner showed gross revenue and nothing else — `lastUpkeep`,
 // `lastMerchRevenue` and the per-set breakdown never reached the screen at all,
 // so a player could not tell whether a set made money, or where a week's cash
-// actually went. That was survivable while the only recurring cost was optional
-// sponsorships; with studio overhead, warehousing and era upkeep now running
-// every week (overhead.js), a management sim without a P&L is unplayable.
+// actually went. With studio overhead, warehousing and era upkeep running every
+// week (overhead.js), a management sim without a P&L is unplayable.
 //
 // Reads state.ledger, written by simulation.js's recordLedger. Uses the
 // `.costs` ledger idiom already built for the set builder's footer.
 
 import { useState } from 'react'
 import Chart from './Chart.jsx'
+import Section from './nav/Section.jsx'
 
 const INCOME_ROWS = [
   ['sealed', 'Sealed product'],
@@ -23,6 +23,8 @@ const COST_ROWS = [
   ['warehouse', 'Warehousing'],
   ['blocks', 'Era upkeep'],
   ['goodwill', 'Community programme'],
+  ['grassroots', 'Grassroots programme'],
+  ['contracts', 'Illustrator contracts'],
   ['sponsorships', 'Creator sponsorships'],
   ['interest', 'Debt interest'],
 ]
@@ -39,10 +41,9 @@ export default function LedgerPanel({ state }) {
 
   if (!latest) {
     return (
-      <div className="panel">
-        <h2 className="panel__title">Profit &amp; Loss</h2>
+      <Section id="stats.pnl" title="Profit & Loss" level={2}>
         <p className="panel__empty">Advance a week to see the books.</p>
-      </div>
+      </Section>
     )
   }
 
@@ -55,9 +56,7 @@ export default function LedgerPanel({ state }) {
   const history = (state.history ?? []).slice(-52)
 
   return (
-    <div className="panel">
-      <h2 className="panel__title">Profit &amp; Loss</h2>
-
+    <Section id="stats.pnl" title="Profit & Loss" level={2} summary={`${money(netRun)}/wk net`}>
       <div className="roster__filters ledger__spans">
         {[1, 13, 52].map((n) => (
           <button
@@ -88,7 +87,7 @@ export default function LedgerPanel({ state }) {
           const v = mean((e) => e.costs[k] ?? 0)
           if (v === 0) return null
           return (
-            <div key={k} className="costs__line"><span>{label}</span><span>−{money(v).replace('$', '$')}</span></div>
+            <div key={k} className="costs__line"><span>{label}</span><span>−{money(v)}</span></div>
           )
         })}
         <div className="costs__line costs__line--total">
@@ -108,8 +107,7 @@ export default function LedgerPanel({ state }) {
       )}
 
       {history.length > 3 && (
-        <>
-          <h3 className="panel__subtitle">Cash &amp; weekly net</h3>
+        <Section id="stats.pnl.cash" title="Cash & weekly net" level={3}>
           <Chart
             labels={history.map((h) => h.w)}
             zeroLine
@@ -119,12 +117,11 @@ export default function LedgerPanel({ state }) {
               { key: 'net', label: 'Net/wk', color: 'var(--pop)', points: history.map((h) => h.net) },
             ]}
           />
-        </>
+        </Section>
       )}
 
       {latest.perSet?.length > 0 && (
-        <>
-          <h3 className="panel__subtitle">This week, by set</h3>
+        <Section id="stats.pnl.bySet" title="This week, by set" level={3}>
           <ul className="ledger__sets">
             {[...latest.perSet].sort((a, b) => b.revenue - a.revenue).map((s) => (
               <li key={s.id} className="ledger__set">
@@ -134,8 +131,8 @@ export default function LedgerPanel({ state }) {
               </li>
             ))}
           </ul>
-        </>
+        </Section>
       )}
-    </div>
+    </Section>
   )
 }

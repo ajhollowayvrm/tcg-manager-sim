@@ -10,6 +10,7 @@ import SetSymbol from './SetSymbol.jsx'
 import { reprintCost } from '../game/sets.js'
 import { getTier } from '../game/blocks.js'
 import { getIllustrationKind } from '../game/content/illustrationsets.js'
+import Section from './nav/Section.jsx'
 
 const REPRINT_RUN_DEFAULT = 55 // matches the reducer's own default when no run size is chosen
 
@@ -72,8 +73,7 @@ export default function SetsPanel({ state, onReprint, onPull, onAdjustWave, onTo
   const rowProps = { state, lastPerSet, onReprint, onPull, canPull, onAdjustWave, onToggleOdds, wavesBySet }
 
   return (
-    <div className="panel">
-      <h2 className="panel__title">Sets in Print</h2>
+    <Section id="studio.sets" title="Sets in Print" level={2}>
       {sets.length === 0 ? (
         <p className="panel__empty">No sets released yet.</p>
       ) : (
@@ -105,7 +105,7 @@ export default function SetsPanel({ state, onReprint, onPull, onAdjustWave, onTo
           )}
         </div>
       )}
-    </div>
+    </Section>
   )
 }
 

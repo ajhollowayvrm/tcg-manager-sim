@@ -15,6 +15,7 @@ import SetSymbol from './SetSymbol.jsx'
 import { visualTier, getRarity, printingOf } from '../game/rarities.js'
 import { illustrationContext } from '../game/illustrationsets.js'
 import { getIllustrationKind } from '../game/content/illustrationsets.js'
+import Section from './nav/Section.jsx'
 
 const PAGE = 40
 
@@ -95,8 +96,7 @@ export default function CardBrowser({ state }) {
   const reset = (fn) => (v) => { fn(v); setPage(0) }
 
   return (
-    <div className="panel">
-      <h2 className="panel__title">Card Browser</h2>
+    <Section id="stats.cards" title="Card Browser" level={2}>
 
       {state.cards.length === 0 ? (
         <p className="panel__empty">No cards printed yet. Release a set.</p>
@@ -209,7 +209,7 @@ export default function CardBrowser({ state }) {
           )}
         </>
       )}
-    </div>
+    </Section>
   )
 }
 

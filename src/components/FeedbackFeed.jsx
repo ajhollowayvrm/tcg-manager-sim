@@ -3,6 +3,8 @@
 // reach indicator (loudness). Credibility is deliberately NOT shown — the
 // player infers who to trust over a run. That's the signal-vs-noise skill.
 
+import Section from './nav/Section.jsx'
+
 const TYPE_BADGE = {
   streamer: { label: 'STREAM', cls: 'badge--streamer' },
   authenticator: { label: 'AUTH', cls: 'badge--competitor' },
@@ -31,8 +33,7 @@ export default function FeedbackFeed({ state }) {
   const feed = state.feedbackFeed
 
   return (
-    <div className="panel">
-      <h2 className="panel__title">Community Chatter</h2>
+    <Section id="community.chatter" title="Community Chatter" level={2}>
       {feed.length > 0 ? (
         <ul className="feed">
           {feed.map((item, i) => {
@@ -53,6 +54,6 @@ export default function FeedbackFeed({ state }) {
       ) : (
         <p className="panel__empty">The community is quiet… for now.</p>
       )}
-    </div>
+    </Section>
   )
 }

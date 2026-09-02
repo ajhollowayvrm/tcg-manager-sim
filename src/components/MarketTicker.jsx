@@ -13,6 +13,7 @@
 import { useState } from 'react'
 import SetSymbol from './SetSymbol.jsx'
 import { visualTier, printingOf } from '../game/rarities.js'
+import Section from './nav/Section.jsx'
 
 // How many singles the hot board shows before "show all" takes over.
 const MAX_ROWS = 12
@@ -54,8 +55,7 @@ export default function MarketTicker({ state }) {
   const cards = showAll ? ranked : ranked.slice(0, MAX_ROWS)
 
   return (
-    <div className="panel">
-      <h2 className="panel__title">Market Ticker</h2>
+    <Section id="stats.market" title="Market Ticker" level={2}>
 
       {hasCards ? (
         <>
@@ -148,6 +148,6 @@ export default function MarketTicker({ state }) {
       ) : (
         <p className="panel__empty">No cards on the market yet. Release a set to get things moving.</p>
       )}
-    </div>
+    </Section>
   )
 }

@@ -4,6 +4,7 @@
 
 import { useMemo, useState } from 'react'
 import { compCost, sponsorCost, invitePrereleaseCost, sponsorTournamentCost, eligiblePrereleaseSet, COMPETITIVE_TASTE_THRESHOLD } from '../game/relationships.js'
+import Section from './nav/Section.jsx'
 
 function money(n) { return '$' + Math.round(n).toLocaleString('en-US') }
 
@@ -72,8 +73,7 @@ export default function PersonasPanel({ state, onComp, onSponsor, onDropSponsor,
   }, [state.personas, type, sort, query])
 
   return (
-    <div className="panel">
-      <h2 className="panel__title">The Community ({state.personas.length})</h2>
+    <Section id="community.voices" title={`The Community (${state.personas.length})`} level={2}>
 
       <div className="roster__controls">
         <div className="roster__filters">
@@ -167,6 +167,6 @@ export default function PersonasPanel({ state, onComp, onSponsor, onDropSponsor,
           })}
         </ul>
       )}
-    </div>
+    </Section>
   )
 }

@@ -1,22 +1,19 @@
 // Pack Ripper — crack open your own product. Pick a released set, rip a pack, and
 // watch the pulls reveal (mostly commons, the occasional chase). The "best pull"
 // is flagged, and prices are live — so you feel it when a sleeper has spiked.
+// Sponsored live breaks moved to Community › Programmes (ProgrammesPanel).
 
 import { useState } from 'react'
 import { visualTier, getRarity } from '../game/rarities.js'
-import { BREAK_PROGRAMS } from '../game/content/breaks.js'
 import SetSymbol from './SetSymbol.jsx'
 import PackOddsPanel from './setbuilder/PackOddsPanel.jsx'
+import Section from './nav/Section.jsx'
 
 function fmt(n) {
   return '$' + (n ?? 0).toFixed(2)
 }
 
-function fmtCash(n) {
-  return '$' + Math.round(n).toLocaleString('en-US')
-}
-
-export default function PackRipper({ state, onRip, onRunBreak }) {
+export default function PackRipper({ state, onRip }) {
   const liveSets = state.sets.filter((s) => !s.rotated)
   const [picked, setPicked] = useState(null)
   const setId = picked && liveSets.some((s) => s.id === picked) ? picked : liveSets[0]?.id
@@ -35,8 +32,7 @@ export default function PackRipper({ state, onRip, onRunBreak }) {
     : []
 
   return (
-    <div className="panel">
-      <h2 className="panel__title">Rip a Pack</h2>
+    <Section id="studio.rip" title="Rip a Pack" level={2} defaultOpen={false}>
       {liveSets.length === 0 ? (
         <p className="panel__empty">Release a set, then crack your own packs here.</p>
       ) : (
@@ -77,30 +73,8 @@ export default function PackRipper({ state, onRip, onRunBreak }) {
           ) : (
             <p className="panel__empty">Crack a pack to see what you pull.</p>
           )}
-
-          {onRunBreak && (
-            <>
-              <h3 className="panel__subtitle">Sponsor a live break</h3>
-              <p className="field__note">
-                Sell spots and crack {set?.name ?? 'this set'} live on stream — a collector-hype
-                marketing channel, distinct from a normal sale.
-              </p>
-              <div className="breaks">
-                {Object.values(BREAK_PROGRAMS).map((prog) => (
-                  <button
-                    key={prog.kind}
-                    className="btn btn--ghost breaks__opt"
-                    onClick={() => onRunBreak(prog.kind, setId)}
-                    title={prog.blurb}
-                  >
-                    {prog.name} — {fmtCash(prog.cost)}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
         </>
       )}
-    </div>
+    </Section>
   )
 }

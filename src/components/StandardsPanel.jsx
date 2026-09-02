@@ -33,6 +33,7 @@ import {
   MAX_STANDARD_NAME,
   MAX_STANDARD_NOTE,
 } from '../game/standards.js'
+import Section from './nav/Section.jsx'
 
 const SUBTABS = [
   { id: 'sheets', label: 'Rarity sheets', kind: 'raritySheet' },
@@ -72,22 +73,21 @@ export default function StandardsPanel({ state, onSave, onDelete }) {
         : (draft.sheetId || draft.formatId) ? [] : ['A blueprint has to pin a sheet, a format, or both.']
 
   return (
-    <div className="panel">
-      <h2 className="panel__title">Studio standards</h2>
+    <Section id="studio.standards" title="Studio standards" level={2}>
       <p className="panel__lede">
         Design a rarity sheet or a booster once, name it, and pull it into any
         set. Editing one here never touches a set you have already shipped —
         importing takes a copy.
       </p>
 
-      <div className="substabs" role="tablist" aria-label="Studio standards sections">
+      <div className="roster__filters std__kinds" role="tablist" aria-label="Studio standards sections">
         {SUBTABS.map((s) => (
           <button
             key={s.id}
             role="tab"
             type="button"
             aria-selected={tab === s.id}
-            className={'substabs__btn' + (tab === s.id ? ' is-active' : '')}
+            className={'roster__chip' + (tab === s.id ? ' is-active' : '')}
             onClick={() => { setTab(s.id); setDraft(null); setConfirming(null) }}
           >
             {s.label}
@@ -194,7 +194,7 @@ export default function StandardsPanel({ state, onSave, onDelete }) {
           )}
         </>
       )}
-    </div>
+    </Section>
   )
 }
 
