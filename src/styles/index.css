@@ -1936,3 +1936,45 @@ button.tag--oddsobscured:hover { border-color: var(--accent-2); color: var(--tex
 .builder__panetitle {
   margin: 0 0 2px; font-size: 1rem; font-weight: 700; color: var(--text);
 }
+
+/* ---- Studio standards ---------------------------------------------------- */
+/* Named rarity sheets and booster formats (StandardsPanel). The panel's own
+   sub-tabs, plus the list rows. The two editors it hosts (RarityEditor,
+   PackFormatEditor) bring their own styles from the set builder unchanged. */
+.panel__lede {
+  margin: 0 0 10px; color: var(--text-dim); font-size: 0.82rem; line-height: 1.45;
+}
+.substabs { display: flex; gap: 4px; margin-bottom: 12px; flex-wrap: wrap; }
+.substabs__btn {
+  flex: 1 1 auto; padding: 8px 10px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--text-dim); font: inherit; font-size: 0.8rem; font-weight: 600;
+  /* iOS HIG: a tab is a primary target and must clear 44px on a touch screen. */
+  min-height: 40px;
+}
+.substabs__btn.is-active {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+}
+@media (pointer: coarse) { .substabs__btn { min-height: 44px; } }
+
+.std__list { max-height: none; }
+.std__row { display: flex; align-items: stretch; gap: 6px; }
+.std__open {
+  flex: 1; display: flex; flex-direction: column; gap: 2px; text-align: left;
+  padding: 8px 10px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface-2); font: inherit;
+}
+.std__open:hover { border-color: var(--accent); }
+.std__name { color: var(--text); font-size: 0.86rem; font-weight: 600; }
+.std__badge {
+  margin-left: 6px; padding: 1px 6px; border-radius: 999px;
+  background: var(--accent); color: var(--bg); font-size: 0.62rem;
+  font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+}
+.std__meta { color: var(--text-dim); font-size: 0.75rem; }
+.std__note { color: var(--text-dim); font-size: 0.72rem; font-style: italic; }
+.std__del { align-self: center; }
+.std__confirm { display: flex; align-items: center; gap: 6px; }
+.std__new { margin-top: 8px; }
+.std__editor { display: flex; flex-direction: column; gap: 10px; }
+.std__actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }

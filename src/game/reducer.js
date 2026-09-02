@@ -27,6 +27,12 @@ import { launchMerchLine, refreshMerchLine, retireMerchLine } from './merch.js'
 import { pitchMediaDeal } from './media.js'
 import { runBreak } from './breaks.js'
 import { createCharacter, normalizeCharacter } from './characters.js'
+import {
+  STANDARD_KINDS,
+  normalizeRaritySheetStandard,
+  normalizePackFormatStandard,
+  normalizeBlueprint,
+} from './standards.js'
 import { scoreRun, unlockedPerks } from './legacy.js'
 import { clearSave, loadPrestige, bankPrestige, recordHallOfFame } from './persistence.js'
 
@@ -478,6 +484,55 @@ export function reducer(state, action) {
         }),
       }
     }
+    case 'SAVE_STANDARD':
+    case 'DELETE_STANDARD': {
+      // One shared body over the three libraries rather than six near-identical
+      // cases, the way the grading-partner actions above already are. `kind` is
+      // 'raritySheet' | 'packFormat' | 'blueprint'; STANDARD_KINDS maps it to the
+      // state array it lives in.
+      const key = STANDARD_KINDS[action.kind]
+      if (!key) return state
+      const list = state[key] ?? []
+      if (action.type === 'DELETE_STANDARD') {
+        if (!action.id || !list.some((s) => s.id === action.id)) return state
+        const next = { ...state, [key]: list.filter((s) => s.id !== action.id) }
+        // A blueprint pins a sheet and a format by id, so deleting either half
+        // has to reach the blueprints too — otherwise one keeps a dangling id
+        // until the next reload, and applying it would seed a draft from
+        // nothing. normalizeBlueprint drops a blueprint left pinning neither.
+        return action.kind === 'blueprint' ? next : renormalizeBlueprints(next)
+      }
+      // SAVE is an UPSERT: the panel edits a record in place and hands the whole
+      // thing back, and "save as standard" from the builder hands over a brand
+      // new one. Both are the same write.
+      //
+      // Every write goes through the same normaliser a loaded save uses — the
+      // technique UPDATE_CHARACTER already relies on, and the reason a malformed
+      // sheet can never reach the record no matter which surface authored it. A
+      // record the normaliser refuses is dropped rather than stored, because a
+      // library entry the release button would reject is worse than no entry.
+      const normalize = action.kind === 'raritySheet'
+        ? normalizeRaritySheetStandard
+        : action.kind === 'packFormat'
+          ? normalizePackFormatStandard
+          : (b) => normalizeBlueprint(b, {
+            sheetIds: new Set((state.raritySheets ?? []).map((s) => s.id)),
+            formatIds: new Set((state.packFormats ?? []).map((f) => f.id)),
+          })
+      const record = normalize(action.record)
+      if (!record) return state
+      // Exactly one default per library — the one a fresh draft seeds from. Set
+      // on this record, cleared everywhere else, so the invariant holds by
+      // construction rather than by the panel remembering to clear the old one.
+      const cleared = record.isDefault ? list.map((s) => ({ ...s, isDefault: false })) : list
+      const exists = cleared.some((s) => s.id === record.id)
+      return {
+        ...state,
+        [key]: exists
+          ? cleared.map((s) => (s.id === record.id ? record : s))
+          : [...cleared, record],
+      }
+    }
     default:
       return state
   }
@@ -508,4 +563,18 @@ export function applyClockDirective(next) {
   const d = next.clock.autoEvent
   const reason = d?.reason ?? null
   return { ...next, clock: { ...next.clock, autoEvent: null, reason } }
+}
+
+// Re-resolve every blueprint against the libraries as they now stand. Called
+// after a sheet or a format is deleted, so a blueprint that pinned it loses that
+// half immediately instead of carrying a dangling id until the next reload.
+function renormalizeBlueprints(state) {
+  const sheetIds = new Set((state.raritySheets ?? []).map((s) => s.id))
+  const formatIds = new Set((state.packFormats ?? []).map((f) => f.id))
+  return {
+    ...state,
+    blueprints: (state.blueprints ?? [])
+      .map((b) => normalizeBlueprint(b, { sheetIds, formatIds }))
+      .filter(Boolean),
+  }
 }

@@ -6,6 +6,7 @@ import FeedbackFeed from './components/FeedbackFeed.jsx'
 import EventsFeed from './components/EventsFeed.jsx'
 import PersonasPanel from './components/PersonasPanel.jsx'
 import CastPanel from './components/CastPanel.jsx'
+import StandardsPanel from './components/StandardsPanel.jsx'
 import SetsPanel from './components/SetsPanel.jsx'
 import PackRipper from './components/PackRipper.jsx'
 import DistributorsPanel from './components/DistributorsPanel.jsx'
@@ -92,6 +93,13 @@ export default function App() {
       onRetire={game.retire}
       retireConfirm={retireConfirm} onRetireConfirm={setRetireConfirm}
     />,
+    standards: (
+      <StandardsPanel
+        state={game.state}
+        onSave={game.saveStandard}
+        onDelete={game.deleteStandard}
+      />
+    ),
     events: <EventsFeed state={game.state} />,
   }
 
@@ -119,6 +127,7 @@ export default function App() {
         <aside className="col col--side">
           {panels.ledger}
           {panels.history}
+          {panels.standards}
           {panels.feedback}
           {panels.personas}
           {panels.cast}
@@ -139,7 +148,7 @@ export default function App() {
       >
         {tab === 'sets' && <div className="col">{panels.sets}</div>}
         {tab === 'market' && <div className="col">{panels.market}{panels.browser}{panels.packs}</div>}
-        {tab === 'studio' && <div className="col">{panels.ledger}{panels.history}{panels.distributors}{panels.ambition}</div>}
+        {tab === 'studio' && <div className="col">{panels.ledger}{panels.history}{panels.standards}{panels.distributors}{panels.ambition}</div>}
         {tab === 'community' && <div className="col">{panels.feedback}{panels.personas}{panels.cast}</div>}
         {tab === 'events' && <div className="col">{panels.events}</div>}
       </main>

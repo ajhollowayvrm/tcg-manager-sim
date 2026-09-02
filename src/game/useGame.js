@@ -102,6 +102,11 @@ export function useGame() {
   const retireMerch = useCallback((kind) => dispatch({ type: 'RETIRE_MERCH_LINE', kind }), [])
   const pitchMedia = useCallback((dealId) => dispatch({ type: 'PITCH_MEDIA_DEAL', dealId }), [])
   const setGoodwill = useCallback((level) => dispatch({ type: 'SET_GOODWILL', level }), [])
+  // Studio standards. `kind` is 'raritySheet' | 'packFormat' | 'blueprint';
+  // saving is an upsert, so the panel's edits and the set builder's "save as
+  // standard" are the same call. See standards.js.
+  const saveStandard = useCallback((kind, record) => dispatch({ type: 'SAVE_STANDARD', kind, record }), [])
+  const deleteStandard = useCallback((kind, id) => dispatch({ type: 'DELETE_STANDARD', kind, id }), [])
   const retire = useCallback(() => dispatch({ type: 'RETIRE_STUDIO' }), [])
   // Manual export/import — the escape hatch, and the fallback whenever a write
   // fails. Import replaces the live run wholesale.
@@ -113,5 +118,5 @@ export function useGame() {
     return true
   }, [])
 
-  return { state, advanceWeek: advanceWeekAction, release, pull, reprint, adjustWave, reset, addCharacter, updateCharacter, rip, startGame, comp, sponsor, unsponsor, invitePrerelease: invitePrereleaseAction, sponsorTournament: sponsorTournamentAction, signDist, dropDist, cultivateDist, upgradeSupplyChain: upgradeSupplyChainAction, signGrading, dropGrading, cultivateGrading, runBreak: runBreakAction, togglePurchaseLimits, togglePhantomStock, toggleOddsPublished, launchMerch, refreshMerch, retireMerch, pitchMedia, setGoodwill, retire, booting, saveError, exportRun, importRun }
+  return { state, advanceWeek: advanceWeekAction, release, pull, reprint, adjustWave, reset, addCharacter, updateCharacter, rip, startGame, comp, sponsor, unsponsor, invitePrerelease: invitePrereleaseAction, sponsorTournament: sponsorTournamentAction, signDist, dropDist, cultivateDist, upgradeSupplyChain: upgradeSupplyChainAction, signGrading, dropGrading, cultivateGrading, runBreak: runBreakAction, togglePurchaseLimits, togglePhantomStock, toggleOddsPublished, launchMerch, refreshMerch, retireMerch, pitchMedia, setGoodwill, retire, saveStandard, deleteStandard, booting, saveError, exportRun, importRun }
 }
