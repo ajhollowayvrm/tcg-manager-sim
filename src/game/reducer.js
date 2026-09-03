@@ -31,7 +31,7 @@ import { signPartnerPromo } from './partners.js'
 import { fundGrant } from './grassroots.js'
 import { purchaseUpgrade } from './upgrades.js'
 import { createCharacter, createLineageCharacter, normalizeCharacter, recordAppearance, getTreatment } from './characters.js'
-import { derivePeople, normalizePerson, recordPersonPrinting } from './people.js'
+import { derivePeople, normalizePerson, recordPersonPrinting, createPerson } from './people.js'
 import { castIdsOf, castMembers, castPopBonus } from './cast.js'
 import { createCardDesign, applyDesignPatch, standaloneCost, recordPrinting } from './carddesigns.js'
 import { makePromoCard } from './promos.js'
@@ -45,6 +45,12 @@ import {
 } from './standards.js'
 import { scoreRun, unlockedPerks } from './legacy.js'
 import { clearSave, loadPrestige, bankPrestige, recordHallOfFame } from './persistence.js'
+
+// The share of a cast member's recognition a form of hers debuts with when there
+// is no lineage to inherit from. Set to the LOWEST fameInherit in
+// content/lineages.js (promotion's 0.35), so simply printing her in a new shape
+// is never a better deal than telling a story about how she got there.
+const BASE_FORM_RECOGNITION_SHARE = 0.35
 
 // The account-level prestige record, resolved into the perks it unlocks. Reads
 // localStorage, which no-ops in the harness (persistence.js self-guards), so a
@@ -622,6 +628,20 @@ export function reducer(state, action) {
         }, ...state.eventsFeed].slice(0, 60),
       })
     }
+    case 'ADD_PERSON': {
+      // A CAST MEMBER — the IP itself. She owns no card and no form; she simply
+      // exists, and forms of her are printed later (see people.js's
+      // derivePeople for why this used to be impossible).
+      //
+      // This is deliberately NOT the old Cast-panel create, which minted a FORM
+      // and guessed her name from the comma in a card title. A cast member's
+      // name is her name.
+      if (!action.name?.trim()) return state
+      return withPeople({
+        ...state,
+        people: [...(state.people ?? []), createPerson(action.name, action.identity)],
+      })
+    }
     case 'ADD_CHARACTER': {
       // Pre-builds your cast ahead of a card, the same record a signature
       // card's "new character" request would mint at release (see sets.js's
@@ -652,9 +672,26 @@ export function reducer(state, action) {
           }, ...state.eventsFeed].slice(0, 60),
         })
       }
+      // A form authored straight onto a cast member — from her own sheet, from
+      // Studio > Lineages' base-form option, or from a card. NO lineage kind, so
+      // nothing labels it a promotion; her `personId` is simply written on it.
+      //
+      // It still DEBUTS KNOWN. A new form of a household name is not an unknown
+      // at 12 fame, which is the same argument createLineageCharacter makes for
+      // a linked form — and the brief's rule that "a new form debuts off THIS",
+      // the character's recognition. Without a lineage there is no parent fame
+      // to read, so her recognition is the whole of it, at the share the
+      // gentlest same-being kind would have granted.
+      const identity = action.identity ?? {}
+      const owner = identity.personId
+        ? (state.people ?? []).find((p) => p.id === identity.personId)
+        : null
       return withPeople({
         ...state,
-        characters: [...roster, createCharacter(action.name, action.identity)],
+        characters: [...roster, createCharacter(action.name, {
+          ...identity,
+          _inheritFame: owner ? (owner.recognition ?? 0) * BASE_FORM_RECOGNITION_SHARE : 0,
+        })],
       })
     }
     case 'UPDATE_CHARACTER': {
@@ -688,18 +725,30 @@ export function reducer(state, action) {
       // chase a better verdict is the player writing a more coherent character,
       // which is the behaviour this whole feature is trying to buy.
       const allowed = ['name', 'traits', 'hook', 'pronouns', 'species', 'formName', 'demeanorIds', 'carriesName']
-      return {
+      // WHO THIS IS. `personId` is authored now (see people.js's derivePeople),
+      // so a form can be moved onto the right cast member — which is the whole
+      // point: before this, saying "this form is Aryla" meant inventing a
+      // same-being lineage link and mislabelling her base form as a promotion.
+      //
+      // Validated against a live person, and null is allowed: a form with no
+      // cast member falls back to the same-being derivation, which is exactly
+      // the old behaviour for a form nobody has assigned.
+      const people = state.people ?? []
+      const reassign = 'personId' in patch
+        && (patch.personId === null || people.some((p) => p.id === patch.personId))
+      return withPeople({
         ...state,
         characters: (state.characters ?? []).map((c) => {
           if (c.id !== id) return c
           const next = { ...c }
           for (const k of allowed) if (k in patch) next[k] = patch[k]
+          if (reassign) next.personId = patch.personId
           if ('archetypeId' in patch && !(c.appearances?.length)) next.archetypeId = patch.archetypeId
           // Run it through the same normaliser a loaded save uses, so an unknown
           // archetype or an over-long trait list can never reach the record.
           return normalizeCharacter({ ...next, name: next.name?.trim() || c.name })
         }),
-      }
+      })
     }
     case 'UPDATE_PERSON': {
       // The CHARACTER's own identity, as opposed to one form's. The name every
@@ -716,7 +765,12 @@ export function reducer(state, action) {
       // writing them here would be overwritten by the next hydrate.
       const { id, patch } = action
       if (!id || !patch) return state
-      const allowed = ['name', 'pronouns', 'throughline', 'coreTraits', 'coreDemeanor']
+      // `archetypeId` and `artBrief` are the IP-level identity a new form of her
+      // starts from. The archetype is safe to leave editable here, unlike a
+      // FORM's: nothing in the sim reads a person's archetype, so there is no
+      // theme-cohesion bonus or fame-drift bias to flip. The form it seeds still
+      // locks on that form's debut, which is where the exploit actually lived.
+      const allowed = ['name', 'pronouns', 'throughline', 'coreTraits', 'coreDemeanor', 'archetypeId', 'artBrief']
       return {
         ...state,
         people: (state.people ?? []).map((p) => {

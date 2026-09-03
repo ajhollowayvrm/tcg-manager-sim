@@ -148,6 +148,20 @@ export function createPerson(name, opts = {}) {
     coreTraits: (o.coreTraits ?? []).slice(0, MAX_TRAITS),
     // The measurable half of the identity. continuityDrift reads ONLY this.
     coreDemeanor: (o.coreDemeanor ?? []).slice(0, MAX_DEMEANORS),
+    // ---- The IP-level identity a new form of her starts from --------------
+    // Her archetype AS THE CHARACTER. Nothing in the sim reads this directly —
+    // popFactors, the cover buzz and fame drift all read the FORM's archetype,
+    // which locks on that form's debut. This is strictly the seed a new form of
+    // her is created with, so "Aryla is a mascot" does not have to be retyped
+    // for every way she is printed. Null until she is given one.
+    archetypeId: o.archetypeId ?? null,
+    // A standing art-direction note for the character. Seeds a new form of her,
+    // and prefills a card's brief when she leads it and the brief is still
+    // empty — a starting value, never an override.
+    artBrief: (o.artBrief ?? '').trim(),
+    // Her base form, or null when nothing of hers has been printed yet. Derived
+    // (see derivePeople), and optional precisely because a cast member is
+    // allowed to exist with no forms at all.
     rootFormId: o.rootFormId ?? null,
     descendedFromIds: o.descendedFromIds ?? [],
     recognition: clamp(o.recognition ?? 0, 0, 100),
@@ -167,6 +181,11 @@ export function normalizePerson(p) {
     throughline: p.throughline ?? '',
     coreTraits: (p.coreTraits ?? []).slice(0, MAX_TRAITS),
     coreDemeanor: (p.coreDemeanor ?? []).slice(0, MAX_DEMEANORS),
+    // Additive: a person from a save written before a cast member could carry
+    // the IP-level identity simply has neither, and lands on the same nulls a
+    // freshly authored one starts from.
+    archetypeId: p.archetypeId ?? null,
+    artBrief: p.artBrief ?? '',
     descendedFromIds: p.descendedFromIds ?? [],
     recognition: clamp(p.recognition ?? 0, 0, 100),
     recognitionHistory: p.recognitionHistory ?? [],
@@ -235,19 +254,42 @@ export function formNameFromForm(name) {
   return raw.slice(comma + 1).trim()
 }
 
-// ---- Backfill ---------------------------------------------------------------
+// ---- Reconciliation ---------------------------------------------------------
 
-// Rebuild the people from the forms. Runs in hydrate() on every load and in
-// createInitialState, and is what lets this whole feature ship without a VERSION
-// bump: an old save arrives with no `people` at all and leaves with a correct
-// one, and a pre-lineage character becomes a one-form person.
+// Bring the people and the forms into agreement. Runs in hydrate() on every
+// load and in createInitialState, and after any reducer action that adds or
+// relinks a form (reducer.js's withPeople).
 //
-// The graph walked here is the SAME-BEING graph only. A fusion or a successor is
-// explicitly not the same person — an heir who takes the mantle is an heir — so
-// those links start a new person and are recorded as descendedFromIds instead.
+// THIS USED TO BE A PURE DERIVATION, and that was the wrong model. It looped
+// over the FORMS and pushed a person only for a form it found, so a person with
+// no forms was deleted on the next dispatch — which meant a cast member could
+// not exist without a card-shaped record to hang her on. The Cast panel
+// therefore minted a form and guessed her name from the comma in it, and the
+// only way left to say "this next form is also her" was a same-being lineage
+// link. So Aryla, Destined Trainee had to be filed as a PROMOTION of a bare
+// "Aryla" that was never a card and never would be — and that phantom form then
+// took two thirds of the fandom's favour, taxing the one real card by 14%
+// through favorMultiplier. A modelling error with a balance bill.
 //
-// Returns { people, characters } with `personId` stamped on every form. Pure:
-// it never mutates its inputs.
+// A cast member is the IP. She is AUTHORED, she simply exists, and she owns no
+// card. A form is one way she was printed. So:
+//
+//   1. EVERY person in state.people is kept, forms or no forms.
+//   2. A form's AUTHORED `personId` decides who it is. Nothing overwrites it.
+//   3. Only a form with no authored person falls back to the same-being lineage
+//      walk below — the back-compat path, since no form in an older save
+//      carries one.
+//
+// Rule 3 self-migrates: the walk stamps `personId` onto the form, persistence
+// now keeps it, and every later load takes the authored path instead. So the
+// derivation runs about once per save and the structure then stands still.
+//
+// The graph walked by that fallback is the SAME-BEING graph only. A fusion or a
+// successor is explicitly not the same person — an heir who takes the mantle is
+// an heir — so those links start a new person and are recorded as
+// descendedFromIds instead.
+//
+// Returns { people, characters }. Pure: it never mutates its inputs.
 export function derivePeople(state) {
   const characters = state.characters ?? []
   const byId = new Map(characters.map((c) => [c.id, c]))
@@ -277,67 +319,97 @@ export function derivePeople(state) {
     return cur
   }
 
-  // Preserve an existing person record wherever one already covers this root, so
-  // the authored text and the earned numbers survive a reload. Matching is by
-  // rootFormId first (stable across a rename) and by name second (covers a
-  // record whose structure was stripped from the save, which is the normal case).
-  const existing = (state.people ?? []).map(normalizePerson).filter(Boolean)
-  const byRoot = new Map(existing.filter((p) => p.rootFormId).map((p) => [p.rootFormId, p]))
-  // Matched with the SAME derivation the seed uses, or a reload would fail to
-  // recognise the person it wrote last time and mint a duplicate beside it.
-  const byName = new Map(existing.map((p) => [p.name.toLowerCase(), p]))
+  // EVERY authored person survives, which is the whole change. She is carried
+  // by id, so a cast member with nothing printed yet is still here next week.
+  const people = (state.people ?? []).map(normalizePerson).filter(Boolean)
+  const byPersonId = new Map(people.map((p) => [p.id, p]))
+  // Matching for the fallback mint. rootFormId is stripped from the save, so in
+  // practice an older save matches by name — with the SAME derivation the seed
+  // uses, or a reload would fail to recognise the person it wrote last time and
+  // mint a duplicate beside it.
+  const byRoot = new Map(people.filter((p) => p.rootFormId).map((p) => [p.rootFormId, p]))
+  const byName = new Map(people.map((p) => [p.name.toLowerCase(), p]))
   const claimed = new Set()
 
-  const people = []
-  const personOf = new Map() // rootId -> person
+  const personOfForm = new Map()
 
+  // Pass 1: an authored personId that resolves to a live person is the answer.
   for (const c of characters) {
+    if (c.personId && byPersonId.has(c.personId)) personOfForm.set(c.id, c.personId)
+  }
+
+  // Pass 2: everything else derives off its same-being root. A chain hanging off
+  // an authored base form joins HER — that is what makes a promotion of an
+  // authored cast member work without the player restating who she is.
+  const personOfRoot = new Map()
+  for (const c of characters) {
+    if (personOfForm.has(c.id)) continue
     const root = rootOf(c)
-    if (personOf.has(root.id)) continue
-    let person = byRoot.get(root.id)
-    if (!person || claimed.has(person.id)) person = byName.get(personNameFromForm(root.name).toLowerCase())
-    if (!person || claimed.has(person.id)) {
-      person = createPerson(personNameFromForm(root.name), {
-        coreTraits: root.traits ?? [],
-        coreDemeanor: root.demeanorIds ?? [],
-        throughline: root.hook ?? '',
-        pronouns: root.pronouns ?? '',
-      })
+    const authoredRoot = personOfForm.get(root.id)
+    if (authoredRoot) { personOfForm.set(c.id, authoredRoot); continue }
+    let person = personOfRoot.get(root.id)
+    if (!person) {
+      person = byRoot.get(root.id)
+      if (!person || claimed.has(person.id)) person = byName.get(personNameFromForm(root.name).toLowerCase())
+      if (!person || claimed.has(person.id)) {
+        person = createPerson(personNameFromForm(root.name), {
+          coreTraits: root.traits ?? [],
+          coreDemeanor: root.demeanorIds ?? [],
+          throughline: root.hook ?? '',
+          pronouns: root.pronouns ?? '',
+          archetypeId: root.archetypeId ?? null,
+        })
+        people.push(person)
+        byPersonId.set(person.id, person)
+      }
+      claimed.add(person.id)
+      personOfRoot.set(root.id, person)
     }
-    claimed.add(person.id)
-    person = { ...person, rootFormId: root.id }
-    personOf.set(root.id, person)
-    people.push(person)
+    personOfForm.set(c.id, person.id)
   }
 
   // Stamp every form with its person.
-  const formToPerson = new Map()
   const stamped = characters.map((c) => {
-    const p = personOf.get(rootOf(c).id)
-    formToPerson.set(c.id, p.id)
+    const pid = personOfForm.get(c.id) ?? null
     // Seed formName from the card face when the player gave none, so an old save
     // gets readable roster labels — "Royal Soldier" rather than a blank.
     const formName = c.formName || formNameFromForm(c.name)
-    if (c.personId === p.id && c.formName === formName) return c
-    return { ...c, personId: p.id, formName }
+    if (c.personId === pid && c.formName === formName) return c
+    return { ...c, personId: pid, formName }
   })
 
-  // Person-level lineage: a fusion or successor child's person descends from the
-  // people its parents belong to. Resolved in a second pass, because it needs
-  // every form already assigned.
+  const formsOfPerson = new Map()
+  for (const c of stamped) {
+    if (!c.personId) continue
+    if (!formsOfPerson.has(c.personId)) formsOfPerson.set(c.personId, [])
+    formsOfPerson.get(c.personId).push(c)
+  }
+
   const finished = people.map((p) => {
-    const root = byId.get(p.rootFormId)
+    const forms = formsOfPerson.get(p.id) ?? []
+    // Her BASE form: the one of hers with no same-being parent that is also
+    // hers. Still derived, and now genuinely optional — null for a cast member
+    // who has not been printed in any form yet, which used to be impossible.
+    const mine = new Set(forms.map((f) => f.id))
+    const root = forms.find((f) => !kinParents(f).some((id) => mine.has(id))) ?? forms[0] ?? null
+    // Person-level lineage: a fusion or successor child's person descends from
+    // the people its parents belong to.
     const kind = root ? getLineageKind(root.lineageKindId) : null
     const from = kind && !kind.sameBeing
-      ? lineageParents(root).map((id) => formToPerson.get(id)).filter((id) => id && id !== p.id)
+      ? lineageParents(root).map((id) => personOfForm.get(id)).filter((id) => id && id !== p.id)
       : []
     // Favour: keep the shares that still name a live form, seed any form that has
     // none, then renormalise. A form added since the last save arrives with an
     // even share rather than zero, which would make it invisible to every
-    // consumer on its debut week.
-    const forms = stamped.filter((c) => c.personId === p.id)
-    const favor = normalizeFavor(forms.map((f) => f.id), p.favor)
-    return { ...p, descendedFromIds: [...new Set(from)], favor }
+    // consumer on its debut week. A cast member with no forms gets {}, and
+    // favorMultiplier returns exactly 1 below two forms — so nobody is ever
+    // taxed for a form that does not exist.
+    return {
+      ...p,
+      rootFormId: root?.id ?? null,
+      descendedFromIds: [...new Set(from)],
+      favor: normalizeFavor(forms.map((f) => f.id), p.favor),
+    }
   })
 
   return { people: finished, characters: stamped }

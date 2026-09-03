@@ -73,7 +73,7 @@ function CastRow({ name, sub, pct, pctTitle, trajectory, label, onOpen }) {
   )
 }
 
-export default function CastPanel({ state, onAddCharacter, onUpdateCharacter, onUpdatePerson }) {
+export default function CastPanel({ state, onAddPerson, onAddCharacter, onUpdateCharacter, onUpdatePerson }) {
   const [category, setCategory] = useState('all')
   const [sort, setSort] = useState('fame')
   const [query, setQuery] = useState('')
@@ -103,17 +103,22 @@ export default function CastPanel({ state, onAddCharacter, onUpdateCharacter, on
         )
         return { person: p, forms: mine, best }
       })
-      .filter((r) => r.best)
-      // The archetype filter reads the character's leading form: a filter that
-      // matched ANY form would put Aryla under every category she has ever taken,
-      // which is most of them by the end of a long line.
-      .filter((r) => category === 'all' || getArchetype(r.best.archetypeId).category === category)
+      // NO `.filter(r => r.best)` HERE. A cast member is the IP and is allowed
+      // to exist with nothing printed yet — she is the whole point of authoring
+      // one — and dropping her from her own roster is how she used to be
+      // invisible even when the state held her.
+      // The archetype filter reads the character's leading form, falling back to
+      // her own default: a filter that matched ANY form would put Aryla under
+      // every category she has ever taken, which is most of them by the end of a
+      // long line.
+      .filter((r) => category === 'all'
+        || getArchetype(r.best?.archetypeId ?? r.person.archetypeId).category === category)
       // Search reaches every form's name, so typing "Divine" still finds Aryla
       // even though the character is not called that.
       .filter((r) => !q
         || r.person.name.toLowerCase().includes(q)
         || r.forms.some((f) => f.name.toLowerCase().includes(q))
-        || getArchetype(r.best.archetypeId).name.toLowerCase().includes(q))
+        || getArchetype(r.best?.archetypeId ?? r.person.archetypeId).name.toLowerCase().includes(q))
       .sort(
         sort === 'name' ? (a, b) => a.person.name.localeCompare(b.person.name)
           : sort === 'recent' ? (a, b) => b.forms.reduce((n, f) => n + (f.appearances?.length ?? 0), 0)
@@ -164,14 +169,20 @@ export default function CastPanel({ state, onAddCharacter, onUpdateCharacter, on
       {rows.length > 0 && (
         <ul className="roster">
           {rows.map(({ person, forms: mine, best }) => {
-            const archetype = getArchetype(best.archetypeId)
+            const archetype = getArchetype(best?.archetypeId ?? person.archetypeId)
             const known = (person.recognition ?? 0) >= WIDELY_KNOWN_RECOGNITION
             // "best known as", not "currently": `best` is the form with the
             // highest fame, which is the one the audience has in mind — not
             // necessarily the one printed most recently.
-            const sub = mine.length > 1
-              ? `${mine.length} forms · best known as ${best.formName || formLabel(person, best)}`
-              : (best.species ? `${archetype.name} · ${best.species}` : archetype.name)
+            //
+            // A cast member with NO forms says so plainly. She is not broken and
+            // she is not waiting on anything — she exists, and nothing has been
+            // printed of her yet.
+            const sub = !best
+              ? `${archetype.id === 'unaligned' ? 'No forms yet' : `${archetype.name} · no forms yet`}`
+              : mine.length > 1
+                ? `${mine.length} forms · best known as ${best.formName || formLabel(person, best)}`
+                : (best.species ? `${archetype.name} · ${best.species}` : archetype.name)
             return (
               <CastRow
                 key={person.id}
@@ -179,10 +190,12 @@ export default function CastPanel({ state, onAddCharacter, onUpdateCharacter, on
                 sub={sub}
                 pct={person.recognition}
                 pctTitle={`Recognition ${Math.round(person.recognition ?? 0)}`}
-                trajectory={known ? 'established' : best.trajectory}
-                label={mine.length > 1
-                  ? (known ? 'Known' : 'Building')
-                  : (CHAR_TRAJ_LABEL[best.trajectory] ?? best.trajectory)}
+                trajectory={!best ? 'rising' : known ? 'established' : best.trajectory}
+                label={!best
+                  ? 'Unprinted'
+                  : mine.length > 1
+                    ? (known ? 'Known' : 'Building')
+                    : (CHAR_TRAJ_LABEL[best.trajectory] ?? best.trajectory)}
                 onOpen={() => setOpenPersonId(person.id)}
               />
             )
@@ -190,7 +203,7 @@ export default function CastPanel({ state, onAddCharacter, onUpdateCharacter, on
         </ul>
       )}
 
-      {onAddCharacter && <NewCharacterForm onAdd={onAddCharacter} />}
+      {onAddPerson && <NewPersonForm onAdd={onAddPerson} />}
 
       {openPerson && (
         <PersonDetail
@@ -199,6 +212,7 @@ export default function CastPanel({ state, onAddCharacter, onUpdateCharacter, on
           onClose={() => setOpenPersonId(null)}
           onUpdatePerson={onUpdatePerson}
           onOpenForm={(id) => setOpenFormId(id)}
+          onAddForm={onAddCharacter}
         />
       )}
 
@@ -217,39 +231,46 @@ export default function CastPanel({ state, onAddCharacter, onUpdateCharacter, on
   )
 }
 
-// Mint a character with no card attached yet — the same record a signature
-// card's "new character" request creates at release (see characters.js's
-// createCharacter), just available before you've released anything at all.
+// Author a CAST MEMBER — the IP itself, with no card and no form.
 //
-// Collapsed to a single name field until the player commits to a name, so the
-// panel is not dominated by a form on a run with no cast yet.
-function NewCharacterForm({ onAdd }) {
+// This used to mint a FORM and guess her name from the comma in a card title:
+// its placeholder was literally "Aryla, Destined Trainee", and the note under it
+// explained that the character would be called Aryla. That existed because a
+// person could not be stored on her own (see people.js's derivePeople), so the
+// only way to get one was to create a card-shaped record and let the loader
+// infer her from it. The knock-on was that "this next form is also Aryla" had to
+// be expressed as a same-being lineage link, filing her base form as a
+// PROMOTION of a card that never existed.
+//
+// So the name here is HER name, the fields are the IP-level ones, and a form of
+// her is added afterwards from her own sheet.
+function NewPersonForm({ onAdd }) {
   const [name, setName] = useState('')
   const [archetypeId, setArchetypeId] = useState('unaligned')
-  const [traits, setTraits] = useState([])
-  const [hook, setHook] = useState('')
+  const [coreTraits, setCoreTraits] = useState([])
+  const [throughline, setThroughline] = useState('')
   const [pronouns, setPronouns] = useState('')
-  const [species, setSpecies] = useState('')
-  const [demeanorIds, setDemeanorIds] = useState([])
+  const [coreDemeanor, setCoreDemeanor] = useState([])
+  const [artBrief, setArtBrief] = useState('')
 
   const toggleTrait = (id) => {
-    setTraits((cur) => (cur.includes(id) ? cur.filter((t) => t !== id) : cur.length >= MAX_TRAITS ? cur : [...cur, id]))
+    setCoreTraits((cur) => (cur.includes(id) ? cur.filter((t) => t !== id) : cur.length >= MAX_TRAITS ? cur : [...cur, id]))
   }
   const toggleDemeanor = (id) => {
-    setDemeanorIds((cur) => (cur.includes(id) ? cur.filter((d) => d !== id) : cur.length >= 2 ? cur : [...cur, id]))
+    setCoreDemeanor((cur) => (cur.includes(id) ? cur.filter((d) => d !== id) : cur.length >= 2 ? cur : [...cur, id]))
   }
 
   const submit = (e) => {
     e.preventDefault()
     if (!name.trim()) return
-    onAdd(name, { archetypeId, traits, hook, pronouns, species, demeanorIds })
+    onAdd(name, { archetypeId, coreTraits, throughline, pronouns, coreDemeanor, artBrief })
     setName('')
     setArchetypeId('unaligned')
-    setTraits([])
-    setHook('')
+    setCoreTraits([])
+    setThroughline('')
     setPronouns('')
-    setSpecies('')
-    setDemeanorIds([])
+    setCoreDemeanor([])
+    setArtBrief('')
   }
 
   return (
@@ -258,44 +279,47 @@ function NewCharacterForm({ onAdd }) {
         className="roster__addinput"
         value={name}
         onChange={(e) => setName(e.target.value)}
-        placeholder="New character name, e.g. Aryla, Destined Trainee"
+        placeholder="New cast member, e.g. Aryla"
       />
 
       {name.trim() && (
         <>
-          {/* The name above is the CARD's. The character's name is taken from the
-              half before the comma, the way this genre has always written a card
-              face: "Aryla, Destined Trainee" is Aryla. Rename the character on
-              her own sheet afterwards if the guess is wrong. */}
-          {name.includes(',') && (
-            <p className="field__note">
-              The character will be called <strong>{name.split(',')[0].trim()}</strong>,
-              and this card is her <strong>{name.split(',').slice(1).join(',').trim()}</strong> form.
-            </p>
-          )}
+          <p className="field__note">
+            <strong>{name.trim()}</strong> joins the cast as herself — no card, no
+            form. Open her sheet to add the forms she gets printed in.
+          </p>
+          {/* Her archetype AS THE CHARACTER. Nothing in the sim reads it; it is
+              the seed a new form of her starts from, and that form locks its own
+              on debut. See people.js's createPerson. */}
           <ArchetypeSelect value={archetypeId} onChange={setArchetypeId} />
-          <TraitPicker traits={traits} onToggle={toggleTrait} archetypeId={archetypeId} />
-          <DemeanorPicker demeanors={demeanorIds} onToggle={toggleDemeanor} />
+          <span className="field__note">
+            Every form of her starts from this and can then diverge.
+          </span>
+          <TraitPicker traits={coreTraits} onToggle={toggleTrait} archetypeId={archetypeId} />
+          <DemeanorPicker demeanors={coreDemeanor} onToggle={toggleDemeanor} />
 
           <label className="field field--full">
-            <span>Hook <span className="muted">(one line that says who they are)</span></span>
-            <input value={hook} onChange={(e) => setHook(e.target.value)} placeholder="e.g. Never raises their voice." />
+            <span>Throughline <span className="muted">(the one line true of every form)</span></span>
+            <input value={throughline} onChange={(e) => setThroughline(e.target.value)} placeholder="e.g. Never raises her voice." />
           </label>
 
-          <div className="sigcard__row sigcard__controls">
-            <label className="field">
-              <span>Pronouns</span>
-              <input value={pronouns} onChange={(e) => setPronouns(e.target.value)} placeholder="they/them" />
-            </label>
-            <label className="field">
-              <span>Epithet <span className="muted">(optional)</span></span>
-              <input value={species} onChange={(e) => setSpecies(e.target.value)} placeholder="the Ashen" />
-            </label>
-          </div>
+          <label className="field field--full">
+            <span>Art brief <span className="muted">(how she should always be drawn)</span></span>
+            <input value={artBrief} onChange={(e) => setArtBrief(e.target.value)} placeholder="e.g. warm light, low angle, never armoured" />
+            <span className="field__note">
+              Carried into every form of her and into the cards she leads, as a
+              starting brief you can still overwrite.
+            </span>
+          </label>
+
+          <label className="field">
+            <span>Pronouns</span>
+            <input value={pronouns} onChange={(e) => setPronouns(e.target.value)} placeholder="they/them" />
+          </label>
         </>
       )}
 
-      <button className="btn btn--ghost" type="submit" disabled={!name.trim()}>+ Add character</button>
+      <button className="btn btn--ghost" type="submit" disabled={!name.trim()}>+ Add cast member</button>
     </form>
   )
 }
