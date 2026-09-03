@@ -16,7 +16,7 @@
 
 import { makeRng, hashSeed, range } from './rng.js'
 import { clamp, communitySentiment } from './simulation.js'
-import { hotCastSignal, distributeNewPlayers } from './segments.js'
+import { hotCastSignal, distributeNewPlayers, effectiveLean } from './segments.js'
 import { getMediaDeal } from './content/mediaDeals.js'
 
 const PITCH_MIN_WEEKS = 4 // minimum weeks before a greenlight roll can even happen
@@ -87,7 +87,7 @@ function applyOutcome(next, entry, feedEntries) {
   if (entry.outcome === 'hit') {
     const rng = makeRng(hashSeed(`media-payoff:${next.week}:${entry.id}`))
     const injection = Math.round(range(rng, deal.hitPlayerInjectionMin, deal.hitPlayerInjectionMax))
-    distributeNewPlayers(next.segments, next.segmentLean, injection)
+    distributeNewPlayers(next.segments, effectiveLean(next), injection)
     next.playerBase = next.segments.casual + next.segments.collectors
     next.mediaWomMultiplier = (next.mediaWomMultiplier ?? 1) + deal.womMultiplierBoost
     next.mediaReputationFloor = Math.max(next.mediaReputationFloor ?? 0, deal.reputationFloorBoost)

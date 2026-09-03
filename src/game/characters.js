@@ -171,7 +171,7 @@ export function createCharacter(name, opts = {}) {
     // already cares. `_inheritFame` is the fame already scaled by the kind's
     // inherit share, passed by createLineageCharacter below, which is the only
     // thing that knows the parents' current fame.
-    fame: clamp(12 + (o._inheritFame ?? 0), 0, 100),
+    fame: clamp(12 + (o._inheritFame ?? 0), 0, getArchetype(o.archetypeId).fameCeiling ?? 100),
     fameHistory: [], // rounded weekly samples, newest last, capped
     beats: [], // { week, kind, label } — the character's story so far
     trajectory: 'rising', // 'rising' | 'established' | 'fading' | 'icon'
@@ -438,7 +438,10 @@ export function recordAppearance(characters, id, { cardId, setId, treatment, pop
       // fandom better than one that is not.
       lastPrintedWeek: week ?? c.lastPrintedWeek ?? null,
       appearances: [...(c.appearances ?? []), { cardId, setId, treatment }],
-      fame: clamp(c.fame + bump, 0, 100),
+      // Capped by the archetype, raised to the character's current fame so an
+      // existing character above it is never pulled down — same rule driftOne
+      // uses. Without this a player could print past the ceiling at will.
+      fame: clamp(c.fame + bump, 0, Math.max(getArchetype(c.archetypeId).fameCeiling ?? 100, c.fame)),
       // The first printing opens the character's story. It goes FIRST even
       // when a lineage beat was filed at creation, so a timeline always opens
       // on the debut.
@@ -476,7 +479,13 @@ function performanceSignal(cards, archetype) {
     const f = c.popFactors ?? {}
     const momentum = clamp((c.momentum ?? 0) / 3, -1, 1)
     const hype = clamp(((c.hype ?? 0) - 0.4) / 1.2, -1, 1)
-    const punch = clamp((f.punch - 50) / 50, -1, 1)
+    // `?? 50` (neutral), not a bare read. The `?? {}` above only stops a throw —
+    // reading `.punch` off it still yields undefined, and one NaN here poisons
+    // the character's fame PERMANENTLY (NaN survives every later sum) and
+    // serializes to null, taking fameHistory with it. buildCard always sets
+    // popFactors, so this only bites a hand-edited or partial imported save —
+    // which importSave does not validate deeply enough to catch.
+    const punch = clamp(((f.punch ?? 50) - 50) / 50, -1, 1)
     const banBite = clamp((c.controversy ?? 0) / 100, 0, 1) * -0.4 * fuel
     sum += momentum * 0.35 + hype * 0.3 + punch * 0.35 + banBite
   }
@@ -491,6 +500,16 @@ function driftOne(c, signal, rng, week, archetype) {
   let beats = c.beats ?? []
   weeksInTrajectory += 1
 
+  // How famous this archetype can CLIMB (content/archetypes.js explains why the
+  // flat 100 had to go: without this every archetype converged on it and stopped
+  // being distinguishable).
+  //
+  // Raised to the character's CURRENT fame when they are already above it, so
+  // this arriving in a save in progress can never yank somebody downward — they
+  // simply stop climbing. Recomputed each week, so a character who falls below
+  // the archetype's own ceiling can climb back to it.
+  const cap = Math.max(archetype?.fameCeiling ?? 100, fame)
+
   // Signal-driven drift, small per week (a career arc, not a coin flip) with a
   // touch of noise so two characters with identical cards don't move in lockstep.
   const raw = signal * range(rng, 1.2, 2.4) + range(rng, -0.4, 0.4)
@@ -503,7 +522,7 @@ function driftOne(c, signal, rng, week, archetype) {
     case 'icon': {
       // Icons barely move — fame is a legacy at this point — but sustained neglect
       // (idle or genuinely disliked cards for a long stretch) can end the era.
-      fame = clamp(fame + base * 0.25, 0, 100)
+      fame = clamp(fame + base * 0.25, 0, cap)
       if (fame <= ICON_DEMOTE_FAME && weeksInTrajectory > ICON_DEMOTE_WEEKS) {
         trajectory = 'fading'
         weeksInTrajectory = 0
@@ -511,7 +530,7 @@ function driftOne(c, signal, rng, week, archetype) {
       break
     }
     case 'established': {
-      fame = clamp(fame + base * 0.6, 0, 100)
+      fame = clamp(fame + base * 0.6, 0, cap)
       if (fame >= ICON_FAME_FLOOR && weeksInTrajectory > ICON_WEEKS_REQUIRED && rng() < 0.03) {
         trajectory = 'icon'
         weeksInTrajectory = 0
@@ -522,8 +541,8 @@ function driftOne(c, signal, rng, week, archetype) {
       break
     }
     case 'fading': {
-      fame = clamp(fame + Math.min(base, 0.3), 0, 100) // fading resists a positive jolt, doesn't erase it
-      if (fame < 6) fame = clamp(fame + range(rng, 0, 0.3), 0, 100) // floors out rather than vanishing
+      fame = clamp(fame + Math.min(base, 0.3), 0, cap) // fading resists a positive jolt, doesn't erase it
+      if (fame < 6) fame = clamp(fame + range(rng, 0, 0.3), 0, cap) // floors out rather than vanishing
       if (fame >= ESTABLISHED_FAME_FLOOR && weeksInTrajectory > RECOVERY_WEEKS_REQUIRED) {
         trajectory = 'rising' // a real comeback re-earns established the normal way
         weeksInTrajectory = 0
@@ -532,7 +551,7 @@ function driftOne(c, signal, rng, week, archetype) {
     }
     default: {
       // rising
-      fame = clamp(fame + base, 0, 100)
+      fame = clamp(fame + base, 0, cap)
       if (fame >= ESTABLISHED_FAME_FLOOR && weeksInTrajectory > ESTABLISHED_WEEKS_REQUIRED) {
         trajectory = 'established'
         weeksInTrajectory = 0

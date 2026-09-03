@@ -18,6 +18,8 @@
 import { makeRng, hashSeed, range } from './rng.js'
 import { clamp } from './simulation.js'
 import { priceElasticity } from './revenue.js'
+import { bestFormPerPerson } from './people.js'
+import { getArchetype } from './content/archetypes.js'
 import { hotCastSignal } from './segments.js'
 import { getMerchType } from './content/merch.js'
 
@@ -45,7 +47,8 @@ export function launchMerchLine(state, kind) {
   // dollars each, and not one persona ever mentioned it.)
   const activeCount = merchLines.filter((m) => m.active).length
   const fame = hotCastSignal(state.characters) // 0–100
-  const delight = clamp((fame - 30) / 70, 0, 1) // a hot cast makes merch wanted
+  // Weighted by whether this cast is the kind people want merchandise OF.
+  const delight = clamp(((fame - 30) / 70) * castMerchPull(state.characters), 0, 1)
   const overreach = clamp((activeCount - 2) / 3, 0, 1) // past two lines it's a lot
   const bump = {
     tasteKey: 'value',
@@ -85,13 +88,36 @@ export function retireMerchLine(state, kind) {
   return { merchLines, cashDelta: 0, feed: `Retired the ${t.name} line.` }
 }
 
+// The merch appetite of the cast carrying the studio: the fame-weighted mean
+// `merchPull` of the same top three hotCastSignal reads. 1 when there is no cast
+// and 1 for an all-`unaligned` roster, so this can only ever redistribute
+// between archetypes — it never moves the baseline.
+function castMerchPull(characters) {
+  const top = bestFormPerPerson(characters)
+    .sort((a, b) => b.fame - a.fame)
+    .slice(0, 3)
+  let sum = 0
+  let weight = 0
+  for (const c of top) {
+    const w = Math.max(0, c.fame ?? 0)
+    sum += (getArchetype(c.archetypeId).merchPull ?? 1) * w
+    weight += w
+  }
+  return weight > 0 ? clamp(sum / weight, 0.5, 1.5) : 1
+}
+
 // ---- Weekly revenue (called from advanceWeek, sibling to resolveRevenue) --
 
 function weeklyMerchDemand(line, t, state, rng) {
   const freshness = clamp(MERCH_BUZZ_FLOOR / 100 + (line.merchBuzz / 100) * (1 - MERCH_BUZZ_FLOOR / 100), MERCH_BUZZ_FLOOR / 100, 1)
   const reputationPull = clamp(1 + (state.franchise?.reputation ?? 0) / 120, 1, 3.2) // the core driver
+  // WHO the cast is, not just how hot. This file's own header has always said
+  // "a hot mascot moves plush" while reading nothing but aggregate fame, so a
+  // shelf of machines sold exactly as much plush as a shelf of mascots.
+  // `merchPull` is 1 for a neutral archetype and for `unaligned`, so a roster
+  // from before archetypes prices exactly as it did.
   const fame = hotCastSignal(state.characters)
-  const castPull = clamp(1 + fame / 140, 1, 1.7)
+  const castPull = clamp(1 + (fame / 140) * castMerchPull(state.characters), 1, 1.7)
   const elasticity = priceElasticity(line.price, t.elasticityRef)
   const seg = state.segments ?? { casual: 0, collectors: 0 }
   const buyerPool = seg.casual * t.appeal.casual + seg.collectors * t.appeal.collectors

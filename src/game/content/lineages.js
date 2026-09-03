@@ -42,7 +42,7 @@
 // up to the person as saturation (people.js) — printing four forms of one
 // character in thirty weeks is the thing that now costs you.
 
-import { getArchetype } from './archetypes.js'
+import { getArchetype, ARCHETYPE_CATEGORIES } from './archetypes.js'
 
 export const LINEAGE_KINDS = [
   {
@@ -129,7 +129,11 @@ export function archetypeRuleText(kind) {
   if (!r || r.type === 'free') return 'any archetype'
   if (r.type === 'same') return 'the same archetype as the parent'
   if (r.type === 'sameCategory') return 'an archetype in the parent’s category'
-  return `an archetype in the ${r.category} category`
+  // The category's NAME, not its raw id — this is player-facing prose, and with
+  // eight categories "an archetype in the antagonists category" reads worse the
+  // more of them there are.
+  const cat = ARCHETYPE_CATEGORIES.find((c) => c.id === r.category)
+  return `an archetype in ${cat ? cat.name : r.category}`
 }
 
 // Whether `childArchetypeId` satisfies the kind's rule against
