@@ -169,7 +169,7 @@ export default function App() {
       onRemoveDesign={game.removeCardDesign}
       onPrintDesign={game.printCardDesign}
     />,
-    'studio.cast': <CastPanel state={state} onAddCharacter={game.addCharacter} onUpdateCharacter={game.updateCharacter} onUpdatePerson={game.updatePerson} />,
+    'studio.cast': <CastPanel state={state} onAddPerson={game.addPerson} onAddCharacter={game.addCharacter} onUpdateCharacter={game.updateCharacter} onUpdatePerson={game.updatePerson} />,
     'studio.lineages': <LineagesPanel state={state} onAddCharacter={game.addCharacter} />,
     'studio.standards': <StandardsPanel state={state} onSave={game.saveStandard} onDelete={game.deleteStandard} />,
 

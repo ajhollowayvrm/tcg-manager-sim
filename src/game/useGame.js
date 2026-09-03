@@ -81,6 +81,8 @@ export function useGame() {
   const updateCharacter = useCallback((id, patch) => dispatch({ type: 'UPDATE_CHARACTER', id, patch }), [])
   // The CHARACTER's own identity, as opposed to one form's — see people.js.
   const updatePerson = useCallback((id, patch) => dispatch({ type: 'UPDATE_PERSON', id, patch }), [])
+  // A CAST MEMBER — the IP, with no card and no form. See people.js.
+  const addPerson = useCallback((name, identity) => dispatch({ type: 'ADD_PERSON', name, identity }), [])
   // The card library — Studio > Cards. See carddesigns.js.
   const addCardDesign = useCallback((design) => dispatch({ type: 'ADD_CARD_DESIGN', design }), [])
   const updateCardDesign = useCallback((id, patch) => dispatch({ type: 'UPDATE_CARD_DESIGN', id, patch }), [])
@@ -135,5 +137,5 @@ export function useGame() {
     return true
   }, [])
 
-  return { state, advanceWeek: advanceWeekAction, release, pull, reprint, adjustWave, reset, addCharacter, updateCharacter, updatePerson, addCardDesign, updateCardDesign, removeCardDesign, printCardDesign, rip, startGame, comp, sponsor, unsponsor, invitePrerelease: invitePrereleaseAction, sponsorTournament: sponsorTournamentAction, signDist, dropDist, cultivateDist, upgradeSupplyChain: upgradeSupplyChainAction, purchaseUpgrade: purchaseUpgradeAction, signArtist, endArtist, signPartner, signGrading, dropGrading, cultivateGrading, runBreak: runBreakAction, togglePurchaseLimits, togglePhantomStock, toggleOddsPublished, launchMerch, refreshMerch, retireMerch, pitchMedia, setGoodwill, setGrassroots, fundGrant: fundGrantAction, retire, saveStandard, deleteStandard, booting, saveError, exportRun, importRun }
+  return { state, advanceWeek: advanceWeekAction, release, pull, reprint, adjustWave, reset, addCharacter, updateCharacter, updatePerson, addPerson, addCardDesign, updateCardDesign, removeCardDesign, printCardDesign, rip, startGame, comp, sponsor, unsponsor, invitePrerelease: invitePrereleaseAction, sponsorTournament: sponsorTournamentAction, signDist, dropDist, cultivateDist, upgradeSupplyChain: upgradeSupplyChainAction, purchaseUpgrade: purchaseUpgradeAction, signArtist, endArtist, signPartner, signGrading, dropGrading, cultivateGrading, runBreak: runBreakAction, togglePurchaseLimits, togglePhantomStock, toggleOddsPublished, launchMerch, refreshMerch, retireMerch, pitchMedia, setGoodwill, setGrassroots, fundGrant: fundGrantAction, retire, saveStandard, deleteStandard, booting, saveError, exportRun, importRun }
 }
