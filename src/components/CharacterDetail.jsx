@@ -160,6 +160,29 @@ export default function CharacterDetail({ character, state, onClose, onUpdate })
           <p className="field__note">{archetype.blurb}</p>
           <p className="field__note">{TRAJ_BLURB[character.trajectory]}</p>
 
+          {/* WHO THIS IS. A form is one way a cast member was printed, and this
+              says which one. It is the control that had no home before: with
+              membership derived from lineage links, the only way to say "this
+              form is Aryla" was to invent a same-being link and have her base
+              form read as a PROMOTION of a card that never existed. */}
+          {onUpdate && (
+            <label className="field field--full">
+              <span>Who is this?</span>
+              <select
+                value={character.personId ?? ''}
+                onChange={(e) => onUpdate(character.id, { personId: e.target.value || null })}
+              >
+                {(state.people ?? []).map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+              <span className="field__note">
+                The cast member this form is a printing of. Moving it moves its
+                fame, its share of the fandom and its printings with it.
+              </span>
+            </label>
+          )}
+
           {onUpdate && !editing && (
             <button className="btn btn--ghost" onClick={() => setEditing(true)}>✎ Edit identity</button>
           )}

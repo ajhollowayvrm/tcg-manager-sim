@@ -190,8 +190,42 @@ debut. See "Lineage kinds" under The cast.
 
 ## The cast
 
-Characters are the player's own IP: invented in the set builder, the Cards panel
-or the Cast panel, and printed again and again.
+Characters are the player's own IP, authored in the Cast panel and printed again
+and again.
+
+### A cast member exists on her own
+
+Aryla is a **cast member**. She owns no card and no form: she is authored in
+Studio › Cast, she simply exists, and forms of her are printed afterwards — from
+her own sheet, from Studio › Lineages, or on a card as it is designed.
+
+This used to be impossible, and the shape it forced is worth recording because
+it looked like a labelling bug and was not. `state.people` was *derived* from
+the forms: the backfill looped over `state.characters` and pushed a person only
+for a form it found, so **a cast member with no form was deleted on the next
+dispatch**. The Cast panel therefore minted a *form* and guessed her name from
+the comma in a card title, and the only durable way to say "this next form is
+also Aryla" was a same-being lineage link — the nearest kind being `promotion`.
+So a base form had to be filed as a promotion of a bare "Aryla" that was never a
+card, and that phantom form then took two thirds of the fandom's favour and
+taxed the one real card by 14% through `favorMultiplier`.
+
+People are **authored and persisted** now, and `derivePeople` is a reconciler
+rather than a derivation. Lineage means only what it says: one form growing into
+another.
+
+She carries two things her forms inherit as starting values and can then
+diverge from:
+
+- a **default archetype** — nothing in the sim reads a person's archetype; it is
+  the seed a new form of her is created with, and that form still locks its own
+  on debut;
+- a standing **art brief** — how she should always be drawn, which also prefills
+  a card's brief when she leads it and the card has none of its own.
+
+A form of her with no lineage debuts off her **recognition** at 0.35 of it — the
+lowest `fameInherit` in the lineage table — so printing her in a new shape is
+never a better deal than telling a story about how she got there.
 
 ### A card names a cast, not a character
 
@@ -242,6 +276,15 @@ among them.
 `card.characterId` points at one; renaming that field would orphan every card in
 every save. `state.people` holds the **people** (`game/people.js`). Every
 user-facing string says "character" for a person and "form" for a record.
+
+**Both sides are authored.** A form's `personId` says which cast member it is a
+printing of, and it is written by the player, not inferred — `derivePeople`
+respects it and never overwrites it, and `serialize` keeps it. The same-being
+lineage walk survives only as the fallback for a form that has none, which is
+every form in a save written before this; that walk stamps a `personId` which is
+then persisted, so such a save upgrades itself once and the structure stands
+still afterwards. `rootFormId` and `descendedFromIds` are still derived, and
+`rootFormId` is **null** for a cast member with nothing printed yet.
 
 A person owns four things no single form can:
 
@@ -461,10 +504,13 @@ organised around the studio's relationships, each with sub-tabs:
 
 Studio › **Cards** is the card library — designs owned by no set (see "The card
 library"). Studio › **Cast** lists **characters**, not printings — one row per person, with
-their recognition and the form they are best known as; opening one shows the
-throughline, the recognition history, the fandom's split across the forms, and
-the tree, and each form drills through to its own sheet. Studio › **Lineages**
-draws the same tree grouped by character.
+their recognition and the form they are best known as, including one with nothing
+printed yet ("no forms yet"); it is also where a cast member is authored. Opening
+one shows the throughline, the recognition history, the fandom's split across the
+forms, and the tree; each form drills through to its own sheet, which is where you
+say which cast member it is a printing of. Studio › **Lineages** draws the same
+tree grouped by character, and adds a form either as a **base form** — no lineage,
+simply another way she appears — or as one of the eight lineage kinds.
 | Business | Distribution, Grading, Illustrators, Partners, Ventures |
 | Community | Pulse, Voices, Programmes, Grassroots, News |
 | Stats | Money, Trends, Market, Cards, Scalp Watch |
@@ -548,7 +594,10 @@ GameState {
                   promotedFromId, lineageKindId, lineageParentIds, retiredWeek,
                   personId, formName, demeanorIds, carriesName, lastPrintedWeek } ],
   people: [ { id, name, pronouns, throughline, coreTraits, coreDemeanor,     // CHARACTERS
-              rootFormId, descendedFromIds, recognition, recognitionHistory,
+              archetypeId, artBrief,            // seeds for her forms; authored
+              rootFormId,                       // her base form, or null — she
+              descendedFromIds,                 //   may have no forms at all
+              recognition, recognitionHistory,
               favor: { [formId]: 0..1 }, saturation, beats } ],
   illustrationSets: [ { id, kindId, name, plannedSize, status, cohesion,
                        members: [ { cardId, setId, week, artistId,

@@ -271,6 +271,12 @@ export function createSignatureCard(n, rarityId = 'rare') {
     // both the art commission cost and the fame bonus the card gets.
     characterId: null,
     newCharacterName: '',
+    // Which CAST MEMBER a brand-new form belongs to (people.js). Set when the
+    // card debuts a new form of somebody already on the roster — Aryla in a
+    // shape she has not been printed in before. Null for a brand-new character,
+    // whose person is minted from the card face by derivePeople exactly as it
+    // always was.
+    newCharacterPersonId: null,
     newCharacterArchetype: 'unaligned',
     newCharacterSpecies: '',
     newCharacterHook: '',
@@ -1053,6 +1059,13 @@ export function releaseSet(state, draft) {
       archetypeId: sig.newCharacterArchetype,
       species: sig.newCharacterSpecies,
       hook: sig.newCharacterHook,
+      // The cast member this form belongs to, authored rather than inferred.
+      // Only set when the card debuts a NEW FORM of somebody already on the
+      // roster; a brand-new character leaves it null and derivePeople mints her
+      // person from the card face, which is what it has always done.
+      personId: (state.people ?? []).some((p) => p.id === sig.newCharacterPersonId)
+        ? sig.newCharacterPersonId
+        : null,
       // The form's own half: what this appearance of the character is called on
       // the roster, how it carries itself, and whether the card face says the
       // character's name at all. See people.js.

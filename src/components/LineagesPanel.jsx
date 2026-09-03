@@ -70,7 +70,7 @@ export default function LineagesPanel({ state, onAddCharacter }) {
       </Section>
 
       {onAddCharacter && all.length > 0 && (
-        <Section id="studio.lineages.link" title="Link a new form" level={2}>
+        <Section id="studio.lineages.link" title="Add a form" level={2}>
           <LinkForm all={all} people={people} onAdd={onAddCharacter} />
         </Section>
       )}
@@ -108,8 +108,16 @@ export default function LineagesPanel({ state, onAddCharacter }) {
 // The link form: kind, parent(s), then the same identity fields the Cast
 // panel's form takes. The archetype picker is filtered by the kind's rule so
 // the player never picks one the reducer would refuse.
+// The sentinel for "no lineage at all". Not a member of LINEAGE_KINDS, because
+// it is the absence of one — content/lineages.js describes eight ways one form
+// GROWS OUT OF another, and a base form does not.
+const BASE_FORM = 'base'
+
 function LinkForm({ all, people, onAdd }) {
-  const [kindId, setKindId] = useState('promotion')
+  // Defaults to the base form: printing a cast member in a new shape is the
+  // ordinary act, and a lineage is the special one. It used to default to
+  // 'promotion', which is how a base form came to be filed as one.
+  const [kindId, setKindId] = useState(BASE_FORM)
   const [parentId, setParentId] = useState('')
   const [secondId, setSecondId] = useState('')
   const [name, setName] = useState('')
@@ -122,7 +130,14 @@ function LinkForm({ all, people, onAdd }) {
   const [formName, setFormName] = useState('')
   const [carriesName, setCarriesName] = useState(true)
 
-  const kind = getLineageKind(kindId)
+  // The base-form option: she simply exists in this form, and there is no
+  // lineage at all. It sits first in the Kind list because it is the ORDINARY
+  // case — a cast member's first printing is not a promotion of anything. Its
+  // absence is what forced "Aryla, Destined Trainee" to be filed as a PROMOTION
+  // of a bare "Aryla" that was never a card. See people.js's derivePeople.
+  const isBase = kindId === BASE_FORM
+  const [personId, setPersonId] = useState('')
+  const kind = isBase ? null : getLineageKind(kindId)
   // EVERY form is eligible as a parent, including a retired one. Retirement
   // closes a path, not a character: a fall retires Royal Soldier, and Royal
   // Commander still has to be able to grow out of him afterwards or a story that
@@ -131,7 +146,7 @@ function LinkForm({ all, people, onAdd }) {
   const eligible = all
   const parent = all.find((c) => c.id === parentId)
   const parentIds = kind?.parents === 2 ? [parentId, secondId] : [parentId]
-  const error = validateLineage(all, { kindId, parentIds, archetypeId })
+  const error = isBase ? null : validateLineage(all, { kindId, parentIds, archetypeId })
   const archetypeFilter = parent ? (id) => archetypeAllowed(kind, parent.archetypeId, id) : null
 
   const pickParent = (id) => {
@@ -158,9 +173,28 @@ function LinkForm({ all, people, onAdd }) {
   const parentPerson = kind?.sameBeing && parent
     ? (people ?? []).find((p) => p.id === parent.personId)
     : null
+  const basePerson = isBase ? (people ?? []).find((p) => p.id === personId) : null
 
   const submit = (e) => {
     e.preventDefault()
+    if (isBase) {
+      // A form that is simply HERS: her personId is authored onto it and NO
+      // lineage kind is set, so nothing labels it a promotion.
+      if (!basePerson || !formName.trim()) return
+      onAdd(`${basePerson.name}, ${formName.trim()}`, {
+        personId: basePerson.id,
+        formName: formName.trim(),
+        archetypeId,
+        traits,
+        hook: hook || basePerson.throughline || '',
+        pronouns: pronouns || basePerson.pronouns || '',
+        demeanorIds: demeanorIds.length ? demeanorIds : (basePerson.coreDemeanor ?? []),
+        carriesName,
+      })
+      setName(''); setTraits([]); setHook(''); setPronouns(''); setSpecies('')
+      setParentId(''); setSecondId(''); setDemeanorIds([]); setFormName(''); setCarriesName(true)
+      return
+    }
     if (!name.trim() || error) return
     onAdd(name, { archetypeId, traits, hook, pronouns, species, demeanorIds, formName, carriesName }, { kindId, parentIds })
     setName(''); setTraits([]); setHook(''); setPronouns(''); setSpecies('')
@@ -172,24 +206,46 @@ function LinkForm({ all, people, onAdd }) {
       <label className="field field--full">
         <span>Kind</span>
         <select value={kindId} onChange={(e) => { setKindId(e.target.value); setSecondId('') }}>
+          <option value={BASE_FORM}>Base form — she simply exists in this form</option>
           {LINEAGE_KINDS.map((k) => (
             <option key={k.id} value={k.id}>{k.name} — {k.short}</option>
           ))}
         </select>
+        {isBase && (
+          <span className="field__note">
+            No lineage. A cast member can be printed in any number of forms
+            without one growing out of another — this is simply another way she
+            appears, and it carries no promotion or evolution badge.
+          </span>
+        )}
         {kind && <span className="field__note">{kind.blurb}</span>}
       </label>
 
-      <label className="field field--full">
-        <span>{kind?.parents === 2 ? 'First parent' : 'Grows out of'}</span>
-        <select value={parentId} onChange={(e) => pickParent(e.target.value)}>
-          <option value="">— pick a character —</option>
-          {eligible.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name} ({getArchetype(c.archetypeId).name}, fame {Math.round(c.fame)}{c.retiredWeek ? ', retired' : ''})
-            </option>
-          ))}
-        </select>
-      </label>
+      {isBase ? (
+        <label className="field field--full">
+          <span>Belongs to</span>
+          <select value={personId} onChange={(e) => setPersonId(e.target.value)}>
+            <option value="">— pick a cast member —</option>
+            {(people ?? []).map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name} (known at {Math.round(p.recognition ?? 0)})
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : (
+        <label className="field field--full">
+          <span>{kind?.parents === 2 ? 'First parent' : 'Grows out of'}</span>
+          <select value={parentId} onChange={(e) => pickParent(e.target.value)}>
+            <option value="">— pick a character —</option>
+            {eligible.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name} ({getArchetype(c.archetypeId).name}, fame {Math.round(c.fame)}{c.retiredWeek ? ', retired' : ''})
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       {kind?.parents === 2 && (
         <label className="field field--full">
@@ -205,12 +261,20 @@ function LinkForm({ all, people, onAdd }) {
         </label>
       )}
 
-      <input
-        className="roster__addinput"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        placeholder="New character name"
-      />
+      {isBase ? (
+        basePerson && formName.trim() && (
+          <p className="field__note">
+            The card face reads <strong>{basePerson.name}, {formName.trim()}</strong>.
+          </p>
+        )
+      ) : (
+        <input
+          className="roster__addinput"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="New character name"
+        />
+      )}
 
       <ArchetypeSelect value={archetypeId} onChange={setArchetypeId} filter={archetypeFilter} />
       <TraitPicker traits={traits} onToggle={toggleTrait} archetypeId={archetypeId} />
@@ -226,8 +290,8 @@ function LinkForm({ all, people, onAdd }) {
 
       <div className="sigcard__row sigcard__controls">
         <label className="field">
-          <span>Form name <span className="muted">(optional)</span></span>
-          <input value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="Royal Commander" />
+          <span>Form name <span className="muted">{isBase ? '(what this version of her is called)' : '(optional)'}</span></span>
+          <input value={formName} onChange={(e) => setFormName(e.target.value)} placeholder={isBase ? 'Destined Trainee' : 'Royal Commander'} />
         </label>
         <label className="check">
           <input type="checkbox" checked={carriesName} onChange={(e) => setCarriesName(e.target.checked)} />
@@ -258,6 +322,14 @@ function LinkForm({ all, people, onAdd }) {
       </div>
 
       {error && parentId && <p className="field__note is-warn">{error}</p>}
+      {isBase && basePerson && (
+        <p className="field__note">
+          Debuts with about {Math.round(12 + (basePerson.recognition ?? 0) * 0.35)} fame —
+          off what the room already knows of {basePerson.name}, not from nothing.
+          A lineage would carry more, because a story about how she got there is
+          worth more than another printing.
+        </p>
+      )}
       {!error && parent && kind && (
         <p className="field__note">
           Debuts with about {Math.round(12 + parentIds.reduce((s, id) => s + (all.find((c) => c.id === id)?.fame ?? 0) * kind.fameInherit, 0))} fame.
@@ -265,7 +337,13 @@ function LinkForm({ all, people, onAdd }) {
         </p>
       )}
 
-      <button className="btn btn--ghost" type="submit" disabled={!name.trim() || !!error}>+ Link character</button>
+      <button
+        className="btn btn--ghost"
+        type="submit"
+        disabled={isBase ? (!basePerson || !formName.trim()) : (!name.trim() || !!error)}
+      >
+        {isBase ? '+ Add form' : '+ Link character'}
+      </button>
     </form>
   )
 }
