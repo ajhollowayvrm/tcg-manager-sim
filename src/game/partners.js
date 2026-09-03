@@ -18,7 +18,7 @@ import { getBrandPartner } from './content/partners.js'
 import { makePromoCard } from './promos.js'
 import { famePopBonus, recordAppearance } from './characters.js'
 import { distributeNewPlayers } from './segments.js'
-import { personOfForm } from './people.js'
+import { personOfForm, recordPersonPrinting } from './people.js'
 import { castStanding } from './cast.js'
 import { clamp } from './simulation.js'
 
@@ -63,11 +63,19 @@ export function signPartnerPromo(state, partnerId, { characterId = null, artistI
   if (character) card.name = `${character.name} (${partner.promoLabel} Promo)`
 
   let characters = state.characters ?? []
+  let people = state.people ?? []
   if (character) {
     characters = recordAppearance(characters, character.id, {
       cardId: card.id, setId: null, treatment: 'standard', popFactors: card.popFactors,
       week: state.week, setName: `the ${partner.name} tie-in`,
     })
+    // AND charge the saturation. A tie-in is a printing: it bumps the form's
+    // fame and collects the character's standing, so the room has to notice it
+    // too. This was the last path that took the reward without the cost — sign a
+    // partner every week and your icon was printed forever with saturation
+    // decaying 1/wk and never once charged. Same hole that was closed for the
+    // collector-box exclusive.
+    if (character.personId) people = recordPersonPrinting(people, character.personId, { week: state.week })
   }
 
   const segments = { ...state.segments }
@@ -95,6 +103,7 @@ export function signPartnerPromo(state, partnerId, { characterId = null, artistI
   return {
     cards: [...state.cards, card],
     characters,
+    people,
     partnerDeals: [...(state.partnerDeals ?? []), deal],
     segments,
     playerBase,

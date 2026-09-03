@@ -329,7 +329,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
   // Resolve artists to their live drifted record so the cost summary and editor
   // reflect current prices, not the static seed.
   const artistOf = (id) => artists?.find((a) => a.id === id) ?? null
-  const cost = setCost(draft, (id) => artistOf(id) ?? undefined, { illustrationSets, upgrades })
+  const cost = setCost(draft, (id) => artistOf(id) ?? undefined, { illustrationSets, upgrades, cardDesigns })
   const errors = validateDraft(draft, { blocks, isFirstSet, franchise, setsShipped: sets.length, perks, illustrationSets })
   // Cash can go negative (a loan), so affordability NO LONGER blocks release —
   // it only flags that you'll dip into debt. The only release gate is validity.
@@ -1162,6 +1162,7 @@ export default function SetBuilder({ setNumber, cash, artists, characters = [], 
             {cost.artDirection > 0 && <CostLine label="Art direction" value={cost.artDirection} />}
             {cost.serialization > 0 && <CostLine label="Serialization" value={cost.serialization} />}
             {cost.exclusivePromo > 0 && <CostLine label="Exclusive promo" value={cost.exclusivePromo} />}
+            {cost.spcDesignCost > 0 && <CostLine label="Box exclusive — art & numbering" value={cost.spcDesignCost} />}
             {cost.prerelease > 0 && <CostLine label="Prerelease" value={cost.prerelease} />}
             {cost.releaseEvent > 0 && <CostLine label="Release event" value={cost.releaseEvent} />}
             {cost.spotlight > 0 && <CostLine label="Preview campaign" value={cost.spotlight} />}

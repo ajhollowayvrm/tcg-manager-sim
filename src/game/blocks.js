@@ -234,7 +234,11 @@ export function mintTreatmentCards(state, { block, setId, tier, themeId, intensi
       number: `${label} ${i + 1}`,
       secret: false,
       signature: false,
-      treatment: true, // THE flag: a block-gimmick chase card
+      // THE flag: a block-gimmick chase card. BOOLEAN true, deliberately — the
+      // same field name on a signature card holds a printing-tier STRING
+      // (characters.js's TREATMENTS), and market.js's fairValue tests for this
+      // exact boolean so the two cannot be confused again.
+      treatment: true,
       treatmentLabel: label,
       blockId: block.id,
       artistId: null,
@@ -285,7 +289,7 @@ export function mintAnniversaryCards(state, { setId, themeId, sheet }) {
       number: `Anniversary ${i + 1}`,
       secret: false,
       signature: false,
-      treatment: true, // reads as a grail on the market same as a block treatment card
+      treatment: true, // boolean, as above — reads as a grail like a block treatment card
       treatmentLabel: 'Anniversary',
       blockId: null,
       artistId: null,

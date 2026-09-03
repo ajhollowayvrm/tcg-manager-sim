@@ -63,7 +63,13 @@ export function makePromoCard(state, { label, prestige, themeId, nonce, characte
     // the field every older reader knows) consistent with the list.
     characterId: cast.characterId,
     castIds: cast.castIds,
-    treatment: treatment ?? (cast.castIds.length ? 'standard' : undefined),
+    // Only a promo that actually FRONTS somebody carries a printing tier. A
+    // cast-less design was defaulting to 'debut', which is a truthy string, and
+    // an auto-minted promo correctly carries undefined — so the two priced
+    // differently for no reason anybody chose. (fairValue now tests the boolean,
+    // so this no longer moves price on its own; it still keeps the record honest
+    // for every reader that asks whether this printing has a tier at all.)
+    treatment: cast.castIds.length ? (treatment ?? 'standard') : undefined,
     flavorText: flavorText || undefined,
     artNotes: artNotes || undefined,
     serialCap: serialCap ?? null,
@@ -74,6 +80,10 @@ export function makePromoCard(state, { label, prestige, themeId, nonce, characte
     hype: hype / 100,
     momentum: 0,
     promoSupply: promoSupply(prestige),
+    // When this was pressed. A promo has no set to date it, and two readers need
+    // one: persistence.js's price-history age heuristic and market.js's legacy
+    // lift. Both fell back to "infinitely old" without it.
+    mintedWeek: state.week ?? 0,
     themeId: theme?.id ?? null,
   }
 }
