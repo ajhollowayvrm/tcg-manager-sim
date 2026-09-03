@@ -15,6 +15,10 @@
 //   2. Printed on its own, as a promo (promos.js) — no set, tiny supply.
 //   3. Attached to a product SKU, shipping in the box as its exclusive.
 //
+// AND IT GOES THE OTHER WAY. A card authored inside a set — the builder's own
+// `+ Add card` — is filed back into the library when that set ships, so the two
+// screens hold one idea of what a card is. See designFromReleasedCard.
+//
 // A PULL COPIES; IT NEVER LINKS. Deliberately the same doctrine studio
 // standards already follow (see docs/BRIEF.md): editing a library design must
 // not be able to reach a card already on shelves. `printings` records where a
@@ -145,6 +149,47 @@ export function designToSignatureCard(design, n, rarityId = 'rare') {
     // before release — generateCards never reads it.
     fromDesignId: design.id,
   }
+}
+
+// The other direction: cut a design OUT of a card a set just shipped.
+//
+// A card could be authored in two places and only one of them kept it. The set
+// builder's `+ Add card` and `✨ Add random` both author a real card, and at
+// release the draft is thrown away — so the card lived on the market forever
+// and the studio that designed it held no record of it. Reprinting it in a
+// later set, putting it in a box or building a character run around it meant
+// retyping it from the card browser. The header of this file says a studio
+// designs a card and then decides where it goes; that was only true one way
+// round.
+//
+// STILL A COPY, in the same doctrine as designToSignatureCard below it. The
+// design is cut from the card at the moment it shipped and carries no id back
+// to it, so editing the library afterwards cannot reach the card on shelves.
+// The printing is filed straight away, because by definition this design has
+// already printed once.
+//
+// `sig` must be a RESOLVED signature card — the release mints any brand-new
+// character a card requested BEFORE generating cards (see sets.js's
+// resolvedSigs), so `characterId` and `castIds` are real roster ids by then and
+// the `newCharacter*` / `newForm*` half is spent. None of it is copied.
+//
+// No rarity, for the reason at the top of this file: the set's sheet owns it.
+export function designFromReleasedCard(sig, cardId, setId, week = 0) {
+  return withCast({
+    id: designId(),
+    name: sig.name?.trim() || 'Untitled card',
+    artistId: sig.artistId ?? null,
+    appeal: clamp(Math.round(Number(sig.appeal ?? sig.power) || 50), 0, 100),
+    finish: sig.finish ?? 'standard',
+    flavorText: sig.flavorText ?? '',
+    artNotes: sig.artNotes ?? '',
+    characterId: sig.characterId ?? null,
+    castIds: [...castIdsOf(sig)],
+    treatment: sig.treatment ?? 'debut',
+    serialCap: sig.serialCap ?? null,
+    createdWeek: week,
+    printings: [{ cardId, setId, week, how: 'set' }],
+  })
 }
 
 // What a standalone printing costs: the artist's commission (the same bill a

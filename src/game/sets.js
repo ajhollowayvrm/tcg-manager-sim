@@ -24,7 +24,7 @@ import { getGimmick, NO_GIMMICK } from './content/gimmicks.js'
 import { createCharacter, getTreatment, recordAppearance, createLineageCharacter } from './characters.js'
 import { derivePeople, recordPersonPrinting, continuityVerdict } from './people.js'
 import { castIdsOf, castMembers, castPopBonus, withCast } from './cast.js'
-import { recordPrinting, standaloneCost, STANDALONE_PRINT_COST } from './carddesigns.js'
+import { recordPrinting, standaloneCost, STANDALONE_PRINT_COST, designFromReleasedCard } from './carddesigns.js'
 import { archetypeMatchesTheme } from './content/archetypes.js'
 import {
   getIllustrationKind,
@@ -1588,19 +1588,43 @@ export function releaseSet(state, draft) {
     ? { tasteKey: 'fairness', floor: 0.4, amount: 3, ambientAmount: 1 }
     : null
 
-  // The card library's printing log (carddesigns.js). Display only — every
-  // placement above already COPIED the design, so nothing here feeds a card.
+  // The card library (carddesigns.js), in both directions — and neither of them
+  // feeds a card, because every placement above already COPIED.
+  //
+  //   · A card PULLED from the library gets a printing logged against the
+  //     design it came from. Display only.
+  //   · A card authored HERE, in the builder, is filed back INTO the library as
+  //     a new design with that printing already on it. Otherwise the card lived
+  //     on the market forever and the studio held no record of it — see
+  //     designFromReleasedCard.
+  //
+  // The two branches are exclusive: a pulled design must never also be filed,
+  // or every release would clone the library.
+  //
+  // Only the SIGNATURE cards. The body (`b1..bN`), the legacy secrets, the
+  // variants, the treatment chase and the reprints are all generated rather
+  // than authored, and a library of several hundred procedural commons is noise
+  // in the one place the player goes to find a card he wrote.
+  //
+  // `sig` is the RESOLVED card by now (see resolvedSigs above), so a design cut
+  // from it carries real roster ids and not a pending `newCharacterName`.
   let cardDesigns = state.cardDesigns ?? []
   // Bounded by what generateCards actually mints, like every other index-based
   // reader here — a 31st signature card would otherwise file a printing against
   // a `${setId}_c31` that does not exist. validateDraft refuses that today, but
   // RELEASE_SET does not re-validate, so a stale draft or the harness reaches it.
+  const filedDesigns = []
   ;(draft.signatureCards ?? []).slice(0, MAX_SIGNATURE_CARDS).forEach((sig, i) => {
-    if (!sig.fromDesignId) return
-    cardDesigns = recordPrinting(cardDesigns, sig.fromDesignId, {
-      cardId: `${setId}_c${i + 1}`, setId, week: state.week, how: 'set',
-    })
+    const cardId = `${setId}_c${i + 1}`
+    if (sig.fromDesignId) {
+      cardDesigns = recordPrinting(cardDesigns, sig.fromDesignId, {
+        cardId, setId, week: state.week, how: 'set',
+      })
+    } else {
+      filedDesigns.push(designFromReleasedCard(sig, cardId, setId, state.week))
+    }
   })
+  cardDesigns = [...cardDesigns, ...filedDesigns]
   if (spcDesign && promoCards[0]) {
     cardDesigns = recordPrinting(cardDesigns, spcDesign.id, {
       cardId: promoCards[0].id, setId, week: state.week, how: 'product',
@@ -1609,7 +1633,7 @@ export function releaseSet(state, draft) {
 
   return {
     set,
-    cardDesigns, // state.cardDesigns after logging where each pulled design printed
+    cardDesigns, // state.cardDesigns: pulled designs' printings logged, plus this release's own cards filed in
     existingSets, // state.sets BEFORE appending this release (siblings may be buzz-bumped)
     // The new set's generated cards PLUS treatment chase, reprint instances, SPC promo.
     cards: [...hypedNewCards, ...reprintResult.reprintCards, ...promoCards],

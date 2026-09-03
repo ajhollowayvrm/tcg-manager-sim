@@ -138,6 +138,15 @@ reach a card already on shelves:
 - **printed on its own**, from the Cards panel: a promo, no set, tiny supply,
   costing the artist's commission plus a flat print bill.
 
+It also goes the other way. A signature card authored inside the set builder
+used to die with the draft, so a card could be published and leave the studio no
+record of it. On release, every signature card that did not come from the library
+is **filed into it** as a new design, with that printing already logged. It is a
+copy like every other crossing: the design is cut from the card as it shipped,
+and editing it afterwards cannot reach the card on shelves. Only the signature
+cards — the body, the secrets, the variants, the treatment chase and the
+reprints are generated rather than authored.
+
 Each design records where it printed. That log is the only tie back.
 
 ### Illustration sets

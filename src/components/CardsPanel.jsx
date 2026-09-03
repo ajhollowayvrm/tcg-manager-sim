@@ -11,6 +11,9 @@
 //   · shipped in a collector box as that SKU's exclusive
 //   · printed on its own, here, as a promo
 //
+// The library also fills itself: a card designed inside a set is filed here
+// when that set ships, with its printing already logged.
+//
 // A pull COPIES. Editing a design after it printed cannot reach the card, which
 // is the same doctrine studio standards follow — so the printing log on each row
 // is a record of where it went, not a live link to anything.
@@ -64,7 +67,8 @@ export default function CardsPanel({ state, onAddDesign, onUpdateDesign, onRemov
       <p className="panel__lede">
         Cards the studio has designed, owned by no set. Pull one into a release
         from Studio&nbsp;›&nbsp;Design, ship one in a collector box, or print one on
-        its own as a promo. Name characters on a card and it carries their
+        its own as a promo. Every card you design inside a set lands here too,
+        once that set ships. Name characters on a card and it carries their
         standing wherever it ends up — and two cards sharing a character are two
         cards collectors chase together.
       </p>
@@ -86,7 +90,8 @@ export default function CardsPanel({ state, onAddDesign, onUpdateDesign, onRemov
         <p className="panel__empty">
           No cards designed yet. A card designed here belongs to no set — it waits
           on the shelf until you pull it into a release, put it in a collector
-          box, or print it on its own. Start one and give it a cast.
+          box, or print it on its own. Start one and give it a cast. Cards you
+          design inside a set arrive here on their own when the set ships.
         </p>
       )}
 
