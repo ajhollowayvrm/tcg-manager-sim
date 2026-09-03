@@ -377,9 +377,15 @@ const GRIEVANCE_LINES = {
 // Every line receives { name, set, trait }. `trait` is always a real word: a
 // character's own trait when they have one, and the voice's house adjective when
 // they do not, so no line ever has to guard against a blank.
+// Controversy points a card sheds each week. Sized against what ADDS heat — a
+// `pull` take is 14 and a `warn` is 5 — so an actively argued-about card still
+// saturates within ten weeks, while a card nobody mentions is clean after 67.
+const CONTROVERSY_COOLING = 1.5
+
 const VOICE_FALLBACK_TRAIT = {
   warm: 'good-natured', brash: 'cocky', menace: 'ruthless',
   cold: 'clinical', reverent: 'ancient', wry: 'slippery', plain: 'quiet',
+  sly: 'light-fingered', folk: 'unhurried',
 }
 
 const CHARACTER_LINES = {
@@ -407,6 +413,9 @@ const CHARACTER_LINES = {
       ({ name, set }) => `${name} runs ${set}. Everyone else is playing for second.`,
       ({ name, trait }) => `Say what you like about ${name} being ${trait} — the card is a monster.`,
     ],
+    love: [
+      ({ name }) => `I have talked trash about ${name} for years. I own every printing. Both things are true.`,
+    ],
     pan: [
       ({ name }) => `${name} has been coasting on one good printing for years.`,
       ({ name, trait }) => `${name} is ${trait} and this card is not good enough to justify it.`,
@@ -420,6 +429,9 @@ const CHARACTER_LINES = {
       ({ name, set }) => `${name} is the only interesting thing in ${set} and it isn't close.`,
       ({ name, trait }) => `${name} is still the most ${trait} thing in this game. Long may it continue.`,
       ({ name }) => `Every time they print ${name} the whole set gets meaner. Good.`,
+    ],
+    love: [
+      ({ name }) => `Nobody roots for ${name}. Everybody collects ${name}. Work that one out.`,
     ],
     pan: [
       ({ name }) => `${name} works because they're rare. This is the fourth one.`,
@@ -436,6 +448,9 @@ const CHARACTER_LINES = {
     hype: [
       ({ name }) => `${name} is the most efficiently designed card in the set. I mean that as praise.`,
       ({ name, trait }) => `${name} remains ${trait}. The card understands this.`,
+    ],
+    love: [
+      ({ name, trait }) => `${name} is ${trait} and I have never once been moved by them. I still own four.`,
     ],
     pan: [
       ({ name }) => `${name} has no story and this printing does not give them one.`,
@@ -464,11 +479,56 @@ const CHARACTER_LINES = {
       ({ name, trait }) => `${name} is ${trait} and somehow the most valuable card in the set. Love that for them.`,
       ({ name, set }) => `${name} stole ${set} out from under the actual chase card.`,
     ],
+    love: [
+      ({ name }) => `${name} is the one I would not sell, and I could not tell you why.`,
+    ],
     pan: [
       ({ name }) => `${name} is a running joke at this point, and not the funny kind.`,
     ],
     neutral: [
       ({ name }) => `${name} again. They get around.`,
+    ],
+  },
+  // Rogues. The room enjoys them and does not trust them, which is the whole
+  // register: admiration delivered as an accusation.
+  sly: {
+    hype: [
+      ({ name, set }) => `${name} is the best card in ${set} and I resent how pleased they look about it.`,
+      ({ name, trait }) => `${name} is ${trait} and getting away with it again.`,
+      ({ name }) => `Whatever ${name} is charging, it's working.`,
+    ],
+    love: [
+      ({ name }) => `I would not leave ${name} alone with my binder. I would also not sell them.`,
+      ({ name, trait }) => `Every collection needs someone ${trait} in it. Mine has ${name}.`,
+    ],
+    pan: [
+      ({ name }) => `${name} has run the same trick four sets running and we all clapped four times.`,
+      ({ name, set }) => `${name} did nothing in ${set} except turn up and take the slot.`,
+    ],
+    warn: [
+      ({ name }) => `Whoever is bidding ${name} up knows something, and it is not about the card.`,
+    ],
+    neutral: [
+      ({ name, set }) => `${name} is in ${set}, which is either a coincidence or it isn't.`,
+    ],
+  },
+  // Folk. Unhurried, specific, and interested in the making of the thing rather
+  // than the chase — the register the game had no way to speak in before.
+  folk: {
+    hype: [
+      ({ name, set }) => `${name} is the quietest card in ${set} and the one I keep coming back to.`,
+      ({ name, trait }) => `Somebody finally drew ${name} as ${trait} as they actually are.`,
+    ],
+    love: [
+      ({ name }) => `I have had a ${name} card in the front of my binder for years. It is not worth anything. It stays.`,
+      ({ name }) => `${name} will never be the chase. ${name} is why I still open packs.`,
+    ],
+    pan: [
+      ({ name }) => `${name} deserved a real illustration and got a placeholder with a name on it.`,
+      ({ name, set }) => `Nothing in ${set} for ${name} to do. They just stand there.`,
+    ],
+    neutral: [
+      ({ name, set }) => `${name} turns up in ${set}, does the job, goes home.`,
     ],
   },
   // The UNALIGNED voice, and the one that matters most for reach: every
@@ -1135,14 +1195,31 @@ function castChatter(state) {
 export function applyPersonaEffects(next, result) {
   next.feedbackFeed = result.feedItems
 
-  // Card hype/controversy effects.
+  // Card hype/controversy effects, and the weekly COOLING of controversy.
+  //
+  // Heat used to be a one-way ratchet: a `pull` take added 14, a `warn` added 5,
+  // an event added 12-22, and NOTHING anywhere ever reduced it. Over a long run
+  // every card anybody talked about crept to the 100 clamp and stayed there —
+  // which quietly turned characters.js's `controversyFuel` from the episodic
+  // scandal dial content/archetypes.js describes into a permanent tax on the
+  // archetypes with a high fuel, and a permanent subsidy for the villain.
+  //
+  // So it cools. A card at the 100 clamp that nobody mentions again is clean
+  // after 67 quiet weeks, while one the room keeps relitigating still saturates
+  // in ten — the weekly additions are several times this. A card warned about
+  // now and then settles in the low single digits instead of creeping to the
+  // ceiling, which is the case that was really broken. Applied to EVERY card,
+  // not just the
+  // ones with an effect this week — being forgotten is what happens when nobody
+  // mentions you.
   next.cards = next.cards.map((card) => {
     const e = result.cardEffects.get(card.id)
-    if (!e) return card
+    const cooled = Math.max(0, (card.controversy ?? 0) - CONTROVERSY_COOLING)
+    if (!e) return cooled === (card.controversy ?? 0) ? card : { ...card, controversy: cooled }
     return {
       ...card,
       hype: clamp((card.hype ?? 0) + e.hype, 0, 3),
-      controversy: clamp((card.controversy ?? 0) + e.controversy, 0, 100),
+      controversy: clamp(cooled + e.controversy, 0, 100),
     }
   })
 

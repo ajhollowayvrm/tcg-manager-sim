@@ -9,7 +9,7 @@ import { resolveMarket } from './market.js'
 import { reactPersonas, applyPersonaEffects } from './personas.js'
 import { resolveRevenue } from './revenue.js'
 import { rollEvent, applyEventEffects } from './events.js'
-import { applySegmentDrift, distributeNewPlayers } from './segments.js'
+import { applySegmentDrift, distributeNewPlayers, effectiveLean } from './segments.js'
 import { clockDirective } from './clock.js'
 import { driftArtists, expireArtistContracts } from './artists.js'
 import { driftCharacters } from './characters.js'
@@ -288,7 +288,7 @@ export function advanceWeek(state) {
       const segments = { ...next.segments }
       const feedEntries = []
       for (const wave of due) {
-        distributeNewPlayers(segments, next.segmentLean, wave.amount)
+        distributeNewPlayers(segments, effectiveLean(next), wave.amount)
         // The preview-channel payoff: name whichever of the set's cards moved
         // the most during the lead-region window, off the same priceHistory
         // the ticker's sparkline already renders — no new tracking needed.

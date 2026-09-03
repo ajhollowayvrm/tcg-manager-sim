@@ -20,6 +20,7 @@ import { famePopBonus, recordAppearance } from './characters.js'
 import { distributeNewPlayers } from './segments.js'
 import { personOfForm, recordPersonPrinting } from './people.js'
 import { castStanding } from './cast.js'
+import { getArchetype } from './content/archetypes.js'
 import { clamp } from './simulation.js'
 
 // A tie-in audience is overwhelmingly casual — nobody buys a kids' meal for
@@ -40,6 +41,27 @@ export function partnerBlock(state, partnerId) {
   return null
 }
 
+// How far a perfect or terrible pairing can move a tie-in's pull.
+const PARTNER_FIT_STRENGTH = 0.4
+
+// How well a character suits a partner, 0.8 to 1.2.
+//
+// A partner's `prestige` runs 0.15 (fast food) to ~0.9 (film studio), and an
+// archetype's `segmentLean` runs -1 (pure casual) to +1 (pure collector). The
+// fit is simply how close those two agree once both are on the same scale, so a
+// mascot at a burger chain and a legendary at a premiere both read as right, and
+// swapping them costs about a fifth of the character's pull. Exactly 1 for a
+// neutral archetype and for `unaligned`, so nothing in an older save moves.
+export function partnerFit(partner, character) {
+  const lean = getArchetype(character?.archetypeId).segmentLean ?? 0
+  const wanted = ((partner?.prestige ?? 0.5) - 0.5) * 2 // -1 mass market .. +1 prestige
+  // A PRODUCT, not a distance: an archetype with no opinion (lean 0, which is
+  // `unaligned` and every pre-archetype character) multiplies by exactly 1 and
+  // is untouched. Agreement in sign rewards, disagreement penalises, and both
+  // scale with how opinionated the archetype actually is.
+  return clamp(1 + lean * wanted * PARTNER_FIT_STRENGTH, 0.8, 1.2)
+}
+
 // Returns the reducer patch or null.
 export function signPartnerPromo(state, partnerId, { characterId = null, artistId = null } = {}) {
   const partner = getBrandPartner(partnerId)
@@ -58,7 +80,14 @@ export function signPartnerPromo(state, partnerId, { characterId = null, artistI
     // Read through castStanding for the same reason every other printing does:
     // a fresh form of a household-name character fronts a tie-in on the
     // character's recognition, not on the form's own thin fame. See cast.js.
-    fameBonus: character ? famePopBonus(castStanding(character, personOfForm(state, character.id)), 'standard') : 0,
+    //
+    // Scaled by whether this character SUITS this partner. A burger chain wants
+    // the face off the box; a film studio wants something with weight. Fronting
+    // a tie-in used to read fame alone, so putting a legendary in a Happy Meal
+    // and a mascot on a prestige premiere were identical decisions.
+    fameBonus: character
+      ? famePopBonus(castStanding(character, personOfForm(state, character.id)), 'standard') * partnerFit(partner, character)
+      : 0,
   })
   if (character) card.name = `${character.name} (${partner.promoLabel} Promo)`
 
