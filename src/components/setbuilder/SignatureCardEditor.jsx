@@ -244,7 +244,14 @@ function CharacterPicker({ card, characters, people = [], set, theme }) {
     }
     set(next)
   }
-  const mode = card.characterId ? 'existing' : card.newCharacterName ? 'new' : 'none'
+  // Four shapes, and the third is the one that had no home before: a NEW FORM
+  // of a cast member who already exists. Without it, debuting Aryla in a shape
+  // she had not been printed in meant either picking one of her existing forms
+  // (wrong — this is a new one) or minting a "new character" who would then have
+  // to be stitched to her with a fake lineage link. See people.js.
+  const mode = card.characterId ? 'existing'
+    : card.newCharacterPersonId ? 'newform'
+      : card.newCharacterName ? 'new' : 'none'
   const selected = card.characterId ? characters.find((c) => c.id === card.characterId) : null
   // A character a lineage kind retired takes no new printings.
   // Supporting cast picked in CastPicker must not be offered as the lead here,
@@ -255,6 +262,9 @@ function CharacterPicker({ card, characters, people = [], set, theme }) {
   const lineageParentIds = [card.newCharacterPromotedFrom, card.newCharacterSecondParent].filter(Boolean)
   const lineageError = lineageKind
     ? validateLineage(characters, { kindId: lineageKind.id, parentIds: lineageParentIds, archetypeId: card.newCharacterArchetype })
+    : null
+  const newFormPerson = card.newCharacterPersonId
+    ? people.find((p) => p.id === card.newCharacterPersonId)
     : null
   const newArchetype = getArchetype(card.newCharacterArchetype)
   const newMatch = theme && archetypeMatchesTheme(newArchetype.id, theme.tags)
@@ -293,12 +303,25 @@ function CharacterPicker({ card, characters, people = [], set, theme }) {
       </span>
       <div className="toggle toggle--counter">
         <button className={'toggle__opt' + (mode === 'none' ? ' is-active' : '')}
-          onClick={() => setLead(null, { newCharacterName: '', newCharacterArchetype: 'unaligned', newCharacterSpecies: '', newCharacterHook: '', newCharacterPromotedFrom: null, newCharacterLineageKind: null, newCharacterSecondParent: null, newFormName: '', newFormDemeanor: [], newFormCarriesName: true, treatment: 'debut' })}>
+          onClick={() => setLead(null, { newCharacterName: '', newCharacterPersonId: null, newCharacterArchetype: 'unaligned', newCharacterSpecies: '', newCharacterHook: '', newCharacterPromotedFrom: null, newCharacterLineageKind: null, newCharacterSecondParent: null, newFormName: '', newFormDemeanor: [], newFormCarriesName: true, treatment: 'debut' })}>
           One-off
         </button>
+        <button className={'toggle__opt' + (mode === 'newform' ? ' is-active' : '')}
+          disabled={people.length === 0}
+          title={people.length === 0 ? 'No cast members yet — add one in Studio › Cast.' : undefined}
+          onClick={() => setLead(null, {
+            newCharacterPersonId: people[0]?.id ?? null,
+            newCharacterName: card.name || '',
+            newCharacterArchetype: people[0]?.archetypeId ?? 'unaligned',
+            newFormName: '', newFormDemeanor: people[0]?.coreDemeanor ?? [], newFormCarriesName: true,
+            newCharacterPromotedFrom: null, newCharacterLineageKind: null, newCharacterSecondParent: null,
+            treatment: 'debut',
+          })}>
+          New form
+        </button>
         <button className={'toggle__opt' + (mode === 'new' ? ' is-active' : '')}
-          onClick={() => setLead(null, { newCharacterName: card.name || '', newCharacterArchetype: card.newCharacterArchetype ?? 'unaligned', treatment: 'debut' })}>
-          New character
+          onClick={() => setLead(null, { newCharacterPersonId: null, newCharacterName: card.name || '', newCharacterArchetype: card.newCharacterArchetype ?? 'unaligned', treatment: 'debut' })}>
+          New cast
         </button>
         <button className={'toggle__opt' + (mode === 'existing' ? ' is-active' : '')}
           disabled={printable.length === 0}
@@ -308,13 +331,62 @@ function CharacterPicker({ card, characters, people = [], set, theme }) {
             // glancing at the existing roster and coming back must not silently
             // reset the player's pick to Unaligned, which would quietly drop both
             // the theme-cohesion bonus and the fame-drift bias.
-            newCharacterName: '', newCharacterSpecies: '', newCharacterHook: '', newCharacterPromotedFrom: null,
+            newCharacterName: '', newCharacterPersonId: null, newCharacterSpecies: '', newCharacterHook: '', newCharacterPromotedFrom: null,
             newCharacterLineageKind: null, newCharacterSecondParent: null,
             treatment: 'debut',
           })}>
-          Existing character
+          Existing
         </button>
       </div>
+
+      {mode === 'newform' && (
+        <>
+          {/* A new form of somebody who already exists. No lineage kind is set,
+              so this form carries no promotion/evolution badge — it is simply
+              another way she is printed. */}
+          <select
+            className="counter__target"
+            value={card.newCharacterPersonId ?? ''}
+            onChange={(e) => {
+              const who = people.find((p) => p.id === e.target.value)
+              set({
+                newCharacterPersonId: e.target.value || null,
+                newCharacterArchetype: who?.archetypeId ?? card.newCharacterArchetype ?? 'unaligned',
+                newFormDemeanor: who?.coreDemeanor ?? [],
+                // Her standing art brief seeds the card's, but only while the
+                // card has none of its own — a starting value, not an override.
+                artNotes: card.artNotes?.trim() ? card.artNotes : (who?.artBrief ?? ''),
+              })
+            }}
+          >
+            {people.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name} · known at {Math.round(p.recognition ?? 0)}
+              </option>
+            ))}
+          </select>
+          <input
+            className="counter__target"
+            value={card.newFormName ?? ''}
+            onChange={(e) => set({
+              newFormName: e.target.value,
+              // The card face follows the genre's convention, unless the player
+              // has already written their own.
+              newCharacterName: card.name || `${newFormPerson?.name ?? ''}, ${e.target.value}`,
+            })}
+            placeholder="Form name, e.g. Royal Soldier"
+          />
+          <span className="field__note">
+            {newFormPerson
+              ? <>A new form of <strong>{newFormPerson.name}</strong> — no lineage, just
+                  another way she is printed. She debuts off her recognition
+                  ({Math.round(newFormPerson.recognition ?? 0)}), not from nothing.
+                  To grow this form OUT of one of her existing ones, use
+                  Studio&nbsp;›&nbsp;Lineages instead.</>
+              : 'Pick a cast member.'}
+          </span>
+        </>
+      )}
 
       {mode === 'new' && (
         <>

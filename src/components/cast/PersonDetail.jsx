@@ -34,7 +34,7 @@ const BEAT_CUE = {
   favourite: { icon: '♥', cls: 'mood--neutral' },
 }
 
-export default function PersonDetail({ person, state, onClose, onUpdatePerson, onOpenForm }) {
+export default function PersonDetail({ person, state, onClose, onUpdatePerson, onOpenForm, onAddForm }) {
   const modalRef = useModal(onClose)
   const [editing, setEditing] = useState(false)
   if (!person) return null
@@ -160,16 +160,30 @@ export default function PersonDetail({ person, state, onClose, onUpdatePerson, o
 
           {/* ---- The forms --------------------------------------------- */}
           <Section id="personsheet.forms" title={`Forms (${forms.length})`} level={3} flat>
-            <ul className="lineage">
-              {roots.map((r) => (
-                <FormNode key={r.id} form={r} all={forms} childrenOf={childrenOf}
-                  person={person} onOpen={onOpenForm} />
-              ))}
-            </ul>
-            <p className="field__note">
-              {printings} printing{printings === 1 ? '' : 's'} across every form.
-              Open one for its own fame, story and cards.
-            </p>
+            {forms.length === 0 ? (
+              <p className="panel__empty">
+                {person.name} has no forms yet. She exists — she is your IP — and
+                nothing has been printed of her. Add the form she first appears
+                in, and every card that names it names her.
+              </p>
+            ) : (
+              <>
+                <ul className="lineage">
+                  {roots.map((r) => (
+                    <FormNode key={r.id} form={r} all={forms} childrenOf={childrenOf}
+                      person={person} onOpen={onOpenForm} />
+                  ))}
+                </ul>
+                <p className="field__note">
+                  {printings} printing{printings === 1 ? '' : 's'} across every form.
+                  Open one for its own fame, story and cards.
+                </p>
+              </>
+            )}
+            {/* A form of her, made directly. It carries her `personId`, so it is
+                simply HERS — no lineage kind, and therefore no bogus promotion
+                badge. Her archetype and art brief seed it. */}
+            {onAddForm && <NewFormForm person={person} onAdd={onAddForm} />}
           </Section>
 
           {/* ---- The story --------------------------------------------- */}
@@ -264,6 +278,74 @@ function PersonEditor({ person, onCancel, onSave }) {
       <div className="sigcard__row">
         <button className="btn btn--ghost" type="button" onClick={onCancel}>Cancel</button>
         <button className="btn" type="submit" disabled={!name.trim()}>Save</button>
+      </div>
+    </form>
+  )
+}
+
+// One form of a cast member, made from her own sheet.
+//
+// THE FORM IS SIMPLY HERS: it is created with her `personId` and NO lineage
+// kind, which is the shape that was impossible before. A base form used to have
+// to be filed as a same-being lineage link — the nearest kind being `promotion`
+// — so "Aryla, Destined Trainee" showed up as a PROMOTION of a bare "Aryla"
+// that was never a card. There is no link here to mislabel.
+//
+// Her archetype and art brief seed it (people.js's createPerson explains why the
+// person carries those at all); the form locks its own archetype on debut.
+function NewFormForm({ person, onAdd }) {
+  const [formName, setFormName] = useState('')
+  const [open, setOpen] = useState(false)
+
+  const submit = (e) => {
+    e.preventDefault()
+    const label = formName.trim()
+    if (!label) return
+    // The card face convention this genre has always used: "Aryla, Destined
+    // Trainee". `formName` is the roster label, separate from that face.
+    onAdd(`${person.name}, ${label}`, {
+      personId: person.id,
+      formName: label,
+      archetypeId: person.archetypeId ?? 'unaligned',
+      hook: person.throughline ?? '',
+      pronouns: person.pronouns ?? '',
+      demeanorIds: person.coreDemeanor ?? [],
+      traits: person.coreTraits ?? [],
+      carriesName: true,
+    })
+    setFormName('')
+    setOpen(false)
+  }
+
+  if (!open) {
+    return (
+      <button className="btn btn--ghost" onClick={() => setOpen(true)}>
+        + Add a form of {person.name}
+      </button>
+    )
+  }
+
+  return (
+    <form className="roster__addform" onSubmit={submit}>
+      <label className="field field--full">
+        <span>Form name <span className="muted">(what this version of her is called)</span></span>
+        <input
+          className="roster__addinput"
+          value={formName}
+          onChange={(e) => setFormName(e.target.value)}
+          placeholder="e.g. Destined Trainee"
+          autoFocus
+        />
+        {formName.trim() && (
+          <span className="field__note">
+            The card face reads <strong>{person.name}, {formName.trim()}</strong>.
+            No lineage — this is simply another way she is printed.
+          </span>
+        )}
+      </label>
+      <div className="roster__actions">
+        <button className="btn btn--primary" type="submit" disabled={!formName.trim()}>Add form</button>
+        <button className="btn btn--ghost" type="button" onClick={() => { setOpen(false); setFormName('') }}>Cancel</button>
       </div>
     </form>
   )

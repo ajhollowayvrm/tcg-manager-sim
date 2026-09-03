@@ -305,15 +305,23 @@ export function serialize(state) {
     return card
   })
 
-  // The person layer. STRUCTURE IS DERIVED AND IS NOT WRITTEN: `personId` on a
-  // form, and `rootFormId`/`descendedFromIds` on a person, are all rebuilt by
-  // derivePeople from the lineage links on the way back in. Only the AUTHORED
-  // text and the EARNED numbers are persisted.
+  // The person layer. `rootFormId` and `descendedFromIds` on a person are still
+  // DERIVED and are not written — derivePeople rebuilds both from the lineage
+  // links on the way back in. Everything else is persisted: the authored text,
+  // the earned numbers, and now `personId` on a form.
   //
-  // That is a size decision, not a tidiness one. A week-312 run already
-  // serialised to 4.07 MB against a ~5 MB quota and silently stopped saving,
-  // which is why the run save moved to IndexedDB at v18; a new top-level array
-  // carrying a 52-week history per record does not get to undo that work.
+  // `personId` USED TO BE STRIPPED HERE, on the same derived-structure grounds,
+  // and that is why a cast member could not be authored: her membership could
+  // not survive a save, so the only durable way to say "this form is her" was a
+  // same-being lineage link, which mislabelled a base form as a promotion. It
+  // is authored now (see derivePeople) and has to be written.
+  //
+  // The strip was defended on SIZE, and that reasoning was sound for the
+  // per-card fields it sits beside — a week-312 run serialised to 4.07 MB
+  // against a ~5 MB quota and silently stopped saving, which is why the run
+  // save moved to IndexedDB at v18. It does not apply here. This is one short
+  // string on each of a few dozen forms, not six thousand cards; the thing that
+  // must keep earning its strip is a 52-week history per record.
   if (state.people?.length) {
     out.people = state.people.map((p) => {
       const person = { ...p }
@@ -328,14 +336,6 @@ export function serialize(state) {
         )
       }
       return person
-    })
-  }
-  if (state.characters?.length) {
-    out.characters = state.characters.map((c) => {
-      if (c.personId == null) return c
-      const form = { ...c }
-      delete form.personId
-      return form
     })
   }
   return out
@@ -426,8 +426,13 @@ export function hydrate(state) {
   // before the person layer arrives with no `people` at all; derivePeople walks
   // the same-being lineage links and rebuilds one person per character, so a
   // pre-lineage save lands on a roster of one-form people that behaves exactly as
-  // it did. It also repairs `personId` on every form, which serialize() strips on
-  // the way out — structure is derived, never stored. Same additive contract as
+  // it did.
+  //
+  // A save written before a cast member could be AUTHORED carries people but no
+  // `personId` on any form. derivePeople derives it from the same-being links
+  // exactly as it always did, and the stamp is now written on the way back out —
+  // so that save upgrades itself once and every later load reads the authored
+  // membership straight off the forms. Same additive contract as
   // normalizeCharacter above, one level up.
   const { people, characters } = derivePeople(next)
   return { ...next, people, characters }
