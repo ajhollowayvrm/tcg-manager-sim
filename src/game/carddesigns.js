@@ -27,6 +27,7 @@
 
 import { castIdsOf, withCast } from './cast.js'
 import { clamp } from './simulation.js'
+import { getFinish } from './rarities.js'
 
 // Same collision hazard as characters.js's characterId(): a fresh `design_1`
 // after a reload would land on top of a design already in the save.
@@ -78,6 +79,12 @@ export function applyDesignPatch(design, patch) {
     if (patch[key] !== undefined) next[key] = patch[key]
   }
   next.appeal = clamp(Math.round(Number(next.appeal) || 0), 0, 100)
+  // Guard the name here, not only in normalizeCardDesign. Emptying the field left
+  // `name: ''`, which makePromoCard reads as falsy and replaces with a random
+  // themed name — so the studio pressed a card the player never named, while the
+  // feed line and the library row both showed a blank. It also meant the same
+  // design behaved differently before and after a reload.
+  next.name = typeof next.name === 'string' && next.name.trim() ? next.name : 'Untitled card'
   return withCast(next)
 }
 
@@ -147,9 +154,16 @@ export const STANDALONE_PRINT_COST = 12000
 
 export function standaloneCost(design, artistOf, treatmentCostMul = 1) {
   const artist = design.artistId ? artistOf(design.artistId) : null
-  const art = artist ? Math.round(artist.cost * treatmentCostMul) : 0
-  // A serialized promo is hand-numbered — the same surcharge a set pays.
-  const serial = design.serialCap ? 4000 : 0
+  // A richer printing finish costs more to produce, exactly as it does in a set
+  // (sets.js's `art` reducer). It was omitted here, so the same design was
+  // billed for its foil inside a set and given it free as a promo.
+  const art = artist ? Math.round(artist.cost * treatmentCostMul * getFinish(design.finish).costMul) : 0
+  // THE SAME SURCHARGE A SET PAYS — which this did not previously charge. A set
+  // bills `4000 + 60000/cap` (sets.js's `serialization`), scaled by the cap
+  // because market.js pays a serialLift of up to 15x for a small one. A flat
+  // 4000 made a /1 studio promo the cheapest price multiplier in the game: $16k
+  // to print, against $64k for the identical card inside a set.
+  const serial = design.serialCap ? Math.round(4_000 + 60_000 / Math.max(1, design.serialCap)) : 0
   return STANDALONE_PRINT_COST + art + serial
 }
 

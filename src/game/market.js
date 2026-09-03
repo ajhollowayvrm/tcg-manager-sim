@@ -101,7 +101,20 @@ export function fairValue(card, set, legacyMul = 1, groupPremium = 1, artistHeat
   // sentence a collector prices off. Same 0.25 band as the illustrator premium
   // above: the hand and the face are worth about the same.
   const castLift = 1 + clamp(castStanding / 100, 0, 1) * CAST_HEAT_PREMIUM
-  const collectorLift = (set.collectorMul ?? 1) * (card.treatment ? 1.25 : 1) * serialLift * gradedLift * chaseLift * groupPremium * artistLift * castLift
+  // `card.treatment === true`, NOT truthiness. THE FIELD CARRIES TWO DIFFERENT
+  // THINGS and this line only ever meant one of them:
+  //
+  //   blocks.js writes `treatment: true` — a boolean flag marking a block-gimmick
+  //     chase card (and an anniversary card), which is what this 1.25x is for;
+  //   sets.js writes `treatment: 'debut'|'standard'|'premium'|'icon'` — the
+  //     CHARACTER PRINTING TIER on a signature card, an unrelated system that
+  //     already pays through famePopBonus's appealMul.
+  //
+  // Testing truthiness gave every signature card in the game a 25% collector
+  // premium it was never designed to have, on top of the fame bonus it had
+  // already earned. An older save's gimmick cards store the boolean, so they
+  // keep the premium; signature cards stop double-dipping.
+  const collectorLift = (set.collectorMul ?? 1) * (card.treatment === true ? 1.25 : 1) * serialLift * gradedLift * chaseLift * groupPremium * artistLift * castLift
   const collectorVal = collectorBase * scarcity * 0.6 * collectorLift * legacyMul * COLLECTOR_MARKET_TILT
 
   return clamp(collectorVal, 0.25, 12000)
@@ -178,6 +191,14 @@ export function sealedPrice(set, weeksSince) {
 
 // Returns { cards, movers } — the updated card list and the notable movers
 // this week (sorted by absolute % move), for the ticker to animate.
+// How hard a promo is pulled toward its fair value each week. Gentler than
+// stepCard's 0.18: a promo trades thinly, so it takes a while to find its level.
+const PROMO_GRAVITY = 0.06
+// The ceiling on a promo. Deliberately above fairValue's 12000 clamp — a promo
+// IS meant to be among the scarcest, priciest singles in the game — but finite,
+// which is the part that was missing.
+const PROMO_PRICE_CAP = 20000
+
 export function resolveMarket(state) {
   const setById = new Map(state.sets.map((s) => [s.id, s]))
   const rng = makeRng(hashSeed(`market:${state.week}`))
@@ -195,6 +216,11 @@ export function resolveMarket(state) {
   const formById = new Map((state.characters ?? []).map((c) => [c.id, c]))
   const personById = new Map((state.people ?? []).map((p) => [p.id, p]))
 
+  // A promo belongs to no set, so it has no release week to age from. It still
+  // rides the franchise's growing reputation like the rest of the back
+  // catalogue; the age term is simply the run so far.
+  const legacyMulFor = (card) => legacyMultiplier(reputation, state.week - (card.mintedWeek ?? 0), {})
+
   const movers = []
   const cards = state.cards.map((orig) => {
     const card = { ...orig, priceHistory: [...orig.priceHistory] }
@@ -205,21 +231,49 @@ export function resolveMarket(state) {
     if (card.promo) {
       const prev = card.singlePrice
       const spike = rng() < 0.05 ? range(rng, 0.08, 0.3) : 0
-      // Promo SUPPLY finally prices. `promoSupply` (promos.js) is the whole
-      // point of a promo — a championship run is a few hundred copies, a league
-      // run a few thousand — and it was written on the card record and read
-      // nowhere, so every promo drifted identically. A scarce run appreciates;
-      // a mass-issued one bleeds. Anchored on promos.js's own output band
-      // (~150 copies at prestige 1, ~5,150 at prestige 0).
+      // Promo SUPPLY prices. `promoSupply` (promos.js) is the whole point of a
+      // promo — a championship run is a few hundred copies, a league run a few
+      // thousand. Anchored on promos.js's own output band (~150 copies at
+      // prestige 1, ~5,150 at prestige 0).
       const scarcity = clamp((PROMO_SUPPLY_MAX - (card.promoSupply ?? 2000)) / PROMO_SUPPLY_MAX, 0, 1)
       // A promo has no set behind it, so fairValue's castLift never reaches it —
-      // and a promo is exactly the card a cast sells. A standalone print of a
-      // household-name character appreciates; a nobody's bleeds like any other.
-      // Sized as a fraction of the scarcity drift so it colours the curve
-      // rather than replacing it, and 0 for a promo with no cast.
-      const castTilt = (liveCastStandingIndexed(card, formById, personById) / 100) * 0.02
-      const drift = range(rng, -0.02 + scarcity * 0.02, 0.01 + scarcity * 0.035) + spike + castTilt
-      const next = Math.round(Math.max(1, prev * (1 + drift)) * 100) / 100
+      // and a promo is exactly the card a cast sells.
+      const standing = liveCastStandingIndexed(card, formById, personById)
+
+      // A PROMO HAS A FAIR VALUE, and it converges toward it.
+      //
+      // This branch used to be a bare compounding drift: a random walk with a
+      // positive mean, no gravity and no ceiling, on a price that multiplies
+      // itself every week. Over a full run that diverges without limit — a $100
+      // promo measured at $2.9M after 312 weeks with no cast at all, and $1.17B
+      // with a famous one. Every other card in the game is pulled toward
+      // fairValue instead, which is exactly why none of them do this.
+      //
+      // So promos get the same treatment, from what a promo actually IS: its own
+      // pop factors, its supply, the franchise's legacy lift, and who is on it.
+      // The cast term rides HERE rather than on the drift, which also makes it
+      // bidirectional by construction — a nobody's promo is no longer helped by
+      // a term that could only ever add.
+      const f = card.popFactors ?? {}
+      const collectorBase = ((f.rarity ?? 60) / 100) ** 1.6 * 100 * 0.95
+        + (f.artAppeal ?? 60) * 0.35 + (f.hype ?? 60) * 0.2
+      const castLift = 1 + clamp(standing / 100, 0, 1) * CAST_HEAT_PREMIUM
+      const serialLift = card.serialCap ? clamp(120 / card.serialCap, 1.5, 15) : 1
+      // Scarcity is worth more to a promo than to a set card: the run is tiny
+      // and fixed, which is the entire proposition.
+      const fair = clamp(
+        collectorBase * (1 + scarcity * 1.8) * 0.6 * castLift * serialLift * legacyMulFor(card)
+          * COLLECTOR_MARKET_TILT,
+        1, PROMO_PRICE_CAP,
+      )
+
+      // Gravity toward it, plus the same speculative spike the branch always had
+      // so a grail can still run. Gentler than stepCard's 0.18 because a promo
+      // trades thinly — it takes a while to find its level, it just has to find
+      // one.
+      const gravity = (fair - prev) * PROMO_GRAVITY
+      const noise = range(rng, -0.02, 0.02) * prev
+      const next = Math.round(clamp(prev + gravity + noise + prev * spike, 1, PROMO_PRICE_CAP) * 100) / 100
       card.singlePrice = next
       card.priceHistory = [...card.priceHistory, next].slice(-PRICE_HISTORY_LEN)
       const pct = prev > 0 ? (next - prev) / prev : 0

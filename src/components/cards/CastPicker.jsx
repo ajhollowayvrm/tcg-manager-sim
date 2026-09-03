@@ -53,7 +53,13 @@ function standingOf(form, people) {
 export default function CastPicker({ card, characters, people = [], theme, set, includeLead = false }) {
   const printable = characters.filter((c) => !c.retiredWeek)
   const ids = castIdsOf(card)
-  const support = includeLead ? ids : ids.slice(1)
+  // WHEN THERE IS NO LEAD, every name on the card is support and all of them
+  // have to be listed. `ids.slice(1)` unconditionally hid the first entry, so
+  // adding somebody to a one-off or a not-yet-named new character stranded them:
+  // invisible in the list, excluded from the add menu because they were already
+  // chosen, and promoted to lead by withCast at release.
+  const hasLead = !!card.characterId
+  const support = includeLead || !hasLead ? ids : ids.slice(1)
   const chosen = new Set(ids)
   const available = printable.filter((c) => !chosen.has(c.id))
   const grouped = groupForms(available, people)
@@ -104,7 +110,10 @@ export default function CastPicker({ card, characters, people = [], theme, set, 
             const form = characters.find((c) => c.id === id)
             if (!form) return null
             const person = form.personId ? people.find((p) => p.id === form.personId) : null
-            const isLead = ids[0] === id
+            // Only this picker's own first entry is a lead, and only when it
+            // owns the lead at all. Otherwise the lead is whatever
+            // CharacterPicker set, which may be nobody.
+            const isLead = includeLead ? ids[0] === id : card.characterId === id
             const match = theme && archetypeMatchesTheme(form.archetypeId, theme.tags)
             return (
               <li key={id} className="roster__row">

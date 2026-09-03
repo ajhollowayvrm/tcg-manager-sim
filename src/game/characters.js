@@ -429,7 +429,11 @@ export function recordAppearance(characters, id, { cardId, setId, treatment, pop
     const t = getTreatment(treatment)
     const appeal = ((popFactors?.hype ?? 40) + (popFactors?.artAppeal ?? 40)) / 2
     const bump = clamp(3 + (appeal / 100) * 10 * t.appealMul, 0, 18)
-    const debuting = !c.debutSetId
+    // THE FIRST PRINTING, read off the appearances rather than off debutSetId.
+    // A standalone promo (reducer.js's PRINT_CARD_DESIGN) has no set, so
+    // `debutSetId` stayed null forever and every subsequent print re-filed a
+    // debut beat — three prints, three "Debuted in..." entries on one career.
+    const debuting = !(c.appearances ?? []).length
     return {
       ...c,
       debutSetId: c.debutSetId ?? setId,

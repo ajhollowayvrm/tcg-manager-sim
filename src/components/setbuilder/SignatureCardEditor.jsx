@@ -232,7 +232,17 @@ function CharacterPicker({ card, characters, people = [], set, theme }) {
   // leaving whatever supporting cast was named.
   const setLead = (id, patch = {}) => {
     const rest = castIdsOf(card).filter((x) => x !== id && x !== card.characterId)
-    set({ ...patch, characterId: id, castIds: id ? [id, ...rest] : rest })
+    const next = { ...patch, characterId: id, castIds: id ? [id, ...rest] : rest }
+    // Drop an icon tier the new lead cannot support. The three mode buttons
+    // below already reset the treatment, but the existing-character SELECT did
+    // not — so switching from an icon to anybody else left the card charging
+    // x2.2 cost and x1.9 appeal for a tier it no longer qualified for, with the
+    // dropdown showing something else.
+    const tier = TREATMENTS.find((t) => t.id === (next.treatment ?? card.treatment))
+    if (tier?.requiresIcon && characters.find((c) => c.id === id)?.trajectory !== 'icon') {
+      next.treatment = 'standard'
+    }
+    set(next)
   }
   // Four shapes, and the third is the one that had no home before: a NEW FORM
   // of a cast member who already exists. Without it, debuting Aryla in a shape

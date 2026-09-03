@@ -24,7 +24,7 @@ import { getGimmick, NO_GIMMICK } from './content/gimmicks.js'
 import { createCharacter, getTreatment, recordAppearance, createLineageCharacter } from './characters.js'
 import { derivePeople, recordPersonPrinting, continuityVerdict } from './people.js'
 import { castIdsOf, castMembers, castPopBonus, withCast } from './cast.js'
-import { recordPrinting } from './carddesigns.js'
+import { recordPrinting, standaloneCost, STANDALONE_PRINT_COST } from './carddesigns.js'
 import { archetypeMatchesTheme } from './content/archetypes.js'
 import {
   getIllustrationKind,
@@ -145,6 +145,12 @@ export function createDraft(setNumber, tier = 'major', liveBlocks = [], standard
     // sheet, plus the cards you hand-designed, numbered ABOVE the count
     // (e.g. 151/150).
     //
+    // Which numbering layout this set uses. See generateCards: a set released
+    // BEFORE the secret dial was retired put its signature cards at the FIRST
+    // collector numbers, and reprintAsUnlimited has to reproduce that exactly.
+    // An older set's record has no flag at all, which reads false and gets the
+    // legacy layout — that is the whole point of storing it.
+    signaturesAboveCount: true,
     // There used to be a second slider here — `secretCount` — for how many
     // cards sat above the count, filled with themed-random chase. It is gone.
     // The cards above the count are the ones the player DESIGNED, and their
@@ -512,6 +518,18 @@ export function setCost(draft, artistOf = getArtist, ctx = {}) {
   // It used to be FREE: neither setCost nor productPrintCost read the flag, so
   // ticking one checkbox minted a scarce, high-value, unpullable grail for
   // nothing. (It also draws a `gated` grievance now — see personas.js.)
+  // A collector-box exclusive built from a LIBRARY DESIGN carries that design's
+  // artist, finish and serial cap onto the minted card — but `art` and
+  // `serialization` above iterate signatureCards only, so none of it was ever
+  // billed. Naming the priciest illustrator and a /1 cap on the box exclusive
+  // cost a flat fee and bought a 15x singles multiplier for nothing.
+  const spcDesign = (draft.products ?? []).find((p) => p.kind === 'spc' && p.exclusivePromo && p.promoDesignId)
+  const spcDesignRecord = spcDesign
+    ? (ctx.cardDesigns ?? []).find((d) => d.id === spcDesign.promoDesignId)
+    : null
+  const spcDesignCost = spcDesignRecord
+    ? standaloneCost(spcDesignRecord, artistOf, getTreatment(spcDesignRecord.treatment).costMul) - STANDALONE_PRINT_COST
+    : 0
   const exclusivePromo = (draft.products ?? []).some((p) => p.kind === 'spc' && p.exclusivePromo)
     ? EXCLUSIVE_PROMO_COST : 0
   // An illustration set is an ART-DIRECTION commission, not a printing one. The
@@ -543,9 +561,9 @@ export function setCost(draft, artistOf = getArtist, ctx = {}) {
     )
     : 0
   return {
-    dev, printCost, art, artDirection, serialization, prerelease, releaseEvent, skus, spotlight, exclusivePromo,
+    dev, printCost, art, artDirection, serialization, prerelease, releaseEvent, skus, spotlight, exclusivePromo, spcDesignCost,
     illustrationSet,
-    total: dev + printCost + art + artDirection + serialization + prerelease + releaseEvent + skus + spotlight + exclusivePromo + illustrationSet,
+    total: dev + printCost + art + artDirection + serialization + prerelease + releaseEvent + skus + spotlight + exclusivePromo + spcDesignCost + illustrationSet,
   }
 }
 
@@ -906,27 +924,57 @@ export function generateCards(draft, setId, week, artistOf = getArtist, characte
 
   const specs = []
 
-  // 1) The numbered set: themed-random cards, rarity by the set's pull weights.
+  // WHICH LAYOUT. A set designed today numbers its hand-designed cards ABOVE the
+  // count. A set released before that change put them at the FIRST numbers, with
+  // the procedural body filling the rest — and reprintAsUnlimited rebuilds an
+  // entire card pool from the stored record, so it has to reproduce the layout
+  // that set actually shipped with. An older record carries no flag and reads
+  // false here, which is what makes an Unlimited run of an old set correct.
+  const aboveCount = draft.signaturesAboveCount === true
+  const sigCount = Math.min(sigs.length, MAX_SIGNATURE_CARDS)
+  // In the legacy layout the signatures consume body slots; in the current one
+  // they sit on top of a full-length body.
+  const bodyCount = aboveCount ? length : Math.max(0, length - sigCount)
+
+  // A hand-designed card's spec id is ALWAYS `c${i + 1}`, in both layouts —
+  // three readers resolve one by its index through `${setId}_c${i + 1}` (the
+  // spotlight picker, the illustration-set picks, and the art-notes map). Body
+  // cards take `b` so the two can never collide now that both can start at 1.
+  const sigSpec = (sig, i, number) => ({
+    id: `c${i + 1}`, name: sig.name, rarity: sig.rarity, number,
+    artistId: sig.artistId,
+    appeal: sig.appeal ?? sig.power, finish: sig.finish, flavorText: sig.flavorText, artNotes: sig.artNotes,
+    characterId: sig.characterId ?? null, castIds: castIdsOf(sig), treatment: sig.treatment ?? 'debut',
+    serialCap: sig.serialCap ?? null,
+    signature: true,
+    // Only above the count is a signature card `secret` — that flag means
+    // "numbered past the set's own count" everywhere else in the sim.
+    secret: aboveCount,
+  })
+
+  // 1) The legacy layout puts the hand-designed cards at the first numbers.
+  if (!aboveCount) {
+    sigs.slice(0, sigCount).forEach((sig, i) => {
+      specs.push(sigSpec(sig, i, `${i + 1}/${length}`))
+    })
+  }
+
+  // 2) The numbered body: themed-random cards, rarity by the set's pull weights.
   //    Bulk cards get a modest random punch so a sleeper can still spike, but
   //    they don't track the loudness dial.
-  for (let i = 0; i < length; i++) {
+  for (let i = 0; i < bodyCount; i++) {
     const rarityId = nonSecret.length ? pickRarity(nonSecret, rng) : (sheet[0]?.id ?? 'common')
+    const num = aboveCount ? i + 1 : sigCount + i + 1
     specs.push({
-      // `b` for body. The `c` prefix is RESERVED for the hand-designed cards
-      // below: three separate readers resolve a signature card by its index
-      // through `${setId}_c${i + 1}` — the spotlight picker, the illustration-set
-      // picks, and the art-notes map — and the body no longer starts at 1/N, so
-      // sharing the prefix would collide every body card with a signature.
       id: `b${i + 1}`, name: randomCardName(theme, rng, nameStyle), rarity: rarityId,
-      number: `${i + 1}/${length}`,
+      number: `${num}/${length}`,
       appeal: clamp(Math.round(range(rng, 15, 70)), 0, 100), // bulk: low-to-mid, sleepers possible
     })
   }
 
-  // 2) Legacy secret rares. Only a set RELEASED before the secret dial was
-  //    retired carries a secretCount, and reprintAsUnlimited replays its record
-  //    verbatim — so this reproduces what shipped and mints nothing for a set
-  //    designed today.
+  // 3) Legacy secret rares. Only a set RELEASED before the secret dial was
+  //    retired carries a secretCount, so this reproduces what shipped and mints
+  //    nothing for a set designed today.
   const legacySecrets = clamp(Math.round(draft.secretCount ?? 0), 0, MAX_SECRET_CARDS)
   for (let s = 0; s < legacySecrets; s++) {
     const rarityId = secretRarities.length
@@ -939,30 +987,21 @@ export function generateCards(draft, setId, week, artistOf = getArtist, characte
     })
   }
 
-  // 3) The hand-designed cards, numbered ABOVE the count — the marquee chase
-  //    band. `secret: true` because that is what the flag means everywhere else
-  //    in the sim: numbered past the set's own count, and chased for it
-  //    (revenue.js's cardWeight and market.js both read it that way).
-  sigs.slice(0, MAX_SIGNATURE_CARDS).forEach((sig, i) => {
-    specs.push({
-      id: `c${i + 1}`, name: sig.name, rarity: sig.rarity,
-      number: `${length + legacySecrets + i + 1}/${length}`,
-      artistId: sig.artistId,
-      appeal: sig.appeal ?? sig.power, finish: sig.finish, flavorText: sig.flavorText, artNotes: sig.artNotes,
-      characterId: sig.characterId ?? null, castIds: castIdsOf(sig), treatment: sig.treatment ?? 'debut',
-      serialCap: sig.serialCap ?? null,
-      signature: true,
-      secret: true,
+  // 4) The current layout puts the hand-designed cards ABOVE the count — the
+  //    marquee chase band, past the secrets.
+  if (aboveCount) {
+    sigs.slice(0, sigCount).forEach((sig, i) => {
+      specs.push(sigSpec(sig, i, `${length + legacySecrets + i + 1}/${length}`))
     })
-  })
+  }
 
-  // 4) Variant printings. A variant is a SECOND card of one the set already
+  // 5) Variant printings. A variant is a SECOND card of one the set already
   //    has — same name, same character, same artist — printed with the
   //    variant's own finishes and numbered above the count beside the secrets.
   //    It reprints the rarity's MARQUEE cards (signature highlights first, then
   //    the highest-appeal bulk), because that is which card a real set gives an
   //    alt art to. A variant whose parent rarity drew no cards prints nothing.
-  let above = length + legacySecrets + Math.min(sigs.length, MAX_SIGNATURE_CARDS)
+  let above = length + legacySecrets + (aboveCount ? sigCount : 0)
   for (const { parent, entry } of variantEntries(sheet)) {
     const pool = [...specs.filter((sp) => sp.rarity === parent.id)].sort(
       (a, b) => (b.signature ? 1 : 0) - (a.signature ? 1 : 0) || (b.appeal ?? 0) - (a.appeal ?? 0),
@@ -1019,7 +1058,7 @@ export function releaseSet(state, draft) {
   // (and elevates a card) what they're worth now, not their seed value.
   const artistOf = (id) => currentArtist(state, id)
   const tier = getTier(draft.tier ?? 'major')
-  const cost = setCost(draft, artistOf, { illustrationSets: state.illustrationSets, upgrades: state.upgrades })
+  const cost = setCost(draft, artistOf, { illustrationSets: state.illustrationSets, upgrades: state.upgrades, cardDesigns: state.cardDesigns })
   // How this set's SIZE reads: event scale, chase density, and bloat.
   const size = sizeProfile(draft)
 
@@ -1217,7 +1256,6 @@ export function releaseSet(state, draft) {
     rarityChase: draft.rarityChase,
     printRun: draft.printRun,
     price: draft.pricePoint,
-    signatureCards: draft.signatureCards,
     // DEEP COPIES, not the draft's own arrays. These two used to be assigned by
     // reference, which was harmless only while every draft built its own sheet
     // from scratch. Now a draft can be seeded from — or import — an entry in the
@@ -1230,9 +1268,18 @@ export function releaseSet(state, draft) {
     rarities: cloneSheet(draft.rarities), // the set's rarity sheet (for pricing/packs/display)
     packFormat: cloneFormat(draft.packFormat), // booster structure (slots) for ripping/display
     setLength: draft.setLength,
+    // `fromDesignId` is STRIPPED here. carddesigns.js's doctrine is that a pull
+    // COPIES and never links, and leaving the id on the released record kept a
+    // permanent pointer into the mutable library — one that REMOVE_CARD_DESIGN
+    // would dangle, and that reprintAsUnlimited would clone into every Unlimited
+    // run. Nothing reads it after release; this makes that true rather than
+    // merely current.
+    signatureCards: (draft.signatureCards ?? []).map(({ fromDesignId, ...sig }) => sig),
     // 0 for a set designed today; only a save's older sets carry a number, and
     // reprintAsUnlimited needs it to reproduce what actually shipped.
     secretCount: draft.secretCount ?? 0,
+    // Likewise: which numbering layout this set actually shipped with.
+    signaturesAboveCount: draft.signaturesAboveCount !== false,
     // How this set's size reads to the world — persisted so the weekly
     // reaction engines (personas/segments/events) can judge it long after
     // release without re-deriving it from the tier band.
@@ -1544,7 +1591,11 @@ export function releaseSet(state, draft) {
   // The card library's printing log (carddesigns.js). Display only — every
   // placement above already COPIED the design, so nothing here feeds a card.
   let cardDesigns = state.cardDesigns ?? []
-  ;(draft.signatureCards ?? []).forEach((sig, i) => {
+  // Bounded by what generateCards actually mints, like every other index-based
+  // reader here — a 31st signature card would otherwise file a printing against
+  // a `${setId}_c31` that does not exist. validateDraft refuses that today, but
+  // RELEASE_SET does not re-validate, so a stale draft or the harness reaches it.
+  ;(draft.signatureCards ?? []).slice(0, MAX_SIGNATURE_CARDS).forEach((sig, i) => {
     if (!sig.fromDesignId) return
     cardDesigns = recordPrinting(cardDesigns, sig.fromDesignId, {
       cardId: `${setId}_c${i + 1}`, setId, week: state.week, how: 'set',
@@ -1933,6 +1984,11 @@ export function reprintAsUnlimited(state, originalSetId, printRun = 55) {
     pricePoint: original.price,
     setLength: original.setLength,
     secretCount: original.secretCount,
+    // Load-bearing, and absent on every set released before the layout changed —
+    // which is exactly the case this reproduces. Without it an old set reprinted
+    // with its signature cards renumbered above the count and N extra cards in
+    // the pool, so an "Unlimited run of the set that shipped" was neither.
+    signaturesAboveCount: original.signaturesAboveCount === true,
     // Cloned, so the reprint's record and the original's are two independent
     // snapshots rather than three aliases of one array (draft -> original set ->
     // reprint set). Nothing edits a released set's sheet today, but an Unlimited

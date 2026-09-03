@@ -267,7 +267,13 @@ export function serialize(state) {
     // Age, not print status, decides how much history to keep: a catalogue that
     // is never pruned has every set "live", so keying off `rotated` trimmed
     // almost nothing on exactly the runs that needed it most.
-    const age = setAge.get(c.setId) ?? Infinity
+    // A promo belongs to no set (promos.js writes `setId: null`), so `setAge`
+    // misses and it read as infinitely old — a promo minted THIS WEEK was
+    // written back with the cold 8-point history while set cards from the same
+    // week kept 26. Age it from its own mint week instead.
+    const age = c.promo
+      ? (state.week ?? 0) - (c.mintedWeek ?? state.week ?? 0)
+      : setAge.get(c.setId) ?? Infinity
     const keep = age <= HOT_AGE_WEEKS ? HOT_HISTORY : COLD_HISTORY
     const card = {
       ...c,

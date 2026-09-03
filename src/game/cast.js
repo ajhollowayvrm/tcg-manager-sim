@@ -64,8 +64,18 @@ export const CAST_APPEAL_MAX = 0.12
 // save written before castIds existed reads correctly with no migration.
 export function castIdsOf(card) {
   if (!card) return []
-  if (Array.isArray(card.castIds) && card.castIds.length) return card.castIds
-  return card.characterId ? [card.characterId] : []
+  const list = Array.isArray(card.castIds) ? card.castIds : []
+  if (!list.length) return card.characterId ? [card.characterId] : []
+  // UNION IN THE LEAD. `cardFeaturesForm` below honours `characterId` whether or
+  // not the list mentions it, and this used to ignore it whenever the list was
+  // non-empty — so the two disagreed for a record with `characterId: 'A'` and
+  // `castIds: ['B','C']`. A then drifted on a card that never recorded a printing
+  // for her and never counted toward her share of the fandom. withCast keeps the
+  // two in step for anything this build writes, so only a hand-edited or
+  // imported save reaches it; agreeing by construction is cheaper than trusting
+  // every future writer.
+  if (card.characterId && !list.includes(card.characterId)) return [card.characterId, ...list]
+  return list
 }
 
 // Is this form printed on this card? THE membership test. Replaces every

@@ -17,7 +17,12 @@ export default function CardDesignEditor({
   design, characters = [], people = [], artists = [],
   open = true, onToggleOpen, onChange, onRemove,
 }) {
-  const set = (patch) => onChange(patch)
+  // Reconcile the printing tier whenever the cast changes. `treatmentOptions`
+  // below hides the icon tier when the lead is not an icon, but hiding an option
+  // does not clear a stored value: a design that took `icon` while its lead was
+  // one kept charging x2.2 cost and x1.9 appeal after the lead changed, while
+  // the select showed something else entirely.
+  const set = (patch) => onChange(reconcileTreatment({ ...design, ...patch }, characters, patch))
   const artist = design.artistId ? makeArtistOf(artists)(design.artistId) : null
   const cast = castMembers(design, characters, people)
   const lead = cast[0] ?? null
@@ -120,4 +125,15 @@ function summarise(design, cast, artist) {
   }
   parts.push(`appeal ${design.appeal}`)
   return parts.join(' · ')
+}
+
+// Drop a printing tier the new lead cannot support. Shared shape with the set
+// builder's picker, which had the same hole.
+export function reconcileTreatment(next, characters, patch) {
+  const tier = TREATMENTS.find((t) => t.id === next.treatment)
+  if (!tier?.requiresIcon) return patch
+  const leadId = next.castIds?.[0] ?? next.characterId
+  const lead = leadId ? characters.find((c) => c.id === leadId) : null
+  if (lead?.trajectory === 'icon') return patch
+  return { ...patch, treatment: 'standard' }
 }
