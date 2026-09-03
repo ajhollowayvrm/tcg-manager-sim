@@ -83,12 +83,10 @@ export function applyDesignPatch(design, patch) {
     if (patch[key] !== undefined) next[key] = patch[key]
   }
   next.appeal = clamp(Math.round(Number(next.appeal) || 0), 0, 100)
-  // Guard the name here, not only in normalizeCardDesign. Emptying the field left
-  // `name: ''`, which makePromoCard reads as falsy and replaces with a random
-  // themed name — so the studio pressed a card the player never named, while the
-  // feed line and the library row both showed a blank. It also meant the same
-  // design behaved differently before and after a reload.
-  next.name = typeof next.name === 'string' && next.name.trim() ? next.name : 'Untitled card'
+  // Do NOT default a blank name here: this runs on every keystroke, and forcing
+  // 'Untitled card' back in makes the field impossible to clear while typing a
+  // new one. The blank is guarded at the choke points that actually feed a
+  // pressed card — designToSignatureCard and normalizeCardDesign — instead.
   return withCast(next)
 }
 
@@ -121,7 +119,7 @@ export function normalizeCardDesign(d) {
 export function designToSignatureCard(design, n, rarityId = 'rare') {
   return {
     id: `sig_${n}`,
-    name: design.name,
+    name: typeof design.name === 'string' && design.name.trim() ? design.name : 'Untitled card',
     rarity: rarityId,
     artistId: design.artistId ?? null,
     appeal: design.appeal ?? 50,
