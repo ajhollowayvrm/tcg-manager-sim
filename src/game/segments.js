@@ -18,6 +18,7 @@
 import { clamp, communitySentiment } from './simulation.js'
 import { PRINT_INTENSITY_NEUTRAL, PRINT_INTENSITY_SPAN } from './config.js'
 import { bestFormPerPerson } from './people.js'
+import { getArchetype } from './content/archetypes.js'
 
 // The nostalgia-erosion level the CURRENT shelf sustains — a buzz-weighted mean
 // of every in-print set's own `printLevel` (see sets.js's releaseSet). This is
@@ -85,6 +86,46 @@ export function hotCastSignal(characters) {
     .slice(0, 3)
   if (!top.length) return 0
   return top.reduce((s, c) => s + c.fame, 0) / top.length
+}
+
+// WHO the cast attracts, -1 (pure casual) to +1 (pure collector), as the
+// fame-weighted mean archetype lean of the characters actually carrying the
+// studio. A roster of mascots reads casual; a shelf of legendaries reads
+// collector. 0 when there is no cast, and 0 for a roster of `unaligned`
+// characters — so a save from before archetypes behaves exactly as it did.
+//
+// Same top-three collapse hotCastSignal uses, and for the same reason: these are
+// the characters the audience actually has in mind.
+export function castLean(characters) {
+  const top = bestFormPerPerson(characters)
+    .sort((a, b) => b.fame - a.fame)
+    .slice(0, 3)
+  let sum = 0
+  let weight = 0
+  for (const c of top) {
+    const w = Math.max(0, c.fame ?? 0)
+    sum += (getArchetype(c.archetypeId).segmentLean ?? 0) * w
+    weight += w
+  }
+  return weight > 0 ? clamp(sum / weight, -1, 1) : 0
+}
+
+// The lean new players actually distribute by: the studio's own
+// (state.segmentLean, set by its concept) nudged toward whoever its cast is.
+//
+// CAST_LEAN_WEIGHT is deliberately small. Who you print shapes who turns up, but
+// the concept you chose still decides most of it — a cute-concept studio that
+// signs one legendary has not become a collector's boutique.
+const CAST_LEAN_WEIGHT = 0.25
+
+export function effectiveLean(state) {
+  const base = state?.segmentLean ?? { casual: 1 / 2, collectors: 1 / 2 }
+  const lean = castLean(state?.characters)
+  if (!lean) return base
+  // lean > 0 pulls toward collectors, < 0 toward casual.
+  const shift = (lean * CAST_LEAN_WEIGHT) / 2
+  const collectors = clamp((base.collectors ?? 0.5) + shift, 0.05, 0.95)
+  return { casual: 1 - collectors, collectors }
 }
 
 // Per-segment health scores from the catalog's live state. Each is normalized
@@ -165,7 +206,7 @@ function applyWordOfMouth(next, seg) {
   const newcomers = Math.round(WORD_OF_MOUTH_BASE * health * communityBuzz * presence * mediaMul * grassrootsMul)
   if (newcomers <= 0) return 0
 
-  distributeNewPlayers(seg, next.segmentLean, newcomers)
+  distributeNewPlayers(seg, effectiveLean(next), newcomers)
   return newcomers
 }
 

@@ -19,7 +19,7 @@ import { releaseSet, reprintAsUnlimited, adjustPendingWave } from './sets.js'
 import { pullFromPrint } from './bans.js'
 import { ripPack } from './packs.js'
 import { resetCadence } from './cadence.js'
-import { distributeNewPlayers } from './segments.js'
+import { distributeNewPlayers, effectiveLean } from './segments.js'
 import { compProduct, sponsorCreator, dropSponsor, invitePrerelease, sponsorTournament } from './relationships.js'
 import { signDistributor, dropDistributor, cultivateDistributor, upgradeSupplyChain } from './distributors.js'
 import { signGradingPartner, dropGradingPartner, cultivateGradingPartner } from './grading.js'
@@ -89,7 +89,7 @@ export function reducer(state, action) {
       const baseCards = softenedCards ?? state.cards
       // Release discovery wave: distribute the new players into segments by lean.
       const segments = { ...state.segments }
-      distributeNewPlayers(segments, state.segmentLean, newPlayers ?? 0)
+      distributeNewPlayers(segments, effectiveLean(state), newPlayers ?? 0)
       const playerBase = segments.casual + segments.collectors
       // A tier-aware launch line: a major opens a block (names the gimmick); a
       // rider rides one. Falls back to the classic line for a blockless release.

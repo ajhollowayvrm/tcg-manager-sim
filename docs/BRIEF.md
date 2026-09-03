@@ -290,12 +290,25 @@ The tolerance is 0.2 rather than 0.25 because the largest drift any two
 demeanours can express is 0.735 — at 0.25 the `not-her` verdict needed a drift
 above 0.75 on a promotion and could never fire at all.
 
-- **Archetype** — 12 across 4 categories (`content/archetypes.js`). The one
-  identity field the sim reads. It carries theme tags, so an on-theme character
-  earns +10 art appeal and +10 hype, beside the artist specialty match and
-  deliberately smaller than it. It also biases fame drift: a mascot climbs
-  fastest and bruises easiest; a villain grows on the heat that would sink one.
+- **Archetype** — 24 across 8 categories (`content/archetypes.js`): Faces,
+  Antagonists, Mythic, Supporting cast, Rogues, Wilds, Folk and Courts. The one
+  identity field the sim reads, and it reaches five systems:
+  - **theme cohesion** — an on-theme character earns +10 art appeal and +10 hype,
+    beside the artist specialty match and deliberately smaller than it;
+  - **fame drift** — a mascot climbs fastest and bruises easiest; a villain grows
+    on the heat that would sink one;
+  - **a fame ceiling** — how famous this archetype can ever *become*. Without it
+    every archetype converged on 100 within three years and stopped being
+    distinguishable at all; now a mentor is beloved and never the face of the
+    franchise, and four archetypes sit below the icon floor and can never become
+    icons. It caps the climb, never yanking a character already above it;
+  - **merch pull** — a mascot moves plush, a machine is admired and not cuddled;
+  - **segment lean** — who the cast attracts, casual against collector, which
+    shapes both word-of-mouth and which brand partner a character suits.
+
   **It locks on debut** — otherwise re-picking it per set is a free exploit.
+  `unaligned` is numerically inert on every one of those dials, because it is
+  what characters from before archetypes normalise onto.
 - **Traits** — up to 2 from 27 (`content/traits.js`). Flavour only. They exist to
   be said: the community names them in the feed.
 - **Fame** (0–100) drifts weekly off how the character's live cards perform, not
@@ -369,6 +382,12 @@ act rather than a scarcity one, and their hype is nudged toward the group's mean
 each week so the members visibly move together.
 
 **Segments.** Two: `casual` and `collectors`. Almost no decision pleases both.
+
+Card **controversy** cools by 1.5 a week. It used to be a one-way ratchet — a
+`pull` take added 14, an event 12–22, and nothing ever reduced it — so every card
+anybody argued about crept to the clamp and stayed, quietly turning the
+archetype's `controversyFuel` into a permanent tax rather than the episodic
+scandal it describes. An actively argued card still saturates in ten weeks.
 
 **Personas.** 52 named voices (`content/personas.js`). Reach and credibility are
 deliberately anti-correlated, so the loudest voices are systematically the least

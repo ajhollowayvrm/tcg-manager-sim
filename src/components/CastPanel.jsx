@@ -20,7 +20,7 @@
 // expands to the forms — each of which still opens its own sheet.
 
 import { useMemo, useState } from 'react'
-import { getArchetype } from '../game/content/archetypes.js'
+import { getArchetype, ARCHETYPE_CATEGORIES } from '../game/content/archetypes.js'
 import { MAX_TRAITS } from '../game/content/traits.js'
 import CharacterDetail, { ArchetypeSelect, TraitPicker } from './CharacterDetail.jsx'
 import PersonDetail from './cast/PersonDetail.jsx'
@@ -33,12 +33,13 @@ const CHAR_TRAJ_LABEL = { rising: 'Rising', established: 'Established', icon: 'I
 // Filter chips: All, then each archetype category, so twelve archetypes stay
 // scannable without twelve chips. 'unaligned' is reachable through its own
 // category like any other.
+// DERIVED from the archetype table, not restated here. This was a hand-kept copy
+// of the four categories, which meant adding one to content/archetypes.js left it
+// filterable nowhere — the characters were still in "All" and could not be found
+// any other way, silently, with nothing to notice it by.
 const CATEGORY_FILTERS = [
   { id: 'all', label: 'All' },
-  { id: 'faces', label: 'Faces' },
-  { id: 'antagonists', label: 'Antagonists' },
-  { id: 'mythic', label: 'Mythic' },
-  { id: 'supporting', label: 'Supporting' },
+  ...ARCHETYPE_CATEGORIES.map((c) => ({ id: c.id, label: c.name })),
 ]
 
 function trajClass(t) {
