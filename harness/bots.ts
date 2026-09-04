@@ -7,11 +7,12 @@
  */
 import type {
   SimState, IpId, ArtistId, Rarity, PrintQualityTier, ProductKind, SetType, ProductId, IpKind,
-  ChannelId, Channel, Tick, SetId, Cents, Artist, ArtistTerms,
+  ChannelId, Channel, Tick, SetId, Cents, Artist, ArtistTerms, RegionId,
 } from '../src/sim/types.ts';
 import { api } from '../src/sim/engine.ts';
 import { rand, pick, chance } from '../src/sim/rng.ts';
 import { REGION_US, IP_KINDS } from '../src/sim/world.ts';
+import { readRegion } from '../src/sim/regions.ts';
 import { CHANNEL_IDS, effectiveCapacity, unlockCost } from '../src/sim/channels.ts';
 
 export interface Bot {
@@ -128,6 +129,19 @@ export interface SetBotOptions {
    * no weekly bill and no claim on them.
    */
   artistTerms?: ArtistTerms;
+  /**
+   * Whether the bot sells abroad.
+   *
+   * - `home` never leaves the US, which is what every bot in the original
+   *   roster did and what keeps that path covered.
+   * - `expand` opens one region at a time, picking the one its own reading
+   *   rates highest, then buys that region's channels and defines a SKU per
+   *   open region on every set.
+   *
+   * `expand` is the only strategy that reads `readRegion`, which is the point:
+   * a reading nothing consults is dead code however carefully it is built.
+   */
+  regionPolicy?: 'home' | 'expand';
 }
 
 /**
@@ -138,6 +152,57 @@ export interface SetBotOptions {
 const UNLOCK_ORDER: ChannelId[] = [
   CHANNEL_IDS.online, CHANNEL_IDS.distributor, CHANNEL_IDS.bigbox, CHANNEL_IDS.direct,
 ];
+
+/**
+ * The channel gates, in order, across every region the bot has opened. The home
+ * market comes first: a second region's LGS is worth less than the US big box,
+ * and buying reach abroad before you have it at home is a way to lose money in
+ * two markets at once.
+ */
+function gateOrder(s: SimState, opts: SetBotOptions): ChannelId[] {
+  const base = opts.unlockOrder ?? UNLOCK_ORDER;
+  if (opts.regionPolicy !== 'expand') return base;
+  const pub = s.publishers[s.playerId]!;
+  const abroad = Object.values(s.channels)
+    .filter(ch => ch.regionId !== REGION_US && pub.unlocks.regions.includes(ch.regionId))
+    .sort((a, b) => a.requiredBrandStanding - b.requiredBrandStanding)
+    .map(ch => ch.id);
+  return [...base, ...abroad];
+}
+
+/**
+ * Opens the region this bot's own reading rates highest, one at a time.
+ *
+ * The reading is noisy in inverse proportion to `knowledge`, and an unopened
+ * region has `knowledge` 0 — so this is a genuine bet, and it is meant to be
+ * wrong sometimes. The reserve is two full print runs rather than one: a
+ * region pays back over years, and spending down to the bone to open one is
+ * how a publisher dies of a good idea.
+ */
+function maybeExpand(s: SimState, opts: SetBotOptions, reserve: number): void {
+  if (opts.regionPolicy !== 'expand') return;
+  const pub = s.publishers[s.playerId]!;
+  const candidates = Object.values(s.regions).filter(
+    r => r.unlockedTick === null && pub.cash - r.unlockCost > reserve * 2,
+  );
+  if (candidates.length === 0) return;
+
+  let best: RegionId | null = null;
+  let bestScore = -Infinity;
+  for (const r of candidates) {
+    const reading = readRegion(s, r.id);
+    if (!reading) continue;
+    // Size and spending power are public; taste is not. The reading is what
+    // carries the error, so it is what makes this a bet rather than a sort.
+    const taste = Object.values(reading.tasteBias).reduce((a, b) => a + b, 0)
+      / Math.max(1, Object.keys(reading.tasteBias).length);
+    const appetite = Object.values(reading.rarityAppetite).reduce((a, b) => a + b, 0)
+      / Math.max(1, Object.keys(reading.rarityAppetite).length);
+    const score = r.marketSize * r.wealth * (0.5 + taste) * appetite * reading.priceTolerance;
+    if (score > bestScore) { bestScore = score; best = r.id; }
+  }
+  if (best) api.unlockRegion(s, best);
+}
 
 function maybeUnlock(s: SimState, reserve: number, runUnits: number, order = UNLOCK_ORDER): void {
   const pub = s.publishers[s.playerId]!;
@@ -190,7 +255,11 @@ function openChannels(s: SimState): Channel[] {
 
 function submitAllocation(s: SimState, productId: ProductId, units: number, opts: SetBotOptions): void {
   if (opts.allocationPolicy === 'auto') return;
-  const open = openChannels(s);
+  // A product only ships through channels in its own region — `allocate`
+  // refuses the rest anyway, and offering them here would silently drop that
+  // share of the run into the warehouse.
+  const product = s.products[productId];
+  const open = openChannels(s).filter(ch => !product || ch.regionId === product.regionId);
   if (open.length === 0) return;
 
   const plan: Record<ChannelId, number> = {};
@@ -270,7 +339,8 @@ export function makeSetBot(opts: SetBotOptions): Bot {
       // every step rather than only on a release week. The reserve is one full
       // print run, so a bot never unlocks its way out of being able to print.
       if (s.tick % 13 === 0) {
-        maybeUnlock(s, printRunCost(s, opts), printRunUnits(s, opts), opts.unlockOrder);
+        maybeUnlock(s, printRunCost(s, opts), printRunUnits(s, opts), gateOrder(s, opts));
+        maybeExpand(s, opts, printRunCost(s, opts));
       }
       submitDrops(s, opts);
       submitMarketing(s, opts);
@@ -299,16 +369,47 @@ export function makeSetBot(opts: SetBotOptions): Bot {
         maybeSign(s, opts, artistId);
       }
 
-      const productId = api.defineProduct(s, setId, opts.productKind, REGION_US, opts.packsPerUnit, opts.msrp);
-      api.commitPrintRun(
-        s,
-        setId,
-        { [productId]: runUnits } as Record<ProductId, number>,
-        opts.quality,
-      );
+      // One SKU per open region. A region with no product gets no release date
+      // and sells nothing, so this is what turns an unlock into volume — and
+      // the print run is split across them, not multiplied by them.
+      const shipTo = opts.regionPolicy === 'expand'
+        ? pub.unlocks.regions.filter(id => !!s.regions[id])
+        : [REGION_US];
+      // Split by the reach the bot actually has in each region, not evenly. A
+      // second region opens with one small LGS against four US channels, so an
+      // even split ships most of the run into a market that cannot move it —
+      // which measures a careless allocator rather than measuring regions.
+      const reachByRegion = shipTo.map(regionId => {
+        const caps = openChannels(s)
+          .filter(ch => ch.regionId === regionId)
+          .map(effectiveCapacity);
+        return caps.reduce((a, b) => a + b, 0);
+      });
+      const totalReach = reachByRegion.reduce((a, b) => a + b, 0);
+
+      const quantities = {} as Record<ProductId, number>;
+      const productIds: ProductId[] = [];
+      const unitsByProduct = new Map<ProductId, number>();
+      for (let i = 0; i < shipTo.length; i++) {
+        const regionId = shipTo[i]!;
+        const share = totalReach > 0 ? reachByRegion[i]! / totalReach : 1 / shipTo.length;
+        const perRegion = Math.max(1, Math.floor(runUnits * share));
+        // A region's price is its own. Selling a US-priced box into a market
+        // that tolerates 0.6 of US prices is a mistake the bot should be able
+        // to avoid, and `priceTolerance` is public where taste is not.
+        const region = s.regions[regionId]!;
+        const msrp = Math.round(opts.msrp * region.truth.priceTolerance);
+        const pid = api.defineProduct(s, setId, opts.productKind, regionId, opts.packsPerUnit, msrp);
+        quantities[pid] = perRegion;
+        unitsByProduct.set(pid, perRegion);
+        productIds.push(pid);
+      }
+      api.commitPrintRun(s, setId, quantities, opts.quality);
       // Allocation locks with the print run, in the same batch. This is the
       // blind bet — it lands before reveal and never changes after.
-      submitAllocation(s, productId, runUnits, opts);
+      for (const pid of productIds) {
+        submitAllocation(s, pid, unitsByProduct.get(pid)!, opts);
+      }
     },
   };
 }
@@ -375,6 +476,16 @@ export const BOTS: Record<string, () => Bot> = {
   smallBets: betSizeBot('SmallBets', 0.10),
   bigBets: betSizeBot('BigBets', 0.50),
   allIn: betSizeBot('AllIn', 0.95),
+
+  // `conservative` in every respect except that it sells abroad. Holding the
+  // rest identical is the point: any difference in the two rows is regions and
+  // nothing else. It is the only bot that consults `readRegion`.
+  globalist: () => makeSetBot({
+    label: 'Globalist', cadenceWeeks: 52, cardsPerSet: 70, setType: 'main',
+    quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000,
+    productKind: 'boosterBox', allocationPolicy: 'spread',
+    regionPolicy: 'expand',
+  }),
 
   // Few, well-supported sets. The steady baseline.
   conservative: () => makeSetBot({

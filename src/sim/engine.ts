@@ -8,7 +8,12 @@ import type {
 } from './types.ts';
 import { rand, randRange, randInt, pick, chance, gauss } from './rng.ts';
 import { emptySeries, writePoint, compact } from './series.ts';
-import { nextId, SEGMENTS, RARITIES, ARTIST_PERSONALITIES, ARTIST_SPECIALTIES } from './world.ts';
+import {
+  nextId, SEGMENTS, RARITIES, ARTIST_PERSONALITIES, ARTIST_SPECIALTIES, REGION_US,
+} from './world.ts';
+import {
+  regionDemandFactor, tickRegionKnowledge, creditRelease, readRegion, readingFit,
+} from './regions.ts';
 import {
   traitsFor, effectiveCapacity, allocatedUnits, autoAllocate, unlockCost, CHANNEL_IDS,
 } from './channels.ts';
@@ -81,7 +86,8 @@ function createSet(s: SimState, id: SetId, name: string, type: SetType, size: nu
   s.sets[id] = {
     id, publisherId: s.playerId, name, type, status: 'design',
     cardIds: [], productIds: [], collabId: null,
-    regionSchedule: [], designStartTick: s.tick, commitTick: null, revealStartTick: null,
+    regionSchedule: [], regionReadings: null,
+    designStartTick: s.tick, commitTick: null, revealStartTick: null,
     budget: C(0), actualCost: C(0), printQuality: 'standard', attentionCost: 0,
     performance: null, hype: null,
   };
@@ -161,7 +167,38 @@ function commitPrintRun(s: SimState, setId: SetId, quantities: Record<ProductId,
   // `scheduleReveal` can move the reveal start inside this window afterwards.
   // The release date and the print run cannot move at all — that is the bet.
   set.revealStartTick = T(s.tick + 12);
-  set.regionSchedule = [{ regionId: 'reg_us' as RegionId, releaseTick: T(s.tick + 18) }];
+  // Every region this set has a product in gets a release date, staggered by
+  // `entryLeadWeeks`. The home market ships first and the rest follow, which is
+  // CONCEPT.md §6.6's "region order is the preview mechanism": a publisher who
+  // has opened a second region sees the first one's numbers before the second
+  // one lands, and still cannot change the print run.
+  const shipTo = new Set<RegionId>();
+  for (const pid of set.productIds) {
+    const p = s.products[pid];
+    if (p) shipTo.add(p.regionId);
+  }
+  if (shipTo.size === 0) shipTo.add(REGION_US);
+  const ordered = [...shipTo].sort(
+    (a, b) => (a === REGION_US ? -1 : b === REGION_US ? 1 : String(a).localeCompare(String(b))),
+  );
+  set.regionSchedule = ordered.map((regionId, i) => ({
+    regionId,
+    releaseTick: T(s.tick + 18 + i * s.config.region.entryLeadWeeks),
+  }));
+  // The reading is taken here and frozen, for the same reason the reveal
+  // signal's truth is frozen at release: this is the last moment before the
+  // answer is knowable, so it is the only moment at which scoring the reading
+  // means anything.
+  set.regionReadings = {} as Record<RegionId, number>;
+  for (const { regionId } of set.regionSchedule) {
+    const region = s.regions[regionId];
+    const reading = readRegion(s, regionId);
+    const product = set.productIds
+      .map(pid => s.products[pid])
+      .find(pr => pr && pr.regionId === regionId);
+    if (!region || !reading || !product) continue;
+    set.regionReadings[regionId] = readingFit(s, reading, set, product, region);
+  }
   set.hype = {
     cadence: s.config.hype.defaultCadenceWeeks,
     cardsRevealed: 0, lastRevealTick: null,
@@ -293,6 +330,32 @@ function purchaseUnlock(s: SimState, unlock: keyof UnlockState, detail?: string)
 }
 
 /**
+ * Opens a second market (CONCEPT.md §6.6, §9).
+ *
+ * The fee is only the door. The region's channels are all locked behind their
+ * own brand gates and their own prices, so an early unlock buys the right to
+ * start building reach rather than the reach itself — which is what stops
+ * "open everything in year one" from being the obvious play.
+ */
+function unlockRegion(s: SimState, regionId: RegionId): void {
+  const pub = s.publishers[s.playerId];
+  const region = s.regions[regionId];
+  if (!pub || !region || region.unlockedTick !== null) return;
+  if (pub.unlocks.regions.includes(regionId)) return;
+  if (pub.cash < region.unlockCost) return;
+
+  pub.cash = C(pub.cash - region.unlockCost);
+  pub.ledger.push({
+    t: s.tick, amount: C(-region.unlockCost), category: 'unlock',
+    note: region.name, refId: region.id,
+  });
+  region.unlockedTick = s.tick;
+  pub.unlocks.regions.push(regionId);
+  emit(s, 'regionUnlocked', true, { publisherId: pub.id, regionId },
+    { cost: region.unlockCost, marketSize: region.marketSize });
+}
+
+/**
  * Puts a fixed quantity of one product up for a drop at a chosen tick. Only the
  * direct store runs drops: every other channel sells continuously off a shelf,
  * and that is the whole difference between them (CONCEPT.md §6.5).
@@ -346,6 +409,7 @@ function applyDecision(s: SimState, d: Decision): void {
       break;
     case 'allocate': allocate(s, d.payload.productId, d.payload.allocations); break;
     case 'purchaseUnlock': purchaseUnlock(s, d.payload.unlock, d.payload.detail); break;
+    case 'unlockRegion': unlockRegion(s, d.payload.regionId); break;
     case 'reprint': reprint(s, d.payload.cardId, d.payload.intoSetId, d.payload.quantity); break;
     case 'scheduleReveal':
       scheduleReveal(s, d.payload.setId, d.payload.startTick, d.payload.cadence);
@@ -423,6 +487,9 @@ export const api = {
   },
   purchaseUnlock(s: SimState, unlock: keyof UnlockState, detail?: string): void {
     submit(s, { type: 'purchaseUnlock', tick: s.tick, payload: { unlock, detail } });
+  },
+  unlockRegion(s: SimState, regionId: RegionId): void {
+    submit(s, { type: 'unlockRegion', tick: s.tick, payload: { regionId } });
   },
   reprint(s: SimState, cardId: CardId, intoSetId: SetId, quantity: number): void {
     submit(s, { type: 'reprint', tick: s.tick, payload: { cardId, intoSetId, quantity } });
@@ -564,7 +631,9 @@ function releaseSet(s: SimState, setId: SetId, regionId: RegionId): void {
     chaseIndex: setChase(s, set), aftermarketIndex: 0,
     goodwillDelta: goodwillBurn / SEGMENTS.length,
   };
-  emit(s, 'setReleased', true, { setId, publisherId: set.publisherId }, { cards: set.cardIds.length });
+  creditRelease(s, regionId);
+  emit(s, 'setReleased', true, { setId, publisherId: set.publisherId },
+    { cards: set.cardIds.length, regionId: regionId as string, wave: 0 });
 }
 
 // ---------------------------------------------------------------------------
@@ -962,6 +1031,11 @@ function tickSales(s: SimState, products: Product[]): void {
     if (p.unitsRemaining <= 0) continue;
     const set = s.sets[p.setId]!;
     if (set.status !== 'released') continue;
+    // A set ships region by region. A product cannot sell before its own
+    // region's date, which is what makes a staggered release a preview rather
+    // than a formality.
+    const sched = set.regionSchedule.find(r => r.regionId === p.regionId);
+    if (!sched || s.tick < sched.releaseTick) continue;
     const pub = s.publishers[set.publisherId]!;
 
     const allocs = Object.entries(p.allocations) as Array<[ChannelId, ChannelAllocation]>;
@@ -979,8 +1053,14 @@ function tickSales(s: SimState, products: Product[]): void {
     const share = s.audience.shareByPublisher[pub.id] ?? 0;
     const shareFactor = share / cfg.attention.referenceShare;
 
-    const weeksOut = (s.tick - set.regionSchedule[0]!.releaseTick) / 52;
+    // Decay runs from this region's own release, not from the set's first one:
+    // a market that opened two years later has not had two years to go cold.
+    const weeksOut = (s.tick - sched.releaseTick) / 52;
     const decay = Math.exp(-weeksOut * 1.4);
+    // What this region is worth, and how much of it this set forfeits by not
+    // suiting it. A region with no opinion and average wealth lands on 1.
+    const region = s.regions[p.regionId];
+    const regionFactor = region ? regionDemandFactor(s, region, set, p) : 1;
     // The demand pool is what the audience wants this week, independent of who
     // is selling it. The channels then compete for it.
     // Hype multiplies the demand the set would have had. It cannot conjure
@@ -988,7 +1068,7 @@ function tickSales(s: SimState, products: Product[]): void {
     // still nearly zero.
     const pool = p.unitsPrinted * 0.06 * attention * shareFactor * fatigueTerm
       * goodwillTerm * (0.3 + pub.brandStanding) * (0.5 + chase) * decay
-      * (1 + (set.hype?.level ?? 0));
+      * (1 + (set.hype?.level ?? 0)) * regionFactor;
     // Below half a unit every channel's share rounds to zero, so the rest of
     // this pass cannot sell anything. Old sets sit here for decades: `decay` is
     // e^(-1.4 * years), so a five-year-old set is already three zeroes down.
@@ -2044,6 +2124,19 @@ export function tick(s: SimState): void {
       if (sched && s.tick >= sched.releaseTick) releaseSet(s, set.id, sched.regionId);
       else tickReveal(s, set);
     }
+    // A released set still has later regions to reach. Those are not another
+    // `releaseSet` — printings mint once, and the attention is burned once —
+    // they are the week that region's stock becomes sellable. `tickSales`
+    // enforces the date; this is what records it and what pays the knowledge.
+    if (set.status === 'released') {
+      for (let i = 1; i < set.regionSchedule.length; i++) {
+        const later = set.regionSchedule[i]!;
+        if (s.tick !== later.releaseTick) continue;
+        creditRelease(s, later.regionId);
+        emit(s, 'setReleased', true, { setId: set.id, publisherId: set.publisherId },
+          { regionId: later.regionId as string, wave: i });
+      }
+    }
     // Hype burns off after launch. What is left of it is what still lifts demand.
     if (set.status === 'released' && set.hype && set.hype.level > 0) {
       set.hype.level = Math.max(0, set.hype.level * (1 - s.config.hype.decayPerTickAfterRelease));
@@ -2065,6 +2158,7 @@ export function tick(s: SimState): void {
   tickArt(s);
   tickRoster(s);
   tickFinance(s);
+  tickRegionKnowledge(s);
   tickCompaction(s);
 }
 

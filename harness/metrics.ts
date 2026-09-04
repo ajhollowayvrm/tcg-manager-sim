@@ -2,7 +2,8 @@
  * Per-run balance metrics (CONCEPT.md §10 "Balance metrics to track") plus
  * CSV export for cross-seed / cross-bot comparison.
  */
-import type { SimState } from '../src/sim/types.ts';
+import type { SimState, RegionId } from '../src/sim/types.ts';
+import { setFit } from '../src/sim/regions.ts';
 
 export interface RunMetrics {
   bot: string;
@@ -110,6 +111,40 @@ export interface RunMetrics {
   printingsGraded: number;
   /** Graders taking submissions at the end of the run. The third is brand-gated. */
   gradersActive: number;
+
+  /** Art commissions and standing arrangements, in dollars. */
+  artSpend: number;
+  /** Share of the studio's cards that shipped with house filler art. */
+  houseArtShare: number;
+  /** Mean `artQuality` across the cards that got a real commission. */
+  meanArtQuality: number;
+  /** Mean reputation of the artists this studio actually used. */
+  meanArtistReputation: number;
+  /**
+   * Reputation those artists gained since this studio first commissioned them.
+   * The scouting bet is measured here: buying low should gain more of this and
+   * still lose about half the seeds on top card.
+   */
+  artistReputationGained: number;
+  artistsRetained: number;
+  /** Artists on the board at the end of the run. The roster drifts. */
+  rosterSize: number;
+
+  /** Regions the publisher has opened, including the home market. */
+  regionsOpen: number;
+  /** Cash paid at the doors of those regions, in dollars. */
+  regionUnlockSpend: number;
+  /** Mean `knowledge` across the opened regions. Zero on a home-market-only run. */
+  regionKnowledge: number;
+  /** Share of units sold that went to a market other than the home one. */
+  exportShare: number;
+  /**
+   * Correlation between what a region reading said a set was worth and what it
+   * was actually worth. This is the region half of the same question the reveal
+   * window asks: a reading nobody can score is a reading nobody can tune, and
+   * one that is always right makes market entry arithmetic.
+   */
+  regionReadingCorrelation: number;
 }
 
 /** Pearson r. Returns 0 rather than NaN for a degenerate sample. */
@@ -294,6 +329,40 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
   for (const a of usedArtists) gained += a.reputation - (firstSeen.get(a.id as string) ?? a.reputation);
   const artistReputationGained = usedArtists.length > 0 ? gained / usedArtists.length : 0;
 
+  // Regions. `exportShare` is read off the products rather than the ledger:
+  // sales are booked to the publisher, not to a market, so the region a unit
+  // went to is only recoverable from the product it came off.
+  const home = 'reg_us' as RegionId;
+  const openRegions = pub.unlocks.regions.map(id => s.regions[id]).filter(Boolean);
+  const regionUnlockSpend = pub.ledger
+    .filter(e => e.category === 'unlock' && e.refId !== undefined
+      && String(e.refId).startsWith('reg_'))
+    .reduce((n, e) => n - e.amount, 0) / 100;
+  const regionKnowledge = openRegions.length
+    ? openRegions.reduce((n, r) => n + r!.knowledge, 0) / openRegions.length : 0;
+  const exportUnits = products
+    .filter(p => p.regionId !== home)
+    .reduce((n, p) => n + (p.unitsPrinted - p.unitsRemaining), 0);
+  const exportShare = soldTotal > 0 ? exportUnits / soldTotal : 0;
+
+  // Scored the same way the reveal signal is: what the reading said when the
+  // bet was placed, against what the set turned out to be worth there.
+  const readingPairs: Array<[number, number]> = [];
+  for (const set of Object.values(s.sets)) {
+    if (!set.regionReadings) continue;
+    for (const [rid, predicted] of Object.entries(set.regionReadings)) {
+      const region = s.regions[rid as RegionId];
+      const product = set.productIds
+        .map(pid => s.products[pid])
+        .find(p => p && p.regionId === (rid as RegionId));
+      if (!region || !product) continue;
+      readingPairs.push([predicted, setFit(s, region, set, product)]);
+    }
+  }
+  const regionReadingCorrelation = correlation(
+    readingPairs.map(p => p[0]), readingPairs.map(p => p[1]),
+  );
+
   return {
     bot,
     seed: s.seed,
@@ -350,6 +419,11 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
     artistReputationGained,
     artistsRetained: Object.keys(pub.retainers).length,
     rosterSize: Object.values(s.artists).filter(a => a.available).length,
+    regionsOpen: openRegions.length,
+    regionUnlockSpend,
+    regionKnowledge,
+    exportShare,
+    regionReadingCorrelation,
   };
 }
 

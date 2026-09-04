@@ -62,11 +62,14 @@ const jobs = showDist ? 1 : Math.min(requestedJobs, tasks.length);
 
 const started = Date.now();
 const results: (RunResult | undefined)[] = new Array(tasks.length);
-let lastState: SimState | null = null;
+// Held in a box rather than a bare `let`: the only writer is the `keep`
+// callback below, and TypeScript cannot see through that, so a bare binding
+// narrows to `null` for the rest of the file and `--dist` stops compiling.
+const kept: { state: SimState | null } = { state: null };
 
 if (jobs === 1) {
   for (let i = 0; i < tasks.length; i++) {
-    const { metrics, violations } = runOne(tasks[i]!, st => { lastState = st; });
+    const { metrics, violations } = runOne(tasks[i]!, st => { kept.state = st; });
     results[i] = { order: i, metrics, violations };
   }
 } else {
@@ -165,6 +168,28 @@ console.table(botNames.map(b => {
     printRun: money(mean(r.map(x => x.meanPrintRun))),
   };
 }));
+
+// Regions, printed only for runs that opened one past the home market.
+const regionRows = botNames
+  .map(b => {
+    const r = rows.filter(x => x.bot === b);
+    const ran = r.filter(x => x.regionsOpen > 1);
+    if (ran.length === 0) return null;
+    return {
+      bot: b,
+      runsAbroad: `${ran.length}/${r.length}`,
+      regions: mean(ran.map(x => x.regionsOpen)).toFixed(1),
+      entrySpend: '$' + money(median(ran.map(x => x.regionUnlockSpend))),
+      knowledge: mean(ran.map(x => x.regionKnowledge)).toFixed(2),
+      exportShare: (100 * mean(ran.map(x => x.exportShare))).toFixed(0) + '%',
+      readingR: mean(ran.map(x => x.regionReadingCorrelation)).toFixed(2),
+    };
+  })
+  .filter(Boolean);
+if (regionRows.length) {
+  console.log('regions:');
+  console.table(regionRows);
+}
 
 // Drops get their own table. The main one is already too wide to read, and a
 // run that never opened a direct store has nothing to say here.
@@ -266,8 +291,8 @@ if (artRows.length) {
 
 // A decile ladder for the last run. Median and max alone cannot tell a power
 // law from flat mush; the step between deciles can. Each step should widen.
-if (showDist && lastState) {
-  const prices = Object.values(lastState.printings)
+if (showDist && kept.state) {
+  const prices = Object.values(kept.state.printings)
     .map(pr => pr.market.rawPrice / 100)
     .sort((a, b) => a - b);
   console.log(`\nprice deciles, last run (${prices.length} printings):`);

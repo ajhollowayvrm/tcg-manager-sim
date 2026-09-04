@@ -84,6 +84,12 @@ export interface SimState {
    * attributable to the art multiplier rather than to reshuffled noise.
    */
   artRng: RngState;
+  /**
+   * A fourth stream, for region readings. A reading is an observation of
+   * `Region.truth`, so like grading it must not renumber the value engine's
+   * draws — otherwise scoring a reading changes the prices it was read against.
+   */
+  regionRng: RngState;
   tick: Tick;
 
   /** Monotonic counter for deterministic id generation. */
@@ -349,6 +355,17 @@ export interface CardSet {
   /** Staggered release. Region order is the preview mechanism. */
   regionSchedule: Array<{ regionId: RegionId; releaseTick: Tick }>;
 
+  /**
+   * What a reading of each region said this set was worth, taken at the moment
+   * the print run was committed — the moment the bet is placed and stops being
+   * guessable. Null until commit.
+   *
+   * This is the region twin of `SetPerformance.chaseIndex`: the harness scores
+   * the reading against the truth, and a reading nobody can score is a reading
+   * nobody can tune. Nothing in the value engine reads it.
+   */
+  regionReadings: Record<RegionId, number> | null;
+
   designStartTick: Tick;
   /** Print runs lock here — before reveal, before any real signal. */
   commitTick: Tick | null;
@@ -578,6 +595,8 @@ export interface Region {
 
   /** 0..1. Grows with research spend and with release history in-region. */
   knowledge: Unit;
+  /** Null until the player opens it. `reg_us` is open from tick 0. */
+  unlockedTick: Tick | null;
 }
 
 export type ChannelKind = 'lgs' | 'distributor' | 'bigbox' | 'online' | 'direct';
@@ -902,7 +921,8 @@ export type SimEventKind =
   | 'fatigueWarning' | 'graderEnteredMarket'
   | 'dropScheduled' | 'dropSoldOut' | 'dropUndersold' | 'scalperCrash'
   | 'artCommissioned' | 'artDelivered' | 'artMissedRelease'
-  | 'artistSigned' | 'artistRetired' | 'artistArrived';
+  | 'artistSigned' | 'artistRetired' | 'artistArrived'
+  | 'regionUnlocked' | 'collabOffered' | 'collabSigned' | 'collabExpired';
 
 export interface SimEvent {
   id: EventId;
@@ -911,7 +931,8 @@ export interface SimEvent {
   /** True if this should interrupt a multi-week skip. */
   interrupts: boolean;
   refs: Partial<Record<
-    'publisherId' | 'setId' | 'printingId' | 'cardId' | 'ipId' | 'artistId' | 'channelId' | 'creatorId',
+    'publisherId' | 'setId' | 'printingId' | 'cardId' | 'ipId' | 'artistId' | 'channelId'
+    | 'creatorId' | 'regionId' | 'collabId',
     string
   >>;
   /** Raw data. Prose is generated at presentation time, never stored here. */
@@ -1224,6 +1245,10 @@ export interface SimConfig {
     knowledgeGainPerResearch: number;
     /** Sales penalty for a SKU mismatched to regional taste. */
     mismatchPenalty: number;
+    /** Spread on a region reading at `knowledge` 0. See `readRegion`. */
+    readingNoiseSigma: number;
+    /** Weeks between one region's release wave and the next. */
+    entryLeadWeeks: number;
   };
 
   history: {

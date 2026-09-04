@@ -6,7 +6,7 @@
 import type {
   SimState, SimConfig, Tick, Cents, PublisherId, RegionId, ArtistId, GraderId,
   AudienceSegment, Rarity, ArtistPersonality, ArtistSpecialty, IpKind, ProductKind,
-  Channel, Unit,
+  Channel, ChannelId, Unit,
 } from './types.ts';
 import { seedRng, rand, randRange, pick } from './rng.ts';
 import { CHANNEL_IDS } from './channels.ts';
@@ -30,6 +30,36 @@ export const RARITIES: Rarity[] = [
 export const IP_KINDS: IpKind[] = ['character', 'location', 'faction', 'concept', 'event'];
 
 export const REGION_US = 'reg_us' as RegionId;
+export const REGION_EU = 'reg_eu' as RegionId;
+export const REGION_JP = 'reg_jp' as RegionId;
+export const REGION_LATAM = 'reg_latam' as RegionId;
+
+/**
+ * The regions past the home market, in the order CONCEPT.md §9 opens them.
+ *
+ * Each one is a different shape of bet rather than a bigger version of the same
+ * one. Japan is small, rich and opinionated; Latin America is large, poor and
+ * cheap to enter; Europe is the safe middle. The taste itself is rolled per
+ * seed, so the shapes are the constants and the specifics are what a run has to
+ * learn.
+ */
+export const REGION_SEEDS = [
+  {
+    id: REGION_EU, name: 'Europe',
+    marketSize: 0.85, wealth: 0.75, unlockCost: 600_000_00 as Cents,
+    priceTolerance: 0.95,
+  },
+  {
+    id: REGION_JP, name: 'Japan',
+    marketSize: 0.55, wealth: 0.9, unlockCost: 900_000_00 as Cents,
+    priceTolerance: 1.15,
+  },
+  {
+    id: REGION_LATAM, name: 'Latin America',
+    marketSize: 1.1, wealth: 0.35, unlockCost: 250_000_00 as Cents,
+    priceTolerance: 0.6,
+  },
+] as const;
 
 /**
  * Share of audience attention the player starts with. Rivals hold the rest
@@ -63,6 +93,7 @@ export function createWorld(seed: string, config: SimConfig): SimState {
     // Grading draws from its own stream so that adding an observer of the value
     // engine does not renumber the value engine's own draws.
     gradingRng: seedRng(`${seed}:grading`),
+    regionRng: seedRng(`${seed}:region`),
     // Art is not an observer — `artQuality` multiplies price directly — but it
     // still gets its own stream so a commission roll does not renumber the
     // value engine's draws. That is what keeps the price movement this pass
@@ -164,7 +195,40 @@ export function createWorld(seed: string, config: SimConfig): SimState {
       readingNoiseSeed: rand(rng),
     },
     knowledge: 0.3,
+    unlockedTick: t0,
   };
+
+  // The regions past the home market. Their taste is drawn from `regionRng`,
+  // not from `rng`: a single extra draw on the main stream renumbers every
+  // later roll in the run and moves every balance number in HANDOFF.md. The
+  // same rule that keeps the grader roster on literals applies here.
+  const rrng = s.regionRng;
+  for (const seed of REGION_SEEDS) {
+    s.regions[seed.id] = {
+      id: seed.id,
+      name: seed.name,
+      marketSize: seed.marketSize,
+      wealth: seed.wealth,
+      unlockCost: seed.unlockCost,
+      truth: {
+        segmentMix: Object.fromEntries(
+          SEGMENTS.map(g => [g, randRange(rrng, 0.05, 0.3)])) as Record<AudienceSegment, number>,
+        tasteBias: Object.fromEntries(
+          IP_KINDS.map(k => [k, randRange(rrng, -0.3, 0.3)])) as Record<IpKind, number>,
+        rarityAppetite: Object.fromEntries(
+          RARITIES.map(r => [r, randRange(rrng, 0.5, 1.5)])) as Record<Rarity, number>,
+        productPreference: Object.fromEntries(
+          Object.keys(productPreference).map(
+            k => [k, productPreference[k as ProductKind]! * randRange(rrng, 0.6, 1.4)],
+          )) as Record<ProductKind, number>,
+        priceTolerance: seed.priceTolerance,
+        readingNoiseSeed: rand(rrng),
+      },
+      // A region you have never sold into is a region you know nothing about.
+      knowledge: 0,
+      unlockedTick: null,
+    };
+  }
 
   // The full roster exists from tick 0; only the LGS network is open. The rest
   // are bought with the `purchaseUnlock` decision once brand standing clears
@@ -204,6 +268,44 @@ export function createWorld(seed: string, config: SimConfig): SimState {
   for (const seed of CHANNEL_SEEDS) {
     s.channels[seed.id] = { ...seed, lastAllocatedTick: null };
     if (seed.unlocked) s.publishers[playerId]!.unlocks.channels.push(seed.id);
+  }
+
+  // Every region has its own channels, and none of them is open. Opening the
+  // region is what makes them buyable; each one is then bought separately, at
+  // the same brand gates as its US counterpart. A region is therefore never one
+  // payment — it is a payment and then a channel tree, which is what keeps an
+  // early unlock from being free reach.
+  //
+  // The home market keeps the big box and the direct store to itself. A
+  // publisher's own store is singular by definition, and a chain deal abroad is
+  // CONCEPT.md §7's "a rival takes your chains" hook rather than a purchase.
+  for (const seed of REGION_SEEDS) {
+    const region = s.regions[seed.id]!;
+    const scale = seed.marketSize;
+    const abroad: Array<Omit<Channel, 'lastAllocatedTick'>> = [
+      {
+        id: `ch_lgs_${seed.id}` as ChannelId, name: `${seed.name} LGS Network`,
+        kind: 'lgs', regionId: region.id,
+        relationship: 0.45, capacityUnits: Math.round(12_000 * scale), marginShare: 0.55,
+        minimumOrder: 1, reliability: 0.75,
+        requiredBrandStanding: 0, unlocked: false, queueCapacity: null,
+      },
+      {
+        id: `ch_online_${seed.id}` as ChannelId, name: `${seed.name} Online Retail`,
+        kind: 'online', regionId: region.id,
+        relationship: 0.45, capacityUnits: Math.round(40_000 * scale), marginShare: 0.5,
+        minimumOrder: 500, reliability: 0.8,
+        requiredBrandStanding: 0.12, unlocked: false, queueCapacity: null,
+      },
+      {
+        id: `ch_dist_${seed.id}` as ChannelId, name: `${seed.name} Distributor`,
+        kind: 'distributor', regionId: region.id,
+        relationship: 0.4, capacityUnits: Math.round(120_000 * scale), marginShare: 0.38,
+        minimumOrder: 2_000, reliability: 0.85,
+        requiredBrandStanding: 0.25, unlocked: false, queueCapacity: null,
+      },
+    ];
+    for (const ch of abroad) s.channels[ch.id] = { ...ch, lastAllocatedTick: null };
   }
 
   // Rivals exist from tick 0 and already own most of the audience. They don't

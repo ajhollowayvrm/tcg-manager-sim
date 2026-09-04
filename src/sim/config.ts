@@ -265,10 +265,21 @@ export const defaultConfig: SimConfig = {
     sideGraderBrandGate: 0.55,
   },
 
+  // First-guess numbers. The shape that matters: a region has to be able to be
+  // the wrong region, or opening one is a pure size multiplier and the decision
+  // is "yes, all of them, as soon as you can afford it".
   region: {
     knowledgeGainPerRelease: 0.02,
     knowledgeGainPerResearch: 0.05,
     mismatchPenalty: 0.25,
+    /**
+     * Spread on a region reading at `knowledge` 0. Wide on purpose, for the
+     * same reason `hype.signalNoiseSigma` is: a reading that is nearly right
+     * from the first week makes knowledge worthless and the entry bet solved.
+     */
+    readingNoiseSigma: 0.8,
+    /** Weeks between a region unlock and the first release the player can ship there. */
+    entryLeadWeeks: 26,
   },
 
   history: {
