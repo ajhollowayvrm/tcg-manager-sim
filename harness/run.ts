@@ -185,6 +185,32 @@ if (hypeRows.length) {
   console.table(hypeRows);
 }
 
+// Grading gets its own table too, and prints only for runs where anything was
+// actually submitted. `printings` is the denominator that matters: grading is
+// supposed to be a minority of the population, not all of it.
+const gradingRows = botNames
+  .map(b => {
+    const r = rows.filter(x => x.bot === b);
+    const ran = r.filter(x => x.gradedCopies > 0);
+    if (ran.length === 0) return null;
+    return {
+      bot: b,
+      runsWithGrading: `${ran.length}/${r.length}`,
+      printingsGraded: mean(ran.map(x => x.printingsGraded)).toFixed(0),
+      ofPrintings: (100 * mean(ran.map(x => x.gradedPrintingShare))).toFixed(1) + '%',
+      gradedCopies: mean(ran.map(x => x.gradedCopies)).toFixed(0),
+      gradedShare: (100 * mean(ran.map(x => x.gradedShare))).toFixed(2) + '%',
+      gemRate: (100 * mean(ran.map(x => x.gemRate))).toFixed(1) + '%',
+      gem10Premium: mean(ran.map(x => x.gem10Premium)).toFixed(1) + 'x',
+      graders: mean(ran.map(x => x.gradersActive)).toFixed(1),
+    };
+  })
+  .filter(Boolean);
+if (gradingRows.length) {
+  console.log('grading and pop reports:');
+  console.table(gradingRows);
+}
+
 // A decile ladder for the last run. Median and max alone cannot tell a power
 // law from flat mush; the step between deciles can. Each step should widen.
 if (showDist && lastState) {

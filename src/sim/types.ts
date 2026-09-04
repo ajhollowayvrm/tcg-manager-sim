@@ -67,6 +67,13 @@ export interface SimState {
   schemaVersion: number;
   seed: string;
   rng: RngState;
+  /**
+   * A second, independent stream, used by grading and nothing else. Grading is
+   * an observer of the value engine, so its rolls must not renumber the value
+   * engine's: sharing `rng` would shift every later draw in the run and make
+   * the five value targets in HANDOFF.md incomparable across the change.
+   */
+  gradingRng: RngState;
   tick: Tick;
 
   /** Monotonic counter for deterministic id generation. */
@@ -605,7 +612,14 @@ export interface Grader {
   /** Higher = fewer 10s. Interacts with print quality. */
   strictness: number;
   marketShare: Unit;
+  /** Cheapest first. A submitter buys the best tier the card can justify. */
   tiers: Array<{ name: string; price: Cents; turnaroundWeeks: number }>;
+  /**
+   * Tick this grader started taking submissions. A grader that has not entered
+   * the player's market yet carries a tick past the end of any run, and the
+   * engine sets this to the real tick when brand standing pulls them in
+   * (CONCEPT.md §7: extra graders are something brand standing buys you).
+   */
   activeFromTick: Tick;
 }
 
@@ -1065,6 +1079,46 @@ export interface SimConfig {
     signalNoiseSigma: number;
     /** How hard hype at release seeds the singles market's opening heat. */
     heatFromHype: number;
+  };
+
+  /**
+   * Grading and pop reports (CONCEPT.md §6.4). The market submits copies, not
+   * the publisher: what the publisher controls is print quality, which moves
+   * the grade distribution, and brand standing, which decides how many graders
+   * bother covering their cards.
+   */
+  grading: {
+    /** Share of the raw pool submitted per tick at full appetite. */
+    submitRatePerTick: number;
+    /** A copy is only worth grading once its raw price clears the fee this many times over. */
+    feeWorthMultiple: number;
+    /** Cap on how far an expensive card can accelerate submissions. */
+    appetiteCeiling: number;
+    /** Graded copies can never exceed this share of the opened population. */
+    maxGradedShare: number;
+    /** Mean latent condition of a fresh copy printed at `standard`. */
+    conditionMean: number;
+    conditionSigma: number;
+    /** Condition points one unit of `printing.qualityGradeShift` is worth. */
+    gradeShiftWeight: number;
+    /** Condition points a grader one step above reference strictness takes off. */
+    strictnessWeight: number;
+    /** Handling wear per year the copy has been in circulation. */
+    agePenaltyPerYear: number;
+    agePenaltyCap: number;
+    /** Price of a grade, as a multiple of the raw price. */
+    tierMultiplier: Record<GradeTier, number>;
+    /** How far grader reputation moves a graded price, either way. */
+    reputationWeight: number;
+    /** Pop-report count at which a tier carries no scarcity premium. */
+    popScarcityReference: number;
+    popScarcityExponent: number;
+    popScarcityCeiling: number;
+    popScarcityFloor: number;
+    /** Graded prices are sticky in the same way raw prices are. */
+    priceLerp: number;
+    /** Brand standing at which a dormant grader starts covering the player. */
+    sideGraderBrandGate: number;
   };
 
   region: {

@@ -12,7 +12,7 @@ src/sim/rng.ts         seeded PRNG, serializable
 src/sim/series.ts      sparse time series + compaction
 src/sim/channels.ts    channel traits, capacity, default allocation split
 src/sim/config.ts      every tunable constant, with dotted overrides
-src/sim/world.ts       initial state bootstrap
+src/sim/world.ts       initial state bootstrap (incl. the grader roster)
 src/sim/engine.ts      tick loop + STUB value math
 src/sim/invariants.ts  dev assertions
 harness/bots.ts        seven strategy bots
@@ -202,8 +202,45 @@ the dependency in the loop.
   twenty times. `scalperCycles` and
   `peakScalpers` are new harness metrics, read off the crash events, because
   the end-of-run population alone cannot tell a healthy cycle from a flat line.
-- CSV output + console summary table, plus a separate drops table that prints
-  only for runs that opened a direct store
+- Grading and pop reports. The market grades cards, not the publisher: what the
+  publisher decides is print quality, which moves the grade distribution, and
+  brand standing, which decides how many graders bother covering them
+  (CONCEPT.md §6.4, §7). `Population.graded`, `PrintingMarket.gradedPrices`,
+  `gradedHistory`, `Grader` and `MarketState.gradingQueue` were all declared and
+  dead before this pass.
+
+  A copy is only submitted once its raw price clears a grader's fee several
+  times over, so the fee is the hurdle that keeps bulk commons out of the pop
+  report: about 5% of printings in a 50-year run carry one at all, and on those
+  about 18% of the opened copies end up in slabs. The submitter buys the best
+  service tier the card can justify, so an expensive card also comes back
+  faster. Grades come off a latent condition score — a normal whose mean is
+  `printing.qualityGradeShift` plus the grader's strictness minus handling wear,
+  split into tiers by CDF rather than a roll per copy.
+
+  Print quality is the dial, and it shows up years later in the pop report:
+
+  | quality | budget | standard | premium |
+  |---|---|---|---|
+  | share of graded copies that are 10s | 2.7% | 9.6% | 20.5% |
+
+  A graded price is the raw price times the grade's multiple, the grader's
+  reputation, and the printing's position in that grader's pop report for that
+  grade. The pop-report term is what makes a 10 that a hundred other people also
+  have a different card from the only one: median gem premium is 5.2x raw, and
+  the ladder runs about 2.5x at the crowded end to 10x at the scarce end. It
+  also means premium printing does not simply win — `chaseMaxxer` gets twice
+  the 10s and each one carries a smaller premium (4.2x against `conservative`'s
+  4.9x), because its own gems crowd its own pop report.
+
+  Two graders cover the market from tick 0. The third is dormant and enters when
+  brand standing clears `grading.sideGraderBrandGate`, which is the CONCEPT.md §7
+  row that pays brand standing in graders. `specialtyOnly` never earns it.
+
+  Nothing in the value engine reads any of this back. Grading is an observer:
+  it reads `market.rawPrice` and writes beside it.
+- CSV output + console summary table, plus separate drops, reveal-window and
+  grading tables that print only for runs that produced any
 - Config overrides from CLI without touching code
 - Sparse price history with quarterly compaction of anything older than 10 years
 
@@ -219,24 +256,37 @@ unit. Typed arrays for the hot price loop are the other candidate and are
 behaviour-neutral, but they mean giving up the object model in `tickPrices`.
 
 **2. Large parts of the model are declared but not simulated.**
-Grading and pop reports, regions beyond `reg_us`, collabs, creators, rival
-publisher behavior, chains and preorders all exist in `types.ts` and are
-untouched by `engine.ts`. `applyDecision` now handles thirteen decision types;
-`commissionArt`, `hireArtist`, `signCollab`, `unlockRegion` and `advance` still
-fall through to `default`.
+Regions beyond `reg_us`, collabs, creators, rival publisher behavior, chains and
+preorders all exist in `types.ts` and are untouched by `engine.ts`.
+`applyDecision` now handles thirteen decision types; `commissionArt`,
+`hireArtist`, `signCollab`, `unlockRegion` and `advance` still fall through to
+`default`.
 
-Drops, scalpers and the reveal window came off this list — see "Verified
-working". Of the secondary market actors in CONCEPT.md §6.8, scalpers now
-behave; `resellers`, `collectors` and `speculators` are still plain numbers.
+Drops, scalpers, the reveal window and now grading came off this list — see
+"Verified working". Of the secondary market actors in CONCEPT.md §6.8, scalpers
+now behave; `resellers`, `collectors` and `speculators` are still plain numbers.
 `collectors` is read as a demand pool by `resolveDrop` and nothing else.
 `SetPerformance.aftermarketIndex` is still written as 0 and read by nothing.
+
+Grading is deliberately one-way: it observes the raw price and never feeds back
+into it. The obvious next step is the one that does — a slabbed copy has left
+the raw pool, so `tickPrices` should arguably compute scarcity over
+`opened - graded` rather than `opened`. That is a change to the value engine,
+not to grading, and it has to be re-measured against all five value targets and
+the decile ladder as one unit.
 
 **3. What is still unswept.**
 Both knobs this section used to name are done — see "Verified working". What has
 never been swept: the `hype` block beyond the signal sigma (`marketingHypeGain`,
 `prereleaseHypeGain` and `heatFromHype` are all first guesses), and
 `drops.breakEvenPremium` / `populationGrowth`, which set how sharply the scalper
-population reacts rather than where it settles. `heatFromHype` is the one with a
+population reacts rather than where it settles, and the whole `grading` block
+past the four numbers that were moved to get the pop report into a believable
+range (`tierMultiplier`, `popScarcityReference`, `popScarcityCeiling`,
+`sideGraderBrandGate` — the last swept, the others fitted by eye against the
+measured pop distribution). `submitRatePerTick` and `feeWorthMultiple` between
+them decide how much of the population ends up in slabs, and neither has been
+swept against anything. `heatFromHype` is the one with a
 measured consequence already: it is what moved `yearsToFirst100Dollar` from 7.6
 to 4.9, because every set now opens at `1.6 + hype * heatFromHype` instead of a
 flat 1.6.
@@ -289,6 +339,22 @@ flat 1.6.
   new site that mints a printing, product, set or IP must call `bumpRoster`, or
   the entity will not be ticked until something else mints one.
   `checkRosterCache` in the invariant pass is what catches that
+- Grading draws from `s.gradingRng`, never from `s.rng`. Grading observes the
+  value engine, so its rolls must not renumber the value engine's: sharing the
+  main stream shifts every later draw in the run and makes the five value
+  targets incomparable across any change to grading. The world bootstrap seeds
+  the grader roster with literals for the same reason — a single `rand` call
+  there moves every balance number in this file
+- Nothing in the value engine reads grading. `Population.graded` and
+  `gradedPrices` are written beside `rawPrice`, never into it. Wiring the
+  feedback (slabbed copies leaving the raw pool) is a value-engine change and
+  is measured as one — see "Known problems"
+- The grading fee is the hurdle. A copy is graded only once its raw price clears
+  a tier's price several times over, which is what keeps 95% of printings out of
+  the pop report. Dropping `feeWorthMultiple` toward 1 slabs the bulk commons
+  and the pop report stops meaning anything
+- Grades come off a latent condition normal split by CDF, not a roll per copy. A
+  submission of 4,000 copies must never cost 4,000 draws
 - Events store data, not prose
 - The LGS network and the direct store can sour but can never be lost. CONCEPT.md
   §7 makes LGS-only volume the floor that relationship death collapses you *to*
@@ -298,11 +364,15 @@ flat 1.6.
 
 ## Suggested next session
 
-Problem 2: the model that is declared and not simulated. Roughly in order of how
-self-contained each slice is — grading and pop reports, then rivals and regions,
-then the remaining secondary-market actors (`resellers`, `collectors` and
-`speculators` are still plain numbers; `collectors` is read as a demand pool by
-`resolveDrop` and nothing else).
+Problem 2, continued: the model that is declared and not simulated. Grading came
+off the list this pass. What is left, roughly in order of how self-contained
+each slice is — rivals and regions, then the remaining secondary-market actors
+(`resellers`, `collectors` and `speculators` are still plain numbers;
+`collectors` is read as a demand pool by `resolveDrop` and nothing else).
+
+The other candidate is the grading feedback loop described under problem 2:
+graded copies leave the raw pool, so `tickPrices` arguably owes them a scarcity
+term. That one is a value-engine change and gets measured like one.
 
 Performance is no longer the thing in the way. A batch shards across cores, and
 the remaining engine cost is concentrated in `tickPrices`, where every idea left
@@ -315,16 +385,22 @@ npm run sim -- --seeds=30 --years=25 --bot=conservative   # the five value targe
 npm run sim -- --seeds=1 --years=25 --bot=conservative --dist   # the decile ladder
 ```
 
-The value targets, 30 seeds x 25 years, `conservative`. The balance pass moved
-none of them, which is what it should have done: the signal is measured and
-never read back, and the scalper population prices sealed product only.
+The value targets, 30 seeds x 25 years, `conservative`. Grading moved none of
+them, and not approximately: every pre-existing column of `runs.csv` is
+byte-identical across all 30 seeds before and after the pass. That is the whole
+acceptance test for a subsystem that is supposed to observe the value engine
+without touching it, and it is only available because grading draws from its own
+RNG stream.
 
-| Metric | Band | Before | After drops | After reveal window | After balance pass |
-|---|---|---|---|---|---|
-| `surpriseGrail` | 15–40% | 33% | 33% | 23% | 23% |
-| `top1PctShare` | 0.4–0.7 | 0.59 | 0.594 | 0.575 | 0.575 |
-| `medianCardPrice` | a few dollars | $3.82 | $4 | $4 | $4 |
-| `yearsToFirst100Dollar` | 3–8 | 7.6 | 7.6 | 4.9 | 4.9 |
+| Metric | Band | Before | After drops | After reveal window | After balance pass | After grading |
+|---|---|---|---|---|---|---|
+| `surpriseGrail` | 15–40% | 33% | 33% | 23% | 23% | 23% |
+| `top1PctShare` | 0.4–0.7 | 0.59 | 0.594 | 0.575 | 0.575 | 0.575 |
+| `medianCardPrice` | a few dollars | $3.82 | $4 | $4 | $4 | $4 |
+| `yearsToFirst100Dollar` | 3–8 | 7.6 | 7.6 | 4.9 | 4.9 | 4.9 |
+
+Grading costs about 9% of run time (30 seeds x 25 years: 4.70s -> 5.20s on four
+cores) and about 20% more history points.
 
 `yearsToFirst100Dollar` at 4.9 is still the row to watch. The cause is not
 subtle — every set opens at `1.6 + hype * heatFromHype` instead of a flat 1.6,

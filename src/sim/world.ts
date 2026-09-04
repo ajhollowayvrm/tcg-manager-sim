@@ -4,9 +4,9 @@
  * no research/community/analytics unlocks yet.
  */
 import type {
-  SimState, SimConfig, Tick, Cents, PublisherId, RegionId, ArtistId,
+  SimState, SimConfig, Tick, Cents, PublisherId, RegionId, ArtistId, GraderId,
   AudienceSegment, Rarity, ArtistPersonality, ArtistSpecialty, IpKind, ProductKind,
-  Channel,
+  Channel, Unit,
 } from './types.ts';
 import { seedRng, rand, randRange, pick } from './rng.ts';
 import { CHANNEL_IDS } from './channels.ts';
@@ -54,6 +54,9 @@ export function createWorld(seed: string, config: SimConfig): SimState {
     schemaVersion: 1,
     seed,
     rng,
+    // Grading draws from its own stream so that adding an observer of the value
+    // engine does not renumber the value engine's own draws.
+    gradingRng: seedRng(`${seed}:grading`),
     tick: t0,
     idCounter: 0,
     printingByCard: {},
@@ -98,7 +101,7 @@ export function createWorld(seed: string, config: SimConfig): SimState {
     artists: {},
     channels: {},
     regions: {},
-    graders: {},
+    graders: {},  // seeded below
     creators: {},
     chains: {},
     collabs: {},
@@ -252,5 +255,62 @@ export function createWorld(seed: string, config: SimConfig): SimState {
     };
   }
 
+  // Graders are a fixed roster, deliberately drawn with no RNG: the world
+  // bootstrap's draw sequence is what every seeded run downstream is built on,
+  // and adding draws here would move every existing balance number.
+  //
+  // Two graders cover the market from day one; the third does not look at a
+  // publisher nobody has heard of, and enters when brand standing clears
+  // `grading.sideGraderBrandGate` (CONCEPT.md §7).
+  for (const g of GRADER_SEEDS) {
+    s.graders[g.id] = {
+      ...g,
+      reputation: g.reputation as Unit,
+      marketShare: g.marketShare as Unit,
+    };
+  }
+
   return s;
 }
+
+/** A grader that has not entered the market yet. Past the end of any run. */
+export const GRADER_DORMANT = Number.MAX_SAFE_INTEGER as Tick;
+
+const GRADER_SEEDS: Array<{
+  id: GraderId; name: string; reputation: number; strictness: number;
+  marketShare: number; tiers: Array<{ name: string; price: Cents; turnaroundWeeks: number }>;
+  activeFromTick: Tick;
+}> = [
+  {
+    // The strict, expensive one. Fewer 10s, and the 10s it does hand out carry
+    // the reputation premium.
+    id: 'grd_pinnacle' as GraderId, name: 'Pinnacle Grading',
+    reputation: 0.85, strictness: 1.15, marketShare: 0.55,
+    tiers: [
+      { name: 'bulk', price: 12_00 as Cents, turnaroundWeeks: 16 },
+      { name: 'standard', price: 30_00 as Cents, turnaroundWeeks: 8 },
+      { name: 'express', price: 90_00 as Cents, turnaroundWeeks: 3 },
+    ],
+    activeFromTick: 0 as Tick,
+  },
+  {
+    // Cheaper, softer, faster. Grades more copies and is trusted less for it.
+    id: 'grd_cardsafe' as GraderId, name: 'Cardsafe',
+    reputation: 0.6, strictness: 0.9, marketShare: 0.32,
+    tiers: [
+      { name: 'bulk', price: 8_00 as Cents, turnaroundWeeks: 12 },
+      { name: 'standard', price: 20_00 as Cents, turnaroundWeeks: 6 },
+      { name: 'express', price: 60_00 as Cents, turnaroundWeeks: 2 },
+    ],
+    activeFromTick: 0 as Tick,
+  },
+  {
+    id: 'grd_apex' as GraderId, name: 'Apex Authentication',
+    reputation: 0.7, strictness: 1, marketShare: 0.13,
+    tiers: [
+      { name: 'standard', price: 25_00 as Cents, turnaroundWeeks: 7 },
+      { name: 'express', price: 75_00 as Cents, turnaroundWeeks: 2 },
+    ],
+    activeFromTick: GRADER_DORMANT,
+  },
+];
