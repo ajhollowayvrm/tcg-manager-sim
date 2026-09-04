@@ -23,6 +23,20 @@ export const IP_KINDS: IpKind[] = ['character', 'location', 'faction', 'concept'
 
 export const REGION_US = 'reg_us' as RegionId;
 
+/**
+ * Share of audience attention the player starts with. Rivals hold the rest
+ * from the first tick — they are the environment, not an unlock
+ * (CONCEPT.md §9). Keep this in step with `config.attention.referenceShare`.
+ */
+export const PLAYER_START_SHARE = 0.08;
+
+/** Established competitors. Inert this pass: they hold share and nothing else. */
+const RIVALS: Array<{ id: string; name: string; brandStanding: number; share: number }> = [
+  { id: 'pub_rival_1', name: 'Meridian Cards', brandStanding: 0.55, share: 0.42 },
+  { id: 'pub_rival_2', name: 'Halcyon Games', brandStanding: 0.45, share: 0.30 },
+  { id: 'pub_rival_3', name: 'Third Coast TCG', brandStanding: 0.35, share: 0.20 },
+];
+
 /** Monotonic, deterministic id generation — same seed, same ids, every time. */
 export function nextId(s: SimState, prefix: string): string {
   s.idCounter += 1;
@@ -88,7 +102,8 @@ export function createWorld(seed: string, config: SimConfig): SimState {
       segments: Object.fromEntries(
         SEGMENTS.map(g => [g, { size: 100_000, attention: 1, fatigue: 0, goodwill: 0.5 }]),
       ) as SimState['audience']['segments'],
-      shareByPublisher: { [playerId]: 1 },
+      // The player starts with almost no audience; the rivals below hold the rest.
+      shareByPublisher: { [playerId]: PLAYER_START_SHARE },
       actors: { scalpers: 500, resellers: 300, collectors: 5000, speculators: 800 },
     },
 
@@ -142,6 +157,40 @@ export function createWorld(seed: string, config: SimConfig): SimState {
     queueCapacity: null,
   };
   s.publishers[playerId]!.unlocks.channels.push(lgsId);
+
+  // Rivals exist from tick 0 and already own most of the audience. They don't
+  // release sets, spend attention, or move yet — their policy is recorded for
+  // a later pass; what bites today is the share of attention they hold.
+  for (const r of RIVALS) {
+    const id = r.id as PublisherId;
+    s.publishers[id] = {
+      id,
+      name: r.name,
+      isPlayer: false,
+      foundedTick: t0,
+      cash: 2_000_000 as Cents,
+      debt: 0 as Cents,
+      credit: 0.6,
+      brandStanding: r.brandStanding,
+      unlocks: {
+        channels: [], regions: [REGION_US],
+        marketResearch: 0, communityTeam: 0, analytics: 0,
+        printQualityTiers: ['budget', 'standard', 'premium'],
+        specialtySetSlots: 0, canHostEvents: false, directStore: false,
+      },
+      policy: {
+        aggression: randRange(rng, 0.3, 0.8),
+        setsPerYearTarget: Math.round(randRange(rng, 1, 4)),
+        chaseHeaviness: randRange(rng, 0.2, 0.8),
+        qualityBias: randRange(rng, 0.2, 0.8),
+        reprintWillingness: randRange(rng, 0.1, 0.6),
+      },
+      ledger: [],
+      deadTick: null,
+      deathCause: null,
+    };
+    s.audience.shareByPublisher[id] = r.share;
+  }
 
   const personalities: ArtistPersonality[] = ['collaborative', 'precious', 'prolific', 'mercurial', 'reclusive'];
   const specialties: ArtistSpecialty[] = ['creature', 'landscape', 'character', 'graphic', 'ensemble'];

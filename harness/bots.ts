@@ -1,10 +1,9 @@
 /**
  * Four scripted strategies to probe for degenerate optima (CONCEPT.md §10).
  *
- * These call `api.*` directly rather than submitting `Decision` objects — see
- * HANDOFF.md "Known problems" #5. That's an existing gap in engine.ts, not
- * something to paper over here; fixing it means routing through `submit()`
- * and expanding `applyDecision`.
+ * Every `api.*` call here submits a `Decision` onto the queue and hands back
+ * the id it minted, so a run is fully reconstructable from its seed plus its
+ * decision log — the same path a UI would drive.
  */
 import type {
   SimState, IpId, ArtistId, Rarity, PrintQualityTier, ProductKind, SetType, ProductId, IpKind,

@@ -2,6 +2,7 @@ import type {
   SimState, Decision, Tick, Cents, Unit, IpId, CardId, SetId, ProductId, PrintingId,
   ProductLineId, RegionId, ChannelId, ArtistId, IpEntity, Card, CardSet, Product,
   Printing, SimEvent, EventId, SetType, Rarity, ProductKind, PrintQualityTier,
+  Treatment, ArtBrief,
 } from './types.ts';
 import { rand, randRange, randInt, pick, chance, gauss } from './rng.ts';
 import { emptySeries, writePoint, compact } from './series.ts';
@@ -39,8 +40,11 @@ function emit(s: SimState, kind: SimEvent['kind'], interrupts: boolean, refs: Si
 
 export function submit(s: SimState, d: Decision): void { s.inbox.push(d); }
 
-function createIp(s: SimState, name: string, kind: IpEntity['kind']): IpId {
-  const id = nextId(s, 'ip') as IpId;
+// The builders below take the id rather than minting one: the submitter mints
+// it (see `api`) so it can reference the entity in later decisions in the same
+// batch, before any of them have been applied.
+
+function createIp(s: SimState, id: IpId, name: string, kind: IpEntity['kind']): void {
   const r = s.rng;
   s.ips[id] = {
     id, publisherId: s.playerId, name, kind, createdTick: s.tick, relatedIps: [],
@@ -55,11 +59,9 @@ function createIp(s: SimState, name: string, kind: IpEntity['kind']): IpId {
     resurgence: 0, resurgenceHistory: emptySeries(s.tick),
     appearanceCount: 0, cameoCount: 0, firstPrintingId: null, isMascot: false,
   };
-  return id;
 }
 
-function createSet(s: SimState, name: string, type: SetType, size: number): SetId {
-  const id = nextId(s, 'set') as SetId;
+function createSet(s: SimState, id: SetId, name: string, type: SetType, size: number): void {
   s.sets[id] = {
     id, publisherId: s.playerId, name, type, status: 'design',
     cardIds: [], productIds: [], collabId: null,
@@ -67,30 +69,44 @@ function createSet(s: SimState, name: string, type: SetType, size: number): SetI
     budget: C(0), actualCost: C(0), printQuality: 'standard', attentionCost: 0,
     performance: null,
   };
-  return id;
 }
 
-function designCard(s: SimState, setId: SetId, subjectIp: IpId, cameos: IpId[], rarity: Rarity, artistId: ArtistId): CardId {
-  const id = nextId(s, 'card') as CardId;
+/** The fields the engine derives when a decision doesn't spell them out. */
+interface CardOverrides {
+  name?: string;
+  treatment?: Treatment;
+  serialized?: { runSize: number } | null;
+  artBrief?: Partial<ArtBrief>;
+  flavorText?: string;
+}
+
+function designCard(
+  s: SimState, id: CardId, setId: SetId, subjectIp: IpId, cameos: IpId[],
+  rarity: Rarity, artistId: ArtistId, overrides: CardOverrides = {},
+): void {
   const artist = s.artists[artistId]!;
   const fit = (artist.stats.composition + artist.stats.linework + artist.stats.color) / 3;
   s.cards[id] = {
-    id, publisherId: s.playerId, name: `${s.ips[subjectIp]!.name} ${rarity}`, createdTick: s.tick,
-    subjectIp, cameos, rarity, treatment: rarity === 'common' ? 'none' : 'holo',
-    serialized: null, artistId,
-    artBrief: { mood: 'neutral', composition: 'portrait', budget: artist.rate, notes: '' },
+    id, publisherId: s.playerId,
+    name: overrides.name ?? `${s.ips[subjectIp]!.name} ${rarity}`,
+    createdTick: s.tick,
+    subjectIp, cameos, rarity,
+    treatment: overrides.treatment ?? (rarity === 'common' ? 'none' : 'holo'),
+    serialized: overrides.serialized ?? null, artistId,
+    artBrief: { mood: 'neutral', composition: 'portrait', budget: artist.rate, notes: '', ...overrides.artBrief },
     artQuality: U(fit * 0.75 + randRange(s.rng, 0, 0.35)),
-    progressionLink: null, illustrationLink: null, flavorText: '',
+    progressionLink: null, illustrationLink: null, flavorText: overrides.flavorText ?? '',
   };
   s.sets[setId]!.cardIds.push(id);
-  return id;
 }
 
-function defineProduct(s: SimState, setId: SetId, kind: ProductKind, regionId: RegionId, packs: number, msrp: number): ProductId {
-  const id = nextId(s, 'prod') as ProductId;
+function defineProduct(
+  s: SimState, id: ProductId, setId: SetId, kind: ProductKind,
+  regionId: RegionId, packs: number, msrp: number, cardsPerPack = 10,
+): void {
   s.products[id] = {
     id, lineId: `line_${kind}` as ProductLineId, setId, regionId, kind,
-    packsPerUnit: packs, cardsPerPack: 10,
+    packsPerUnit: packs, cardsPerPack,
     msrp: C(msrp), unitCogs: C(0),
     unitsPrinted: 0, unitsRemaining: 0, allocations: {},
     scalperAppeal: U(kind === 'etb' || kind === 'premiumCollection' ? 0.8 : 0.4),
@@ -100,7 +116,6 @@ function defineProduct(s: SimState, setId: SetId, kind: ProductKind, regionId: R
     },
   };
   s.sets[setId]!.productIds.push(id);
-  return id;
 }
 
 function commitPrintRun(s: SimState, setId: SetId, quantities: Record<ProductId, number>, quality: PrintQualityTier): void {
@@ -127,10 +142,70 @@ function commitPrintRun(s: SimState, setId: SetId, quantities: Record<ProductId,
   set.regionSchedule = [{ regionId: 'reg_us' as RegionId, releaseTick: T(s.tick + 18) }];
 }
 
+/**
+ * Reprints add supply to the CARD, never to the original printing — so this
+ * mints a second printing with its own population and market, and leaves the
+ * original's supply untouched (CONCEPT.md §5). It skips the
+ * commit → reveal → release pipeline on purpose: the whole point of a reprint
+ * is that the blind bet is already settled.
+ */
+function reprint(s: SimState, cardId: CardId, intoSetId: SetId, quantity: number): void {
+  const card = s.cards[cardId];
+  const set = s.sets[intoSetId];
+  if (!card || !set) return;
+  const cfg = s.config;
+  const originalId = s.printingByCard[cardId] ?? null;
+
+  const id = nextId(s, 'pr') as PrintingId;
+  const err = chance(s.rng, cfg.printing.errorRate[set.printQuality])
+    ? {
+        kind: pick(s.rng, ['miscut', 'inkError', 'missingFoil', 'wrongBack', 'textError', 'crimp'] as const),
+        incidence: randRange(s.rng, 0.0001, 0.004), discoveredTick: null,
+      }
+    : null;
+
+  s.printings[id] = {
+    id, cardId, setId: intoSetId, regionId: 'reg_us' as RegionId, releaseTick: s.tick,
+    printQuantity: Math.max(1, quantity), pullRate: RARITY_PULL[card.rarity] / 10,
+    printQuality: set.printQuality,
+    isReprintOf: originalId, error: err,
+    population: { sealed: Math.max(1, quantity), opened: 0, destroyed: 0, graded: {} as any },
+    market: {
+      rawPrice: C(cfg.value.baseCardPrice), gradedPrices: {} as any,
+      heat: 1.6, nostalgia: 1, liquidity: U(0.5), lastTradeTick: s.tick,
+      rawHistory: emptySeries(s.tick), gradedHistory: {} as any,
+    },
+  };
+  // printingByCard deliberately still points at the original. tickSealed reads
+  // it per set to value a sealed product's contents; repointing it here would
+  // make the original set's sealed price track the reprint instead.
+
+  // Making the chase accessible again costs the original some of its aura.
+  if (originalId) {
+    const orig = s.printings[originalId];
+    if (orig) orig.market.nostalgia = Math.max(1, orig.market.nostalgia * 0.85);
+  }
+}
+
 function applyDecision(s: SimState, d: Decision): void {
   switch (d.type) {
-    case 'createIp': createIp(s, d.payload.name, d.payload.kind); break;
-    case 'createSet': createSet(s, d.payload.name, d.payload.setType, d.payload.targetSize); break;
+    case 'createIp': createIp(s, d.payload.id, d.payload.name, d.payload.kind); break;
+    case 'createSet': createSet(s, d.payload.id, d.payload.name, d.payload.setType, d.payload.targetSize); break;
+    case 'designCard':
+      designCard(s, d.payload.id, d.payload.setId, d.payload.subjectIp, d.payload.cameos,
+        d.payload.rarity, d.payload.artistId, {
+          name: d.payload.name, treatment: d.payload.treatment, serialized: d.payload.serialized,
+          artBrief: d.payload.artBrief, flavorText: d.payload.flavorText,
+        });
+      break;
+    case 'defineProduct':
+      defineProduct(s, d.payload.id, d.payload.setId, d.payload.kind, d.payload.regionId,
+        d.payload.packsPerUnit, d.payload.msrp, d.payload.cardsPerPack);
+      break;
+    case 'commitPrintRun':
+      commitPrintRun(s, d.payload.setId, d.payload.quantities, d.payload.quality);
+      break;
+    case 'reprint': reprint(s, d.payload.cardId, d.payload.intoSetId, d.payload.quantity); break;
     case 'borrow': {
       const pub = s.publishers[s.playerId]!;
       pub.cash = C(pub.cash + d.payload.amount);
@@ -143,12 +218,48 @@ function applyDecision(s: SimState, d: Decision): void {
       pub.cash = C(pub.cash - amt); pub.debt = C(pub.debt - amt);
       break;
     }
-    default: break; // bots use the helpers directly; UI decisions land here
+    // Not simulated yet: commissionArt, allocate, scheduleReveal, hostPrerelease,
+    // hireArtist, purchaseUnlock, signCollab, unlockRegion, marketingSpend, advance.
+    default: break;
   }
 }
 
-// Exposed so bots can act without hand-building every payload.
-export const api = { createIp, createSet, designCard, defineProduct, commitPrintRun };
+/**
+ * The only way to drive the sim. Each call mints the entity id, submits a
+ * decision, and hands the id back, so callers can chain a whole release in one
+ * batch while every action still lands in the decision log.
+ */
+export const api = {
+  createIp(s: SimState, name: string, kind: IpEntity['kind']): IpId {
+    const id = nextId(s, 'ip') as IpId;
+    submit(s, { type: 'createIp', tick: s.tick, payload: { id, name, kind } });
+    return id;
+  },
+  createSet(s: SimState, name: string, setType: SetType, targetSize: number): SetId {
+    const id = nextId(s, 'set') as SetId;
+    submit(s, { type: 'createSet', tick: s.tick, payload: { id, name, setType, targetSize } });
+    return id;
+  },
+  designCard(s: SimState, setId: SetId, subjectIp: IpId, cameos: IpId[], rarity: Rarity, artistId: ArtistId): CardId {
+    const id = nextId(s, 'card') as CardId;
+    submit(s, { type: 'designCard', tick: s.tick, payload: { id, setId, subjectIp, cameos, rarity, artistId } });
+    return id;
+  },
+  defineProduct(s: SimState, setId: SetId, kind: ProductKind, regionId: RegionId, packs: number, msrp: number): ProductId {
+    const id = nextId(s, 'prod') as ProductId;
+    submit(s, {
+      type: 'defineProduct', tick: s.tick,
+      payload: { id, setId, kind, regionId, packsPerUnit: packs, msrp: C(msrp) },
+    });
+    return id;
+  },
+  commitPrintRun(s: SimState, setId: SetId, quantities: Record<ProductId, number>, quality: PrintQualityTier): void {
+    submit(s, { type: 'commitPrintRun', tick: s.tick, payload: { setId, quantities, quality } });
+  },
+  reprint(s: SimState, cardId: CardId, intoSetId: SetId, quantity: number): void {
+    submit(s, { type: 'reprint', tick: s.tick, payload: { cardId, intoSetId, quantity } });
+  },
+};
 
 // ---------------------------------------------------------------------------
 // Release
@@ -261,6 +372,12 @@ function tickPrices(s: SimState, printings: Printing[]): void {
       1 + (pr.market.heat - 1) * Math.pow(1 - cfg.value.heatDecayPerTick, PRICE_STRIDE));
     pr.market.nostalgia = Math.min(cfg.value.nostalgiaCeiling, pr.market.nostalgia * (1 + cfg.value.nostalgiaRatePerYear * yearFrac
       * (0.4 + s.publishers[card.publisherId]!.brandStanding)));
+    // Errors sit in circulation unnoticed until somebody spots one.
+    if (pr.error && pr.error.discoveredTick === null && chance(s.rng, cfg.printing.errorDiscoveryChance)) {
+      pr.error.discoveredTick = s.tick;
+      emit(s, 'errorDiscovered', true, { printingId: pr.id, cardId: pr.cardId },
+        { kind: pr.error.kind, incidence: pr.error.incidence });
+    }
     if (pr.error && pr.error.discoveredTick !== null) {
       pr.market.heat = Math.min(cfg.value.heatCeiling, pr.market.heat + 0.002 / Math.max(0.0002, pr.error.incidence) * 0.00002);
     }
@@ -355,9 +472,15 @@ function tickSales(s: SimState, products: Product[]): void {
       return n + castDesire(s, card) * RARITY_WEIGHT[card.rarity] / 100;
     }, 0) / Math.max(1, set.cardIds.length);
 
+    // Attention is shared with the rivals. Demand is measured relative to the
+    // share the rest of this formula was tuned at, so a publisher sitting at
+    // referenceShare behaves exactly as it did before rivals existed.
+    const share = s.audience.shareByPublisher[pub.id] ?? 0;
+    const shareFactor = share / cfg.attention.referenceShare;
+
     const weeksOut = (s.tick - set.regionSchedule[0]!.releaseTick) / 52;
     const decay = Math.exp(-weeksOut * 1.4);
-    const demand = p.unitsPrinted * 0.06 * attention * (1 - fatigue * 0.6)
+    const demand = p.unitsPrinted * 0.06 * attention * shareFactor * (1 - fatigue * 0.6)
       * (0.2 + 0.8 * goodwill) * (0.3 + pub.brandStanding) * (0.5 + chase) * decay;
 
     const sold = Math.max(0, Math.min(p.unitsRemaining, Math.round(demand)));

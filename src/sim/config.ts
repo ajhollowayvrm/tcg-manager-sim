@@ -40,12 +40,16 @@ export const defaultConfig: SimConfig = {
     fatigueDecay: 0.01,
     goodwillSensitivity: 0.6,
     goodwillRegenPerTick: 0.001,
+    // Must match the player's starting share in world.ts, or the demand curve
+    // shifts away from what the value pass was tuned against.
+    referenceShare: 0.08,
   },
 
   printing: {
     qualityGradeShift: { budget: -0.15, standard: 0, premium: 0.12, archival: 0.2 },
     errorRate: { budget: 0.02, standard: 0.008, premium: 0.002, archival: 0.0005 },
     unitCost: { budget: C(80), standard: C(140), premium: C(240), archival: C(400) },
+    errorDiscoveryChance: 0.01,
   },
 
   finance: {

@@ -631,12 +631,31 @@ export interface GradingSubmission {
 // Decisions — the only way the outside world touches the sim
 // ---------------------------------------------------------------------------
 
+/**
+ * Ids are minted by the submitter, not the engine, and travel inside the
+ * payload. That's what lets a caller chain a multi-step release (create set →
+ * design cards → define product → commit run) in one batch, and it puts the
+ * ids in the decision log itself so a replay reconstructs identical entities.
+ */
 export type Decision =
-  | { type: 'createIp'; tick: Tick; payload: { name: string; kind: IpKind } }
-  | { type: 'createSet'; tick: Tick; payload: { name: string; setType: SetType; targetSize: number } }
-  | { type: 'designCard'; tick: Tick; payload: Omit<Card, 'id' | 'createdTick' | 'artQuality' | 'publisherId'> }
+  | { type: 'createIp'; tick: Tick; payload: { id: IpId; name: string; kind: IpKind } }
+  | { type: 'createSet'; tick: Tick; payload: { id: SetId; name: string; setType: SetType; targetSize: number } }
+  | {
+      type: 'designCard'; tick: Tick; payload: {
+        id: CardId; setId: SetId; subjectIp: IpId; cameos: IpId[];
+        rarity: Rarity; artistId: ArtistId;
+        /** Optional. The engine derives each of these when not supplied. */
+        name?: string; treatment?: Treatment; serialized?: { runSize: number } | null;
+        artBrief?: Partial<ArtBrief>; flavorText?: string;
+      };
+    }
   | { type: 'commissionArt'; tick: Tick; payload: { cardId: CardId; artistId: ArtistId; brief: ArtBrief } }
-  | { type: 'defineProduct'; tick: Tick; payload: Omit<Product, 'id' | 'unitsRemaining' | 'allocations'> }
+  | {
+      type: 'defineProduct'; tick: Tick; payload: {
+        id: ProductId; setId: SetId; kind: ProductKind; regionId: RegionId;
+        packsPerUnit: number; msrp: Cents; cardsPerPack?: number;
+      };
+    }
   | { type: 'commitPrintRun'; tick: Tick; payload: { setId: SetId; quantities: Record<ProductId, number>; quality: PrintQualityTier } }
   | { type: 'allocate'; tick: Tick; payload: { productId: ProductId; allocations: Record<ChannelId, number> } }
   | { type: 'scheduleReveal'; tick: Tick; payload: { setId: SetId; startTick: Tick; cadence: number } }
@@ -726,12 +745,20 @@ export interface SimConfig {
     goodwillSensitivity: number;
     /** Passive per-tick recovery of goodwill, deliberately much slower than fatigueDecay. */
     goodwillRegenPerTick: number;
+    /**
+     * The player's `shareByPublisher` value that the demand constant in
+     * tickSales was tuned against. Demand scales by share / referenceShare, so
+     * a player sitting at exactly this share behaves as if rivals weren't there.
+     */
+    referenceShare: number;
   };
 
   printing: {
     qualityGradeShift: Record<PrintQualityTier, number>;
     errorRate: Record<PrintQualityTier, number>;
     unitCost: Record<PrintQualityTier, Cents>;
+    /** Per-price-tick chance that an undiscovered error on a printing gets found. */
+    errorDiscoveryChance: number;
   };
 
   finance: {
