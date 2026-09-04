@@ -26,7 +26,12 @@ Run it:
 npm run sim:quick
 npm run sim -- --seeds=40 --years=50 --bot=all
 npm run sim -- --set=value.noiseSigma=0.09 --set=attention.fatigueGain=0.05
+npm run sim -- --seeds=1 --years=25 --bot=conservative --dist
 ```
+
+`--dist` prints a price decile ladder for the last run. Use it, not the median
+and max columns, when you change anything in the `value` config block: only the
+step between deciles tells a power law from flat mush.
 
 Requires Node 22.6+ (uses `--experimental-strip-types`, no build step). Swap to `tsx` if that ever gets annoying.
 
@@ -52,28 +57,34 @@ Requires Node 22.6+ (uses `--experimental-strip-types`, no build step). Swap to 
 
   Under-releasing is a gentle loss; over-releasing is a cliff. That asymmetry is
   what CONCEPT.md §6.2 asks for.
+- The price distribution is a power law, not flat mush. `Printing.truth.chase`
+  is a hidden lognormal roll made once per printing, so two commons in the same
+  set do not settle at the same price; `market.nostalgia` now compounds only on
+  a printing the market still wants and that already stands above the pack, and
+  decays back toward 1 on one it does not. 30 seeds x 25 years, `conservative`:
+
+  | Metric | Target | Measured |
+  |---|---|---|
+  | `surpriseGrail` | 15–40% of runs | 33% |
+  | `top1PctShare` | 0.4–0.7 | 0.59 |
+  | `medianCardPrice` | a few dollars | $3.82 |
+  | `yearsToFirst100Dollar` | 3–8 | 7.6 |
+
+  The decile ladder (`--dist`) steps 1.2-1.3x through the middle deciles and
+  1.8x, 2.7x, 9.8x across p90, p99 and the top. Widening steps are the shape;
+  equal steps are the mush this replaced. `surpriseGrail` now uses CONCEPT.md
+  §10's 100x bar, not the 20x one it used to.
 - CSV output + console summary table
 - Config overrides from CLI without touching code
 - Sparse price history with quarterly compaction of anything older than 10 years
 
 ## Known problems — these are the next tasks
 
-**1. The price distribution is too flat and grails are too common.**
-The value formula and the goodwill wiring were fixed in `1a89067`; the numbers below are from a 25-year, 10-seed run of the current code, measured against the targets at the bottom of this file.
+**1. Performance.**
+A 50-run, 25-year batch takes about 5s, so a 50-year × 40-seed batch is still
+impractical. Prices already update on a 4-tick stride and entity lists are cached. Next candidates: typed arrays for the hot price loop, skipping printings whose price hasn't moved in N ticks, and worker threads for batch runs.
 
-| Metric | Target | Measured |
-|---|---|---|
-| `surpriseGrail` | 15–40% of runs | 60–100% |
-| `top1PctShare` | 0.4–0.7 | 0.21–0.24 |
-| `medianCardPrice` | a few dollars | $12–20 |
-| `yearsToFirst100Dollar` | 3–8 | 2.2–3.4 |
-
-So value is emergent but not concentrated: too many cards break out, and the ones that do are not far enough clear of the median. The distribution is mush where it should be a power law. The scarcity term in `tickPrices` (`100000 / surviving`) is still the arbitrary part.
-
-**2. Performance.**
-~3s per 15-year run, so a 50-year × 40-seed batch is impractical. Prices already update on a 4-tick stride and entity lists are cached. Next candidates: typed arrays for the hot price loop, skipping printings whose price hasn't moved in N ticks, and worker threads for batch runs.
-
-**3. Large parts of the model are declared but not simulated.**
+**2. Large parts of the model are declared but not simulated.**
 Grading and pop reports, regions beyond `reg_us`, collabs, creators, rival publisher behavior, chains, preorders, and the scalper population all exist in `types.ts` and are untouched by `engine.ts`. `applyDecision` now handles nine decision types; `commissionArt`, `scheduleReveal`, `hostPrerelease`, `hireArtist`, `signCollab`, `unlockRegion`, `marketingSpend` and `advance` still fall through to `default`.
 
 The direct store unlocks and sells, but it does not run drops. `Product.scalperAppeal` and `Channel.queueCapacity` are still read by nothing — they are the hooks for that pass.
@@ -82,10 +93,17 @@ The direct store unlocks and sells, but it does not run drops. `Product.scalperA
 ## Things not to break
 
 - The sim core stays pure: no React, no DOM, no `Date`, no I/O, no unseeded randomness
-- Ground truth stays hidden: `IpEntity.truth`, `Region.truth`, `Artist.growth`, and `SealedMarket.hidden` must never be read by anything that renders
+- Ground truth stays hidden: `IpEntity.truth`, `Printing.truth`, `Region.truth`, `Artist.growth`, and `SealedMarket.hidden` must never be read by anything that renders
 - `Printing` is the priced unit, not `Card`
 - The art multiplier reads `Artist.reputation` live, never a value frozen at commission
 - Price noise is load-bearing. Don't tune `value.noiseSigma` to zero to make runs look tidier
+- The `value` config block is tuned as one unit. `scarcityExponent` and
+  `referencePopulation` set the day-one rarity ladder, the three nostalgia
+  knobs decide who climbs it over the next twenty years, and `chaseSigma` sets
+  how far the luckiest card gets. Moving one and re-measuring only one metric
+  will look fine and be wrong
+- `value.priceFloorCents` is 20c because bulk commons are worth cents. A floor
+  near the median piles half the population onto one price
 - Events store data, not prose
 - The LGS network and the direct store can sour but can never be lost. CONCEPT.md
   §7 makes LGS-only volume the floor that relationship death collapses you *to*
@@ -93,14 +111,22 @@ The direct store unlocks and sells, but it does not run drops. `Product.scalperA
   subset, so their remainders sum to at most `unitsRemaining` — never exactly it.
   Unallocated stock, and stock stranded by a lost channel, is the difference
 
-## Suggested first session
+## Suggested next session
 
-Fix the value formula and the attention/fatigue balance together, using `npm run sim:quick` as the feedback loop, and drive toward these targets:
+Problem 1 above: performance. `npm run sim -- --seeds=10 --years=25 --bot=all`
+takes about 5s, so a 50-year x 40-seed batch is still impractical.
 
-| Metric | Target |
-|---|---|
-| `surpriseGrail` | 15–40% of runs |
-| `flooder` survival | well below `conservative` |
-| `medianCardPrice` | a few dollars, not zero |
-| `top1PctShare` | 0.4–0.7 |
-| `yearsToFirst100Dollar` | 3–8 years |
+Re-run these before you touch the value engine again:
+
+```
+npm run sim -- --seeds=30 --years=25 --bot=conservative   # the five value targets
+npm run sim -- --seeds=1 --years=25 --bot=conservative --dist   # the decile ladder
+```
+
+The release-cadence sweep is the other regression. It still puts the profit
+optimum at 18 weeks after the value rework:
+
+| cadence | 6wk | 10wk | 14wk | **18wk** | 26wk | 34wk | 52wk | 78wk |
+|---|---|---|---|---|---|---|---|---|
+| survived | 0/10 | 0/10 | 10/10 | **10/10** | 10/10 | 10/10 | 10/10 | 10/10 |
+| net worth | — | — | $2.9M | **$24.4M** | $17.8M | $13.5M | $8.7M | $6.0M |

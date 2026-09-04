@@ -25,6 +25,9 @@ export function checkInvariants(s: SimState): string[] {
     if (pr.population.sealed < 0 || pr.population.opened < 0 || pr.population.destroyed < 0) {
       bad.push(`printing ${pr.id} negative population`);
     }
+    if (!Number.isFinite(pr.truth.chase) || pr.truth.chase <= 0) {
+      bad.push(`printing ${pr.id} bad chase: ${pr.truth.chase}`);
+    }
   }
 
   for (const p of Object.values(s.products)) {

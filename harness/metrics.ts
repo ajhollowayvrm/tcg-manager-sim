@@ -14,6 +14,8 @@ export interface RunMetrics {
   top1PctShare: number;
   yearsToFirst100Dollar: number | null;
   medianCardPrice: number;
+  p90CardPrice: number;
+  p99CardPrice: number;
   maxCardPrice: number;
   topSealedPrice: number;
   flopRate: number;
@@ -36,7 +38,9 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
   const printings = Object.values(s.printings);
   const prices = printings.map(p => dollars(p.market.rawPrice)).sort((a, b) => a - b);
 
-  const median = prices.length ? prices[Math.floor(prices.length / 2)]! : 0;
+  const quantile = (q: number) =>
+    prices.length ? prices[Math.min(prices.length - 1, Math.floor(prices.length * q))]! : 0;
+  const median = quantile(0.5);
   const max = prices.length ? prices[prices.length - 1]! : 0;
 
   const base = dollars(s.config.value.baseCardPrice);
@@ -48,7 +52,9 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
   const top1PctShare = total > 0 ? topSum / total : 0;
 
   // A common/uncommon that broke out well past its rarity's expected ceiling —
-  // value that was emergent, not authored by rarity placement.
+  // value that was emergent, not authored by rarity placement. CONCEPT.md §10
+  // sets the bar at 100x; the rarity filter is the "not a planned chase" half.
+  const GRAIL_MULTIPLE = 100;
   let surpriseGrail = false;
   for (const pr of printings) {
     const card = s.cards[pr.cardId];
@@ -56,7 +62,7 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
     if (
       (card.rarity === 'common' || card.rarity === 'uncommon') &&
       base > 0 &&
-      dollars(pr.market.rawPrice) / base >= 20
+      dollars(pr.market.rawPrice) / base >= GRAIL_MULTIPLE
     ) {
       surpriseGrail = true;
       break;
@@ -110,6 +116,8 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
     top1PctShare,
     yearsToFirst100Dollar: firstHundredTick !== null ? firstHundredTick / 52 : null,
     medianCardPrice: median,
+    p90CardPrice: quantile(0.9),
+    p99CardPrice: quantile(0.99),
     maxCardPrice: max,
     topSealedPrice,
     flopRate,

@@ -10,18 +10,37 @@ const C = (n: number) => Math.round(n) as Cents;
 export const defaultConfig: SimConfig = {
   startYear: 2026,
 
+  // The value block was tuned as one unit against the targets in HANDOFF.md,
+  // by sweeping over 30 seeds and 25 years. The knobs are not independent:
+  // `scarcityExponent` and `referencePopulation` set the day-one ladder, the
+  // nostalgia triple decides who climbs it afterwards, and `chaseSigma` sets
+  // how far the luckiest card gets. Move one and re-measure all five targets.
   value: {
     baseCardPrice: C(150),
     cameoWeight: 0.15,
-    scarcityExponent: 0.6,
+    // Deliberately shallow. A steep day-one ladder puts a $100 card in year 2
+    // and leaves nothing for the next twenty years to discover.
+    scarcityExponent: 0.45,
     artMultiplierWeight: 0.6,
-    nostalgiaRatePerYear: 0.05,
+    nostalgiaRatePerYear: 0.16,
     heatDecayPerTick: 0.08,
     noiseSigma: 0.12,
-    priceFloorCents: C(100),
+    // Bulk commons are worth cents. A floor at a dollar piles half the
+    // population onto one price and calls it a distribution.
+    priceFloorCents: C(20),
     priceCeilingMultiple: 5000,
-    heatCeiling: 3,
-    nostalgiaCeiling: 8,
+    heatCeiling: 6,
+    nostalgiaCeiling: 20,
+    chaseSigma: 0.65,
+    referencePopulation: 60_000,
+    // The gate is tight on purpose. Nostalgia is the engine that separates the
+    // top 1% from the rest over twenty years; open it wider and it stops
+    // separating anything, because it lifts the whole population together.
+    nostalgiaDesireReference: 90,
+    nostalgiaStandingReference: 80,
+    nostalgiaDecayPerYear: 0.05,
+    shockChancePerTick: 0.0015,
+    shockGain: 1.1,
   },
 
   affection: {

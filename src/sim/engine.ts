@@ -24,6 +24,15 @@ const RARITY_PULL: Record<Rarity, number> = {
   illustrationRare: 0.035, specialIllustrationRare: 0.008, hyperRare: 0.004, promo: 0.05,
 };
 
+/**
+ * Latent demand for one printing, rolled once and never shown. Lognormal, so
+ * the median printing rolls 1 and a rare few roll many times that — the shape
+ * a power law needs (CONCEPT.md §5).
+ */
+function rollChase(s: SimState): number {
+  return Math.exp(gauss(s.rng, 0, s.config.value.chaseSigma));
+}
+
 /** Below `ceiling`, identity. Above it, tapers to logarithmic growth instead of compounding freely. */
 function softCap(x: number, ceiling: number): number {
   return x <= ceiling ? x : ceiling * (1 + Math.log(x / ceiling));
@@ -172,6 +181,9 @@ function reprint(s: SimState, cardId: CardId, intoSetId: SetId, quantity: number
     printQuantity: Math.max(1, quantity), pullRate: RARITY_PULL[card.rarity] / 10,
     printQuality: set.printQuality,
     isReprintOf: originalId, error: err,
+    // A reprint rolls its own chase. It is a different collectible, and the
+    // market is free to want it more or less than the printing it copies.
+    truth: { chase: rollChase(s) },
     population: { sealed: Math.max(1, quantity), opened: 0, destroyed: 0, graded: {} as any },
     market: {
       rawPrice: C(cfg.value.baseCardPrice), gradedPrices: {} as any,
@@ -380,6 +392,7 @@ function releaseSet(s: SimState, setId: SetId, regionId: RegionId): void {
       printQuantity: Math.max(1, Math.round(totalPacks * pullRate)),
       pullRate, printQuality: set.printQuality,
       isReprintOf: null, error: err,
+      truth: { chase: rollChase(s) },
       population: { sealed: Math.round(totalPacks * pullRate), opened: 0, destroyed: 0, graded: {} as any },
       market: {
         rawPrice: C(cfg.value.baseCardPrice), gradedPrices: {} as any,
@@ -491,13 +504,33 @@ function tickPrices(s: SimState, printings: Printing[]): void {
     // Rarity's price effect flows only through scarcity (print quantity is
     // already rarity-scaled via RARITY_PULL at release) — see CONCEPT.md §5.
     // RARITY_WEIGHT stays out of price; it's a demand-side signal in tickSales.
-    const scarcity = Math.pow(100000 / surviving, cfg.value.scarcityExponent);
+    const scarcity = Math.pow(cfg.value.referencePopulation / surviving, cfg.value.scarcityExponent);
     const art = 1 + card.artQuality * artist.reputation * cfg.value.artMultiplierWeight;
 
     pr.market.heat = Math.min(cfg.value.heatCeiling,
       1 + (pr.market.heat - 1) * Math.pow(1 - cfg.value.heatDecayPerTick, PRICE_STRIDE));
-    pr.market.nostalgia = Math.min(cfg.value.nostalgiaCeiling, pr.market.nostalgia * (1 + cfg.value.nostalgiaRatePerYear * yearFrac
-      * (0.4 + s.publishers[card.publisherId]!.brandStanding)));
+
+    // Nostalgia compounds only on a printing the market still wants, and only
+    // as fast as it already stands above the pack. A printing nobody wants
+    // drifts back toward 1. The old unconditional 5%/year lifted every price
+    // together, which set the level far too high and flattened the shape.
+    const standing = pr.market.rawPrice / (cfg.value.baseCardPrice * cfg.value.nostalgiaStandingReference);
+    const gate = Math.min(1, desire / cfg.value.nostalgiaDesireReference) * Math.min(1, standing);
+    const brand = 0.4 + s.publishers[card.publisherId]!.brandStanding;
+    const nostalgiaRate = cfg.value.nostalgiaRatePerYear * gate * brand
+      - cfg.value.nostalgiaDecayPerYear * (1 - gate);
+    pr.market.nostalgia = Math.max(1, Math.min(cfg.value.nostalgiaCeiling,
+      pr.market.nostalgia * (1 + nostalgiaRate * yearFrac)));
+
+    // A visible speculation event. The hidden chase roll weights it, so the
+    // cards that spike are the cards the market quietly wanted — CONCEPT.md
+    // §5, "random commons should occasionally take off".
+    const shockChance = cfg.value.shockChancePerTick * PRICE_STRIDE * pr.truth.chase
+      * Math.min(2, desire / cfg.value.nostalgiaDesireReference);
+    if (chance(s.rng, shockChance)) {
+      pr.market.heat = Math.min(cfg.value.heatCeiling, pr.market.heat + cfg.value.shockGain);
+      emit(s, 'priceSpike', false, { printingId: pr.id, cardId: pr.cardId }, { heat: pr.market.heat });
+    }
     // Errors sit in circulation unnoticed until somebody spots one.
     if (pr.error && pr.error.discoveredTick === null && chance(s.rng, cfg.printing.errorDiscoveryChance)) {
       pr.error.discoveredTick = s.tick;
@@ -509,7 +542,8 @@ function tickPrices(s: SimState, printings: Printing[]): void {
     }
 
     const noise = 1 + gauss(s.rng, 0, cfg.value.noiseSigma);
-    const rawMultiplier = scarcity * (desire / 40) * art * pr.market.heat * pr.market.nostalgia * s.market.climate * noise;
+    const rawMultiplier = scarcity * (desire / 40) * art * pr.truth.chase
+      * pr.market.heat * pr.market.nostalgia * s.market.climate * noise;
     const cappedMultiplier = softCap(rawMultiplier, cfg.value.priceCeilingMultiple);
     const target = cfg.value.baseCardPrice * cappedMultiplier;
 

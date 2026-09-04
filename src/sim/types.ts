@@ -425,6 +425,17 @@ export interface Printing {
   isReprintOf: PrintingId | null;
   error: PrintError | null;
 
+  /**
+   * HIDDEN GROUND TRUTH. Never read by anything that renders.
+   *
+   * `chase` is latent demand for this printing specifically — the reason two
+   * commons in the same set do not settle at the same price. It is rolled
+   * lognormal at creation, so its median is 1 and its tail is long. This is
+   * the term that makes value emergent rather than authored by rarity
+   * placement (CONCEPT.md §5).
+   */
+  truth: { chase: number };
+
   population: Population;
   market: PrintingMarket;
 }
@@ -736,6 +747,20 @@ export interface SimConfig {
     heatCeiling: number;
     /** Upper bound on the slow-compounding vintage nostalgia multiplier. */
     nostalgiaCeiling: number;
+    /** Sigma of the lognormal `Printing.truth.chase` roll. The tail lives here. */
+    chaseSigma: number;
+    /** Population a printing is measured against in the scarcity term. */
+    referencePopulation: number;
+    /** Cast desire at which a printing compounds nostalgia at full rate. */
+    nostalgiaDesireReference: number;
+    /** Price, as a multiple of base, at which a printing compounds nostalgia at full rate. */
+    nostalgiaStandingReference: number;
+    /** Rate at which an unwanted printing's nostalgia decays back toward 1. */
+    nostalgiaDecayPerYear: number;
+    /** Chance per price tick that a printing takes a speculative heat spike. */
+    shockChancePerTick: number;
+    /** Size of that spike. */
+    shockGain: number;
   };
 
   affection: {
