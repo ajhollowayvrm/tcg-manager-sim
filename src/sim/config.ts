@@ -13,11 +13,15 @@ export const defaultConfig: SimConfig = {
   value: {
     baseCardPrice: C(150),
     cameoWeight: 0.15,
-    scarcityExponent: 0.35,
+    scarcityExponent: 0.6,
     artMultiplierWeight: 0.6,
     nostalgiaRatePerYear: 0.05,
     heatDecayPerTick: 0.08,
     noiseSigma: 0.12,
+    priceFloorCents: C(100),
+    priceCeilingMultiple: 5000,
+    heatCeiling: 3,
+    nostalgiaCeiling: 8,
   },
 
   affection: {
@@ -30,11 +34,12 @@ export const defaultConfig: SimConfig = {
   },
 
   attention: {
-    perReleaseCost: 0.05,
+    perReleaseCost: 0.22,
     regenPerTick: 0.02,
-    fatigueGain: 0.08,
+    fatigueGain: 0.18,
     fatigueDecay: 0.01,
-    goodwillSensitivity: 0.5,
+    goodwillSensitivity: 0.6,
+    goodwillRegenPerTick: 0.001,
   },
 
   printing: {
@@ -46,7 +51,8 @@ export const defaultConfig: SimConfig = {
   finance: {
     interestBase: 0.14,
     creditToRate: 0.08,
-    borrowCeilingMultiple: 1,
+    borrowCeilingMultiple: 2.5,
+    brandConvergenceRate: 0.01,
   },
 
   sealed: {

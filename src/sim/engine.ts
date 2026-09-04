@@ -20,6 +20,11 @@ const RARITY_PULL: Record<Rarity, number> = {
   illustrationRare: 0.035, specialIllustrationRare: 0.008, hyperRare: 0.004, promo: 0.05,
 };
 
+/** Below `ceiling`, identity. Above it, tapers to logarithmic growth instead of compounding freely. */
+function softCap(x: number, ceiling: number): number {
+  return x <= ceiling ? x : ceiling * (1 + Math.log(x / ceiling));
+}
+
 // ---------------------------------------------------------------------------
 // Events
 // ---------------------------------------------------------------------------
@@ -187,9 +192,13 @@ function releaseSet(s: SimState, setId: SetId, regionId: RegionId): void {
     for (const cid of card.cameos) s.ips[cid]!.cameoCount++;
   }
 
-  // Attention is consumed on release. This is the flood penalty.
+  // Attention is consumed on release. This is the flood penalty. Goodwill
+  // burns harder the less attention has recovered since the last release —
+  // releasing into an already-exhausted audience is what a flood looks like.
   for (const seg of SEGMENTS) {
     const st = s.audience.segments[seg];
+    const floodPenalty = Math.max(0, 1 - st.attention / cfg.attention.perReleaseCost);
+    st.goodwill = Math.max(0, st.goodwill - cfg.attention.goodwillSensitivity * 0.06 * (0.3 + floodPenalty));
     st.attention = Math.max(0, st.attention - cfg.attention.perReleaseCost);
     st.fatigue = Math.min(1, st.fatigue + cfg.attention.fatigueGain);
   }
@@ -242,30 +251,36 @@ function tickPrices(s: SimState, printings: Printing[]): void {
 
     const desire = castDesire(s, card);
     const surviving = Math.max(1, pr.population.sealed + pr.population.opened - pr.population.destroyed);
+    // Rarity's price effect flows only through scarcity (print quantity is
+    // already rarity-scaled via RARITY_PULL at release) — see CONCEPT.md §5.
+    // RARITY_WEIGHT stays out of price; it's a demand-side signal in tickSales.
     const scarcity = Math.pow(100000 / surviving, cfg.value.scarcityExponent);
     const art = 1 + card.artQuality * artist.reputation * cfg.value.artMultiplierWeight;
-    const rarity = RARITY_WEIGHT[card.rarity];
 
-    pr.market.heat = 1 + (pr.market.heat - 1) * Math.pow(1 - cfg.value.heatDecayPerTick, PRICE_STRIDE);
-    pr.market.nostalgia *= 1 + cfg.value.nostalgiaRatePerYear * yearFrac
-      * (0.4 + s.publishers[card.publisherId]!.brandStanding);
+    pr.market.heat = Math.min(cfg.value.heatCeiling,
+      1 + (pr.market.heat - 1) * Math.pow(1 - cfg.value.heatDecayPerTick, PRICE_STRIDE));
+    pr.market.nostalgia = Math.min(cfg.value.nostalgiaCeiling, pr.market.nostalgia * (1 + cfg.value.nostalgiaRatePerYear * yearFrac
+      * (0.4 + s.publishers[card.publisherId]!.brandStanding)));
     if (pr.error && pr.error.discoveredTick !== null) {
-      pr.market.heat += 0.002 / Math.max(0.0002, pr.error.incidence) * 0.00002;
+      pr.market.heat = Math.min(cfg.value.heatCeiling, pr.market.heat + 0.002 / Math.max(0.0002, pr.error.incidence) * 0.00002);
     }
 
     const noise = 1 + gauss(s.rng, 0, cfg.value.noiseSigma);
-    const target = cfg.value.baseCardPrice * rarity * (desire / 40) * scarcity
-      * art * pr.market.heat * pr.market.nostalgia * s.market.climate * noise;
+    const rawMultiplier = scarcity * (desire / 40) * art * pr.market.heat * pr.market.nostalgia * s.market.climate * noise;
+    const cappedMultiplier = softCap(rawMultiplier, cfg.value.priceCeilingMultiple);
+    const target = cfg.value.baseCardPrice * cappedMultiplier;
 
     // Prices are sticky; they drift toward target rather than snapping.
-    pr.market.rawPrice = C(pr.market.rawPrice * 0.62 + Math.max(25, target) * 0.38);
+    pr.market.rawPrice = C(pr.market.rawPrice * 0.62 + Math.max(cfg.value.priceFloorCents, target) * 0.38);
     writePoint(pr.market.rawHistory, s.tick, pr.market.rawPrice, cfg.history.writeThreshold);
 
-    // Vintage price growth feeds character resurgence.
+    // Vintage price growth feeds character resurgence. Every printing seeds
+    // at a flat baseCardPrice regardless of rarity (see releaseSet), so the
+    // baseline here matches that seed, not a rarity-scaled one.
     const ageYears = (s.tick - pr.releaseTick) / 52;
     if (ageYears > 5 && chance(s.rng, 0.02 * PRICE_STRIDE)) {
       const ip = s.ips[card.subjectIp]!;
-      const growth = pr.market.rawPrice / Math.max(1, cfg.value.baseCardPrice * rarity);
+      const growth = pr.market.rawPrice / Math.max(1, cfg.value.baseCardPrice);
       if (growth > 3) {
         ip.resurgence = Math.min(1, ip.resurgence + cfg.affection.resurgenceFromVintage * 0.02);
         emit(s, 'characterResurgence', false, { ipId: ip.id, printingId: pr.id }, { growth });
@@ -334,6 +349,7 @@ function tickSales(s: SimState, products: Product[]): void {
 
     const attention = SEGMENTS.reduce((n, g) => n + s.audience.segments[g].attention, 0) / SEGMENTS.length;
     const fatigue = SEGMENTS.reduce((n, g) => n + s.audience.segments[g].fatigue, 0) / SEGMENTS.length;
+    const goodwill = SEGMENTS.reduce((n, g) => n + s.audience.segments[g].goodwill, 0) / SEGMENTS.length;
     const chase = set.cardIds.reduce((n, cid) => {
       const card = s.cards[cid]!;
       return n + castDesire(s, card) * RARITY_WEIGHT[card.rarity] / 100;
@@ -342,7 +358,7 @@ function tickSales(s: SimState, products: Product[]): void {
     const weeksOut = (s.tick - set.regionSchedule[0]!.releaseTick) / 52;
     const decay = Math.exp(-weeksOut * 1.4);
     const demand = p.unitsPrinted * 0.06 * attention * (1 - fatigue * 0.6)
-      * (0.3 + pub.brandStanding) * (0.5 + chase) * decay;
+      * (0.2 + 0.8 * goodwill) * (0.3 + pub.brandStanding) * (0.5 + chase) * decay;
 
     const sold = Math.max(0, Math.min(p.unitsRemaining, Math.round(demand)));
     if (sold <= 0) continue;
@@ -367,6 +383,9 @@ function tickAudience(s: SimState): void {
     const st = s.audience.segments[g];
     st.attention = Math.min(1, st.attention + cfg.regenPerTick);
     st.fatigue = Math.max(0, st.fatigue - cfg.fatigueDecay);
+    // Long-memory trust. Deliberately much slower than fatigue recovery —
+    // flood damage should stay felt long after attention has refilled.
+    st.goodwill = Math.min(1, st.goodwill + cfg.goodwillRegenPerTick * (1 - st.goodwill));
   }
   s.market.climate = Math.max(0.5, Math.min(1.8,
     s.market.climate + gauss(s.rng, 0, 0.012) + (1 - s.market.climate) * 0.008));
@@ -399,8 +418,15 @@ function tickFinance(s: SimState): void {
     }
   }
   pub.credit = U(pub.credit + (pub.cash > 0 ? 0.0006 : -0.002));
-  pub.brandStanding = U(pub.brandStanding * 0.9995 +
-    Object.values(s.ips).reduce((n, ip) => n + ip.affection, 0) / 8000);
+
+  // brandStanding mean-reverts toward a target driven by average affection and
+  // goodwill, rather than accumulating without limit — that's what was pinning
+  // it at 1.0 for any publisher that survived long enough to build affection.
+  const ipsArr = Object.values(s.ips);
+  const affectionAvg = ipsArr.length ? ipsArr.reduce((n, ip) => n + ip.affection, 0) / ipsArr.length : 0;
+  const goodwillAvg = SEGMENTS.reduce((n, g) => n + s.audience.segments[g].goodwill, 0) / SEGMENTS.length;
+  const brandTarget = U(0.15 + 0.55 * (affectionAvg / 100) + 0.30 * goodwillAvg);
+  pub.brandStanding = U(pub.brandStanding + (brandTarget - pub.brandStanding) * cfg.brandConvergenceRate);
 }
 
 function tickArtists(s: SimState): void {

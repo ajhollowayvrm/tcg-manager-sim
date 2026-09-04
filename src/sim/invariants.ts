@@ -44,6 +44,7 @@ export function checkInvariants(s: SimState): string[] {
   for (const [seg, st] of Object.entries(s.audience.segments)) {
     if (st.attention < -1e-6 || st.attention > 1.0001) bad.push(`segment ${seg} attention out of range: ${st.attention}`);
     if (st.fatigue < -1e-6 || st.fatigue > 1.0001) bad.push(`segment ${seg} fatigue out of range: ${st.fatigue}`);
+    if (st.goodwill < -1e-6 || st.goodwill > 1.0001) bad.push(`segment ${seg} goodwill out of range: ${st.goodwill}`);
   }
 
   if (!Number.isFinite(s.market.climate)) bad.push('market climate not finite');

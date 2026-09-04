@@ -697,6 +697,14 @@ export interface SimConfig {
     heatDecayPerTick: number;
     /** Unexplainable price movement. Non-negotiable: emergence needs noise. */
     noiseSigma: number;
+    /** Minimum raw price a printing can settle at. */
+    priceFloorCents: Cents;
+    /** Combined multiplier above which growth tapers logarithmically instead of compounding freely. */
+    priceCeilingMultiple: number;
+    /** Upper bound on the short-term speculative heat multiplier. */
+    heatCeiling: number;
+    /** Upper bound on the slow-compounding vintage nostalgia multiplier. */
+    nostalgiaCeiling: number;
   };
 
   affection: {
@@ -716,6 +724,8 @@ export interface SimConfig {
     fatigueGain: number;
     fatigueDecay: number;
     goodwillSensitivity: number;
+    /** Passive per-tick recovery of goodwill, deliberately much slower than fatigueDecay. */
+    goodwillRegenPerTick: number;
   };
 
   printing: {
@@ -728,6 +738,8 @@ export interface SimConfig {
     interestBase: number;
     creditToRate: number;
     borrowCeilingMultiple: number;
+    /** How fast brandStanding converges toward its affection/goodwill-driven target each tick. */
+    brandConvergenceRate: number;
   };
 
   sealed: {
