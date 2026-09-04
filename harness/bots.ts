@@ -7,7 +7,7 @@
  */
 import type {
   SimState, IpId, ArtistId, Rarity, PrintQualityTier, ProductKind, SetType, ProductId, IpKind,
-  ChannelId, Channel,
+  ChannelId, Channel, Tick, SetId, Cents,
 } from '../src/sim/types.ts';
 import { api } from '../src/sim/engine.ts';
 import { rand, pick, chance } from '../src/sim/rng.ts';
@@ -71,6 +71,30 @@ export interface SetBotOptions {
   allocationPolicy: AllocationPolicy;
   /** Channel `hog` dumps into. Ignored by the other policies. */
   hogChannel?: ChannelId;
+  /**
+   * Order the bot buys channel access in. Defaults to the cheapest-gate-first
+   * order of CONCEPT.md §9; a drop strategy overrides it to save for the store.
+   */
+  unlockOrder?: ChannelId[];
+  /**
+   * Units to put up per direct-store drop. Unset means the bot schedules no
+   * drops of its own and takes the engine's automatic cadence instead, which
+   * keeps that fallback path covered.
+   */
+  dropUnits?: number;
+  /** How often the bot offers to schedule the next drop. */
+  dropCadenceWeeks?: number;
+  /**
+   * Weeks before release to start dripping previews, and the weeks between
+   * them. Unset leaves the engine's default window, which is what every bot
+   * without a campaign gets.
+   */
+  revealLeadWeeks?: number;
+  revealCadenceWeeks?: number;
+  /** Cash committed to marketing each set, spread across the reveal window. */
+  marketingPerSet?: number;
+  /** Prerelease scale hosted per set. */
+  prereleaseScale?: number;
 }
 
 /**
@@ -82,9 +106,9 @@ const UNLOCK_ORDER: ChannelId[] = [
   CHANNEL_IDS.online, CHANNEL_IDS.distributor, CHANNEL_IDS.bigbox, CHANNEL_IDS.direct,
 ];
 
-function maybeUnlock(s: SimState, reserve: number, runUnits: number): void {
+function maybeUnlock(s: SimState, reserve: number, runUnits: number, order = UNLOCK_ORDER): void {
   const pub = s.publishers[s.playerId]!;
-  for (const id of UNLOCK_ORDER) {
+  for (const id of order) {
     const ch = s.channels[id];
     if (!ch || ch.unlocked) continue;
     if (pub.brandStanding < ch.requiredBrandStanding) continue;
@@ -132,16 +156,68 @@ function submitAllocation(s: SimState, productId: ProductId, units: number, opts
   api.allocate(s, productId, plan);
 }
 
+/**
+ * Puts the direct store's stock up for a drop. The engine keeps one pending
+ * drop per allocation, so submitting every cadence week simply queues the next
+ * one as soon as the last has resolved.
+ */
+function submitDrops(s: SimState, opts: SetBotOptions): void {
+  if (!opts.dropUnits) return;
+  const ch = s.channels[CHANNEL_IDS.direct];
+  if (!ch || !ch.unlocked) return;
+  if (s.tick % (opts.dropCadenceWeeks ?? 4) !== 0) return;
+
+  for (const p of Object.values(s.products)) {
+    const a = p.allocations[CHANNEL_IDS.direct];
+    if (!a || a.unitsRemaining <= 0) continue;
+    api.scheduleDrop(s, p.id, ch.id, s.tick as Tick, Math.min(opts.dropUnits, a.unitsRemaining));
+  }
+}
+
+/**
+ * Runs the reveal campaign for a set that has just been committed. Marketing is
+ * split across the window rather than dumped in one tick, which is what a
+ * player with a logarithmic spend curve would do.
+ */
+function submitCampaign(s: SimState, setId: SetId, opts: SetBotOptions): void {
+  const release = s.sets[setId]?.regionSchedule[0]?.releaseTick;
+  if (release === undefined) return;
+
+  if (opts.revealLeadWeeks !== undefined) {
+    api.scheduleReveal(
+      s,
+      setId,
+      Math.max(s.tick, (release as number) - opts.revealLeadWeeks) as Tick,
+      opts.revealCadenceWeeks ?? 2,
+    );
+  }
+  if (opts.prereleaseScale) {
+    api.hostPrerelease(s, setId, opts.prereleaseScale,
+      (opts.prereleaseScale * s.config.hype.prereleaseCostPerScale) as Cents);
+  }
+}
+
 export function makeSetBot(opts: SetBotOptions): Bot {
   let nextRelease = 8; // small startup delay so world init settles first
+  const campaigned = new Set<SetId>();
   return {
     step(s: SimState) {
       const pub = s.publishers[s.playerId]!;
       if (pub.deadTick !== null) return;
+      // A campaign can only be planned once `commitPrintRun` has been applied:
+      // the release date it schedules against is written by the engine on the
+      // following tick, not by the bot that submitted the commit.
+      for (const set of Object.values(s.sets)) {
+        if (set.status !== 'committed' || campaigned.has(set.id)) continue;
+        campaigned.add(set.id);
+        submitCampaign(s, set.id, opts);
+      }
       // Buying channel access is a between-releases decision, so it is checked
       // every step rather than only on a release week. The reserve is one full
       // print run, so a bot never unlocks its way out of being able to print.
-      if (s.tick % 13 === 0) maybeUnlock(s, printRunCost(s, opts), opts.units);
+      if (s.tick % 13 === 0) maybeUnlock(s, printRunCost(s, opts), opts.units, opts.unlockOrder);
+      submitDrops(s, opts);
+      submitMarketing(s, opts);
       if (s.tick < nextRelease) return;
       nextRelease = s.tick + opts.cadenceWeeks;
 
@@ -168,6 +244,18 @@ export function makeSetBot(opts: SetBotOptions): Bot {
       submitAllocation(s, productId, opts.units, opts);
     },
   };
+}
+
+/** Drips marketing into every set still inside its reveal window. */
+function submitMarketing(s: SimState, opts: SetBotOptions): void {
+  if (!opts.marketingPerSet) return;
+  for (const set of Object.values(s.sets)) {
+    if (set.status !== 'committed' && set.status !== 'revealing') continue;
+    // Split across the window rather than dumped in one tick: the spend curve
+    // is logarithmic in the cumulative total, so the timing is free but the
+    // player still has to survive the outlay.
+    api.marketingSpend(s, set.id, Math.round(opts.marketingPerSet / 6) as Cents);
+  }
 }
 
 export const BOTS: Record<string, () => Bot> = {
@@ -199,6 +287,29 @@ export const BOTS: Record<string, () => Bot> = {
     label: 'Specialty', cadenceWeeks: 20, cardsPerSet: 20, setType: 'specialty',
     quality: 'premium', units: 1200, packsPerUnit: 10, msrp: 6000, productKind: 'premiumCollection',
     allocationPolicy: 'spread',
+  }),
+
+  // `conservative` in every respect except that it runs a full reveal campaign:
+  // a long preview window, marketing spend, and prereleases through the LGS.
+  // Holding the other parameters identical is the point — any difference in the
+  // two rows is the hype loop and nothing else.
+  hypeBuilder: () => makeSetBot({
+    label: 'HypeBuilder', cadenceWeeks: 52, cardsPerSet: 70, setType: 'main',
+    quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000, productKind: 'boosterBox',
+    allocationPolicy: 'spread',
+    revealLeadWeeks: 16, revealCadenceWeeks: 1,
+    marketingPerSet: 300_000_00, prereleaseScale: 4,
+  }),
+
+  // `conservative` in every respect except that it saves for the direct store
+  // first and sells through drops. Holding the other parameters identical is the
+  // point: any difference in the two rows is the drop channel and nothing else.
+  dropRunner: () => makeSetBot({
+    label: 'DropRunner', cadenceWeeks: 52, cardsPerSet: 70, setType: 'main',
+    quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000, productKind: 'boosterBox',
+    allocationPolicy: 'spread',
+    unlockOrder: [CHANNEL_IDS.direct, CHANNEL_IDS.online, CHANNEL_IDS.distributor, CHANNEL_IDS.bigbox],
+    dropUnits: 2500, dropCadenceWeeks: 4,
   }),
 
   // `conservative` in every respect except allocation: it dumps each whole run

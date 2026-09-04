@@ -108,6 +108,51 @@ const table = botNames.map(b => {
 });
 console.table(table);
 
+// Drops get their own table. The main one is already too wide to read, and a
+// run that never opened a direct store has nothing to say here.
+const dropRows = botNames
+  .map(b => {
+    const r = rows.filter(x => x.bot === b);
+    const ran = r.filter(x => x.dropsRun > 0);
+    if (ran.length === 0) return null;
+    return {
+      bot: b,
+      runsWithDrops: `${ran.length}/${r.length}`,
+      drops: mean(ran.map(x => x.dropsRun)).toFixed(0),
+      soldOut: (100 * mean(ran.map(x => x.dropSellOutRate))).toFixed(0) + '%',
+      toScalpers: (100 * mean(ran.map(x => x.scalperShareOfDrops))).toFixed(0) + '%',
+      peakPremium: mean(ran.map(x => x.peakDropPremium)).toFixed(2) + 'x',
+      scalpers: mean(ran.map(x => x.scalperPopulation)).toFixed(0),
+    };
+  })
+  .filter(Boolean);
+if (dropRows.length) {
+  console.log('direct-store drops:');
+  console.table(dropRows);
+}
+
+// The reveal window gets its own table for the same reason drops do, and it
+// prints only for runs that actually ran a campaign.
+const hypeRows = botNames
+  .map(b => {
+    const r = rows.filter(x => x.bot === b);
+    const ran = r.filter(x => x.avgHypeAtRelease > 0 || x.marketingTotal > 0);
+    if (ran.length === 0) return null;
+    return {
+      bot: b,
+      runsWithHype: `${ran.length}/${r.length}`,
+      hypeAtRelease: mean(ran.map(x => x.avgHypeAtRelease)).toFixed(2) + 'x',
+      marketing$: (mean(ran.map(x => x.marketingTotal)) / 1e6).toFixed(1) + 'M',
+      prereleases: mean(ran.map(x => x.prereleasesHosted)).toFixed(0),
+      signalR: mean(ran.map(x => x.signalCorrelation)).toFixed(2),
+    };
+  })
+  .filter(Boolean);
+if (hypeRows.length) {
+  console.log('reveal window:');
+  console.table(hypeRows);
+}
+
 // A decile ladder for the last run. Median and max alone cannot tell a power
 // law from flat mush; the step between deciles can. Each step should widen.
 if (showDist && lastState) {

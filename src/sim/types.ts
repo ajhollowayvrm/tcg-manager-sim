@@ -38,6 +38,7 @@ export type CreatorId = Brand<string, 'CreatorId'>;
 export type ChainId = Brand<string, 'ChainId'>;
 export type CollabId = Brand<string, 'CollabId'>;
 export type EventId = Brand<string, 'EventId'>;
+export type DropId = Brand<string, 'DropId'>;
 
 /** Seeded PRNG state. Serializable so runs are exactly reproducible. */
 export interface RngState {
@@ -89,6 +90,7 @@ export interface SimState {
   creators: Record<CreatorId, Creator>;
   chains: Record<ChainId, Chain>;
   collabs: Record<CollabId, Collab>;
+  drops: Record<DropId, Drop>;
 
   audience: AudienceState;
   market: MarketState;
@@ -317,6 +319,43 @@ export interface CardSet {
   attentionCost: number;
 
   performance: SetPerformance | null;
+  /** Pre-launch demand, built across the reveal window. Null until commit. */
+  hype: SetHype | null;
+}
+
+/**
+ * The reveal window, in state. CONCEPT.md §2: "Signal arrives; the print run
+ * does not change." Everything here shapes demand or reads it; nothing here can
+ * reach back and change what was printed.
+ */
+export interface SetHype {
+  /** Weeks between preview drops. */
+  cadence: number;
+  /** Cards previewed so far. Each drip sharpens `signal` and costs attention. */
+  cardsRevealed: number;
+  /** Tick the last drip went out. */
+  lastRevealTick: Tick | null;
+
+  /** Hype earned by the previews themselves. */
+  revealHype: number;
+  /** Cumulative cash committed. Hype is derived from the total, so it diminishes. */
+  marketingSpend: Cents;
+  /** Prerelease events hosted, and the scale they were hosted at. */
+  prereleases: number;
+  prereleaseScale: number;
+
+  /** The three components summed. Multiplies demand, then decays after release. */
+  level: number;
+  /** `level` at the moment of release, kept for the post-mortem. */
+  levelAtRelease: number | null;
+
+  /**
+   * The player-visible read on how the reveal is going. A NOISY measurement of
+   * the set's true chase, never the truth. The print run is already committed
+   * when this arrives, so the signal has to be able to lie — a signal that
+   * cannot be wrong turns the blind bet into a solved problem.
+   */
+  signal: number;
 }
 
 export interface SetPerformance {
@@ -528,6 +567,37 @@ export interface Channel {
   lastAllocatedTick: Tick | null;
 }
 
+/**
+ * A direct-store drop: a fixed quantity put up at MSRP at a scheduled tick,
+ * and gone in one tick whatever happens. This is the discrete counterpart to
+ * the continuous sell-through every other channel runs on, and CONCEPT.md §6.5
+ * calls it the most volatile scalper interaction in the game.
+ */
+export interface Drop {
+  id: DropId;
+  productId: ProductId;
+  channelId: ChannelId;
+  scheduledTick: Tick;
+  /** Units the store intends to put up. Capped by queue capacity and stock at resolve time. */
+  offered: number;
+  /** True if the engine scheduled this, false if a `scheduleDrop` decision did. */
+  automatic: boolean;
+  status: 'scheduled' | 'complete';
+  result: DropResult | null;
+}
+
+export interface DropResult {
+  /** Units actually put up, after the queue-capacity and stock caps. */
+  offered: number;
+  /** Everyone who wanted in. Above `offered` means the queue did not clear. */
+  demand: number;
+  soldToCollectors: number;
+  soldToScalpers: number;
+  soldOut: boolean;
+  /** Resale premium over MSRP the scalpers were betting on when they queued. */
+  expectedPremium: number;
+}
+
 export interface Grader {
   id: GraderId;
   name: string;
@@ -612,6 +682,35 @@ export interface AudienceState {
     collectors: number;
     speculators: number;
   };
+
+  /**
+   * HIDDEN. The scalper population's books. The player sees drop chaos, resale
+   * prices and their own goodwill; they never see how much stock the scalpers
+   * are sitting on or what it is earning them.
+   */
+  hidden: {
+    /** Open scalper positions, by product. Absent means they hold none. */
+    scalperInventory: Record<ProductId, ScalperPosition>;
+    /** Rolling realized resale premium. Drives the population. */
+    scalperProfitability: number;
+    /** Latched, so `scalperCrash` fires on the crossing and not every tick after. */
+    scalperBoom: boolean;
+  };
+}
+
+/**
+ * One scalper position. A scalper flips; they do not hold. Carrying the basis
+ * and the age is what keeps that true: their return is measured against what
+ * they paid, and the position is force-cleared once it stops being a flip.
+ * Without both, a position rides twenty years of vintage appreciation and
+ * reports it as scalping profit.
+ */
+export interface ScalperPosition {
+  units: number;
+  /** Weighted average of what they paid. */
+  basis: Cents;
+  /** Weighted average tick they bought at. */
+  openedTick: Tick;
 }
 
 export interface SegmentState {
@@ -691,6 +790,13 @@ export type Decision =
   | { type: 'borrow'; tick: Tick; payload: { amount: Cents } }
   | { type: 'repay'; tick: Tick; payload: { amount: Cents } }
   | { type: 'marketingSpend'; tick: Tick; payload: { setId: SetId; amount: Cents } }
+  | {
+      type: 'scheduleDrop'; tick: Tick; payload: {
+        id: DropId; productId: ProductId; channelId: ChannelId;
+        /** Absolute tick, not an offset. A drop in the past resolves on the next tick. */
+        atTick: Tick; units: number;
+      };
+    }
   | { type: 'advance'; tick: Tick; payload: { weeks: number } };
 
 // ---------------------------------------------------------------------------
@@ -707,7 +813,8 @@ export type SimEventKind =
   | 'channelStrained' | 'channelLost' | 'channelUnlocked'
   | 'rivalRelease' | 'rivalDominance'
   | 'debtWarning' | 'studioDead'
-  | 'fatigueWarning' | 'graderEnteredMarket';
+  | 'fatigueWarning' | 'graderEnteredMarket'
+  | 'dropScheduled' | 'dropSoldOut' | 'dropUndersold' | 'scalperCrash';
 
 export interface SimEvent {
   id: EventId;
@@ -833,6 +940,58 @@ export interface SimConfig {
     /** How much rising sealed price suppresses ripping. */
     ripPriceElasticity: number;
     sealedNostalgiaRatePerYear: number;
+    /** Share of a product's speculative sealed heat that decays each tick. */
+    heatDecayPerTick: number;
+    /** Upper bound on that heat multiplier. */
+    heatCeiling: number;
+  };
+
+  /**
+   * Direct-store drops and the scalper population that camps them
+   * (CONCEPT.md §6.5, §6.8). The loop is self-regulating: a wide resale premium
+   * pulls scalpers in, they buy the drop out, they resell into the premium
+   * until it closes, and the population shrinks again when it stops paying.
+   */
+  drops: {
+    /** Weeks between automatic drops while a direct allocation still holds stock. */
+    cadenceWeeks: number;
+    /** Share of the collector population that considers any one drop. */
+    collectorReach: number;
+    /** Share of the scalper population that considers any one drop. */
+    scalperReach: number;
+    /** How much faster a camping scalper clears the queue than a collector. */
+    scalperSpeed: number;
+    /** Resale premium a scalper needs before a drop is worth camping. */
+    breakEvenPremium: number;
+    /** Share of held stock a scalper resells per tick at zero premium. */
+    baseResaleRate: number;
+    /** Weeks after which a position is dumped whatever it is worth. A flip has a clock. */
+    holdLimitWeeks: number;
+    /**
+     * Units per scalper at which a flip pays its full premium. Profit is
+     * per-capita, not per-unit: a fixed drop split between twice as many
+     * scalpers pays each of them half. This is what stops the population from
+     * being a one-way ratchet.
+     */
+    unitsPerScalperReference: number;
+    /** How much a wide premium accelerates that. */
+    resaleUrgency: number;
+    /** Population change per tick per unit of premium above break-even. */
+    populationGrowth: number;
+    minScalpers: number;
+    maxScalpers: number;
+    /** Weight of the newest realized premium in the rolling profitability average. */
+    profitabilitySmoothing: number;
+    /** Goodwill gained by a drop that reached collectors. */
+    goodwillPerCollectorDrop: number;
+    /** Goodwill lost by a drop that went to scalpers. */
+    goodwillPerScalperDrop: number;
+    /** Goodwill lost when the queue dwarfs the stock. Shortages cost trust too. */
+    goodwillPerShortage: number;
+    /** Sealed heat added by an oversubscribed drop. */
+    heatPerOversubscription: number;
+    /** Sealed heat removed as scalpers dump inventory back into the market. */
+    dumpHeatDrag: number;
   };
 
   channels: {
@@ -869,6 +1028,43 @@ export interface SimConfig {
     stalenessPerWeek: number;
     /** Cash cost to unlock a channel, by kind. */
     unlockCost: Record<ChannelKind, Cents>;
+  };
+
+  /**
+   * The reveal window (CONCEPT.md §2, §6.7). Three levers turn money and
+   * attention into pre-launch demand, and one read comes back the other way.
+   * Every gain here diminishes: hype is bought in a market that is already
+   * paying attention to you, so the second million buys less than the first.
+   */
+  hype: {
+    /** Weeks between preview drops when a set is revealed without a schedule. */
+    defaultCadenceWeeks: number;
+    /** Hype one preview adds, before the diminishing term. */
+    revealHypePerCard: number;
+    /** Hype level at which further previews are worth half as much. */
+    revealHalfLife: number;
+    /** Audience attention one preview consumes. */
+    revealAttentionCost: number;
+    /** Spend at which marketing has bought one unit of its hype curve. */
+    marketingReference: Cents;
+    /** Scale of the logarithmic marketing curve. */
+    marketingHypeGain: number;
+    /** Cash one unit of prerelease scale costs to host. */
+    prereleaseCostPerScale: Cents;
+    /** Hype one unit of prerelease scale adds, before the diminishing term. */
+    prereleaseHypeGain: number;
+    /** Goodwill one unit of prerelease scale earns. The LGS is the goodwill engine. */
+    prereleaseGoodwillGain: number;
+    /** LGS relationship one unit of prerelease scale earns. */
+    prereleaseRelationshipGain: number;
+    /** Upper bound on `level`. Hype is a multiplier on demand, not a substitute for it. */
+    ceiling: number;
+    /** Share of the remaining hype that burns off each tick after release. */
+    decayPerTickAfterRelease: number;
+    /** Sigma of the signal's error at zero previews. Shrinks as previews land. */
+    signalNoiseSigma: number;
+    /** How hard hype at release seeds the singles market's opening heat. */
+    heatFromHype: number;
   };
 
   region: {

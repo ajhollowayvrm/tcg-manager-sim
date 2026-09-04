@@ -90,6 +90,32 @@ export const defaultConfig: SimConfig = {
     baseRipRatePerTick: 0.01,
     ripPriceElasticity: 0.8,
     sealedNostalgiaRatePerYear: 0.04,
+    heatDecayPerTick: 0.05,
+    heatCeiling: 4,
+  },
+
+  // First-guess numbers. This block was wired for behaviour, not swept for
+  // balance: the loop it has to produce is scalpers arriving when resale pays,
+  // buying the drop out, and leaving again once they have closed the premium.
+  drops: {
+    cadenceWeeks: 6,
+    collectorReach: 0.06,
+    scalperReach: 0.5,
+    scalperSpeed: 3,
+    breakEvenPremium: 0.15,
+    baseResaleRate: 0.04,
+    holdLimitWeeks: 26,
+    unitsPerScalperReference: 1,
+    resaleUrgency: 0.5,
+    populationGrowth: 0.06,
+    minScalpers: 50,
+    maxScalpers: 40_000,
+    profitabilitySmoothing: 0.1,
+    goodwillPerCollectorDrop: 0.01,
+    goodwillPerScalperDrop: 0.014,
+    goodwillPerShortage: 0.006,
+    heatPerOversubscription: 0.35,
+    dumpHeatDrag: 1.5,
   },
 
   channels: {
@@ -114,6 +140,26 @@ export const defaultConfig: SimConfig = {
       online: C(80_000_00),
       direct: C(750_000_00),
     },
+  },
+
+  // First-guess numbers, wired for behaviour rather than swept. The shape that
+  // matters: every lever diminishes, and none of them can rescue a set the
+  // audience does not want — hype multiplies demand, it does not create it.
+  hype: {
+    defaultCadenceWeeks: 2,
+    revealHypePerCard: 0.05,
+    revealHalfLife: 0.8,
+    revealAttentionCost: 0.004,
+    marketingReference: C(100_000_00),
+    marketingHypeGain: 0.35,
+    prereleaseCostPerScale: C(25_000_00),
+    prereleaseHypeGain: 0.12,
+    prereleaseGoodwillGain: 0.02,
+    prereleaseRelationshipGain: 0.04,
+    ceiling: 3,
+    decayPerTickAfterRelease: 0.06,
+    signalNoiseSigma: 0.55,
+    heatFromHype: 0.8,
   },
 
   region: {

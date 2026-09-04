@@ -80,6 +80,58 @@ export function checkInvariants(s: SimState): string[] {
     if (st.goodwill < -1e-6 || st.goodwill > 1.0001) bad.push(`segment ${seg} goodwill out of range: ${st.goodwill}`);
   }
 
+  for (const set of Object.values(s.sets)) {
+    const h = set.hype;
+    if (!h) continue;
+    if (!Number.isFinite(h.level) || h.level < 0) bad.push(`set ${set.id} bad hype level: ${h.level}`);
+    if (h.level > s.config.hype.ceiling + 1e-6) {
+      bad.push(`set ${set.id} hype past ceiling: ${h.level}/${s.config.hype.ceiling}`);
+    }
+    if (!Number.isFinite(h.signal) || h.signal < 0) bad.push(`set ${set.id} bad hype signal: ${h.signal}`);
+    if (h.marketingSpend < 0) bad.push(`set ${set.id} negative marketing spend: ${h.marketingSpend}`);
+    // Previews come out of the set. You cannot reveal a card you did not print.
+    if (h.cardsRevealed > set.cardIds.length) {
+      bad.push(`set ${set.id} revealed past its size: ${h.cardsRevealed}/${set.cardIds.length}`);
+    }
+    if (h.cadence < 1) bad.push(`set ${set.id} bad reveal cadence: ${h.cadence}`);
+  }
+
+  for (const d of Object.values(s.drops)) {
+    if (d.offered < 0) bad.push(`drop ${d.id} negative offer: ${d.offered}`);
+    if (d.status === 'complete' && d.result) {
+      const r = d.result;
+      const sold = r.soldToCollectors + r.soldToScalpers;
+      if (sold > r.offered) bad.push(`drop ${d.id} sold past its offer: ${sold}/${r.offered}`);
+      if (r.soldToCollectors < 0 || r.soldToScalpers < 0) bad.push(`drop ${d.id} negative fill`);
+      if (!Number.isFinite(r.demand) || r.demand < 0) bad.push(`drop ${d.id} bad demand: ${r.demand}`);
+    }
+    if (!s.products[d.productId]) bad.push(`drop ${d.id} references unknown product ${d.productId}`);
+  }
+
+  const scalpers = s.audience.actors.scalpers;
+  if (!Number.isFinite(scalpers) || scalpers < 0) bad.push(`scalper population invalid: ${scalpers}`);
+  if (!Number.isFinite(s.audience.hidden.scalperProfitability)) {
+    bad.push('scalper profitability not finite');
+  }
+  for (const [pid, pos] of Object.entries(s.audience.hidden.scalperInventory)) {
+    if (!Number.isFinite(pos.units) || pos.units <= 0) {
+      bad.push(`scalper position for ${pid} invalid: ${pos.units}`);
+      continue;
+    }
+    if (!Number.isFinite(pos.basis) || pos.basis <= 0) {
+      bad.push(`scalper position for ${pid} bad basis: ${pos.basis}`);
+    }
+    if ((pos.openedTick as number) > s.tick) {
+      bad.push(`scalper position for ${pid} opened in the future: ${pos.openedTick}`);
+    }
+    // Scalpers can only be holding stock that was actually printed.
+    const prod = s.products[pid as keyof typeof s.products];
+    if (!prod) bad.push(`scalper position for unknown product ${pid}`);
+    else if (pos.units > prod.unitsPrinted) {
+      bad.push(`scalper position for ${pid} exceeds print run: ${pos.units}/${prod.unitsPrinted}`);
+    }
+  }
+
   if (!Number.isFinite(s.market.climate)) bad.push('market climate not finite');
 
   return bad;

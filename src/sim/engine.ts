@@ -3,12 +3,13 @@ import type {
   ProductLineId, RegionId, ChannelId, ArtistId, IpEntity, Card, CardSet, Product,
   Printing, SimEvent, EventId, SetType, Rarity, ProductKind, PrintQualityTier,
   Treatment, ArtBrief, UnlockState, ChannelAllocation, Channel, SetPerformance,
+  Drop, DropId,
 } from './types.ts';
 import { rand, randRange, randInt, pick, chance, gauss } from './rng.ts';
 import { emptySeries, writePoint, compact } from './series.ts';
 import { nextId, SEGMENTS, RARITIES } from './world.ts';
 import {
-  traitsFor, effectiveCapacity, allocatedUnits, autoAllocate, unlockCost,
+  traitsFor, effectiveCapacity, allocatedUnits, autoAllocate, unlockCost, CHANNEL_IDS,
 } from './channels.ts';
 
 const T = (n: number) => n as Tick;
@@ -79,7 +80,7 @@ function createSet(s: SimState, id: SetId, name: string, type: SetType, size: nu
     cardIds: [], productIds: [], collabId: null,
     regionSchedule: [], designStartTick: s.tick, commitTick: null, revealStartTick: null,
     budget: C(0), actualCost: C(0), printQuality: 'standard', attentionCost: 0,
-    performance: null,
+    performance: null, hype: null,
   };
 }
 
@@ -150,8 +151,16 @@ function commitPrintRun(s: SimState, setId: SetId, quantities: Record<ProductId,
   pub.ledger.push({ t: s.tick, amount: C(-cost), category: 'print_run', note: set.name, refId: setId });
 
   // Blind commitment: reveal and release are scheduled here, before any signal.
+  // `scheduleReveal` can move the reveal start inside this window afterwards.
+  // The release date and the print run cannot move at all — that is the bet.
   set.revealStartTick = T(s.tick + 12);
   set.regionSchedule = [{ regionId: 'reg_us' as RegionId, releaseTick: T(s.tick + 18) }];
+  set.hype = {
+    cadence: s.config.hype.defaultCadenceWeeks,
+    cardsRevealed: 0, lastRevealTick: null,
+    revealHype: 0, marketingSpend: C(0), prereleases: 0, prereleaseScale: 0,
+    level: 0, levelAtRelease: null, signal: 0,
+  };
 }
 
 /**
@@ -275,6 +284,40 @@ function purchaseUnlock(s: SimState, unlock: keyof UnlockState, detail?: string)
   emit(s, 'channelUnlocked', true, { channelId: ch.id, publisherId: pub.id }, { kind: ch.kind, cost });
 }
 
+/**
+ * Puts a fixed quantity of one product up for a drop at a chosen tick. Only the
+ * direct store runs drops: every other channel sells continuously off a shelf,
+ * and that is the whole difference between them (CONCEPT.md §6.5).
+ *
+ * The player schedules a drop; the engine schedules one for them when they
+ * don't, exactly as `allocate` and `autoAllocate` already split that job.
+ */
+function scheduleDrop(
+  s: SimState, id: DropId, productId: ProductId, channelId: ChannelId,
+  atTick: Tick, units: number,
+): void {
+  const p = s.products[productId];
+  const ch = s.channels[channelId];
+  if (!p || !ch || ch.kind !== 'direct' || !ch.unlocked) return;
+  if (!p.allocations[ch.id]) return;
+  const offered = Math.floor(units);
+  if (offered <= 0) return;
+  // One pending drop per allocation. A store cannot queue the same stock twice,
+  // and without this a caller that submits every tick stacks drops on one tick.
+  for (const existing of Object.values(s.drops)) {
+    if (existing.status === 'scheduled'
+      && existing.productId === productId && existing.channelId === channelId) return;
+  }
+
+  // A drop scheduled into the past runs on the next tick rather than never.
+  s.drops[id] = {
+    id, productId, channelId, scheduledTick: T(Math.max(s.tick, atTick)),
+    offered, automatic: false, status: 'scheduled', result: null,
+  };
+  emit(s, 'dropScheduled', false, { channelId: ch.id, setId: p.setId },
+    { productId: p.id, offered, atTick: s.drops[id]!.scheduledTick as number });
+}
+
 function applyDecision(s: SimState, d: Decision): void {
   switch (d.type) {
     case 'createIp': createIp(s, d.payload.id, d.payload.name, d.payload.kind); break;
@@ -296,6 +339,19 @@ function applyDecision(s: SimState, d: Decision): void {
     case 'allocate': allocate(s, d.payload.productId, d.payload.allocations); break;
     case 'purchaseUnlock': purchaseUnlock(s, d.payload.unlock, d.payload.detail); break;
     case 'reprint': reprint(s, d.payload.cardId, d.payload.intoSetId, d.payload.quantity); break;
+    case 'scheduleReveal':
+      scheduleReveal(s, d.payload.setId, d.payload.startTick, d.payload.cadence);
+      break;
+    case 'hostPrerelease':
+      hostPrerelease(s, d.payload.setId, d.payload.scale, d.payload.budget);
+      break;
+    case 'marketingSpend':
+      marketingSpend(s, d.payload.setId, d.payload.amount);
+      break;
+    case 'scheduleDrop':
+      scheduleDrop(s, d.payload.id, d.payload.productId, d.payload.channelId,
+        d.payload.atTick, d.payload.units);
+      break;
     case 'borrow': {
       const pub = s.publishers[s.playerId]!;
       pub.cash = C(pub.cash + d.payload.amount);
@@ -308,9 +364,8 @@ function applyDecision(s: SimState, d: Decision): void {
       pub.cash = C(pub.cash - amt); pub.debt = C(pub.debt - amt);
       break;
     }
-    // Not simulated yet: commissionArt, scheduleReveal, hostPrerelease, hireArtist,
-    // signCollab, unlockRegion, marketingSpend, advance. `purchaseUnlock` handles
-    // its channel branch only.
+    // Not simulated yet: commissionArt, hireArtist, signCollab, unlockRegion,
+    // advance. `purchaseUnlock` handles its channel branch only.
     default: break;
   }
 }
@@ -356,6 +411,20 @@ export const api = {
   reprint(s: SimState, cardId: CardId, intoSetId: SetId, quantity: number): void {
     submit(s, { type: 'reprint', tick: s.tick, payload: { cardId, intoSetId, quantity } });
   },
+  scheduleReveal(s: SimState, setId: SetId, startTick: Tick, cadence: number): void {
+    submit(s, { type: 'scheduleReveal', tick: s.tick, payload: { setId, startTick, cadence } });
+  },
+  hostPrerelease(s: SimState, setId: SetId, scale: number, budget: Cents): void {
+    submit(s, { type: 'hostPrerelease', tick: s.tick, payload: { setId, scale, budget } });
+  },
+  marketingSpend(s: SimState, setId: SetId, amount: Cents): void {
+    submit(s, { type: 'marketingSpend', tick: s.tick, payload: { setId, amount } });
+  },
+  scheduleDrop(s: SimState, productId: ProductId, channelId: ChannelId, atTick: Tick, units: number): DropId {
+    const id = nextId(s, 'drop') as DropId;
+    submit(s, { type: 'scheduleDrop', tick: s.tick, payload: { id, productId, channelId, atTick, units } });
+    return id;
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -366,6 +435,12 @@ function releaseSet(s: SimState, setId: SetId, regionId: RegionId): void {
   const set = s.sets[setId]!;
   const cfg = s.config;
   set.status = 'released';
+
+  // Hype stops being built the moment the set ships. What it reached is what
+  // the launch gets, and it burns off from there.
+  const hype = set.hype;
+  if (hype) hype.levelAtRelease = hype.level;
+  const launchHype = hype?.levelAtRelease ?? 0;
 
   // A product the player never allocated goes out on the default split. Anything
   // the channels will not carry stays unallocated, and unallocated stock cannot
@@ -396,7 +471,10 @@ function releaseSet(s: SimState, setId: SetId, regionId: RegionId): void {
       population: { sealed: Math.round(totalPacks * pullRate), opened: 0, destroyed: 0, graded: {} as any },
       market: {
         rawPrice: C(cfg.value.baseCardPrice), gradedPrices: {} as any,
-        heat: 1.6, nostalgia: 1, liquidity: U(0.5), lastTradeTick: s.tick,
+        // A hyped set launches hot. This is where the reveal window reaches the
+        // value engine; a set with no campaign opens at exactly 1.6 as before.
+        heat: 1.6 + launchHype * cfg.hype.heatFromHype,
+        nostalgia: 1, liquidity: U(0.5), lastTradeTick: s.tick,
         rawHistory: emptySeries(s.tick), gradedHistory: {} as any,
       },
     };
@@ -429,7 +507,11 @@ function releaseSet(s: SimState, setId: SetId, regionId: RegionId): void {
   set.performance = {
     unitsSold: 0, unitsUnsold: 0, revenue: C(0),
     sellThroughByChannel: {} as SetPerformance['sellThroughByChannel'],
-    chaseIndex: 0, aftermarketIndex: 0,
+    // The truth the reveal window's signal was a measurement of, recorded at
+    // the moment it stops being guessable. Keeping it is what lets the harness
+    // ask whether the signal was informative — a signal nobody can score is a
+    // signal nobody can tune.
+    chaseIndex: setChase(s, set), aftermarketIndex: 0,
     goodwillDelta: goodwillBurn / SEGMENTS.length,
   };
   emit(s, 'setReleased', true, { setId, publisherId: set.publisherId }, { cards: set.cardIds.length });
@@ -594,8 +676,13 @@ function tickSealed(s: SimState, products: Product[]): void {
     }
 
     p.market.nostalgia *= 1 + cfg.sealedNostalgiaRatePerYear * yearFrac;
+    // Drop chaos is short-lived. `resolveDrop` adds heat when a queue does not
+    // clear and `tickScalpers` takes it back out as they dump; this is the
+    // decay that stops either from compounding.
+    p.market.heat = Math.min(cfg.heatCeiling,
+      1 + (p.market.heat - 1) * Math.pow(1 - cfg.heatDecayPerTick, SEALED_STRIDE));
     const scarcity = Math.pow(Math.max(1, p.unitsPrinted) / Math.max(1, h.sealedRemaining), 0.5);
-    const target = (contents * cfg.contentsWeight + p.msrp * 0.6) * scarcity * p.market.nostalgia;
+    const target = (contents * cfg.contentsWeight + p.msrp * 0.6) * scarcity * p.market.nostalgia * p.market.heat;
     p.market.price = C(p.market.price * 0.9 + Math.max(p.msrp * 0.4, target) * 0.1);
     writePoint(p.market.history, s.tick, p.market.price, s.config.history.writeThreshold);
 
@@ -616,6 +703,186 @@ function tickSealed(s: SimState, products: Product[]): void {
   }
 }
 
+/**
+ * The reveal window (CONCEPT.md §2). Three levers spend money and audience
+ * attention to shape demand for a set that is already printed, and one noisy
+ * read comes back the other way.
+ *
+ * None of them can change the print run. That restriction is the entire point:
+ * the player finds out during the reveal whether the blind bet was good, and
+ * the only things still open to them are allocation, drops, and how hard to
+ * push. A lever that could unprint would delete the bet.
+ */
+
+/** Hype from marketing. Read off the cumulative spend, so it diminishes by construction. */
+function marketingHype(s: SimState, spend: Cents): number {
+  const cfg = s.config.hype;
+  return cfg.marketingHypeGain * Math.log(1 + spend / Math.max(1, cfg.marketingReference));
+}
+
+/** Hype from prereleases. Diminishes in the number hosted, not just the scale. */
+function prereleaseHype(s: SimState, scale: number, count: number): number {
+  const cfg = s.config.hype;
+  return cfg.prereleaseHypeGain * scale / (1 + 0.5 * Math.max(0, count - 1));
+}
+
+/** Recomputes `level` from its three parts. Only meaningful before release. */
+function recomputeHype(s: SimState, set: CardSet): void {
+  const h = set.hype;
+  if (!h) return;
+  const total = h.revealHype
+    + marketingHype(s, h.marketingSpend)
+    + prereleaseHype(s, h.prereleaseScale, h.prereleases);
+  h.level = Math.max(0, Math.min(s.config.hype.ceiling, total));
+}
+
+/** The set is still in the window where hype can be built. */
+function inRevealWindow(set: CardSet): boolean {
+  return set.status === 'committed' || set.status === 'revealing';
+}
+
+/**
+ * Moves the reveal start and sets the drip cadence. A longer window and a
+ * slower drip build more hype and burn more attention; a short one is cheap and
+ * quiet. The reveal cannot outlast the release it is advertising.
+ */
+function scheduleReveal(s: SimState, setId: SetId, startTick: Tick, cadence: number): void {
+  const set = s.sets[setId];
+  if (!set || !set.hype || !inRevealWindow(set)) return;
+  const release = set.regionSchedule[0]?.releaseTick;
+  if (release === undefined) return;
+
+  set.revealStartTick = T(Math.max(s.tick, Math.min(startTick, release)));
+  set.hype.cadence = Math.max(1, Math.round(cadence));
+  // Bringing the reveal forward past a start that has already fired would
+  // otherwise re-open a window the set has left.
+  if (set.status === 'revealing' && set.revealStartTick > s.tick) set.status = 'committed';
+}
+
+/**
+ * Cash for pre-launch demand. The curve is logarithmic in the cumulative spend,
+ * so a publisher cannot simply buy a hit: the second million buys much less
+ * than the first, and a set nobody wants still sells to nobody.
+ */
+function marketingSpend(s: SimState, setId: SetId, amount: Cents): void {
+  const set = s.sets[setId];
+  if (!set || !set.hype || !inRevealWindow(set)) return;
+  const pub = s.publishers[set.publisherId];
+  if (!pub) return;
+  const spend = Math.min(Math.max(0, amount), Math.max(0, pub.cash));
+  if (spend <= 0) return;
+
+  pub.cash = C(pub.cash - spend);
+  pub.ledger.push({ t: s.tick, amount: C(-spend), category: 'marketing', note: set.name, refId: set.id });
+  set.hype.marketingSpend = C(set.hype.marketingSpend + spend);
+  recomputeHype(s, set);
+}
+
+/**
+ * A prerelease event, run through the LGS network — CONCEPT.md §6.5 gives the
+ * LGS the prerelease infrastructure and the goodwill. This is the deliberate
+ * counterweight to a direct-store drop: a drop is full margin paid for in
+ * goodwill, a prerelease is goodwill paid for in cash.
+ */
+function hostPrerelease(s: SimState, setId: SetId, scale: number, budget: Cents): void {
+  const set = s.sets[setId];
+  if (!set || !set.hype || !inRevealWindow(set)) return;
+  const pub = s.publishers[set.publisherId];
+  const lgs = s.channels[CHANNEL_IDS.lgs];
+  if (!pub || !lgs || !lgs.unlocked) return;
+  if (!pub.unlocks.channels.includes(lgs.id)) return;
+
+  const cfg = s.config.hype;
+  // Scale is bounded by whichever runs out first: the budget the player set, or
+  // the cash they actually have.
+  const affordable = Math.min(budget, pub.cash) / Math.max(1, cfg.prereleaseCostPerScale);
+  const actual = Math.max(0, Math.min(scale, affordable));
+  if (actual <= 0) return;
+
+  const cost = C(actual * cfg.prereleaseCostPerScale);
+  pub.cash = C(pub.cash - cost);
+  pub.ledger.push({ t: s.tick, amount: C(-cost), category: 'event', note: `prerelease ${set.name}`, refId: set.id });
+
+  set.hype.prereleases += 1;
+  set.hype.prereleaseScale += actual;
+  recomputeHype(s, set);
+
+  for (const g of SEGMENTS) {
+    const st = s.audience.segments[g];
+    st.goodwill = U(st.goodwill + cfg.prereleaseGoodwillGain * actual);
+  }
+  lgs.relationship = U(lgs.relationship + cfg.prereleaseRelationshipGain * actual);
+  emit(s, 'communitySentiment', true, { setId: set.id, channelId: lgs.id, publisherId: pub.id },
+    { kind: 'prerelease', scale: actual, cost, hype: set.hype.level });
+}
+
+/**
+ * One preview drop. Costs attention, adds hype, and sharpens the signal.
+ *
+ * The signal is a measurement of the set's true chase with error that shrinks
+ * as previews land — an early read is nearly useless and a late one is decent,
+ * but it is never exact and it arrives too late to reprint against. It is not
+ * stored anywhere the value engine reads: it exists to be looked at.
+ */
+function tickReveal(s: SimState, set: CardSet): void {
+  const cfg = s.config.hype;
+  const h = set.hype;
+  if (!h) return;
+  if (h.lastRevealTick !== null && s.tick - (h.lastRevealTick as number) < h.cadence) return;
+  if (h.cardsRevealed >= set.cardIds.length) return;
+
+  h.lastRevealTick = s.tick;
+  h.cardsRevealed += 1;
+
+  // Diminishing: hype already earned makes the next preview worth less.
+  const card = s.cards[set.cardIds[h.cardsRevealed - 1]!];
+  const pull = card ? RARITY_WEIGHT[card.rarity] / 10 : 1;
+  h.revealHype += cfg.revealHypePerCard * pull / (1 + h.revealHype / cfg.revealHalfLife);
+  recomputeHype(s, set);
+
+  // Previews are not free. They spend the same finite attention a release does,
+  // so a long campaign into a tired audience is waste.
+  for (const g of SEGMENTS) {
+    const st = s.audience.segments[g];
+    st.attention = Math.max(0, st.attention - cfg.revealAttentionCost);
+  }
+
+  const truth = setChase(s, set);
+  const noise = gauss(s.rng, 0, cfg.signalNoiseSigma / Math.sqrt(h.cardsRevealed));
+  h.signal = Math.max(0, truth * (1 + noise));
+  emit(s, 'communitySentiment', false, { setId: set.id, publisherId: set.publisherId },
+    { kind: 'reveal', revealed: h.cardsRevealed, signal: h.signal, hype: h.level });
+}
+
+/**
+ * The audience aggregates that drive demand. Shared by the shelf sales in
+ * `tickSales` and the drop queue in `resolveDrop`, so both read the same
+ * audience rather than two drifting copies of it.
+ */
+interface AudienceAverages { attention: number; fatigue: number; goodwill: number }
+
+function audienceAverages(s: SimState): AudienceAverages {
+  let attention = 0, fatigue = 0, goodwill = 0;
+  for (const g of SEGMENTS) {
+    const st = s.audience.segments[g];
+    attention += st.attention;
+    fatigue += st.fatigue;
+    goodwill += st.goodwill;
+  }
+  const n = SEGMENTS.length;
+  return { attention: attention / n, fatigue: fatigue / n, goodwill: goodwill / n };
+}
+
+/** How much this set's cards are wanted, weighted by how hard they are to pull. */
+function setChase(s: SimState, set: CardSet): number {
+  let total = 0;
+  for (const cid of set.cardIds) {
+    const card = s.cards[cid]!;
+    total += castDesire(s, card) * RARITY_WEIGHT[card.rarity] / 100;
+  }
+  return total / Math.max(1, set.cardIds.length);
+}
+
 function tickSales(s: SimState, products: Product[]): void {
   const cfg = s.config;
   for (const p of products) {
@@ -627,13 +894,8 @@ function tickSales(s: SimState, products: Product[]): void {
     const allocs = Object.entries(p.allocations) as Array<[ChannelId, ChannelAllocation]>;
     if (allocs.length === 0) continue;
 
-    const attention = SEGMENTS.reduce((n, g) => n + s.audience.segments[g].attention, 0) / SEGMENTS.length;
-    const fatigue = SEGMENTS.reduce((n, g) => n + s.audience.segments[g].fatigue, 0) / SEGMENTS.length;
-    const goodwill = SEGMENTS.reduce((n, g) => n + s.audience.segments[g].goodwill, 0) / SEGMENTS.length;
-    const chase = set.cardIds.reduce((n, cid) => {
-      const card = s.cards[cid]!;
-      return n + castDesire(s, card) * RARITY_WEIGHT[card.rarity] / 100;
-    }, 0) / Math.max(1, set.cardIds.length);
+    const { attention, fatigue, goodwill } = audienceAverages(s);
+    const chase = setChase(s, set);
 
     // Attention is shared with the rivals. Demand is measured relative to the
     // share the rest of this formula was tuned at, so a publisher sitting at
@@ -645,8 +907,12 @@ function tickSales(s: SimState, products: Product[]): void {
     const decay = Math.exp(-weeksOut * 1.4);
     // The demand pool is what the audience wants this week, independent of who
     // is selling it. The channels then compete for it.
+    // Hype multiplies the demand the set would have had. It cannot conjure
+    // demand for a set nobody wants: a zero-chase set times any campaign is
+    // still nearly zero.
     const pool = p.unitsPrinted * 0.06 * attention * shareFactor * fatigueResponse(s, fatigue)
-      * (0.2 + 0.8 * goodwill) * (0.3 + pub.brandStanding) * (0.5 + chase) * decay;
+      * (0.2 + 0.8 * goodwill) * (0.3 + pub.brandStanding) * (0.5 + chase) * decay
+      * (1 + (set.hype?.level ?? 0));
     if (pool <= 0) continue;
 
     // Reach, relationship, and what the channel is actually charging. A store
@@ -671,6 +937,11 @@ function tickSales(s: SimState, products: Product[]): void {
       if (w <= 0) continue;
       const [cid, a] = allocs[i]!;
       const ch = s.channels[cid]!;
+      // The direct store does not sell off a shelf; `resolveDrop` sells its
+      // allocation. Its weight still counts toward `totalWeight` above, so the
+      // demand it holds is reserved for its drops rather than handed to the
+      // other channels.
+      if (ch.kind === 'direct') continue;
 
       const sold = Math.max(0, Math.min(a.unitsRemaining, Math.round(pool * w / totalWeight)));
       if (sold <= 0) continue;
@@ -699,6 +970,256 @@ function tickSales(s: SimState, products: Product[]): void {
       if (ip) ip.exposure += soldTotal / 20000;
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Drops and the scalper population
+// ---------------------------------------------------------------------------
+
+/**
+ * One drop, resolved in a single tick. A queue forms, it is served in one pass,
+ * and whatever is left goes back in the warehouse until the next drop.
+ *
+ * The queue holds two populations with opposite effects on the publisher.
+ * Collectors are who the drop is for: reaching them builds goodwill. Scalpers
+ * camp it, buy at MSRP, and resell above it — they clear stock at full margin
+ * and cost goodwill for the collectors they shut out. That trade is the whole
+ * system (CONCEPT.md §6.5, §6.8).
+ */
+function resolveDrop(s: SimState, drop: Drop): void {
+  const cfg = s.config.drops;
+  drop.status = 'complete';
+
+  const p = s.products[drop.productId];
+  const ch = s.channels[drop.channelId];
+  if (!p || !ch || !ch.unlocked) return;
+  const a = p.allocations[ch.id];
+  const set = s.sets[p.setId];
+  if (!a || !set || set.status !== 'released') return;
+  const pub = s.publishers[set.publisherId];
+  if (!pub) return;
+
+  // The store can only put up what it holds, and only as much as it can push
+  // through in one drop. `queueCapacity` is what makes a drop a drop.
+  const capacity = ch.queueCapacity ?? a.unitsRemaining;
+  const offered = Math.min(drop.offered, a.unitsRemaining, capacity);
+  if (offered <= 0) return;
+
+  const { attention, fatigue, goodwill } = audienceAverages(s);
+  const share = s.audience.shareByPublisher[pub.id] ?? 0;
+  const shareFactor = share / s.config.attention.referenceShare;
+  const weeksOut = (s.tick - set.regionSchedule[0]!.releaseTick) / 52;
+  const decay = Math.exp(-weeksOut * 1.4);
+  const traits = traitsFor(ch);
+
+  // Same forces as a shelf sale, concentrated into one moment.
+  const collectorDemand = s.audience.actors.collectors * cfg.collectorReach
+    * attention * shareFactor * fatigueResponse(s, fatigue)
+    * (0.2 + 0.8 * goodwill) * (0.3 + pub.brandStanding) * (0.5 + setChase(s, set))
+    * decay * traits.reach * (1 + (set.hype?.level ?? 0));
+
+  // Scalpers price off the sealed market, which is the only public number they
+  // have. No premium, no queue: the population regulates itself on this line.
+  const premium = p.market.price / Math.max(1, p.msrp) - 1;
+  const appetite = Math.max(0, Math.min(1,
+    (premium - cfg.breakEvenPremium) / Math.max(0.05, cfg.breakEvenPremium)));
+  const scalperDemand = s.audience.actors.scalpers * cfg.scalperReach * p.scalperAppeal * appetite;
+
+  const demand = collectorDemand + scalperDemand;
+  const sold = Math.min(offered, Math.floor(demand));
+  const oversubscription = demand / offered;
+
+  // Camping is a speed advantage, not a bigger wallet. Scalpers take a larger
+  // share of the queue than their numbers alone would win, and no more than
+  // they actually wanted.
+  const scalperWeight = scalperDemand * cfg.scalperSpeed;
+  const totalWeight = scalperWeight + collectorDemand;
+  const scalperCut = totalWeight > 0 ? scalperWeight / totalWeight : 0;
+  const toScalpers = Math.min(Math.round(sold * scalperCut), Math.floor(scalperDemand), sold);
+  const toCollectors = sold - toScalpers;
+
+  drop.result = {
+    offered, demand: Math.round(demand), soldToCollectors: toCollectors,
+    soldToScalpers: toScalpers, soldOut: sold >= offered, expectedPremium: premium,
+  };
+
+  if (sold > 0) {
+    a.unitsRemaining -= sold;
+    p.unitsRemaining = Math.max(0, p.unitsRemaining - sold);
+
+    // Full margin. The direct store is the point of owning one.
+    const revenue = sold * p.msrp * ch.marginShare;
+    pub.cash = C(pub.cash + revenue);
+    pub.ledger.push({ t: s.tick, amount: C(revenue), category: 'sales', note: `drop ${p.kind}`, refId: p.id });
+    if (set.performance) set.performance.revenue = C(set.performance.revenue + revenue);
+
+    for (const cid of set.cardIds) {
+      const ip = s.ips[s.cards[cid]!.subjectIp];
+      if (ip) ip.exposure += sold / 20000;
+    }
+
+    if (toScalpers > 0) {
+      // Basis and age are weighted averages, so topping up an open position
+      // neither hides what the earlier units cost nor resets their clock.
+      const inv = s.audience.hidden.scalperInventory;
+      const pos = inv[p.id];
+      if (pos) {
+        const units = pos.units + toScalpers;
+        pos.basis = C((pos.basis * pos.units + p.msrp * toScalpers) / units);
+        pos.openedTick = T(Math.round(((pos.openedTick as number) * pos.units + s.tick * toScalpers) / units));
+        pos.units = units;
+      } else {
+        inv[p.id] = { units: toScalpers, basis: p.msrp, openedTick: s.tick };
+      }
+    }
+
+    if (a.unitsRemaining === 0 && a.soldOutTick === null) {
+      a.soldOutTick = s.tick;
+      emit(s, 'setSoldOut', true, { setId: set.id, channelId: ch.id }, { productId: p.id, kind: ch.kind });
+    }
+  }
+
+  // Goodwill is the price of the margin. A drop that reaches collectors pays;
+  // one the scalpers take costs; and a queue that dwarfs the stock costs too,
+  // because a shortage is its own kind of broken promise.
+  const scalperShare = sold > 0 ? toScalpers / sold : 0;
+  const shortage = Math.min(2, Math.max(0, oversubscription - 1));
+  const goodwillDelta = cfg.goodwillPerCollectorDrop * (1 - scalperShare) * (sold / offered)
+    - cfg.goodwillPerScalperDrop * scalperShare
+    - cfg.goodwillPerShortage * shortage;
+  for (const g of SEGMENTS) {
+    const st = s.audience.segments[g];
+    st.goodwill = U(st.goodwill + goodwillDelta);
+  }
+  if (set.performance) set.performance.goodwillDelta += goodwillDelta;
+
+  // A queue nobody could clear is the most visible price signal in the game.
+  p.market.heat = Math.min(s.config.sealed.heatCeiling,
+    p.market.heat + cfg.heatPerOversubscription * shortage);
+
+  emit(s, drop.result.soldOut ? 'dropSoldOut' : 'dropUndersold', true,
+    { setId: set.id, channelId: ch.id, publisherId: pub.id },
+    {
+      productId: p.id, offered, sold, demand: drop.result.demand,
+      scalperShare, oversubscription, premium,
+    });
+}
+
+/**
+ * Keeps one pending drop per direct allocation that still holds stock. A player
+ * who schedules their own drops always has one pending and never sees this run;
+ * a player who schedules none gets the store's own cadence, so the channel is
+ * never silently dead.
+ */
+function scheduleAutomaticDrops(s: SimState, products: Product[]): void {
+  const cfg = s.config.drops;
+  const pending = new Set<string>();
+  for (const d of Object.values(s.drops)) {
+    if (d.status === 'scheduled') pending.add(`${d.productId}|${d.channelId}`);
+  }
+
+  for (const p of products) {
+    const set = s.sets[p.setId];
+    if (!set || set.status !== 'released') continue;
+    for (const [cid, a] of Object.entries(p.allocations) as Array<[ChannelId, ChannelAllocation]>) {
+      const ch = s.channels[cid];
+      if (!ch || ch.kind !== 'direct' || !ch.unlocked) continue;
+      if (a.unitsRemaining <= 0) continue;
+      const key = `${p.id}|${cid}`;
+      if (pending.has(key)) continue;
+
+      const id = nextId(s, 'drop') as DropId;
+      s.drops[id] = {
+        id, productId: p.id, channelId: cid,
+        scheduledTick: T(s.tick + cfg.cadenceWeeks),
+        offered: ch.queueCapacity ?? a.unitsRemaining,
+        automatic: true, status: 'scheduled', result: null,
+      };
+      pending.add(key);
+    }
+  }
+}
+
+/** Scalper stock trades on the sealed market, so it moves on the sealed cadence. */
+const SCALPER_STRIDE = 4;
+
+/**
+ * The other half of the loop. Scalpers resell what they bought, and what they
+ * earn doing it decides how many of them show up to the next drop. Dumping
+ * stock closes the premium that drew them, so the population is self-limiting
+ * rather than a one-way ratchet.
+ */
+function tickScalpers(s: SimState, products: Product[]): void {
+  if (s.tick % SCALPER_STRIDE !== 0) return;
+  const cfg = s.config.drops;
+  const hidden = s.audience.hidden;
+
+  let realized = 0;
+  let realizedUnits = 0;
+
+  for (const p of products) {
+    const pos = hidden.scalperInventory[p.id];
+    if (!pos || pos.units <= 0) continue;
+
+    // Measured against what they paid, never against MSRP. A position bought at
+    // a drop years ago has ridden the same vintage curve every collector has,
+    // and that appreciation is not what scalping earns.
+    const premium = p.market.price / Math.max(1, pos.basis) - 1;
+    // They sell hardest into a wide premium, but the base rate clears stock
+    // even at a loss, and the hold limit clears it whatever happens. A flip has
+    // a clock; without one a scalper is just a collector with worse manners.
+    const expired = s.tick - (pos.openedTick as number) >= cfg.holdLimitWeeks;
+    const rate = expired
+      ? 1
+      : Math.min(1, cfg.baseResaleRate * (1 + Math.max(0, premium) * cfg.resaleUrgency));
+    const moved = Math.min(pos.units, Math.max(1, Math.ceil(pos.units * rate)));
+
+    pos.units -= moved;
+    if (pos.units <= 0) delete hidden.scalperInventory[p.id];
+
+    realized += premium * moved;
+    realizedUnits += moved;
+
+    // Their stock hitting the market is visible supply. It presses the frenzy
+    // back out of the sealed price, which is what closes the premium.
+    const drag = Math.min(0.5, cfg.dumpHeatDrag * (moved / Math.max(1, p.unitsPrinted)));
+    p.market.heat = Math.max(1, p.market.heat * (1 - drag));
+  }
+
+  if (realizedUnits > 0) {
+    // Per-capita, not per-unit. A drop is a fixed number of units however many
+    // scalpers turn up for it, so twice the population is half the flip each.
+    // Reading the per-unit premium instead makes the population a one-way
+    // ratchet that pins at its cap and never leaves.
+    const perCapita = realizedUnits / Math.max(1, s.audience.actors.scalpers);
+    const crowding = Math.min(1, perCapita / cfg.unitsPerScalperReference);
+    const avg = (realized / realizedUnits) * crowding;
+    hidden.scalperProfitability += (avg - hidden.scalperProfitability) * cfg.profitabilitySmoothing;
+  } else {
+    // Holding no stock is not a profit. With nothing to flip the trade decays
+    // back toward break-even and the population drifts off.
+    hidden.scalperProfitability *= (1 - cfg.profitabilitySmoothing);
+  }
+
+  const edge = hidden.scalperProfitability - cfg.breakEvenPremium;
+  s.audience.actors.scalpers = Math.max(cfg.minScalpers, Math.min(cfg.maxScalpers,
+    s.audience.actors.scalpers * (1 + cfg.populationGrowth * edge)));
+
+  // Latched, so the crash fires on the crossing and not every tick after it.
+  const boom = hidden.scalperProfitability > cfg.breakEvenPremium;
+  if (hidden.scalperBoom && !boom) {
+    emit(s, 'scalperCrash', true, { publisherId: s.playerId },
+      { scalpers: Math.round(s.audience.actors.scalpers), profitability: hidden.scalperProfitability });
+  }
+  hidden.scalperBoom = boom;
+}
+
+function tickDrops(s: SimState, products: Product[]): void {
+  for (const d of Object.values(s.drops)) {
+    if (d.status === 'scheduled' && s.tick >= d.scheduledTick) resolveDrop(s, d);
+  }
+  scheduleAutomaticDrops(s, products);
+  tickScalpers(s, products);
 }
 
 const CHANNEL_STRIDE = 4;
@@ -916,6 +1437,12 @@ function tickArtists(s: SimState): void {
 
 function tickCompaction(s: SimState): void {
   if (s.tick % 52 !== 0) return;
+  // Completed drops are feed history, and the feed does not reach back decades.
+  // Without this a long run keeps every queue it ever ran.
+  const dropCutoff = s.tick - s.config.history.weeklyRetentionTicks;
+  for (const d of Object.values(s.drops)) {
+    if (d.status === 'complete' && (d.scheduledTick as number) < dropCutoff) delete s.drops[d.id];
+  }
   for (const pr of Object.values(s.printings)) compact(pr.market.rawHistory, s.tick, s.config.history);
   for (const p of Object.values(s.products)) compact(p.market.history, s.tick, s.config.history);
   for (const ip of Object.values(s.ips)) compact(ip.affectionHistory, s.tick, s.config.history);
@@ -957,12 +1484,18 @@ export function tick(s: SimState): void {
     if (set.status === 'revealing') {
       const sched = set.regionSchedule[0];
       if (sched && s.tick >= sched.releaseTick) releaseSet(s, set.id, sched.regionId);
+      else tickReveal(s, set);
+    }
+    // Hype burns off after launch. What is left of it is what still lifts demand.
+    if (set.status === 'released' && set.hype && set.hype.level > 0) {
+      set.hype.level = Math.max(0, set.hype.level * (1 - s.config.hype.decayPerTickAfterRelease));
     }
   }
 
   const { printings, products, ips } = lists(s);
   tickAffection(s, ips);
   tickSales(s, products);
+  tickDrops(s, products);
   tickChannels(s, products);
   tickSealed(s, products);
   tickPrices(s, printings);

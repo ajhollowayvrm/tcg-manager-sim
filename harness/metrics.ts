@@ -29,6 +29,46 @@ export interface RunMetrics {
   worstRelationship: number;
   /** Share of every printed unit that actually reached a buyer. */
   avgSellThrough: number;
+
+  /** Drops that ran at all. Zero means the run never opened a direct store. */
+  dropsRun: number;
+  /** Share of those drops whose queue cleared the stock. */
+  dropSellOutRate: number;
+  /** Share of every unit sold through a drop that a scalper took. */
+  scalperShareOfDrops: number;
+  /** Widest resale premium over MSRP any drop was camped for. */
+  peakDropPremium: number;
+  /** Scalper population at the end of the run. Starts at 500. */
+  scalperPopulation: number;
+
+  /** Mean hype a set carried into its launch. Zero means the run ran no campaigns. */
+  avgHypeAtRelease: number;
+  /** Total marketing outlay, in dollars. */
+  marketingTotal: number;
+  prereleasesHosted: number;
+  /**
+   * Correlation between the reveal-window signal and the set's true chase at
+   * release. This is the number the whole reveal window lives or dies on: near
+   * 1 means the signal gives the answer away and the blind bet is solved, near
+   * 0 means it is noise the player should ignore. It wants to be in between,
+   * and it should rise with the number of previews the campaign ran.
+   */
+  signalCorrelation: number;
+}
+
+/** Pearson r. Returns 0 rather than NaN for a degenerate sample. */
+function correlation(xs: number[], ys: number[]): number {
+  const n = Math.min(xs.length, ys.length);
+  if (n < 3) return 0;
+  const mx = xs.reduce((a, b) => a + b, 0) / n;
+  const my = ys.reduce((a, b) => a + b, 0) / n;
+  let sxy = 0, sxx = 0, syy = 0;
+  for (let i = 0; i < n; i++) {
+    const dx = xs[i]! - mx, dy = ys[i]! - my;
+    sxy += dx * dy; sxx += dx * dx; syy += dy * dy;
+  }
+  const d = Math.sqrt(sxx * syy);
+  return d > 0 ? sxy / d : 0;
 }
 
 const dollars = (cents: number) => cents / 100;
@@ -101,6 +141,36 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
   const soldTotal = products.reduce((n, p) => n + (p.unitsPrinted - p.unitsRemaining), 0);
   const avgSellThrough = printedTotal > 0 ? soldTotal / printedTotal : 0;
 
+  // Drops are read off the event log, not off `s.drops`: completed drops are
+  // pruned as feed history, and a 50-year run would lose most of them.
+  const dropEvents = s.events.filter(e => e.kind === 'dropSoldOut' || e.kind === 'dropUndersold');
+  const dropsRun = dropEvents.length;
+  const dropSoldOut = s.events.filter(e => e.kind === 'dropSoldOut').length;
+  const dropUnits = dropEvents.reduce((n, e) => n + Number(e.data.sold ?? 0), 0);
+  const dropScalperUnits = dropEvents.reduce(
+    (n, e) => n + Number(e.data.sold ?? 0) * Number(e.data.scalperShare ?? 0), 0);
+  const peakDropPremium = dropEvents.reduce((n, e) => Math.max(n, Number(e.data.premium ?? 0)), 0);
+
+  // The reveal window. `hype.signal` stops updating at release, so what is on
+  // the set at the end of the run is the read the player actually had.
+  const releasedSets = Object.values(s.sets).filter(set => set.hype && set.performance);
+  const hypeAtRelease = releasedSets
+    .map(set => set.hype!.levelAtRelease)
+    .filter((v): v is number => v !== null);
+  const marketingTotal = dollars(
+    pub.ledger.filter(e => e.category === 'marketing').reduce((n, e) => n - e.amount, 0));
+  const prereleasesHosted = releasedSets.reduce((n, set) => n + set.hype!.prereleases, 0);
+
+  // Scored against `chaseIndex`, the truth the signal is a measurement of and
+  // which `releaseSet` freezes at launch. Scoring it against sell-through
+  // instead measures the economy's variance, not the signal's accuracy, and in
+  // a run where every set sells through it returns noise whatever the signal did.
+  const signalPairs = releasedSets.filter(set => set.hype!.cardsRevealed > 0);
+  const signalCorrelation = correlation(
+    signalPairs.map(set => set.hype!.signal),
+    signalPairs.map(set => set.performance!.chaseIndex),
+  );
+
   const segments = Object.values(s.audience.segments);
   const fatigueAvg = segments.length
     ? segments.reduce((n, seg) => n + seg.fatigue, 0) / segments.length
@@ -127,6 +197,16 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
     channelsLost,
     worstRelationship,
     avgSellThrough,
+    dropsRun,
+    dropSellOutRate: dropsRun > 0 ? dropSoldOut / dropsRun : 0,
+    scalperShareOfDrops: dropUnits > 0 ? dropScalperUnits / dropUnits : 0,
+    peakDropPremium,
+    scalperPopulation: s.audience.actors.scalpers,
+    avgHypeAtRelease: hypeAtRelease.length
+      ? hypeAtRelease.reduce((a, b) => a + b, 0) / hypeAtRelease.length : 0,
+    marketingTotal,
+    prereleasesHosted,
+    signalCorrelation,
   };
 }
 

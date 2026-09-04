@@ -102,6 +102,7 @@ export function createWorld(seed: string, config: SimConfig): SimState {
     creators: {},
     chains: {},
     collabs: {},
+    drops: {},
 
     audience: {
       segments: Object.fromEntries(
@@ -111,6 +112,7 @@ export function createWorld(seed: string, config: SimConfig): SimState {
       shareByPublisher: { [playerId]: PLAYER_START_SHARE },
       fatigueWarned: false,
       actors: { scalpers: 500, resellers: 300, collectors: 5000, speculators: 800 },
+      hidden: { scalperInventory: {}, scalperProfitability: 0, scalperBoom: false },
     },
 
     market: {
