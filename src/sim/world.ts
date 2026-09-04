@@ -65,7 +65,10 @@ export function createWorld(seed: string, config: SimConfig): SimState {
         name: 'Player Studio',
         isPlayer: true,
         foundedTick: t0,
-        cash: 500_000 as Cents,
+        // $500,000. Everything in the model is cents, so the `_00` suffix is
+        // load-bearing: without it this reads as $5,000, which does not cover a
+        // single print run and disagrees with the borrow ceiling in tickFinance.
+        cash: 500_000_00 as Cents,
         debt: 0 as Cents,
         credit: 0.2,
         brandStanding: 0.02,
@@ -193,7 +196,9 @@ export function createWorld(seed: string, config: SimConfig): SimState {
       name: r.name,
       isPlayer: false,
       foundedTick: t0,
-      cash: 2_000_000 as Cents,
+      // $2,000,000. Inert today — rivals never spend — but kept in the same
+      // cents convention as the player so it stays right when they do.
+      cash: 2_000_000_00 as Cents,
       debt: 0 as Cents,
       credit: 0.6,
       brandStanding: r.brandStanding,
