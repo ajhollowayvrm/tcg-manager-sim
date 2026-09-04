@@ -133,6 +133,12 @@ export interface Publisher {
 
   cash: Cents;
   debt: Cents;
+  /**
+   * The widest the debt ever got, not where it ended. A publisher that borrows
+   * to the ceiling and climbs back out looks identical to one that never
+   * borrowed if you only read `debt` at the end of the run.
+   */
+  peakDebt: Cents;
   /** 0..1. Raises borrowing ceiling and lowers rate. */
   credit: Unit;
   /** 0..1. Gates channels, collabs, artist interest, grader attention. */

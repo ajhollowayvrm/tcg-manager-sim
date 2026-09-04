@@ -65,6 +65,23 @@ export interface SetBotOptions {
   setType: SetType;
   quality: PrintQualityTier;
   units: number;
+  /**
+   * How big a bet the bot places on each set.
+   *
+   * - `fixed` prints `units` regardless of anything, which is what every bot
+   *   in the original roster did.
+   * - `bankroll` commits `bankrollFraction` of the cash on hand to the print
+   *   run and prints whatever that buys.
+   *
+   * The size of the print run is the wager the whole game is about, so a
+   * roster where nothing varies it cannot measure difficulty. `bankroll` is
+   * also the only policy that can lose everything, because it scales the
+   * downside with the bankroll rather than holding it at a constant the
+   * starting cash always covers.
+   */
+  unitsPolicy?: 'fixed' | 'bankroll';
+  /** Share of cash committed per print run under `bankroll`. Ignored by `fixed`. */
+  bankrollFraction?: number;
   packsPerUnit: number;
   msrp: number;
   productKind: ProductKind;
@@ -138,9 +155,30 @@ function maybeUnlock(s: SimState, reserve: number, runUnits: number, order = UNL
   }
 }
 
+/** What one unit costs to print, using the engine's own COGS formula. */
+function unitCost(s: SimState, opts: SetBotOptions): number {
+  return s.config.printing.unitCost[opts.quality] * opts.packsPerUnit * 0.55;
+}
+
+/**
+ * How many units this bot prints next.
+ *
+ * Under `bankroll` the run is sized off cash rather than off a constant, so
+ * the bet grows with the bankroll and a bad set costs a share of everything
+ * rather than a fixed sum the starting cash always covered. The floor of 1
+ * keeps a broke publisher submitting a run it cannot pay for, which is a death
+ * route rather than a bug: `tickFinance` is what decides whether it survives it.
+ */
+function printRunUnits(s: SimState, opts: SetBotOptions): number {
+  if (opts.unitsPolicy !== 'bankroll') return opts.units;
+  const pub = s.publishers[s.playerId]!;
+  const budget = Math.max(0, pub.cash) * (opts.bankrollFraction ?? 0.25);
+  return Math.max(1, Math.floor(budget / unitCost(s, opts)));
+}
+
 /** What this bot's next print run will cost, using the engine's own COGS formula. */
 function printRunCost(s: SimState, opts: SetBotOptions): number {
-  return s.config.printing.unitCost[opts.quality] * opts.packsPerUnit * 0.55 * opts.units;
+  return unitCost(s, opts) * printRunUnits(s, opts);
 }
 
 function openChannels(s: SimState): Channel[] {
@@ -231,11 +269,18 @@ export function makeSetBot(opts: SetBotOptions): Bot {
       // Buying channel access is a between-releases decision, so it is checked
       // every step rather than only on a release week. The reserve is one full
       // print run, so a bot never unlocks its way out of being able to print.
-      if (s.tick % 13 === 0) maybeUnlock(s, printRunCost(s, opts), opts.units, opts.unlockOrder);
+      if (s.tick % 13 === 0) {
+        maybeUnlock(s, printRunCost(s, opts), printRunUnits(s, opts), opts.unlockOrder);
+      }
       submitDrops(s, opts);
       submitMarketing(s, opts);
       if (s.tick < nextRelease) return;
       nextRelease = s.tick + opts.cadenceWeeks;
+
+      // Sized once, before the set exists, and used for both the commit and the
+      // allocation. Sizing it twice would let cash spent on art between the two
+      // calls shrink the allocation below the run that was actually printed.
+      const runUnits = printRunUnits(s, opts);
 
       const ipId = ensureIp(s, opts.label);
       const setId = api.createSet(s, `${opts.label} Set W${s.tick}`, opts.setType, opts.cardsPerSet);
@@ -258,12 +303,12 @@ export function makeSetBot(opts: SetBotOptions): Bot {
       api.commitPrintRun(
         s,
         setId,
-        { [productId]: opts.units } as Record<ProductId, number>,
+        { [productId]: runUnits } as Record<ProductId, number>,
         opts.quality,
       );
       // Allocation locks with the print run, in the same batch. This is the
       // blind bet — it lands before reveal and never changes after.
-      submitAllocation(s, productId, opts.units, opts);
+      submitAllocation(s, productId, runUnits, opts);
     },
   };
 }
@@ -309,7 +354,28 @@ function submitMarketing(s: SimState, opts: SetBotOptions): void {
   }
 }
 
+/**
+ * The three bet sizes. All three are `conservative` in every other respect, so
+ * the only thing that separates their rows is how much of the bankroll goes
+ * onto each set. Under `fixed` sizing the wager is a constant the starting cash
+ * always covers, which is why the original roster could not produce a survival
+ * gradient at all.
+ */
+function betSizeBot(label: string, fraction: number): () => Bot {
+  return () => makeSetBot({
+    label, cadenceWeeks: 52, cardsPerSet: 70, setType: 'main',
+    quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000,
+    productKind: 'boosterBox', allocationPolicy: 'spread',
+    unitsPolicy: 'bankroll', bankrollFraction: fraction,
+  });
+}
+
 export const BOTS: Record<string, () => Bot> = {
+  // The size-of-the-bet ladder. See `betSizeBot`.
+  smallBets: betSizeBot('SmallBets', 0.10),
+  bigBets: betSizeBot('BigBets', 0.50),
+  allIn: betSizeBot('AllIn', 0.95),
+
   // Few, well-supported sets. The steady baseline.
   conservative: () => makeSetBot({
     label: 'Conservative', cadenceWeeks: 52, cardsPerSet: 70, setType: 'main',

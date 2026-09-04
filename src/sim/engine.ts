@@ -1493,6 +1493,7 @@ function tickFinance(s: SimState): void {
       emit(s, 'studioDead', true, { publisherId: pub.id }, { cause: pub.deathCause, tick: s.tick });
     }
   }
+  if (pub.debt > pub.peakDebt) pub.peakDebt = pub.debt;
   pub.credit = U(pub.credit + (pub.cash > 0 ? 0.0006 : -0.002));
 
   // brandStanding mean-reverts toward a target driven by average affection and

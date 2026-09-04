@@ -84,6 +84,7 @@ export function createWorld(seed: string, config: SimConfig): SimState {
         // single print run and disagrees with the borrow ceiling in tickFinance.
         cash: 500_000_00 as Cents,
         debt: 0 as Cents,
+        peakDebt: 0 as Cents,
         credit: 0.2,
         brandStanding: 0.02,
         unlocks: {
@@ -219,6 +220,7 @@ export function createWorld(seed: string, config: SimConfig): SimState {
       // cents convention as the player so it stays right when they do.
       cash: 2_000_000_00 as Cents,
       debt: 0 as Cents,
+      peakDebt: 0 as Cents,
       credit: 0.6,
       brandStanding: r.brandStanding,
       unlocks: {

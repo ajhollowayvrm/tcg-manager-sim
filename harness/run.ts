@@ -73,7 +73,7 @@ if (jobs === 1) {
   await new Promise<void>((resolve, reject) => {
     let next = 0;
     let live = jobs;
-    const workerUrl = new URL('./worker.ts', import.meta.url);
+    const workerUrl = new URL('./worker.mjs', import.meta.url);
     for (let w = 0; w < jobs; w++) {
       const worker = new Worker(workerUrl);
       const feed = () => {
@@ -137,6 +137,34 @@ const table = botNames.map(b => {
   };
 });
 console.table(table);
+
+// Finance and survival. The main table says whether a bot lived; this one says
+// how, and it is where the difficulty pass reads its numbers. `netWorth` counts
+// unsold stock at cost, so read it against `unsold` — a large net worth held
+// entirely as a warehouse is an overprint that has not been called yet.
+const money = (m: number) =>
+  Math.abs(m) >= 1e6 ? (m / 1e6).toFixed(1) + 'M'
+  : Math.abs(m) >= 1e3 ? (m / 1e3).toFixed(0) + 'k'
+  : m.toFixed(0);
+console.log('finance and survival:');
+console.table(botNames.map(b => {
+  const r = rows.filter(x => x.bot === b);
+  const causes = new Map<string, number>();
+  for (const x of r) if (x.deathCause) causes.set(x.deathCause, (causes.get(x.deathCause) ?? 0) + 1);
+  const deaths = [...causes.entries()].sort((a, c) => c[1] - a[1])
+    .map(([c, n]) => `${c} ${n}`).join(' ');
+  return {
+    bot: b,
+    survived: pct(r.map(x => x.survived)),
+    deaths: deaths || '-',
+    netWorth: '$' + money(median(r.map(x => x.netWorth))),
+    liquid: '$' + money(median(r.map(x => x.liquidNetWorth))),
+    peakDebt: '$' + money(median(r.map(x => x.peakDebt))),
+    unsold: money(mean(r.map(x => x.unsoldUnits))),
+    invValue: '$' + money(median(r.map(x => x.inventoryValue))),
+    printRun: money(mean(r.map(x => x.meanPrintRun))),
+  };
+}));
 
 // Drops get their own table. The main one is already too wide to read, and a
 // run that never opened a direct store has nothing to say here.

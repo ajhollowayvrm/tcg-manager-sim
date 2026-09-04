@@ -9,6 +9,34 @@ export interface RunMetrics {
   seed: string;
   survived: boolean;
   deathYear: number | null;
+  /**
+   * Which of CONCEPT.md §7's death routes actually fired. Empty for a survivor.
+   * The publisher has carried this since the engine was written; nothing
+   * reported it, so "four of the five routes are unreachable" was invisible.
+   */
+  deathCause: string;
+
+  /**
+   * Cash, less debt, plus unsold stock at what it cost to print. Inventory is
+   * an asset at cost, so a publisher that printed a warehouse it cannot sell
+   * still books it here — which is why `unsoldUnits` sits beside it. Read the
+   * two together: net worth alone cannot tell a full warehouse from a full bank.
+   */
+  netWorth: number;
+  /** Cash less debt. Net worth with the warehouse taken out of it. */
+  liquidNetWorth: number;
+  /** The widest the debt ever got, not where it ended. */
+  peakDebt: number;
+  /** Unsold units at the end of the run, across every product. */
+  unsoldUnits: number;
+  /** What that stock cost to print. The overprint half of `netWorth`. */
+  inventoryValue: number;
+  /**
+   * Units printed across the run divided by the number of print runs. The bet
+   * the game is about is how big to print, and a bot roster where every bot
+   * prints the same fixed number never makes it.
+   */
+  meanPrintRun: number;
   surpriseGrail: boolean;
   topMultiple: number;
   top1PctShare: number;
@@ -165,6 +193,15 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
     ? Math.min(...openChannels.map(ch => ch!.relationship))
     : 0;
 
+  // Finance. Inventory is valued at cost, which is the conservative reading:
+  // unsold stock is worth at most what it cost, and usually less.
+  const unsoldUnits = products.reduce((n, p) => n + p.unitsRemaining, 0);
+  const inventoryValue = dollars(products.reduce((n, p) => n + p.unitsRemaining * p.unitCogs, 0));
+  const liquidNetWorth = dollars(pub.cash - pub.debt);
+  const printRuns = products.filter(p => p.unitsPrinted > 0);
+  const meanPrintRun = printRuns.length
+    ? printRuns.reduce((n, p) => n + p.unitsPrinted, 0) / printRuns.length : 0;
+
   const printedTotal = products.reduce((n, p) => n + p.unitsPrinted, 0);
   const soldTotal = products.reduce((n, p) => n + (p.unitsPrinted - p.unitsRemaining), 0);
   const avgSellThrough = printedTotal > 0 ? soldTotal / printedTotal : 0;
@@ -262,6 +299,13 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
     seed: s.seed,
     survived: pub.deadTick === null,
     deathYear: pub.deadTick !== null ? (pub.deadTick as number) / 52 : null,
+    deathCause: pub.deathCause ?? '',
+    netWorth: liquidNetWorth + inventoryValue,
+    liquidNetWorth,
+    peakDebt: dollars(pub.peakDebt),
+    unsoldUnits,
+    inventoryValue,
+    meanPrintRun,
     surpriseGrail,
     topMultiple,
     top1PctShare,
