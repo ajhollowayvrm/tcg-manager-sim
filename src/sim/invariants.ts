@@ -179,6 +179,66 @@ export function checkInvariants(s: SimState): string[] {
     }
   }
 
+  // The art pipeline. The failure modes worth catching are money leaving twice,
+  // art arriving before it was ordered, and a released card still waiting.
+  const seenCommissionCards = new Set<string>();
+  for (const com of s.market.commissionQueue) {
+    if ((com.returnsTick as number) < (com.placedTick as number)) {
+      bad.push(`commission ${com.id} returns before it was placed`);
+    }
+    if ((com.placedTick as number) > s.tick) bad.push(`commission ${com.id} placed in the future`);
+    // Art runs on a stride, so a commission may sit due for a tick or two. Any
+    // longer and the return pass has skipped it and the money is stranded.
+    if ((com.returnsTick as number) + 4 < s.tick) {
+      bad.push(`commission ${com.id} overdue: due ${com.returnsTick}, now ${s.tick}`);
+    }
+    if (!Number.isFinite(com.fee) || com.fee < 0) bad.push(`commission ${com.id} bad fee: ${com.fee}`);
+    if (seenCommissionCards.has(com.cardId)) {
+      bad.push(`card ${com.cardId} has two live commissions`);
+    }
+    seenCommissionCards.add(com.cardId);
+    if (!s.cards[com.cardId]) bad.push(`commission ${com.id} for unknown card ${com.cardId}`);
+    const artist = s.artists[com.artistId];
+    if (!artist) bad.push(`commission ${com.id} for unknown artist ${com.artistId}`);
+    // An exclusive artist works for one studio. If that ever breaks, the
+    // exclusivity fee is buying nothing.
+    else if (artist.exclusiveTo !== null && artist.exclusiveTo !== com.publisherId) {
+      bad.push(`commission ${com.id} placed with ${com.artistId}, exclusive to ${artist.exclusiveTo}`);
+    }
+  }
+
+  for (const a of Object.values(s.artists)) {
+    if (a.relationship < -1e-6 || a.relationship > 1.0001) {
+      bad.push(`artist ${a.id} relationship out of range: ${a.relationship}`);
+    }
+    if (!Number.isFinite(a.rate) || a.rate < 0) bad.push(`artist ${a.id} bad rate: ${a.rate}`);
+    if (a.turnaroundWeeks < 1) bad.push(`artist ${a.id} bad turnaround: ${a.turnaroundWeeks}`);
+  }
+
+  for (const pub of Object.values(s.publishers)) {
+    for (const r of Object.values(pub.retainers)) {
+      const artist = s.artists[r.artistId];
+      if (!artist) { bad.push(`${pub.id} retains unknown artist ${r.artistId}`); continue; }
+      if (r.terms === 'exclusive' && artist.exclusiveTo !== pub.id) {
+        bad.push(`${pub.id} pays an exclusive fee for ${r.artistId}, who is not exclusive to them`);
+      }
+      if (!Number.isFinite(r.weeklyFee) || r.weeklyFee < 0) {
+        bad.push(`${pub.id} bad retainer fee for ${r.artistId}: ${r.weeklyFee}`);
+      }
+    }
+  }
+
+  // A shipped card cannot still be waiting for its illustration.
+  for (const set of Object.values(s.sets)) {
+    if (set.status !== 'released') continue;
+    for (const cardId of set.cardIds) {
+      const card = s.cards[cardId];
+      if (card && card.artSource === 'pending') {
+        bad.push(`card ${cardId} released in ${set.id} with art still pending`);
+      }
+    }
+  }
+
   if (!Number.isFinite(s.market.climate)) bad.push('market climate not finite');
 
   return bad;

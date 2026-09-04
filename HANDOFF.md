@@ -15,7 +15,7 @@ src/sim/config.ts      every tunable constant, with dotted overrides
 src/sim/world.ts       initial state bootstrap (incl. the grader roster)
 src/sim/engine.ts      tick loop + STUB value math
 src/sim/invariants.ts  dev assertions
-harness/bots.ts        seven strategy bots
+harness/bots.ts        nine strategy bots
 harness/metrics.ts     per-run balance metrics + CSV
 harness/runOne.ts      one run, shared by the runner and the workers
 harness/worker.ts      batch worker thread
@@ -239,6 +239,63 @@ the dependency in the loop.
 
   Nothing in the value engine reads any of this back. Grading is an observer:
   it reads `market.rawPrice` and writes beside it.
+- The art pipeline. `commissionArt` and `hireArtist` were the last two decision
+  types inside the core loop still falling through to `default`, and five
+  `Artist` fields — `rate`, `turnaroundWeeks`, `exclusiveTo`, `available` and
+  the artist half of `relationship` — were declared and read nowhere.
+
+  The asymmetry is what made this worth building: the whole *reward* half was
+  already live. `artQuality * artist.reputation` multiplies every price, the
+  value engine reads that reputation live, and `Artist.growth` compounds a
+  career in the dark. Nothing paid for any of it. `designCard` rolled quality
+  free at design time, so the best art in the game cost nothing, took no time,
+  and was available to everybody at once.
+
+  A commission is now money now for art later. The fee leaves at placement and
+  the illustration returns `turnaroundWeeks` afterwards, which is what forces
+  art to start before `commitPrintRun` rather than after it. Three things keep
+  it honest:
+
+  - **A card whose art has not landed by release ships anyway**, as house
+    filler at the quality floor. Missing the calendar costs quality; it must
+    never be able to hold a release hostage. The commission is still paid for.
+  - **The late tail is exponential, not uniform.** Reliability is blowout risk,
+    not a predictable slip: an unreliable artist goes quiet for a month. A
+    uniform slip mathematically cannot cross the 18 weeks between commit and
+    release, which made the schedule decorative — measured, 2.7% of commissions
+    now miss, against 0% before the change.
+  - **A rate is driven off `baseRate`, never off today's rate.** Computing the
+    target from the current rate compounds: a career-long reputation climb
+    turned into a bill of $191 billion in the first run of this pass.
+
+  `hireArtist`'s three declared terms each mean something. `perCard` is no
+  standing arrangement; `retainer` is a weekly bill that buys a discount and
+  gets your briefs taken regardless of relationship; `exclusive` is a larger
+  weekly bill that sets `exclusiveTo` and locks the artist away from everyone
+  else. That last one is also the CONCEPT.md §7 "a rival takes your artists"
+  hook, built from the player's side.
+
+  The roster drifts: newcomers arrive unproven and cheap, reputation drags
+  rates up behind it, and the established retire. Without that, scouting is a
+  puzzle you solve once in year one and never think about again.
+
+  Two probe bots make the gamble measurable, both `conservative` in every other
+  respect. `scout` commissions the cheapest artist on the board and signs them
+  exclusively; `safeHands` buys visible reputation at 2.5x rate on a retainer.
+  Over 20 seeds x 50 years:
+
+  | | scout | safeHands |
+  |---|---|---|
+  | mean `artQuality` | 0.49 | 0.65 |
+  | reputation gained by its artists | 0.760 | 0.288 |
+  | art spend | $18.4k | $45.1k |
+  | median top card | $6,124 | $6,900 |
+
+  **`scout` beats `safeHands` on top card in exactly 10 of 20 seeds**, while
+  gaining more reputation in 20 of 20. That is the shape the gamble needs:
+  buying low reliably leaves more room to climb, and just as reliably fails to
+  guarantee the outcome. If scouting had won every seed, `growth` would not be
+  hidden enough to be a bet.
 - CSV output + console summary table, plus separate drops, reveal-window and
   grading tables that print only for runs that produced any
 - Config overrides from CLI without touching code
@@ -258,12 +315,23 @@ behaviour-neutral, but they mean giving up the object model in `tickPrices`.
 **2. Large parts of the model are declared but not simulated.**
 Regions beyond `reg_us`, collabs, creators, rival publisher behavior, chains and
 preorders all exist in `types.ts` and are untouched by `engine.ts`.
-`applyDecision` now handles thirteen decision types; `commissionArt`,
-`hireArtist`, `signCollab`, `unlockRegion` and `advance` still fall through to
-`default`.
+`applyDecision` now handles fifteen decision types; `signCollab`,
+`unlockRegion` and `advance` still fall through to `default`.
 
-Drops, scalpers, the reveal window and now grading came off this list — see
-"Verified working". Of the secondary market actors in CONCEPT.md §6.8, scalpers
+**Rivals are the load-bearing gap.** They are not merely unimplemented, they
+are *decorative*: `world.ts` seeds five of them with a full `policy` block
+(aggression, `setsPerYearTarget`, chaseHeaviness, qualityBias,
+reprintWillingness) and an audience share, and the engine reads none of it. The
+player's `shareByPublisher` is assigned once at `world.ts:228` and only ever
+read — at `engine.ts` in the shelf-demand pool and again in the drop queue — so
+attention share is a constant for the whole run and nothing the player does
+moves it. Two consequences worth writing down: CONCEPT.md §7's "irrelevance"
+death is unreachable, and CONCEPT.md §11 says plainly that *"any tuning done in
+a world without competitors is tuning against the wrong numbers"* — which is a
+standing caveat on every balance figure in this document.
+
+Drops, scalpers, the reveal window, grading and now the art pipeline came off
+this list — see "Verified working". Of the secondary market actors in CONCEPT.md §6.8, scalpers
 now behave; `resellers`, `collectors` and `speculators` are still plain numbers.
 `collectors` is read as a demand pool by `resolveDrop` and nothing else.
 `SetPerformance.aftermarketIndex` is still written as 0 and read by nothing.
@@ -286,7 +354,19 @@ range (`tierMultiplier`, `popScarcityReference`, `popScarcityCeiling`,
 `sideGraderBrandGate` — the last swept, the others fitted by eye against the
 measured pop distribution). `submitRatePerTick` and `feeWorthMultiple` between
 them decide how much of the population ends up in slabs, and neither has been
-swept against anything. `heatFromHype` is the one with a
+swept against anything. The whole `art` block is unswept — it was
+wired for shape, not balance, and the balance pass owns it. Two numbers there
+are known to be wrong rather than merely unmeasured:
+
+- `world.ts` seeds artist `rate` at $0.50-$3.00 (`randRange(rng, 50, 300)`
+  cents). A 25-year `conservative` run therefore spends about **$7.8k** on art
+  against a **$22M** net worth — art is currently a rounding error, not a
+  budget line. Whatever the right number is, it is not this one.
+- `art.maxLateWeeks` was set so the late tail *can* cross the 18 weeks between
+  commit and release. That it must be crossable is a shape requirement; that it
+  currently happens to 2.7% of commissions is not a target anybody chose.
+
+`heatFromHype` is the one with a
 measured consequence already: it is what moved `yearsToFirst100Dollar` from 7.6
 to 4.9, because every set now opens at `1.6 + hype * heatFromHype` instead of a
 flat 1.6.
@@ -294,6 +374,23 @@ flat 1.6.
 
 ## Things not to break
 
+- A commission is paid for when it is placed, not when the art lands. A late
+  illustration is abandoned at release and the money stays spent — that is the
+  cost of missing the calendar, and refunding it would make the schedule free
+- Art never blocks a release. A card whose commission has not returned ships as
+  house art at the quality floor. `releaseSet` resolves every pending card, and
+  the invariant pass fails a released card still marked `pending`
+- One live commission per card. Without the guard in `placeCommission`, a
+  caller that submits every tick pays for the same illustration a hundred times
+- `Artist.rate` grows off `baseRate`, never off itself. A target computed from
+  the current rate compounds a reputation climb into a bill in the billions
+- The late tail is exponential on purpose. A uniform slip cannot cross the 18
+  weeks between commit and release, and a deadline that cannot be missed is not
+  a deadline
+- `Artist.growth` stays hidden. It is the whole scouting bet: reputation is
+  visible and priced, growth is not. The measured check is that `scout` beats
+  `safeHands` on top card in about half of seeds — if it ever wins them all,
+  the gamble has leaked
 - The sim core stays pure: no React, no DOM, no `Date`, no I/O, no unseeded randomness
 - Ground truth stays hidden: `IpEntity.truth`, `Printing.truth`, `Region.truth`, `Artist.growth`, `SealedMarket.hidden`, and `AudienceState.hidden` (the scalper
   population's books) must never be read by anything that renders
@@ -364,15 +461,55 @@ flat 1.6.
 
 ## Suggested next session
 
-Problem 2, continued: the model that is declared and not simulated. Grading came
-off the list this pass. What is left, roughly in order of how self-contained
-each slice is — rivals and regions, then the remaining secondary-market actors
-(`resellers`, `collectors` and `speculators` are still plain numbers;
-`collectors` is read as a demand pool by `resolveDrop` and nothing else).
+Problem 2, continued: the model that is declared and not simulated. The art
+pipeline came off the list this pass. **Rivals are the next mechanism**, and
+problem 2 says why they are not just the next bullet: they are decorative
+today, the player's attention share is a constant, and CONCEPT.md §11 makes
+every balance figure in this document provisional until they move.
 
-The other candidate is the grading feedback loop described under problem 2:
-graded copies leave the raw pool, so `tickPrices` arguably owes them a scarcity
-term. That one is a value-engine change and gets measured like one.
+The standing plan is to build the remaining *mechanisms* first and do the
+balance and difficulty work in one pass at the end. That order is deliberate,
+and the difficulty findings are already banked below so the tuning pass does
+not have to rediscover them.
+
+Then, roughly in order of how self-contained each slice is: regions, the
+remaining secondary-market actors (`resellers`, `collectors` and `speculators`
+are still plain numbers), then the grading feedback loop described under problem
+2 — graded copies leave the raw pool, so `tickPrices` arguably owes them a
+scarcity term. That last one is a value-engine change and gets measured like one.
+
+### Banked for the difficulty pass
+
+Measured, not guessed, over 280 runs x 50 years: **six of the seven bots then in
+the roster survived 100% of runs**, and the only death was `flooder`, at median
+year 1.1 in every seed. There is no middle ground between faceplanting in year
+one and immortality, and four of the five CONCEPT.md §7 death routes are
+unreachable. `tickFinance` already classifies three of them (`overprint`,
+`channel_collapse`, `debt_spiral`) and nothing ever triggers them.
+
+Two structural causes, both worth fixing in that pass rather than piecemeal:
+
+- **Time is free.** Every ledger outflow is discretionary — `print_run`,
+  `marketing`, `unlock`, `event`, `art_commission`, `staff`, `interest`. There
+  is no overhead and no per-tick burn, so a publisher that releases nothing pays
+  almost nothing and cannot die. (The art pipeline added the first two
+  non-discretionary-ish lines, but at current rates they are a rounding error.)
+- **The blind bet has no downside.** `avgSellThrough` runs 0.97-0.98: the market
+  absorbs essentially everything printed. COGS is `unitCost * packsPerUnit *
+  0.55` = **$18.48 a box against a $140 MSRP**, so being wrong is cheap. The
+  reveal signal is honestly noisy now and it barely matters.
+
+Missing instrument, needed before any of that is tunable: **there is no
+net-worth metric**, and `deathCause` is stored on the publisher but never
+reported by the harness. The cadence sweep already has to compute net worth in a
+scratch script. Add `netWorth`, `peakDebt` and `deathCause` to `RunMetrics`
+first, plus probe bots that actually vary the size of the bet — all nine current
+bots print a fixed 8000 units regardless of anything, so none of them ever makes
+the wager the game is about.
+
+Target agreed for that pass: most strategies survivable — a sound strategy
+lives, a sloppy one dies somewhere in the middle years rather than in year one.
+Failure should be a slope, not a cliff.
 
 Performance is no longer the thing in the way. A batch shards across cores, and
 the remaining engine cost is concentrated in `tickPrices`, where every idea left

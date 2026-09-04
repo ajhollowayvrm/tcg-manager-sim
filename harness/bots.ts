@@ -7,7 +7,7 @@
  */
 import type {
   SimState, IpId, ArtistId, Rarity, PrintQualityTier, ProductKind, SetType, ProductId, IpKind,
-  ChannelId, Channel, Tick, SetId, Cents,
+  ChannelId, Channel, Tick, SetId, Cents, Artist, ArtistTerms,
 } from '../src/sim/types.ts';
 import { api } from '../src/sim/engine.ts';
 import { rand, pick, chance } from '../src/sim/rng.ts';
@@ -95,6 +95,22 @@ export interface SetBotOptions {
   marketingPerSet?: number;
   /** Prerelease scale hosted per set. */
   prereleaseScale?: number;
+  /**
+   * How the bot picks an illustrator. `random` is the historical behaviour and
+   * the default; `cheapest` scouts unproven newcomers, betting on the hidden
+   * `growth` roll; `established` pays for reputation it can already see.
+   */
+  artistPolicy?: 'random' | 'cheapest' | 'established';
+  /**
+   * What the bot pays per brief, as a multiple of the artist's asking rate.
+   * Over 1 buys quality with diminishing returns. Unset means it pays the rate.
+   */
+  artBudgetMultiple?: number;
+  /**
+   * Standing arrangement to sign with its chosen artist. Unset means perCard —
+   * no weekly bill and no claim on them.
+   */
+  artistTerms?: ArtistTerms;
 }
 
 /**
@@ -224,12 +240,18 @@ export function makeSetBot(opts: SetBotOptions): Bot {
       const ipId = ensureIp(s, opts.label);
       const setId = api.createSet(s, `${opts.label} Set W${s.tick}`, opts.setType, opts.cardsPerSet);
 
-      const artistIds = Object.keys(s.artists) as ArtistId[];
+      // Art is commissioned in the same batch as the design, which is the only
+      // way it can land before the release 18 weeks later. A slow or unreliable
+      // artist still misses, and that card ships as house filler.
       for (let i = 0; i < opts.cardsPerSet; i++) {
         const rarity = pickRarity(s);
-        const artistId = artistIds.length ? pick(s.rng, artistIds) : undefined;
+        const artistId = chooseArtist(s, opts);
         if (!artistId) break;
-        api.designCard(s, setId, ipId, [], rarity, artistId);
+        const cardId = api.designCard(s, setId, ipId, [], rarity, artistId);
+        const artist = s.artists[artistId]!;
+        const budget = Math.round(artist.rate * (opts.artBudgetMultiple ?? 1)) as Cents;
+        api.commissionArt(s, cardId, artistId, { budget });
+        maybeSign(s, opts, artistId);
       }
 
       const productId = api.defineProduct(s, setId, opts.productKind, REGION_US, opts.packsPerUnit, opts.msrp);
@@ -244,6 +266,35 @@ export function makeSetBot(opts: SetBotOptions): Bot {
       submitAllocation(s, productId, opts.units, opts);
     },
   };
+}
+
+/**
+ * Who illustrates the next card. `cheapest` and `established` are the two ends
+ * of the scouting gamble: reputation is visible and priced, `growth` is hidden
+ * and free, so the cheap unknown is either the bargain of the decade or filler.
+ */
+function chooseArtist(s: SimState, opts: SetBotOptions): ArtistId | undefined {
+  const pub = s.publishers[s.playerId]!;
+  const open = (Object.values(s.artists) as Artist[]).filter(
+    a => a.available && (a.exclusiveTo === null || a.exclusiveTo === pub.id),
+  );
+  if (open.length === 0) return undefined;
+  switch (opts.artistPolicy) {
+    case 'cheapest':
+      return open.reduce((best, a) => (a.rate < best.rate ? a : best)).id;
+    case 'established':
+      return open.reduce((best, a) => (a.reputation > best.reputation ? a : best)).id;
+    default:
+      return pick(s.rng, open.map(a => a.id));
+  }
+}
+
+/** Signs the bot's standing arrangement once, the first time it uses an artist. */
+function maybeSign(s: SimState, opts: SetBotOptions, artistId: ArtistId): void {
+  if (!opts.artistTerms || opts.artistTerms === 'perCard') return;
+  const pub = s.publishers[s.playerId]!;
+  if (pub.retainers[artistId]) return;
+  api.hireArtist(s, artistId, opts.artistTerms);
 }
 
 /** Drips marketing into every set still inside its reveal window. */
@@ -311,6 +362,31 @@ export const BOTS: Record<string, () => Bot> = {
     allocationPolicy: 'spread',
     unlockOrder: [CHANNEL_IDS.direct, CHANNEL_IDS.online, CHANNEL_IDS.distributor, CHANNEL_IDS.bigbox],
     dropUnits: 2500, dropCadenceWeeks: 4,
+  }),
+
+  // The two ends of the scouting gamble. Both are `conservative` in every other
+  // respect, so any difference between their rows is the art pipeline and
+  // nothing else.
+  //
+  // `scout` commissions the cheapest artist on the board and signs them
+  // exclusively — locking down an unknown before anybody finds out whether the
+  // hidden `growth` roll was kind. Cheap art now, a weekly bill, and a bet that
+  // pays only years later through `Artist.reputation`, which the value engine
+  // reads live.
+  scout: () => makeSetBot({
+    label: 'Scout', cadenceWeeks: 52, cardsPerSet: 70, setType: 'main',
+    quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000, productKind: 'boosterBox',
+    allocationPolicy: 'spread',
+    artistPolicy: 'cheapest', artistTerms: 'exclusive',
+  }),
+
+  // `safeHands` buys the reputation it can already see, pays over the rate for
+  // it, and keeps the artist on a retainer so the briefs get taken.
+  safeHands: () => makeSetBot({
+    label: 'SafeHands', cadenceWeeks: 52, cardsPerSet: 70, setType: 'main',
+    quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000, productKind: 'boosterBox',
+    allocationPolicy: 'spread',
+    artistPolicy: 'established', artBudgetMultiple: 2.5, artistTerms: 'retainer',
   }),
 
   // `conservative` in every respect except allocation: it dumps each whole run

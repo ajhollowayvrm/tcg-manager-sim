@@ -4,10 +4,11 @@ import type {
   Printing, SimEvent, EventId, SetType, Rarity, ProductKind, PrintQualityTier,
   Treatment, ArtBrief, UnlockState, ChannelAllocation, Channel, SetPerformance,
   Drop, DropId, Grader, GradeTier, GradingSubmission,
+  Artist, Publisher, Commission, CommissionId, ArtistTerms,
 } from './types.ts';
 import { rand, randRange, randInt, pick, chance, gauss } from './rng.ts';
 import { emptySeries, writePoint, compact } from './series.ts';
-import { nextId, SEGMENTS, RARITIES } from './world.ts';
+import { nextId, SEGMENTS, RARITIES, ARTIST_PERSONALITIES, ARTIST_SPECIALTIES } from './world.ts';
 import {
   traitsFor, effectiveCapacity, allocatedUnits, autoAllocate, unlockCost, CHANNEL_IDS,
 } from './channels.ts';
@@ -100,7 +101,6 @@ function designCard(
   rarity: Rarity, artistId: ArtistId, overrides: CardOverrides = {},
 ): void {
   const artist = s.artists[artistId]!;
-  const fit = (artist.stats.composition + artist.stats.linework + artist.stats.color) / 3;
   s.cards[id] = {
     id, publisherId: s.playerId,
     name: overrides.name ?? `${s.ips[subjectIp]!.name} ${rarity}`,
@@ -109,7 +109,11 @@ function designCard(
     treatment: overrides.treatment ?? (rarity === 'common' ? 'none' : 'holo'),
     serialized: overrides.serialized ?? null, artistId,
     artBrief: { mood: 'neutral', composition: 'portrait', budget: artist.rate, notes: '', ...overrides.artBrief },
-    artQuality: U(fit * 0.75 + randRange(s.rng, 0, 0.35)),
+    // A designed card has no art yet. It carries the house floor until a
+    // commission lands, which is what makes `commissionArt` a real decision
+    // rather than an upgrade: skipping it ships filler.
+    artQuality: U(s.config.art.houseQuality),
+    artSource: 'pending',
     progressionLink: null, illustrationLink: null, flavorText: overrides.flavorText ?? '',
   };
   s.sets[setId]!.cardIds.push(id);
@@ -368,8 +372,16 @@ function applyDecision(s: SimState, d: Decision): void {
       pub.cash = C(pub.cash - amt); pub.debt = C(pub.debt - amt);
       break;
     }
-    // Not simulated yet: commissionArt, hireArtist, signCollab, unlockRegion,
-    // advance. `purchaseUnlock` handles its channel branch only.
+    case 'commissionArt': {
+      placeCommission(s, d.payload.cardId, d.payload.artistId, d.payload.brief);
+      break;
+    }
+    case 'hireArtist': {
+      hireArtist(s, d.payload.artistId, d.payload.terms);
+      break;
+    }
+    // Not simulated yet: signCollab, unlockRegion, advance. `purchaseUnlock`
+    // handles its channel branch only.
     default: break;
   }
 }
@@ -424,6 +436,21 @@ export const api = {
   marketingSpend(s: SimState, setId: SetId, amount: Cents): void {
     submit(s, { type: 'marketingSpend', tick: s.tick, payload: { setId, amount } });
   },
+  commissionArt(s: SimState, cardId: CardId, artistId: ArtistId, brief?: Partial<ArtBrief>): void {
+    const artist = s.artists[artistId];
+    const full: ArtBrief = {
+      mood: 'neutral', composition: 'portrait',
+      // Default to the artist's asking rate. Paying over it buys a better
+      // result with diminishing returns; paying under it is not a discount,
+      // it is a worse brief.
+      budget: artist ? artist.rate : (0 as Cents),
+      notes: '', ...brief,
+    };
+    submit(s, { type: 'commissionArt', tick: s.tick, payload: { cardId, artistId, brief: full } });
+  },
+  hireArtist(s: SimState, artistId: ArtistId, terms: ArtistTerms): void {
+    submit(s, { type: 'hireArtist', tick: s.tick, payload: { artistId, terms } });
+  },
   scheduleDrop(s: SimState, productId: ProductId, channelId: ChannelId, atTick: Tick, units: number): DropId {
     const id = nextId(s, 'drop') as DropId;
     submit(s, { type: 'scheduleDrop', tick: s.tick, payload: { id, productId, channelId, atTick, units } });
@@ -445,6 +472,24 @@ function releaseSet(s: SimState, setId: SetId, regionId: RegionId): void {
   const hype = set.hype;
   if (hype) hype.levelAtRelease = hype.level;
   const launchHype = hype?.levelAtRelease ?? 0;
+
+  // Art that has not come back by now never will, as far as this set is
+  // concerned. The card ships with house filler at the quality floor, and the
+  // commission — already paid for — is abandoned. A missed schedule costs
+  // quality; it must never be able to hold a release hostage.
+  let housed = 0;
+  for (const cardId of set.cardIds) {
+    const card = s.cards[cardId]!;
+    if (card.artSource !== 'pending') continue;
+    card.artSource = 'house';
+    card.artQuality = U(s.config.art.houseQuality);
+    housed++;
+  }
+  if (housed > 0) {
+    s.market.commissionQueue = s.market.commissionQueue.filter(c => !set.cardIds.includes(c.cardId));
+    emit(s, 'artMissedRelease', true, { setId, publisherId: set.publisherId },
+      { cards: housed, ofSet: set.cardIds.length });
+  }
 
   // A product the player never allocated goes out on the default split. Anything
   // the channels will not carry stays unallocated, and unallocated stock cannot
@@ -1470,6 +1515,246 @@ function tickArtists(s: SimState): void {
 }
 
 // ---------------------------------------------------------------------------
+// The art pipeline (CONCEPT.md §2, §6.3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Art is the step of the core loop that was declared and never simulated. The
+ * reward half already existed — `artQuality * artist.reputation` multiplies
+ * every price, and `Artist.growth` compounds a career in the dark — so the only
+ * thing missing was the half where it costs something.
+ *
+ * A commission is money now for art later: the fee leaves at placement and the
+ * illustration comes back `turnaroundWeeks` afterwards, which is what forces
+ * art to start before `commitPrintRun` rather than after it. A card whose art
+ * has not landed by release ships as house art at the quality floor. That is
+ * the cost of missing the calendar, and it is deliberately a cost rather than a
+ * block: a late brief must never be able to strand a release.
+ *
+ * Rolls come from `s.artRng`. Art is NOT an observer of the value engine the
+ * way grading is — quality feeds price directly, so this pass moves the value
+ * targets no matter what — but keeping the stream separate means the movement
+ * is attributable to the art multiplier instead of to renumbered noise.
+ */
+const ART_STRIDE = 2;
+
+/** The mean of the three stats that decide how good the picture is. */
+function artistCraft(a: Artist): number {
+  return (a.stats.linework + a.stats.color + a.stats.composition) / 3;
+}
+
+/**
+ * Whether an artist will take this brief at all. Relationship is what you build
+ * by working with someone; brand standing is what gets a stranger to answer.
+ * A retainer or an exclusive skips the question — that is what it bought.
+ */
+function artistWillAccept(s: SimState, a: Artist, pub: Publisher): boolean {
+  if (!a.available) return false;
+  if (a.exclusiveTo !== null && a.exclusiveTo !== pub.id) return false;
+  if (pub.retainers[a.id]) return true;
+  const cfg = s.config.art;
+  const standing = a.relationship + pub.brandStanding * cfg.brandStandingOffsetsRelationship;
+  return standing >= cfg.minRelationshipToAccept;
+}
+
+/** What this brief costs, before the artist has done anything. */
+function commissionFee(s: SimState, a: Artist, pub: Publisher, brief: ArtBrief): Cents {
+  const cfg = s.config.art;
+  const held = pub.retainers[a.id];
+  const discount = held?.terms === 'exclusive' ? cfg.exclusiveFeeDiscount
+    : held?.terms === 'retainer' ? cfg.retainerFeeDiscount
+    : 0;
+  return C(Math.max(1, brief.budget * (1 - discount)));
+}
+
+function placeCommission(s: SimState, cardId: CardId, artistId: ArtistId, brief: ArtBrief): void {
+  const card = s.cards[cardId];
+  const artist = s.artists[artistId];
+  if (!card || !artist) return;
+  const pub = s.publishers[card.publisherId];
+  if (!pub) return;
+  // One live commission per card. Without this guard a caller that submits
+  // every tick pays for the same illustration a hundred times.
+  if (card.artSource !== 'pending') return;
+  if (s.market.commissionQueue.some(c => c.cardId === cardId)) return;
+  if (!artistWillAccept(s, artist, pub)) return;
+
+  const cfg = s.config.art;
+  const fee = commissionFee(s, artist, pub, brief);
+  if (pub.cash < fee) return;
+
+  // Speed sets the pace; unreliability is the tail that ruins a schedule.
+  const pace = cfg.slowestTurnaround
+    - (cfg.slowestTurnaround - cfg.fastestTurnaround) * artist.stats.speed;
+  // The tail is exponential, not uniform. An unreliable artist does not run a
+  // predictable 20% late — they go quiet for a month and the set ships without
+  // them. A uniform slip can never cross the 18 weeks between commit and
+  // release, which would make the schedule decorative.
+  const lateScale = cfg.maxLateWeeks * (1 - artist.stats.reliability);
+  const late = Math.min(
+    Math.round(lateScale * 3),
+    Math.round(lateScale * -Math.log(1 - rand(s.artRng))),
+  );
+  const weeks = Math.max(1, Math.round(artist.turnaroundWeeks * pace) + late);
+
+  pub.cash = C(pub.cash - fee);
+  pub.ledger.push({ t: s.tick, amount: C(-fee), category: 'art_commission', note: artist.name, refId: cardId });
+
+  s.market.commissionQueue.push({
+    id: nextId(s, 'com') as CommissionId,
+    cardId, artistId, publisherId: pub.id, brief, fee,
+    placedTick: s.tick, returnsTick: T(s.tick + weeks),
+  });
+  card.artistId = artistId;
+  card.artBrief = brief;
+
+  artist.relationship = U(artist.relationship + cfg.relationshipPerCommission);
+  // `reputationAtCommission` is what makes the scouting bet measurable after
+  // the fact: the harness compares it against where the artist ended up.
+  emit(s, 'artCommissioned', false, { cardId, artistId, publisherId: pub.id },
+    { fee, weeks, rate: artist.rate, reputationAtCommission: artist.reputation });
+}
+
+/** Sign, retain or lock down an artist. */
+function hireArtist(s: SimState, artistId: ArtistId, terms: ArtistTerms): void {
+  const artist = s.artists[artistId];
+  const pub = s.publishers[s.playerId];
+  if (!artist || !pub || !artist.available) return;
+  if (artist.exclusiveTo !== null && artist.exclusiveTo !== pub.id) return;
+  const cfg = s.config.art;
+
+  if (terms === 'perCard') {
+    // Dropping a standing arrangement. The exclusivity goes with it.
+    if (artist.exclusiveTo === pub.id) artist.exclusiveTo = null;
+    delete pub.retainers[artistId];
+    return;
+  }
+
+  const multiple = terms === 'exclusive' ? cfg.exclusiveWeeklyMultiple : cfg.retainerWeeklyMultiple;
+  pub.retainers[artistId] = {
+    artistId, terms, sinceTick: s.tick, weeklyFee: C(artist.rate * multiple),
+  };
+  if (terms === 'exclusive') artist.exclusiveTo = pub.id;
+  emit(s, 'artistSigned', true, { artistId, publisherId: pub.id },
+    { terms, weeklyFee: pub.retainers[artistId]!.weeklyFee, reputation: artist.reputation });
+}
+
+/**
+ * Delivered art, weekly bills, and the roster drifting underneath both. Runs on
+ * a stride because art moves in weeks; the retainer bill is scaled to match so
+ * the stride cannot change what a retainer costs per year.
+ */
+function tickArt(s: SimState): void {
+  if (s.tick % ART_STRIDE !== 0) return;
+  const cfg = s.config.art;
+
+  // 1. Art that has come back.
+  const stillOut: Commission[] = [];
+  for (const com of s.market.commissionQueue) {
+    if ((com.returnsTick as number) > s.tick) { stillOut.push(com); continue; }
+    const card = s.cards[com.cardId];
+    const artist = s.artists[com.artistId];
+    if (!card || !artist) continue;
+    // A set that already shipped got house art; the commission is still paid
+    // for, and the money is still gone. Late art does not un-ship a card.
+    if (card.artSource !== 'pending') continue;
+
+    // Paying over the rate buys a better result, with diminishing returns, so
+    // no budget can buy a masterpiece from a beginner.
+    const overRate = Math.max(0, com.brief.budget / Math.max(1, artist.rate) - 1);
+    const budgetLift = cfg.budgetQualityGain * Math.log(1 + overRate);
+    const quality = U(artistCraft(artist) * cfg.statsWeight
+      + rand(s.artRng) * cfg.qualityNoise + budgetLift);
+
+    card.artQuality = quality;
+    card.artSource = 'commissioned';
+    emit(s, 'artDelivered', false, { cardId: card.id, artistId: artist.id },
+      { quality, weeks: (s.tick as number) - (com.placedTick as number), fee: com.fee });
+  }
+  s.market.commissionQueue = stillOut;
+
+  // 2. Standing arrangements bill whether or not anything was commissioned.
+  // That is the whole point of them: locking an artist down is a running cost,
+  // not a free claim.
+  for (const pub of Object.values(s.publishers)) {
+    if (pub.deadTick !== null) continue;
+    let bill = 0;
+    for (const r of Object.values(pub.retainers)) {
+      const artist = s.artists[r.artistId];
+      if (!artist || !artist.available) { delete pub.retainers[r.artistId]; continue; }
+      bill += r.weeklyFee * ART_STRIDE;
+    }
+    if (bill > 0) {
+      pub.cash = C(pub.cash - bill);
+      pub.ledger.push({ t: s.tick, amount: C(-bill), category: 'staff', note: 'artist retainers' });
+    }
+  }
+
+  // 3. Relationships cool when you stop calling.
+  for (const a of Object.values(s.artists)) {
+    a.relationship = U(a.relationship - cfg.relationshipDecayPerTick * ART_STRIDE);
+  }
+}
+
+/**
+ * The roster is not a fixed cast. Newcomers turn up unproven and cheap, the
+ * established price themselves up as their reputation climbs, and some retire.
+ * Without this, scouting is a puzzle you solve once in year one and never
+ * think about again for the next forty-nine.
+ */
+function tickRoster(s: SimState): void {
+  if (s.tick % 13 !== 0) return;
+  const cfg = s.config.art;
+  const artists = Object.values(s.artists);
+
+  for (const a of artists) {
+    if (!a.available) continue;
+    // A reputation that has climbed drags the rate up behind it — off the rate
+    // they started at, never off today's. Compounding a career's worth of
+    // reputation onto the current rate produces a bill in the billions.
+    const target = a.baseRate * (1 + a.reputation * cfg.rateGrowthPerReputation);
+    a.rate = C(a.rate + (target - a.rate) * cfg.rateAdjustRate * 13);
+    // Retirement takes the artist off the board. Their old cards keep the
+    // reputation they earned — the value engine reads it live either way.
+    if (a.reputation > 0.5 && chance(s.artRng, cfg.retireChancePerTick * 13)) {
+      a.available = false;
+      for (const pub of Object.values(s.publishers)) delete pub.retainers[a.id];
+      if (a.exclusiveTo !== null) a.exclusiveTo = null;
+      emit(s, 'artistRetired', true, { artistId: a.id }, { reputation: a.reputation });
+    }
+  }
+
+  if (artists.filter(a => a.available).length < cfg.maxRosterSize
+      && chance(s.artRng, cfg.newcomerChancePerTick * 13)) {
+    const id = nextId(s, 'art') as ArtistId;
+    const newcomerRate = Math.round(randRange(s.artRng, 50, 300)) as Cents;
+    s.artists[id] = {
+      id,
+      name: `Artist ${Object.keys(s.artists).length + 1}`,
+      personality: pick(s.artRng, ARTIST_PERSONALITIES),
+      specialty: pick(s.artRng, ARTIST_SPECIALTIES),
+      stats: {
+        linework: randRange(s.artRng, 0.2, 0.7),
+        color: randRange(s.artRng, 0.2, 0.7),
+        composition: randRange(s.artRng, 0.2, 0.7),
+        speed: randRange(s.artRng, 0.3, 0.8),
+        reliability: randRange(s.artRng, 0.4, 0.9),
+      },
+      rate: newcomerRate,
+      baseRate: newcomerRate,
+      turnaroundWeeks: Math.round(randRange(s.artRng, 2, 8)),
+      reputation: randRange(s.artRng, 0.03, 0.2),
+      // The gamble. Hidden, and the whole reason scouting is not solved.
+      growth: randRange(s.artRng, 0.0005, 0.004),
+      relationship: 0.5,
+      exclusiveTo: null,
+      available: true,
+    };
+    emit(s, 'artistArrived', false, { artistId: id }, { rate: s.artists[id]!.rate });
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Grading and pop reports (CONCEPT.md §6.4)
 // ---------------------------------------------------------------------------
 
@@ -1776,6 +2061,8 @@ export function tick(s: SimState): void {
   tickGrading(s, printings);
   tickAudience(s);
   tickArtists(s);
+  tickArt(s);
+  tickRoster(s);
   tickFinance(s);
   tickCompaction(s);
 }

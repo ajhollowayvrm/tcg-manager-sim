@@ -211,6 +211,31 @@ if (gradingRows.length) {
   console.table(gradingRows);
 }
 
+// The art pipeline gets its own table, for the same reason drops and grading
+// do: the main table is already too wide, and this one is about a decision the
+// bot made rather than about the market.
+const artRows = botNames
+  .map(b => {
+    const r = rows.filter(x => x.bot === b);
+    const ran = r.filter(x => x.artSpend > 0);
+    if (ran.length === 0) return null;
+    return {
+      bot: b,
+      art$: (mean(ran.map(x => x.artSpend)) / 1000).toFixed(1) + 'k',
+      houseArt: (100 * mean(ran.map(x => x.houseArtShare))).toFixed(0) + '%',
+      artQuality: mean(ran.map(x => x.meanArtQuality)).toFixed(2),
+      artistRep: mean(ran.map(x => x.meanArtistReputation)).toFixed(2),
+      repGained: mean(ran.map(x => x.artistReputationGained)).toFixed(3),
+      retained: mean(ran.map(x => x.artistsRetained)).toFixed(1),
+      roster: mean(ran.map(x => x.rosterSize)).toFixed(0),
+    };
+  })
+  .filter(Boolean);
+if (artRows.length) {
+  console.log('art pipeline:');
+  console.table(artRows);
+}
+
 // A decile ladder for the last run. Median and max alone cannot tell a power
 // law from flat mush; the step between deciles can. Each step should widen.
 if (showDist && lastState) {
