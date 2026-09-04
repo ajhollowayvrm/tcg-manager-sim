@@ -158,7 +158,12 @@ export const defaultConfig: SimConfig = {
     prereleaseRelationshipGain: 0.04,
     ceiling: 3,
     decayPerTickAfterRelease: 0.06,
-    signalNoiseSigma: 0.55,
+    // Wide on purpose. The read has to be genuinely poor without a campaign,
+    // or the reveal window is a solved problem and its levers buy nothing: at
+    // 0.55 a publisher who spent nothing already scored r = 0.93. Error shrinks
+    // as 1/sqrt(previews), so 2.0 puts a default three-preview window at
+    // r = 0.55 and a sixteen-preview campaign at r = 0.86.
+    signalNoiseSigma: 2.0,
     heatFromHype: 0.8,
   },
 

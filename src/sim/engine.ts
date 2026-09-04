@@ -862,8 +862,15 @@ function tickReveal(s: SimState, set: CardSet): void {
   }
 
   const truth = setChase(s, set);
+  // The error is multiplicative and lognormal, not additive-then-clamped. A
+  // `1 + noise` read has to be clipped at zero once the sigma is wide enough to
+  // matter, and clipping is what made a sixteen-preview campaign score *worse*
+  // than no campaign at high sigma: the long campaign's extra draws piled up on
+  // the floor and threw away the ordering the previews had bought. Here the
+  // error only ever shrinks with the number of previews, which is what
+  // CONCEPT.md §2 asks of the window.
   const noise = gauss(s.rng, 0, cfg.signalNoiseSigma / Math.sqrt(h.cardsRevealed));
-  h.signal = Math.max(0, truth * (1 + noise));
+  h.signal = truth * Math.exp(noise);
   emit(s, 'communitySentiment', false, { setId: set.id, publisherId: set.publisherId },
     { kind: 'reveal', revealed: h.cardsRevealed, signal: h.signal, hype: h.level });
 }
