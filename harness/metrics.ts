@@ -233,6 +233,30 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
     ? segments.reduce((n, seg) => n + seg.fatigue, 0) / segments.length
     : 0;
 
+  // The art pipeline. Spend comes off the ledger rather than the queue: a
+  // commission that missed its release was still paid for, and pretending
+  // otherwise would flatter every strategy that misses the calendar.
+  const artSpend = pub.ledger
+    .filter(e => e.category === 'art_commission' || e.category === 'staff')
+    .reduce((n, e) => n - e.amount, 0) / 100;
+  const playerCards = Object.values(s.cards).filter(c => c.publisherId === pub.id);
+  const housed = playerCards.filter(c => c.artSource === 'house').length;
+  const commissioned = playerCards.filter(c => c.artSource === 'commissioned');
+  const usedArtistIds = new Set<string>(playerCards.map(c => c.artistId as string));
+  const usedArtists = Object.values(s.artists).filter(a => usedArtistIds.has(a.id as string));
+  // Reputation now against reputation when this studio first commissioned them.
+  // The event log is what remembers who was an unknown at the time, which is
+  // the whole scouting bet.
+  const firstSeen = new Map<string, number>();
+  for (const e of s.events) {
+    if (e.kind !== 'artCommissioned') continue;
+    const aid = e.refs.artistId;
+    if (aid && !firstSeen.has(aid)) firstSeen.set(aid, Number(e.data.reputationAtCommission ?? 0));
+  }
+  let gained = 0;
+  for (const a of usedArtists) gained += a.reputation - (firstSeen.get(a.id as string) ?? a.reputation);
+  const artistReputationGained = usedArtists.length > 0 ? gained / usedArtists.length : 0;
+
   return {
     bot,
     seed: s.seed,
@@ -273,6 +297,15 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
     gem10Premium,
     printingsGraded,
     gradersActive,
+    artSpend,
+    houseArtShare: playerCards.length > 0 ? housed / playerCards.length : 0,
+    meanArtQuality: commissioned.length > 0
+      ? commissioned.reduce((n, c) => n + c.artQuality, 0) / commissioned.length : 0,
+    meanArtistReputation: usedArtists.length > 0
+      ? usedArtists.reduce((n, a) => n + a.reputation, 0) / usedArtists.length : 0,
+    artistReputationGained,
+    artistsRetained: Object.keys(pub.retainers).length,
+    rosterSize: Object.values(s.artists).filter(a => a.available).length,
   };
 }
 

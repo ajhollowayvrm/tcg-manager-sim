@@ -16,6 +16,12 @@ export const SEGMENTS: AudienceSegment[] = [
   'kids', 'teens', 'adults', 'lapsed', 'investors', 'artFans',
 ];
 
+/** Shared with the engine, which mints newcomers into the same roster. */
+export const ARTIST_PERSONALITIES: ArtistPersonality[] =
+  ['collaborative', 'precious', 'prolific', 'mercurial', 'reclusive'];
+export const ARTIST_SPECIALTIES: ArtistSpecialty[] =
+  ['creature', 'landscape', 'character', 'graphic', 'ensemble'];
+
 export const RARITIES: Rarity[] = [
   'common', 'uncommon', 'rare', 'doubleRare', 'ultraRare',
   'illustrationRare', 'specialIllustrationRare', 'hyperRare', 'promo',
@@ -57,6 +63,11 @@ export function createWorld(seed: string, config: SimConfig): SimState {
     // Grading draws from its own stream so that adding an observer of the value
     // engine does not renumber the value engine's own draws.
     gradingRng: seedRng(`${seed}:grading`),
+    // Art is not an observer — `artQuality` multiplies price directly — but it
+    // still gets its own stream so a commission roll does not renumber the
+    // value engine's draws. That is what keeps the price movement this pass
+    // causes attributable to the art multiplier rather than to reshuffled noise.
+    artRng: seedRng(`${seed}:art`),
     tick: t0,
     idCounter: 0,
     printingByCard: {},
@@ -87,6 +98,7 @@ export function createWorld(seed: string, config: SimConfig): SimState {
           directStore: false,
         },
         policy: null,
+        retainers: {},
         ledger: [],
         deadTick: null,
         deathCause: null,
@@ -123,6 +135,7 @@ export function createWorld(seed: string, config: SimConfig): SimState {
       climateHistory: emptySeries(t0),
       indexes: { allCards: 100, byPublisher: { [playerId]: 100 }, bySet: {} },
       gradingQueue: [],
+      commissionQueue: [],
     },
 
     inbox: [],
@@ -221,6 +234,7 @@ export function createWorld(seed: string, config: SimConfig): SimState {
         qualityBias: randRange(rng, 0.2, 0.8),
         reprintWillingness: randRange(rng, 0.1, 0.6),
       },
+      retainers: {},
       ledger: [],
       deadTick: null,
       deathCause: null,
@@ -228,10 +242,11 @@ export function createWorld(seed: string, config: SimConfig): SimState {
     s.audience.shareByPublisher[id] = r.share;
   }
 
-  const personalities: ArtistPersonality[] = ['collaborative', 'precious', 'prolific', 'mercurial', 'reclusive'];
-  const specialties: ArtistSpecialty[] = ['creature', 'landscape', 'character', 'graphic', 'ensemble'];
+  const personalities = ARTIST_PERSONALITIES;
+  const specialties = ARTIST_SPECIALTIES;
   for (let i = 0; i < 6; i++) {
     const id = nextId(s, 'art') as ArtistId;
+    const rate0 = Math.round(randRange(rng, 50, 300)) as Cents;
     s.artists[id] = {
       id,
       name: `Artist ${i + 1}`,
@@ -245,7 +260,8 @@ export function createWorld(seed: string, config: SimConfig): SimState {
         reliability: randRange(rng, 0.4, 0.9),
       },
       // Cheap and unproven, per CONCEPT.md's opening state.
-      rate: Math.round(randRange(rng, 50, 300)) as Cents,
+      rate: rate0,
+      baseRate: rate0,
       turnaroundWeeks: Math.round(randRange(rng, 2, 8)),
       reputation: randRange(rng, 0.05, 0.25),
       growth: randRange(rng, 0.0005, 0.004),

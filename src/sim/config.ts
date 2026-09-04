@@ -78,6 +78,59 @@ export const defaultConfig: SimConfig = {
     errorDiscoveryChance: 0.01,
   },
 
+  // First-guess numbers, wired for behaviour and NOT swept — the balance pass
+  // owns them. The shape that matters: art costs money and takes weeks, so it
+  // has to be started before the print run is committed; a card whose art does
+  // not arrive in time still ships, at `houseQuality`; and who will take a
+  // brief at all depends on relationship, brand standing and exclusivity.
+  art: {
+    /** Quality of in-house filler. The floor a card falls back to. */
+    houseQuality: 0.15,
+    /** Weight on the artist's linework/colour/composition mean. */
+    statsWeight: 0.75,
+    /** Width of the roll on top of stats. Two briefs to one artist differ. */
+    qualityNoise: 0.35,
+    /**
+     * Paying over the artist's rate buys a better result, with diminishing
+     * returns — logarithmic in the multiple of rate, so a caller cannot buy a
+     * masterpiece by paying a hundred times.
+     */
+    budgetQualityGain: 0.18,
+    /** Turnaround multiplier at speed 0 and at speed 1. */
+    slowestTurnaround: 1.4,
+    fastestTurnaround: 0.7,
+    /**
+     * An unreliable artist runs late. Weeks added, scaled by (1 - reliability).
+     * The roll is exponential and capped at 3x this scale, so it has to be able
+     * to cross the 18 weeks between commit and release — otherwise the
+     * house-art path never fires and the schedule is decorative. How often it
+     * should cross is unswept.
+     */
+    maxLateWeeks: 8,
+    /** Relationship: earned by commissioning, decays when you stop. */
+    relationshipPerCommission: 0.05,
+    relationshipDecayPerTick: 0.0015,
+    /**
+     * Below this an artist turns the brief down, unless they are on a retainer.
+     * Brand standing offsets it: a known studio gets its calls returned.
+     */
+    minRelationshipToAccept: 0.25,
+    brandStandingOffsetsRelationship: 0.3,
+    /** Weekly bills, as a multiple of the artist's per-card rate. */
+    retainerWeeklyMultiple: 0.35,
+    exclusiveWeeklyMultiple: 1.1,
+    /** A retainer discounts each brief; an exclusive discounts it further. */
+    retainerFeeDiscount: 0.2,
+    exclusiveFeeDiscount: 0.35,
+    /** Roster drift: newcomers arrive, the established retire or price up. */
+    newcomerChancePerTick: 0.012,
+    retireChancePerTick: 0.0009,
+    maxRosterSize: 24,
+    /** A rising reputation drags the rate up behind it. */
+    rateGrowthPerReputation: 2.5,
+    rateAdjustRate: 0.02,
+  },
+
   finance: {
     interestBase: 0.14,
     creditToRate: 0.08,

@@ -39,6 +39,7 @@ export type ChainId = Brand<string, 'ChainId'>;
 export type CollabId = Brand<string, 'CollabId'>;
 export type EventId = Brand<string, 'EventId'>;
 export type DropId = Brand<string, 'DropId'>;
+export type CommissionId = Brand<string, 'CommissionId'>;
 
 /** Seeded PRNG state. Serializable so runs are exactly reproducible. */
 export interface RngState {
@@ -74,6 +75,15 @@ export interface SimState {
    * the five value targets in HANDOFF.md incomparable across the change.
    */
   gradingRng: RngState;
+  /**
+   * A third stream, for the art pipeline. Unlike grading, art is NOT an
+   * observer: `Card.artQuality` is a direct multiplier on price, so this pass
+   * moves the value targets whatever we do. The separate stream is not there to
+   * keep the CSV identical — it cannot — but so that a commission roll does not
+   * renumber the value engine's draws, which is what makes the movement
+   * attributable to the art multiplier rather than to reshuffled noise.
+   */
+  artRng: RngState;
   tick: Tick;
 
   /** Monotonic counter for deterministic id generation. */
@@ -132,6 +142,13 @@ export interface Publisher {
   unlocks: UnlockState;
   /** Rival behaviour profile. Null for the player. */
   policy: RivalPolicy | null;
+
+  /**
+   * Standing arrangements with artists. A retainer or an exclusive is a weekly
+   * bill that runs whether or not the studio is commissioning anything, which
+   * is what makes locking an artist down a decision rather than a free win.
+   */
+  retainers: Record<ArtistId, Retainer>;
 
   ledger: LedgerEntry[];
   deadTick: Tick | null;
@@ -261,8 +278,19 @@ export interface Card {
 
   artistId: ArtistId;
   artBrief: ArtBrief;
-  /** 0..1, rolled at commission from artist stats × brief fit. Immutable. */
+  /**
+   * 0..1, rolled when the commissioned art lands, from artist stats x brief
+   * fit x budget. Immutable from that moment: the roll is the artist's work,
+   * and only their `reputation` keeps moving afterwards.
+   */
   artQuality: Unit;
+  /**
+   * Where the illustration came from. A card designed and never commissioned,
+   * or commissioned too late for its release, ships as `house` — cheap
+   * in-house filler art at the quality floor. That is the cost of missing the
+   * calendar, and it is why a late commission cannot block a release.
+   */
+  artSource: 'pending' | 'commissioned' | 'house';
 
   progressionLink: { chainId: ChainId; position: number } | null;
   illustrationLink: ChainId | null;
@@ -638,6 +666,12 @@ export interface Artist {
     linework: Unit; color: Unit; composition: Unit; speed: Unit; reliability: Unit;
   };
   rate: Cents;
+  /**
+   * What they charged when they arrived. The live `rate` is driven off this,
+   * never off itself — a target computed from the current rate compounds, and
+   * a career-long reputation climb turns into an exponential fee.
+   */
+  baseRate: Cents;
   turnaroundWeeks: number;
 
   /**
@@ -752,6 +786,38 @@ export interface MarketState {
     bySet: Record<SetId, number>;
   };
   gradingQueue: GradingSubmission[];
+  /** Art that has been paid for and not yet come back. */
+  commissionQueue: Commission[];
+}
+
+/**
+ * One commissioned illustration. The fee is charged when the commission is
+ * placed, not when the art lands: the money is gone whether or not the artist
+ * delivers something good, and whether or not it arrives before the set ships.
+ */
+export interface Commission {
+  id: CommissionId;
+  cardId: CardId;
+  artistId: ArtistId;
+  publisherId: PublisherId;
+  brief: ArtBrief;
+  fee: Cents;
+  placedTick: Tick;
+  /** When the art comes back. Set at placement from the artist's turnaround. */
+  returnsTick: Tick;
+}
+
+/**
+ * How a publisher is paying an artist. `perCard` is no standing arrangement at
+ * all; the other two cost money every week whether or not a brief is placed.
+ */
+export type ArtistTerms = 'perCard' | 'retainer' | 'exclusive';
+
+export interface Retainer {
+  artistId: ArtistId;
+  terms: ArtistTerms;
+  sinceTick: Tick;
+  weeklyFee: Cents;
 }
 
 export interface GradingSubmission {
@@ -828,7 +894,9 @@ export type SimEventKind =
   | 'rivalRelease' | 'rivalDominance'
   | 'debtWarning' | 'studioDead'
   | 'fatigueWarning' | 'graderEnteredMarket'
-  | 'dropScheduled' | 'dropSoldOut' | 'dropUndersold' | 'scalperCrash';
+  | 'dropScheduled' | 'dropSoldOut' | 'dropUndersold' | 'scalperCrash'
+  | 'artCommissioned' | 'artDelivered' | 'artMissedRelease'
+  | 'artistSigned' | 'artistRetired' | 'artistArrived';
 
 export interface SimEvent {
   id: EventId;
@@ -937,6 +1005,30 @@ export interface SimConfig {
     unitCost: Record<PrintQualityTier, Cents>;
     /** Per-price-tick chance that an undiscovered error on a printing gets found. */
     errorDiscoveryChance: number;
+  };
+
+  /** The art pipeline. Every number here is a first guess and unswept. */
+  art: {
+    houseQuality: number;
+    statsWeight: number;
+    qualityNoise: number;
+    budgetQualityGain: number;
+    slowestTurnaround: number;
+    fastestTurnaround: number;
+    maxLateWeeks: number;
+    relationshipPerCommission: number;
+    relationshipDecayPerTick: number;
+    minRelationshipToAccept: number;
+    brandStandingOffsetsRelationship: number;
+    retainerWeeklyMultiple: number;
+    exclusiveWeeklyMultiple: number;
+    retainerFeeDiscount: number;
+    exclusiveFeeDiscount: number;
+    newcomerChancePerTick: number;
+    retireChancePerTick: number;
+    maxRosterSize: number;
+    rateGrowthPerReputation: number;
+    rateAdjustRate: number;
   };
 
   finance: {
