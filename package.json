@@ -9,7 +9,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "ios:build": "npm run build && npm run ios:project",
-    "ios:project": "cd ios && xcodegen generate"
+    "ios:project": "cd ios && xcodegen generate",
+    "sim": "tsx harness/run.ts",
+    "sim:quick": "tsx harness/run.ts --seeds=5 --years=15 --bot=all"
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -17,6 +19,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
+    "tsx": "^4.19.2",
     "vite": "^5.4.11"
   }
 }

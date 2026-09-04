@@ -5,6 +5,9 @@ node_modules/
 dist/
 build/
 
+# Balance harness output
+out/
+
 # Logs
 *.log
 npm-debug.log*
