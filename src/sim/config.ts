@@ -37,7 +37,14 @@ export const defaultConfig: SimConfig = {
     perReleaseCost: 0.22,
     regenPerTick: 0.02,
     fatigueGain: 0.18,
-    fatigueDecay: 0.01,
+    // Proportional decay. Chosen with `fatigueBite`/`fatigueExponent` by sweeping
+    // release cadence from 6 to 78 weeks: this triple puts the profit optimum at
+    // ~18 weeks, kills a 6-10 week cadence outright, and taxes a once-a-year
+    // publisher under 5% of demand.
+    fatigueDecay: 0.015,
+    fatigueBite: 0.97,
+    fatigueExponent: 2,
+    fatigueWarnThreshold: 0.45,
     goodwillSensitivity: 0.6,
     goodwillRegenPerTick: 0.001,
     // Must match the player's starting share in world.ts, or the demand curve

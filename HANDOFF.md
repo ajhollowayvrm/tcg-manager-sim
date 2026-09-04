@@ -39,6 +39,19 @@ Requires Node 22.6+ (uses `--experimental-strip-types`, no build step). Swap to 
 - Channel allocation: explicit `allocate` decisions, a release-time default split,
   per-channel sell-through and margin, floating street price, relationship drift,
   souring, and the channel unlock gates
+- Release cadence is a real trade-off. Sweeping `conservative`'s cadence from 6 to
+  78 weeks over 25 years and 10 seeds puts the profit optimum at 18 weeks, and
+  pushing one notch faster costs most of it:
+
+  | cadence | 6wk | 10wk | 14wk | **18wk** | 26wk | 34wk | 52wk |
+  |---|---|---|---|---|---|---|---|
+  | sets/year | 8.7 | 5.2 | 3.7 | **2.9** | 2.0 | 1.5 | 1.0 |
+  | survived | 0/10 | 0/10 | 10/10 | **10/10** | 10/10 | 10/10 | 10/10 |
+  | net worth | — | — | $5.9M | **$22.5M** | $16.7M | $13.6M | $8.9M |
+  | fatigue | 0.89 | 0.96 | 0.76 | **0.61** | 0.37 | 0.35 | 0.22 |
+
+  Under-releasing is a gentle loss; over-releasing is a cliff. That asymmetry is
+  what CONCEPT.md §6.2 asks for.
 - CSV output + console summary table
 - Config overrides from CLI without touching code
 - Sparse price history with quarterly compaction of anything older than 10 years
@@ -51,29 +64,16 @@ The value formula and the goodwill wiring were fixed in `1a89067`; the numbers b
 | Metric | Target | Measured |
 |---|---|---|
 | `surpriseGrail` | 15–40% of runs | 60–100% |
-| `top1PctShare` | 0.4–0.7 | 0.20–0.26 |
-| `medianCardPrice` | a few dollars | $11–23 |
+| `top1PctShare` | 0.4–0.7 | 0.21–0.24 |
+| `medianCardPrice` | a few dollars | $12–20 |
 | `yearsToFirst100Dollar` | 3–8 | 2.2–3.4 |
 
 So value is emergent but not concentrated: too many cards break out, and the ones that do are not far enough clear of the median. The distribution is mush where it should be a power law. The scarcity term in `tickPrices` (`100000 / surviving`) is still the arbitrary part.
 
-**2. Flooding is punished, but fatigue is not what punishes it.**
-`flooder` dies of `overprint` in 10/10 seeds at a median year 1.1, against `conservative` at 100% survival. CONCEPT.md §6.2 is satisfied. But turning each half of the attention system off one at a time, over 25 years and 10 seeds, shows only one of them is load-bearing:
-
-| `flooder` variant | survived | median death year | fatigue at death |
-|---|---|---|---|
-| default | 0/10 | 1.1 | 0.83 |
-| `attention.fatigueGain=0` | 0/10 | 1.3 | 0.00 |
-| `attention.goodwillSensitivity=0` | 0/10 | 1.2 | 0.85 |
-| `attention.perReleaseCost≈0` | **9/10** | 12.6 | 0.98 |
-| all three off | 10/10 | — | 0.00 |
-
-So attention consumption is doing all the work and fatigue is close to inert: with the attention cost removed, `flooder` survives 25 years sitting at 0.98 fatigue. That is backwards from §6.2, which frames fatigue as the counterweight to infinite printing. The cause is shape, not tuning — attention multiplies demand directly and falls to 0.25, while fatigue only enters as `(1 - fatigue * 0.6)` and so can never cost more than 60% of demand. Give fatigue a sharper curve before trusting the sets-per-year convergence metric.
-
-**3. Performance.**
+**2. Performance.**
 ~3s per 15-year run, so a 50-year × 40-seed batch is impractical. Prices already update on a 4-tick stride and entity lists are cached. Next candidates: typed arrays for the hot price loop, skipping printings whose price hasn't moved in N ticks, and worker threads for batch runs.
 
-**4. Large parts of the model are declared but not simulated.**
+**3. Large parts of the model are declared but not simulated.**
 Grading and pop reports, regions beyond `reg_us`, collabs, creators, rival publisher behavior, chains, preorders, and the scalper population all exist in `types.ts` and are untouched by `engine.ts`. `applyDecision` now handles nine decision types; `commissionArt`, `scheduleReveal`, `hostPrerelease`, `hireArtist`, `signCollab`, `unlockRegion`, `marketingSpend` and `advance` still fall through to `default`.
 
 The direct store unlocks and sells, but it does not run drops. `Product.scalperAppeal` and `Channel.queueCapacity` are still read by nothing — they are the hooks for that pass.

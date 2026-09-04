@@ -109,6 +109,7 @@ export function createWorld(seed: string, config: SimConfig): SimState {
       ) as SimState['audience']['segments'],
       // The player starts with almost no audience; the rivals below hold the rest.
       shareByPublisher: { [playerId]: PLAYER_START_SHARE },
+      fatigueWarned: false,
       actors: { scalpers: 500, resellers: 300, collectors: 5000, speculators: 800 },
     },
 

@@ -442,6 +442,27 @@ function tickAffection(s: SimState, ips: IpEntity[]): void {
   }
 }
 
+/**
+ * What fatigue leaves of demand — the counterweight to infinite printing in
+ * CONCEPT.md §6.2. Replaces a hard-coded `1 - fatigue * 0.6`.
+ *
+ * The two knobs do different jobs, and it is worth not confusing them:
+ *
+ * - `fatigueBite` is what makes flooding fatal. The old 0.6 let a publisher
+ *   saturate fatigue and still keep 40% of its demand, whatever it did.
+ * - `fatigueExponent` protects the careful publisher, and only that. Above 1 it
+ *   makes low fatigue nearly free. It does NOT sharpen the penalty in the middle
+ *   of the range — there a higher exponent is more forgiving, not less.
+ *
+ * Neither knob matters unless fatigue actually takes intermediate values, which
+ * is the job of the proportional decay in `tickAudience`.
+ */
+function fatigueResponse(s: SimState, fatigue: number): number {
+  const cfg = s.config.attention;
+  const f = Math.max(0, Math.min(1, fatigue));
+  return Math.max(0, 1 - cfg.fatigueBite * Math.pow(f, cfg.fatigueExponent));
+}
+
 function castDesire(s: SimState, card: Card): number {
   const cfg = s.config;
   const subj = s.ips[card.subjectIp]!;
@@ -590,7 +611,7 @@ function tickSales(s: SimState, products: Product[]): void {
     const decay = Math.exp(-weeksOut * 1.4);
     // The demand pool is what the audience wants this week, independent of who
     // is selling it. The channels then compete for it.
-    const pool = p.unitsPrinted * 0.06 * attention * shareFactor * (1 - fatigue * 0.6)
+    const pool = p.unitsPrinted * 0.06 * attention * shareFactor * fatigueResponse(s, fatigue)
       * (0.2 + 0.8 * goodwill) * (0.3 + pub.brandStanding) * (0.5 + chase) * decay;
     if (pool <= 0) continue;
 
@@ -779,11 +800,27 @@ function tickAudience(s: SimState): void {
   for (const g of SEGMENTS) {
     const st = s.audience.segments[g];
     st.attention = Math.min(1, st.attention + cfg.regenPerTick);
-    st.fatigue = Math.max(0, st.fatigue - cfg.fatigueDecay);
+    // Proportional, not a flat subtraction. A constant decay makes fatigue
+    // bimodal: below the break-even cadence it saturates, above it sits at
+    // zero, and nothing lands in between. Decaying a share of what is there
+    // gives every cadence its own equilibrium, which is what lets the response
+    // curve discriminate at all.
+    st.fatigue = Math.max(0, st.fatigue * (1 - cfg.fatigueDecay));
     // Long-memory trust. Deliberately much slower than fatigue recovery —
     // flood damage should stay felt long after attention has refilled.
     st.goodwill = Math.min(1, st.goodwill + cfg.goodwillRegenPerTick * (1 - st.goodwill));
   }
+  // Fatigue is now the sharpest penalty in the model, so the player has to be
+  // able to see it coming. `fatigueWarning` was declared and never emitted.
+  const fatigueAvg = SEGMENTS.reduce((n, g) => n + s.audience.segments[g].fatigue, 0) / SEGMENTS.length;
+  const warn = fatigueAvg >= cfg.fatigueWarnThreshold;
+  if (warn !== s.audience.fatigueWarned) {
+    s.audience.fatigueWarned = warn;
+    if (warn) {
+      emit(s, 'fatigueWarning', true, { publisherId: s.playerId }, { fatigue: fatigueAvg });
+    }
+  }
+
   s.market.climate = Math.max(0.5, Math.min(1.8,
     s.market.climate + gauss(s.rng, 0, 0.012) + (1 - s.market.climate) * 0.008));
   writePoint(s.market.climateHistory, s.tick, s.market.climate, 0.02);

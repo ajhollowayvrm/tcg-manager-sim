@@ -58,7 +58,7 @@ function ensureIp(s: SimState, label: string): IpId {
  */
 type AllocationPolicy = 'auto' | 'spread' | 'hog';
 
-interface SetBotOptions {
+export interface SetBotOptions {
   label: string;
   cadenceWeeks: number;
   cardsPerSet: number;
@@ -132,7 +132,7 @@ function submitAllocation(s: SimState, productId: ProductId, units: number, opts
   api.allocate(s, productId, plan);
 }
 
-function makeSetBot(opts: SetBotOptions): Bot {
+export function makeSetBot(opts: SetBotOptions): Bot {
   let nextRelease = 8; // small startup delay so world init settles first
   return {
     step(s: SimState) {

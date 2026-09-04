@@ -589,6 +589,12 @@ export interface AudienceState {
   /** Attention share by publisher. Sums to 1. The thing you actually fight for. */
   shareByPublisher: Record<PublisherId, Unit>;
 
+  /**
+   * Latched, so `fatigueWarning` fires on the crossing rather than every tick
+   * the audience stays tired.
+   */
+  fatigueWarned: boolean;
+
   actors: {
     scalpers: number;
     resellers: number;
@@ -747,7 +753,27 @@ export interface SimConfig {
     perReleaseCost: number;
     regenPerTick: number;
     fatigueGain: number;
+    /** Share of current fatigue that decays each tick, not a flat subtraction. */
     fatigueDecay: number;
+    /**
+     * Largest share of demand that fatigue can remove, at fatigue 1. The old
+     * hard-coded cap was 0.6, which let a publisher release every six weeks,
+     * saturate fatigue, and still keep 40% of its demand.
+     */
+    fatigueBite: number;
+    /**
+     * Curve shape of the fatigue penalty. Demand is multiplied by
+     * `1 - fatigueBite * fatigue ** fatigueExponent`.
+     *
+     * Above 1 the curve is convex: a normal release cadence sits near zero
+     * fatigue and pays almost nothing, while a flooder is crushed. That
+     * separation is the whole point — a linear term punishes the careful
+     * publisher and the flooder in proportion, which is not what CONCEPT.md
+     * §6.2 asks for.
+     */
+    fatigueExponent: number;
+    /** Average fatigue that fires `fatigueWarning`, so the player sees it coming. */
+    fatigueWarnThreshold: number;
     goodwillSensitivity: number;
     /** Passive per-tick recovery of goodwill, deliberately much slower than fatigueDecay. */
     goodwillRegenPerTick: number;
