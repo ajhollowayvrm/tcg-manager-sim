@@ -40,6 +40,10 @@ export interface RunMetrics {
   peakDropPremium: number;
   /** Scalper population at the end of the run. Starts at 500. */
   scalperPopulation: number;
+  /** Boom-to-bust crossings. Zero means the population never cycled at all. */
+  scalperCycles: number;
+  /** Population at the widest point of any cycle, read off the crash events. */
+  peakScalpers: number;
 
   /** Mean hype a set carried into its launch. Zero means the run ran no campaigns. */
   avgHypeAtRelease: number;
@@ -151,6 +155,13 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
     (n, e) => n + Number(e.data.sold ?? 0) * Number(e.data.scalperShare ?? 0), 0);
   const peakDropPremium = dropEvents.reduce((n, e) => Math.max(n, Number(e.data.premium ?? 0)), 0);
 
+  // The population's shape, not just where it stopped. A crash fires on the
+  // boom-to-bust crossing, which is where the population is widest, so the
+  // crash events are the cycle peaks. No crashes at all means a flat line —
+  // either pinned at the floor or pinned at the cap, both of them dead.
+  const crashes = s.events.filter(e => e.kind === 'scalperCrash');
+  const peakScalpers = crashes.reduce((n, e) => Math.max(n, Number(e.data.scalpers ?? 0)), 0);
+
   // The reveal window. `hype.signal` stops updating at release, so what is on
   // the set at the end of the run is the read the player actually had.
   const releasedSets = Object.values(s.sets).filter(set => set.hype && set.performance);
@@ -202,6 +213,8 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
     scalperShareOfDrops: dropUnits > 0 ? dropScalperUnits / dropUnits : 0,
     peakDropPremium,
     scalperPopulation: s.audience.actors.scalpers,
+    scalperCycles: crashes.length,
+    peakScalpers,
     avgHypeAtRelease: hypeAtRelease.length
       ? hypeAtRelease.reduce((a, b) => a + b, 0) / hypeAtRelease.length : 0,
     marketingTotal,

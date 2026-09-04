@@ -153,6 +153,8 @@ const dropRows = botNames
       toScalpers: (100 * mean(ran.map(x => x.scalperShareOfDrops))).toFixed(0) + '%',
       peakPremium: mean(ran.map(x => x.peakDropPremium)).toFixed(2) + 'x',
       scalpers: mean(ran.map(x => x.scalperPopulation)).toFixed(0),
+      peakScalpers: mean(ran.map(x => x.peakScalpers)).toFixed(0),
+      cycles: mean(ran.map(x => x.scalperCycles)).toFixed(1),
     };
   })
   .filter(Boolean);
