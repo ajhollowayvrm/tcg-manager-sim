@@ -94,6 +94,7 @@ export function createWorld(seed: string, config: SimConfig): SimState {
     // engine does not renumber the value engine's own draws.
     gradingRng: seedRng(`${seed}:grading`),
     regionRng: seedRng(`${seed}:region`),
+    actorRng: seedRng(`${seed}:actors`),
     // Art is not an observer — `artQuality` multiplies price directly — but it
     // still gets its own stream so a commission roll does not renumber the
     // value engine's draws. That is what keeps the price movement this pass

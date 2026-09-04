@@ -191,6 +191,22 @@ if (regionRows.length) {
   console.table(regionRows);
 }
 
+// The secondary-market actors. Scalpers are in the drops table with the
+// mechanism they belong to; these three act on singles.
+console.log('secondary market:');
+console.table(botNames.map(b => {
+  const r = rows.filter(x => x.bot === b);
+  return {
+    bot: b,
+    collectors: money(mean(r.map(x => x.collectors))),
+    heldOffMarket: (100 * mean(r.map(x => x.collectorHeldShare))).toFixed(0) + '%',
+    resellers: money(mean(r.map(x => x.resellers))),
+    speculators: money(mean(r.map(x => x.speculators))),
+    specSwing: mean(r.map(x => x.speculatorSwing)).toFixed(1) + 'x',
+    aftermarket: mean(r.map(x => x.aftermarketIndex)).toFixed(1) + 'x',
+  };
+}));
+
 // Drops get their own table. The main one is already too wide to read, and a
 // run that never opened a direct store has nothing to say here.
 const dropRows = botNames

@@ -90,6 +90,13 @@ export interface SimState {
    * draws — otherwise scoring a reading changes the prices it was read against.
    */
   regionRng: RngState;
+  /**
+   * A fifth stream, for the secondary-market actors. These populations move
+   * prices, so unlike grading they are not observers and the value targets do
+   * move — the stream is separate so the movement is attributable to the
+   * mechanism rather than to renumbered noise.
+   */
+  actorRng: RngState;
   tick: Tick;
 
   /** Monotonic counter for deterministic id generation. */
@@ -922,7 +929,8 @@ export type SimEventKind =
   | 'dropScheduled' | 'dropSoldOut' | 'dropUndersold' | 'scalperCrash'
   | 'artCommissioned' | 'artDelivered' | 'artMissedRelease'
   | 'artistSigned' | 'artistRetired' | 'artistArrived'
-  | 'regionUnlocked' | 'collabOffered' | 'collabSigned' | 'collabExpired';
+  | 'regionUnlocked' | 'collabOffered' | 'collabSigned' | 'collabExpired'
+  | 'speculatorSwing';
 
 export interface SimEvent {
   id: EventId;
@@ -960,6 +968,8 @@ export interface SimConfig {
     /** Combined multiplier above which growth tapers logarithmically instead of compounding freely. */
     priceCeilingMultiple: number;
     /** Upper bound on the short-term speculative heat multiplier. */
+    /** Lowest heat a printing can be pushed to. Heat multiplies price. */
+    heatFloor: number;
     heatCeiling: number;
     /** Upper bound on the slow-compounding vintage nostalgia multiplier. */
     nostalgiaCeiling: number;
@@ -1249,6 +1259,49 @@ export interface SimConfig {
     readingNoiseSigma: number;
     /** Weeks between one region's release wave and the next. */
     entryLeadWeeks: number;
+  };
+
+  /**
+   * The secondary-market actors of CONCEPT.md §6.8, excluding scalpers, whose
+   * numbers live in `drops` with the mechanism that uses them.
+   *
+   * First-guess values. The shape that matters: collectors are stable and
+   * permanent, resellers follow a trade that closes itself, and speculators
+   * have a sign that flips.
+   */
+  actors: {
+    /** Share of the audience that collects, at full goodwill and no fatigue. */
+    collectorShareOfAudience: number;
+    collectorConvergence: number;
+    minCollectors: number;
+    /** Collectors per head of audience at which holding reaches its ceiling. */
+    collectorDensityReference: number;
+    /** Share of opened copies held out of the market at the extremes. */
+    collectorHoldFloor: number;
+    collectorHoldCeiling: number;
+
+    /** Reseller population at which ripping is exactly break-even. */
+    resellerReference: number;
+    resellerConvergence: number;
+    minResellers: number;
+    maxResellers: number;
+    /** Singles-to-sealed value ratio at which ripping stops paying. */
+    ripBreakEven: number;
+    /** Extra rip rate per reseller, against `resellerReference`. */
+    ripPerReseller: number;
+
+    speculatorReference: number;
+    speculatorConvergence: number;
+    minSpeculators: number;
+    maxSpeculators: number;
+    /** Heat above the pack per speculator at which the population holds still. */
+    speculatorHeatPerCapita: number;
+    /** How hard the population chases its own per-capita return. */
+    speculatorMomentumGain: number;
+    /** Heat added to a printing already above the pack, and taken off one below. */
+    speculatorHeatGain: number;
+    speculatorSensitivity: number;
+    speculatorNoise: number;
   };
 
   history: {

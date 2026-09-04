@@ -4,6 +4,7 @@
  */
 import type { SimState, RegionId } from '../src/sim/types.ts';
 import { setFit } from '../src/sim/regions.ts';
+import { collectorHeldShare } from '../src/sim/actors.ts';
 
 export interface RunMetrics {
   bot: string;
@@ -145,6 +146,23 @@ export interface RunMetrics {
    * one that is always right makes market entry arithmetic.
    */
   regionReadingCorrelation: number;
+
+  /** Collector population at the end of the run. The stable floor. */
+  collectors: number;
+  /** Share of opened copies sitting in collections rather than on the market. */
+  collectorHeldShare: number;
+  /** Reseller population. Rip-and-ship follows whether ripping pays. */
+  resellers: number;
+  /** Speculator population. This one is meant to swing. */
+  speculators: number;
+  /** Widest and narrowest the speculator population got, as a ratio. */
+  speculatorSwing: number;
+  /**
+   * Mean `SetPerformance.aftermarketIndex` across released sets — how the sets
+   * did as cards rather than as product. It was written as 0 and read by
+   * nothing before this pass.
+   */
+  aftermarketIndex: number;
 }
 
 /** Pearson r. Returns 0 rather than NaN for a degenerate sample. */
@@ -363,6 +381,20 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
     readingPairs.map(p => p[0]), readingPairs.map(p => p[1]),
   );
 
+  // The secondary-market actors. The speculator swing is the one that says
+  // whether the population is a population or a constant: read at the end of
+  // the run it can only ever say where it stopped.
+  const specSeries = s.events
+    .filter(e => e.kind === 'speculatorSwing')
+    .map(e => Number(e.data.speculators ?? 0))
+    .filter(n => n > 0);
+  const speculatorSwing = specSeries.length >= 2
+    ? Math.max(...specSeries) / Math.max(1, Math.min(...specSeries)) : 1;
+  const releasedWithPerf = Object.values(s.sets).filter(set => set.performance);
+  const aftermarket = releasedWithPerf.length
+    ? releasedWithPerf.reduce((n, set) => n + set.performance!.aftermarketIndex, 0)
+      / releasedWithPerf.length : 0;
+
   return {
     bot,
     seed: s.seed,
@@ -424,6 +456,12 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
     regionKnowledge,
     exportShare,
     regionReadingCorrelation,
+    collectors: s.audience.actors.collectors,
+    collectorHeldShare: collectorHeldShare(s),
+    resellers: s.audience.actors.resellers,
+    speculators: s.audience.actors.speculators,
+    speculatorSwing,
+    aftermarketIndex: aftermarket,
   };
 }
 

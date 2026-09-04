@@ -29,6 +29,10 @@ export const defaultConfig: SimConfig = {
     // population onto one price and calls it a distribution.
     priceFloorCents: C(20),
     priceCeilingMultiple: 5000,
+    // Speculators can push heat below 1, and a crash has to be able to
+    // overshoot for the amplify-and-crash shape to mean anything. It cannot go
+    // to zero: heat multiplies the price, so a floor of 0 is a floor of $0.
+    heatFloor: 0.4,
     heatCeiling: 6,
     nostalgiaCeiling: 20,
     chaseSigma: 0.65,
@@ -280,6 +284,51 @@ export const defaultConfig: SimConfig = {
     readingNoiseSigma: 0.8,
     /** Weeks between a region unlock and the first release the player can ship there. */
     entryLeadWeeks: 26,
+  },
+
+  // First-guess numbers, wired for behaviour rather than swept. Each population
+  // has to be able to move and to come back: one that only grows is a price
+  // multiplier with extra steps.
+  actors: {
+    collectorShareOfAudience: 0.02,
+    collectorConvergence: 0.08,
+    minCollectors: 500,
+    // Collectors per head of audience at which holding reaches its ceiling.
+    // At 0.03 a healthy run sits exactly on it and every seed reports the
+    // ceiling, which is a constant wearing a population's clothes.
+    collectorDensityReference: 0.09,
+    // A third of opened copies off the market at the floor is not a guess about
+    // this game — it is roughly what any collectible market looks like, and it
+    // is the term that makes a loyal audience worth money.
+    collectorHoldFloor: 0.2,
+    collectorHoldCeiling: 0.5,
+
+    resellerReference: 300,
+    resellerConvergence: 0.12,
+    minResellers: 20,
+    maxResellers: 20_000,
+    // Singles-to-sealed value ratio at which ripping stops paying. Measured,
+    // the weighted ratio runs 0.7-1.0, so a break-even of exactly 1 sits at the
+    // top of the range and holds the population on its floor for every strategy
+    // except a flooder. Below 1 is also the honest number: a streamer earns on
+    // the stream and on the retail spread, not only on the pull.
+    ripBreakEven: 0.5,
+    ripPerReseller: 0.5,
+
+    speculatorReference: 800,
+    speculatorConvergence: 0.1,
+    minSpeculators: 50,
+    maxSpeculators: 30_000,
+    /** Heat above the pack per speculator at which the population holds still. */
+    // At 0.02 the population settles near 25,000 against a 30,000 cap, which
+    // is the runaway this per-capita form exists to prevent. The pool scales
+    // with the size of the catalogue, so this is the number that decides how
+    // many speculators a market of a given size supports.
+    speculatorHeatPerCapita: 0.3,
+    speculatorMomentumGain: 0.35,
+    speculatorHeatGain: 0.05,
+    speculatorSensitivity: 1.5,
+    speculatorNoise: 0.004,
   },
 
   history: {

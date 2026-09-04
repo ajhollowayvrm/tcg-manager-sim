@@ -15,6 +15,9 @@ import {
   regionDemandFactor, tickRegionKnowledge, creditRelease, readRegion, readingFit,
 } from './regions.ts';
 import {
+  tickActors, tradeablePopulation, speculatorHeatDelta, ripMultiplier, aftermarketIndex,
+} from './actors.ts';
+import {
   traitsFor, effectiveCapacity, allocatedUnits, autoAllocate, unlockCost, CHANNEL_IDS,
 } from './channels.ts';
 
@@ -711,7 +714,11 @@ function tickPrices(s: SimState, printings: Printing[]): void {
     const artist = s.artists[card.artistId]!;
 
     const desire = castDesire(s, card);
-    const surviving = Math.max(1, pr.population.sealed + pr.population.opened - pr.population.destroyed);
+    // Not every copy is for sale. A slabbed copy has left the raw market for
+    // the graded one and a collected copy is not coming back, so scarcity is
+    // computed over what is left rather than over everything ever printed.
+    // This is the grading feedback loop and the collector floor in one term.
+    const surviving = tradeablePopulation(s, pr, gradedTotal(pr));
     // Rarity's price effect flows only through scarcity (print quantity is
     // already rarity-scaled via RARITY_PULL at release) — see CONCEPT.md §5.
     // RARITY_WEIGHT stays out of price; it's a demand-side signal in tickSales.
@@ -719,6 +726,10 @@ function tickPrices(s: SimState, printings: Printing[]): void {
     const art = 1 + card.artQuality * artist.reputation * v.artMultiplierWeight;
 
     pr.market.heat = Math.min(v.heatCeiling, 1 + (pr.market.heat - 1) * heatKeep);
+    // Speculators amplify what is already moving, in whichever direction it is
+    // already moving. They cannot start a run on a printing sitting at 1.
+    pr.market.heat = Math.max(v.heatFloor,
+      Math.min(v.heatCeiling, pr.market.heat + speculatorHeatDelta(s, pr)));
 
     // Nostalgia compounds only on a printing the market still wants, and only
     // as fast as it already stands above the pack. A printing nobody wants
@@ -816,7 +827,11 @@ function tickSealed(s: SimState, products: Product[]): void {
 
     // Ripping destroys sealed supply and adds singles supply. Rising price slows it.
     const priceRatio = p.market.price / Math.max(1, p.msrp);
-    h.ripRate = cfg.baseRipRatePerTick / Math.pow(Math.max(0.3, priceRatio), cfg.ripPriceElasticity);
+    // The base rate is the shelf ripping itself open; the multiplier is the
+    // rip-and-ship population on top of it. Rising sealed price still slows
+    // both — a box worth more unopened stays unopened.
+    h.ripRate = Math.min(1, cfg.baseRipRatePerTick * ripMultiplier(s)
+      / Math.pow(Math.max(0.3, priceRatio), cfg.ripPriceElasticity));
     const opened = Math.min(h.sealedRemaining, h.sealedRemaining * h.ripRate);
     h.sealedRemaining -= opened;
 
@@ -1122,6 +1137,11 @@ function tickSales(s: SimState, products: Product[]): void {
     pub.cash = C(pub.cash + revenue);
     pub.ledger.push({ t: s.tick, amount: C(revenue), category: 'sales', note: p.kind, refId: p.id });
     if (set.performance) set.performance.revenue = C(set.performance.revenue + revenue);
+
+    // `aftermarketIndex` is the set-health number CONCEPT.md §8 asks for, and
+    // it was written as 0 and read by nothing. It is refreshed here rather than
+    // in `tickPrices` because it is a per-set summary of prices, not a price.
+    if (set.performance) set.performance.aftermarketIndex = aftermarketIndex(s, set);
 
     // Selling builds exposure, which is what lets affection converge.
     for (const cid of set.cardIds) {
@@ -2154,6 +2174,7 @@ export function tick(s: SimState): void {
   tickPrices(s, printings);
   tickGrading(s, printings);
   tickAudience(s);
+  tickActors(s, products, printings);
   tickArtists(s);
   tickArt(s);
   tickRoster(s);
