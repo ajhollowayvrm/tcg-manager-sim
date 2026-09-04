@@ -34,6 +34,36 @@ export function checkInvariants(s: SimState): string[] {
     if (!Number.isFinite(p.market.price) || p.market.price < 0) {
       bad.push(`product ${p.id} bad sealed price`);
     }
+
+    let allocated = 0;
+    let allocRemaining = 0;
+    for (const [cid, a] of Object.entries(p.allocations)) {
+      allocated += a.units;
+      allocRemaining += a.unitsRemaining;
+      if (a.unitsRemaining < 0 || a.unitsRemaining > a.units) {
+        bad.push(`product ${p.id} allocation ${cid} remaining out of range: ${a.unitsRemaining}/${a.units}`);
+      }
+      if (!Number.isFinite(a.streetPrice) || a.streetPrice <= 0) {
+        bad.push(`product ${p.id} allocation ${cid} bad street price: ${a.streetPrice}`);
+      }
+      const ch = s.channels[cid as keyof typeof s.channels];
+      if (!ch) bad.push(`product ${p.id} allocated to unknown channel ${cid}`);
+      else if (!ch.unlocked) bad.push(`product ${p.id} allocated to locked channel ${cid}`);
+    }
+    if (allocated > p.unitsPrinted) {
+      bad.push(`product ${p.id} over-allocated: ${allocated}/${p.unitsPrinted}`);
+    }
+    // Allocated stock is a subset of unsold stock. Anything unallocated, or
+    // stranded by a lost channel, still sits in the warehouse.
+    if (allocRemaining > p.unitsRemaining) {
+      bad.push(`product ${p.id} allocation remainder exceeds stock: ${allocRemaining}/${p.unitsRemaining}`);
+    }
+  }
+
+  for (const ch of Object.values(s.channels)) {
+    if (ch.relationship < -1e-6 || ch.relationship > 1.0001) {
+      bad.push(`channel ${ch.id} relationship out of range: ${ch.relationship}`);
+    }
   }
 
   for (const ip of Object.values(s.ips)) {

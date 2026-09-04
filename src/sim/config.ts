@@ -66,6 +66,30 @@ export const defaultConfig: SimConfig = {
     sealedNostalgiaRatePerYear: 0.04,
   },
 
+  channels: {
+    relationshipGainPerSellThrough: 0.02,
+    relationshipLossPerUnsold: 0.03,
+    unsoldGraceWeeks: 26,
+    evaluationWindowWeeks: 104,
+    reopenRelationship: 0.45,
+    sellThroughTarget: 0.6,
+    strainThreshold: 0.3,
+    lossThreshold: 0.12,
+    idleDriftPerTick: 0.004,
+    idleGraceWeeks: 78,
+    streetPriceLerp: 0.15,
+    stalenessPerWeek: 0.012,
+    // Distributors and chains cost relationship-building money, not a licence fee.
+    // The direct store is the one you actually build.
+    unlockCost: {
+      lgs: C(0),
+      distributor: C(150_000_00),
+      bigbox: C(400_000_00),
+      online: C(80_000_00),
+      direct: C(750_000_00),
+    },
+  },
+
   region: {
     knowledgeGainPerRelease: 0.02,
     knowledgeGainPerResearch: 0.05,

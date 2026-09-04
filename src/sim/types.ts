@@ -162,7 +162,7 @@ export interface LedgerEntry {
   amount: Cents;
   category:
     | 'print_run' | 'art_commission' | 'staff' | 'marketing' | 'event'
-    | 'licensing' | 'sales' | 'interest' | 'principal' | 'misc';
+    | 'licensing' | 'sales' | 'interest' | 'principal' | 'unlock' | 'misc';
   note: string;
   refId?: string;
 }
@@ -509,6 +509,12 @@ export interface Channel {
   unlocked: boolean;
   /** Direct store only: drop mechanics. */
   queueCapacity: number | null;
+
+  /**
+   * Last tick this channel received an allocation. Visible, not hidden — the
+   * channel board shows it, and a long gap is what "under-deliver" means.
+   */
+  lastAllocatedTick: Tick | null;
 }
 
 export interface Grader {
@@ -776,6 +782,42 @@ export interface SimConfig {
     /** How much rising sealed price suppresses ripping. */
     ripPriceElasticity: number;
     sealedNostalgiaRatePerYear: number;
+  };
+
+  channels: {
+    /** Relationship gained per evaluation when sell-through beats `sellThroughTarget`. */
+    relationshipGainPerSellThrough: number;
+    /** Relationship lost per evaluation for allocation still sitting unsold past the grace period. */
+    relationshipLossPerUnsold: number;
+    /** Weeks after release before unsold allocation starts souring the relationship. */
+    unsoldGraceWeeks: number;
+    /**
+     * Weeks after release that a set still counts toward its channels'
+     * relationship. Past this it is settled history — a distributor does not
+     * hold a grudge for a decade, and old stock must stop souring forever.
+     */
+    evaluationWindowWeeks: number;
+    /**
+     * Relationship a channel restarts at when it is unlocked again after being
+     * lost. Above `strainThreshold`, so re-establishing actually buys something.
+     */
+    reopenRelationship: number;
+    /** Share of an allocation that must move by the evaluation to count as healthy. */
+    sellThroughTarget: number;
+    /** Relationship at or below which the channel emits `channelStrained`. */
+    strainThreshold: number;
+    /** Relationship below which the channel is lost outright. */
+    lossThreshold: number;
+    /** Per-evaluation relationship drift for an unlocked channel getting no allocation. */
+    idleDriftPerTick: number;
+    /** Weeks a channel may go unallocated before `idleDriftPerTick` starts biting. */
+    idleGraceWeeks: number;
+    /** How fast street price moves toward its target. 0..1 per evaluation. */
+    streetPriceLerp: number;
+    /** How fast stale stock earns a discount, per week since release. */
+    stalenessPerWeek: number;
+    /** Cash cost to unlock a channel, by kind. */
+    unlockCost: Record<ChannelKind, Cents>;
   };
 
   region: {

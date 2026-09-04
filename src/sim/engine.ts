@@ -2,11 +2,14 @@ import type {
   SimState, Decision, Tick, Cents, Unit, IpId, CardId, SetId, ProductId, PrintingId,
   ProductLineId, RegionId, ChannelId, ArtistId, IpEntity, Card, CardSet, Product,
   Printing, SimEvent, EventId, SetType, Rarity, ProductKind, PrintQualityTier,
-  Treatment, ArtBrief,
+  Treatment, ArtBrief, UnlockState, ChannelAllocation, Channel, SetPerformance,
 } from './types.ts';
 import { rand, randRange, randInt, pick, chance, gauss } from './rng.ts';
 import { emptySeries, writePoint, compact } from './series.ts';
 import { nextId, SEGMENTS, RARITIES } from './world.ts';
+import {
+  traitsFor, effectiveCapacity, allocatedUnits, autoAllocate, unlockCost,
+} from './channels.ts';
 
 const T = (n: number) => n as Tick;
 const C = (n: number) => Math.round(n) as Cents;
@@ -187,6 +190,79 @@ function reprint(s: SimState, cardId: CardId, intoSetId: SetId, quantity: number
   }
 }
 
+/**
+ * Channel allocation is the second half of the blind bet (CONCEPT.md §2). It
+ * locks with the print run, before reveal, so it only lands on a set that has
+ * not shipped yet. Each channel takes what its relationship lets it take and no
+ * more; anything the channels will not carry stays in the warehouse unsold.
+ */
+function allocate(s: SimState, productId: ProductId, allocations: Record<ChannelId, number>): void {
+  const p = s.products[productId];
+  if (!p) return;
+  const set = s.sets[p.setId];
+  if (!set || set.status === 'released' || set.status === 'archived') return;
+  const pub = s.publishers[set.publisherId];
+  if (!pub) return;
+
+  let left = p.unitsPrinted - allocatedUnits(p);
+  for (const [cid, requested] of Object.entries(allocations)) {
+    if (left <= 0) break;
+    const ch = s.channels[cid as ChannelId];
+    if (!ch || !ch.unlocked) continue;
+    if (!pub.unlocks.channels.includes(ch.id)) continue;
+    if (ch.regionId !== p.regionId) continue;
+
+    const existing = p.allocations[ch.id];
+    const headroom = effectiveCapacity(ch) - (existing ? existing.units : 0);
+    const units = Math.min(Math.max(0, Math.floor(requested)), headroom, left);
+    if (units < ch.minimumOrder) continue;
+
+    if (existing) {
+      existing.units += units;
+      existing.unitsRemaining += units;
+    } else {
+      p.allocations[ch.id] = {
+        units, unitsRemaining: units, streetPrice: p.msrp, soldOutTick: null,
+      };
+    }
+    ch.lastAllocatedTick = s.tick;
+    left -= units;
+  }
+}
+
+/**
+ * Buys a gated channel. Only the channel branch of the unlock tree is wired;
+ * the rest of `UnlockState` is still a later pass.
+ */
+function purchaseUnlock(s: SimState, unlock: keyof UnlockState, detail?: string): void {
+  if (unlock !== 'channels' || !detail) return;
+  const pub = s.publishers[s.playerId];
+  const ch = s.channels[detail as ChannelId];
+  if (!pub || !ch || ch.unlocked) return;
+  if (pub.brandStanding < ch.requiredBrandStanding) return;
+
+  const cost = unlockCost(s, ch);
+  if (pub.cash < cost) return;
+  pub.cash = C(pub.cash - cost);
+  pub.ledger.push({ t: s.tick, amount: C(-cost), category: 'unlock', note: ch.name, refId: ch.id });
+
+  ch.unlocked = true;
+  // Re-establishing a channel you soured out of starts the relationship over.
+  // It must clear `lossThreshold` outright, not merely sit at the configured
+  // reopen value: otherwise it reopens still below the loss line and is dropped
+  // again on the next evaluation, which is a thrash loop, not a comeback.
+  const chCfg = s.config.channels;
+  ch.relationship = U(Math.max(
+    ch.relationship, chCfg.reopenRelationship, chCfg.lossThreshold + 0.1,
+  ));
+  // Start the idle clock now, so a channel bought between releases does not
+  // immediately sour for having had nothing to sell.
+  ch.lastAllocatedTick = s.tick;
+  if (!pub.unlocks.channels.includes(ch.id)) pub.unlocks.channels.push(ch.id);
+  if (ch.kind === 'direct') pub.unlocks.directStore = true;
+  emit(s, 'channelUnlocked', true, { channelId: ch.id, publisherId: pub.id }, { kind: ch.kind, cost });
+}
+
 function applyDecision(s: SimState, d: Decision): void {
   switch (d.type) {
     case 'createIp': createIp(s, d.payload.id, d.payload.name, d.payload.kind); break;
@@ -205,6 +281,8 @@ function applyDecision(s: SimState, d: Decision): void {
     case 'commitPrintRun':
       commitPrintRun(s, d.payload.setId, d.payload.quantities, d.payload.quality);
       break;
+    case 'allocate': allocate(s, d.payload.productId, d.payload.allocations); break;
+    case 'purchaseUnlock': purchaseUnlock(s, d.payload.unlock, d.payload.detail); break;
     case 'reprint': reprint(s, d.payload.cardId, d.payload.intoSetId, d.payload.quantity); break;
     case 'borrow': {
       const pub = s.publishers[s.playerId]!;
@@ -218,8 +296,9 @@ function applyDecision(s: SimState, d: Decision): void {
       pub.cash = C(pub.cash - amt); pub.debt = C(pub.debt - amt);
       break;
     }
-    // Not simulated yet: commissionArt, allocate, scheduleReveal, hostPrerelease,
-    // hireArtist, purchaseUnlock, signCollab, unlockRegion, marketingSpend, advance.
+    // Not simulated yet: commissionArt, scheduleReveal, hostPrerelease, hireArtist,
+    // signCollab, unlockRegion, marketingSpend, advance. `purchaseUnlock` handles
+    // its channel branch only.
     default: break;
   }
 }
@@ -256,6 +335,12 @@ export const api = {
   commitPrintRun(s: SimState, setId: SetId, quantities: Record<ProductId, number>, quality: PrintQualityTier): void {
     submit(s, { type: 'commitPrintRun', tick: s.tick, payload: { setId, quantities, quality } });
   },
+  allocate(s: SimState, productId: ProductId, allocations: Record<ChannelId, number>): void {
+    submit(s, { type: 'allocate', tick: s.tick, payload: { productId, allocations } });
+  },
+  purchaseUnlock(s: SimState, unlock: keyof UnlockState, detail?: string): void {
+    submit(s, { type: 'purchaseUnlock', tick: s.tick, payload: { unlock, detail } });
+  },
   reprint(s: SimState, cardId: CardId, intoSetId: SetId, quantity: number): void {
     submit(s, { type: 'reprint', tick: s.tick, payload: { cardId, intoSetId, quantity } });
   },
@@ -269,6 +354,14 @@ function releaseSet(s: SimState, setId: SetId, regionId: RegionId): void {
   const set = s.sets[setId]!;
   const cfg = s.config;
   set.status = 'released';
+
+  // A product the player never allocated goes out on the default split. Anything
+  // the channels will not carry stays unallocated, and unallocated stock cannot
+  // sell — that is the honest cost of printing past your channel reach.
+  for (const pid of set.productIds) {
+    const p = s.products[pid]!;
+    if (Object.keys(p.allocations).length === 0) autoAllocate(s, p, set.publisherId);
+  }
 
   for (const cardId of set.cardIds) {
     const card = s.cards[cardId]!;
@@ -306,14 +399,26 @@ function releaseSet(s: SimState, setId: SetId, regionId: RegionId): void {
   // Attention is consumed on release. This is the flood penalty. Goodwill
   // burns harder the less attention has recovered since the last release —
   // releasing into an already-exhausted audience is what a flood looks like.
+  let goodwillBurn = 0;
   for (const seg of SEGMENTS) {
     const st = s.audience.segments[seg];
     const floodPenalty = Math.max(0, 1 - st.attention / cfg.attention.perReleaseCost);
+    const before = st.goodwill;
     st.goodwill = Math.max(0, st.goodwill - cfg.attention.goodwillSensitivity * 0.06 * (0.3 + floodPenalty));
+    goodwillBurn += st.goodwill - before;
     st.attention = Math.max(0, st.attention - cfg.attention.perReleaseCost);
     st.fatigue = Math.min(1, st.fatigue + cfg.attention.fatigueGain);
   }
   set.attentionCost = cfg.attention.perReleaseCost;
+
+  // `goodwillDelta` starts at what the release cost and is paid back by
+  // sell-through in `tickChannels`. A set that sells is a set that is forgiven.
+  set.performance = {
+    unitsSold: 0, unitsUnsold: 0, revenue: C(0),
+    sellThroughByChannel: {} as SetPerformance['sellThroughByChannel'],
+    chaseIndex: 0, aftermarketIndex: 0,
+    goodwillDelta: goodwillBurn / SEGMENTS.length,
+  };
   emit(s, 'setReleased', true, { setId, publisherId: set.publisherId }, { cards: set.cardIds.length });
 }
 
@@ -464,6 +569,9 @@ function tickSales(s: SimState, products: Product[]): void {
     if (set.status !== 'released') continue;
     const pub = s.publishers[set.publisherId]!;
 
+    const allocs = Object.entries(p.allocations) as Array<[ChannelId, ChannelAllocation]>;
+    if (allocs.length === 0) continue;
+
     const attention = SEGMENTS.reduce((n, g) => n + s.audience.segments[g].attention, 0) / SEGMENTS.length;
     const fatigue = SEGMENTS.reduce((n, g) => n + s.audience.segments[g].fatigue, 0) / SEGMENTS.length;
     const goodwill = SEGMENTS.reduce((n, g) => n + s.audience.segments[g].goodwill, 0) / SEGMENTS.length;
@@ -480,24 +588,190 @@ function tickSales(s: SimState, products: Product[]): void {
 
     const weeksOut = (s.tick - set.regionSchedule[0]!.releaseTick) / 52;
     const decay = Math.exp(-weeksOut * 1.4);
-    const demand = p.unitsPrinted * 0.06 * attention * shareFactor * (1 - fatigue * 0.6)
+    // The demand pool is what the audience wants this week, independent of who
+    // is selling it. The channels then compete for it.
+    const pool = p.unitsPrinted * 0.06 * attention * shareFactor * (1 - fatigue * 0.6)
       * (0.2 + 0.8 * goodwill) * (0.3 + pub.brandStanding) * (0.5 + chase) * decay;
+    if (pool <= 0) continue;
 
-    const sold = Math.max(0, Math.min(p.unitsRemaining, Math.round(demand)));
-    if (sold <= 0) continue;
-    p.unitsRemaining -= sold;
+    // Reach, relationship, and what the channel is actually charging. A store
+    // marking product up above MSRP moves less of it.
+    const weights: number[] = [];
+    let totalWeight = 0;
+    for (const [cid, a] of allocs) {
+      const ch = s.channels[cid];
+      if (!ch || a.unitsRemaining <= 0) { weights.push(0); continue; }
+      const traits = traitsFor(ch);
+      const priceResponse = Math.pow(p.msrp / Math.max(1, a.streetPrice), traits.priceElasticity);
+      const w = a.unitsRemaining * traits.reach * (0.5 + 0.5 * ch.relationship) * priceResponse;
+      weights.push(w);
+      totalWeight += w;
+    }
+    if (totalWeight <= 0) continue;
 
-    const revenue = sold * p.msrp * 0.62;
+    let revenue = 0;
+    let soldTotal = 0;
+    for (let i = 0; i < allocs.length; i++) {
+      const w = weights[i]!;
+      if (w <= 0) continue;
+      const [cid, a] = allocs[i]!;
+      const ch = s.channels[cid]!;
+
+      const sold = Math.max(0, Math.min(a.unitsRemaining, Math.round(pool * w / totalWeight)));
+      if (sold <= 0) continue;
+      a.unitsRemaining -= sold;
+      soldTotal += sold;
+
+      // The publisher is paid on MSRP, never on street price. A store that marks
+      // up hot product keeps that upside — CONCEPT.md §4.
+      revenue += sold * p.msrp * ch.marginShare;
+
+      if (a.unitsRemaining === 0 && a.soldOutTick === null) {
+        a.soldOutTick = s.tick;
+        emit(s, 'setSoldOut', true, { setId: set.id, channelId: ch.id }, { productId: p.id, kind: ch.kind });
+      }
+    }
+    if (soldTotal <= 0) continue;
+
+    p.unitsRemaining = Math.max(0, p.unitsRemaining - soldTotal);
     pub.cash = C(pub.cash + revenue);
     pub.ledger.push({ t: s.tick, amount: C(revenue), category: 'sales', note: p.kind, refId: p.id });
+    if (set.performance) set.performance.revenue = C(set.performance.revenue + revenue);
 
     // Selling builds exposure, which is what lets affection converge.
     for (const cid of set.cardIds) {
       const ip = s.ips[s.cards[cid]!.subjectIp];
-      if (ip) ip.exposure += sold / 20000;
+      if (ip) ip.exposure += soldTotal / 20000;
     }
-    if (p.unitsRemaining === 0) emit(s, 'setSoldOut', true, { setId: set.id }, { productId: p.id });
   }
+}
+
+const CHANNEL_STRIDE = 4;
+
+/**
+ * Street price, relationship drift, and souring. Runs on the same stride as the
+ * sealed market — relationships move over months, not weeks.
+ *
+ * Street price is what a consumer pays and it floats freely around MSRP
+ * (CONCEPT.md §4). An LGS marks up product that is moving; a big box holds the
+ * line whatever happens; stale stock gets discounted everywhere that is allowed
+ * to discount it.
+ */
+function tickChannels(s: SimState, products: Product[]): void {
+  if (s.tick % CHANNEL_STRIDE !== 0) return;
+  const cfg = s.config.channels;
+
+  // Per-channel accumulators for this evaluation.
+  const sellThrough = new Map<ChannelId, { moved: number; held: number; stale: number }>();
+  const setTotals = new Map<SetId, { sold: number; unsold: number }>();
+
+  for (const p of products) {
+    const set = s.sets[p.setId];
+    if (!set || set.status !== 'released') continue;
+    const weeksOut = s.tick - set.regionSchedule[0]!.releaseTick;
+    const staleness = Math.min(1, Math.max(0, weeksOut) * cfg.stalenessPerWeek);
+    // Past the window the set is settled history. Its leftovers still sit in the
+    // warehouse and still price the sealed market, but they stop souring the
+    // relationship — otherwise every old flop compounds forever and the channel
+    // is guaranteed to be lost eventually, whatever the player does now.
+    const counts = weeksOut <= cfg.evaluationWindowWeeks;
+
+    for (const [cid, a] of Object.entries(p.allocations) as Array<[ChannelId, ChannelAllocation]>) {
+      const ch = s.channels[cid];
+      if (!ch) continue;
+      const traits = traitsFor(ch);
+
+      const moved = a.units - a.unitsRemaining;
+      const pressure = a.units > 0 ? moved / a.units : 0;
+
+      if (a.unitsRemaining > 0) {
+        const target = p.msrp
+          * (1 + traits.markupSensitivity * pressure - traits.discountFloor * (1 - pressure) * staleness);
+        a.streetPrice = C(Math.max(p.msrp * 0.25,
+          a.streetPrice + (target - a.streetPrice) * cfg.streetPriceLerp));
+      }
+
+      if (counts) {
+        const acc = sellThrough.get(cid) ?? { moved: 0, held: 0, stale: 0 };
+        acc.moved += moved;
+        acc.held += a.units;
+        if (weeksOut > cfg.unsoldGraceWeeks) acc.stale += a.unitsRemaining * traits.strainSensitivity;
+        sellThrough.set(cid, acc);
+      }
+
+      if (set.performance) set.performance.sellThroughByChannel[cid] = U(pressure);
+    }
+
+    // Read the totals off the product, not off the allocations: losing a
+    // channel deletes its allocation, and `unitsSold` must not fall when that
+    // happens. The units were still sold.
+    const prior = setTotals.get(set.id);
+    setTotals.set(set.id, {
+      sold: (prior?.sold ?? 0) + (p.unitsPrinted - p.unitsRemaining),
+      unsold: (prior?.unsold ?? 0) + p.unitsRemaining,
+    });
+  }
+
+  for (const [setId, totals] of setTotals) {
+    const perf = s.sets[setId]?.performance;
+    if (!perf) continue;
+    perf.unitsSold = totals.sold;
+    perf.unitsUnsold = totals.unsold;
+  }
+
+  // Relationship drift. Selling through builds it; leaving stock on the shelf
+  // past the grace period burns it; getting nothing to sell burns it slowly.
+  for (const ch of Object.values(s.channels)) {
+    if (!ch.unlocked) continue;
+    const before = ch.relationship;
+    const acc = sellThrough.get(ch.id);
+    const traits = traitsFor(ch);
+
+    if (acc && acc.held > 0) {
+      const rate = acc.moved / acc.held;
+      if (rate >= cfg.sellThroughTarget) {
+        ch.relationship = U(ch.relationship + cfg.relationshipGainPerSellThrough * (rate - cfg.sellThroughTarget + 0.2));
+        // Selling through your channels is what pays the goodwill back.
+        const gain = traits.goodwillPerSellThrough * rate;
+        for (const g of SEGMENTS) {
+          const st = s.audience.segments[g];
+          st.goodwill = U(st.goodwill + gain);
+        }
+      }
+      if (acc.stale > 0) {
+        const strain = Math.min(1, acc.stale / Math.max(1, acc.held));
+        ch.relationship = U(ch.relationship - cfg.relationshipLossPerUnsold * strain);
+      }
+    } else if (ch.lastAllocatedTick !== null && s.tick - ch.lastAllocatedTick > cfg.idleGraceWeeks) {
+      ch.relationship = U(ch.relationship - cfg.idleDriftPerTick);
+    }
+
+    if (before > cfg.strainThreshold && ch.relationship <= cfg.strainThreshold) {
+      emit(s, 'channelStrained', true, { channelId: ch.id }, { relationship: ch.relationship, kind: ch.kind });
+    }
+    // Your LGS network and your own store never drop you. CONCEPT.md §7 makes
+    // LGS-only the floor that relationship death collapses you *to*, so losing
+    // it would leave a publisher with no way to sell anything at all. Their
+    // relationship still sinks, and a sunk relationship still costs capacity.
+    const canBeLost = ch.kind !== 'lgs' && ch.kind !== 'direct';
+    if (canBeLost && ch.relationship < cfg.lossThreshold) loseChannel(s, ch);
+  }
+}
+
+/**
+ * A soured channel drops you. This is the "relationship death" path in
+ * CONCEPT.md §7 — lose enough of them and you collapse back to LGS volume.
+ * Stock already allocated to the channel is stranded there.
+ */
+function loseChannel(s: SimState, ch: Channel): void {
+  ch.unlocked = false;
+  for (const pub of Object.values(s.publishers)) {
+    const i = pub.unlocks.channels.indexOf(ch.id);
+    if (i >= 0) pub.unlocks.channels.splice(i, 1);
+    if (ch.kind === 'direct') pub.unlocks.directStore = false;
+  }
+  for (const p of Object.values(s.products)) delete p.allocations[ch.id];
+  emit(s, 'channelLost', true, { channelId: ch.id }, { relationship: ch.relationship, kind: ch.kind });
 }
 
 function tickAudience(s: SimState): void {
@@ -536,7 +810,15 @@ function tickFinance(s: SimState): void {
     } else {
       pub.deadTick = s.tick;
       const unsold = Object.values(s.products).reduce((n, p) => n + p.unitsRemaining, 0);
-      pub.deathCause = unsold > 20000 ? 'overprint' : 'debt_spiral';
+      // Dying on unsold stock is overprint death by default. It is only
+      // `channel_collapse` if the channels actually went away — a publisher that
+      // never had the reach in the first place simply printed too much.
+      const lostAChannel = s.events.some(
+        e => e.kind === 'channelLost' && (e.refs.publisherId ?? pub.id) === pub.id,
+      );
+      pub.deathCause = unsold > 20000
+        ? (lostAChannel ? 'channel_collapse' : 'overprint')
+        : 'debt_spiral';
       emit(s, 'studioDead', true, { publisherId: pub.id }, { cause: pub.deathCause, tick: s.tick });
     }
   }
@@ -610,6 +892,7 @@ export function tick(s: SimState): void {
   const { printings, products, ips } = lists(s);
   tickAffection(s, ips);
   tickSales(s, products);
+  tickChannels(s, products);
   tickSealed(s, products);
   tickPrices(s, printings);
   tickAudience(s);

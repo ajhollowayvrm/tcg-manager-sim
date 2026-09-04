@@ -4,10 +4,12 @@
  * no research/community/analytics unlocks yet.
  */
 import type {
-  SimState, SimConfig, Tick, Cents, PublisherId, RegionId, ChannelId, ArtistId,
+  SimState, SimConfig, Tick, Cents, PublisherId, RegionId, ArtistId,
   AudienceSegment, Rarity, ArtistPersonality, ArtistSpecialty, IpKind, ProductKind,
+  Channel,
 } from './types.ts';
 import { seedRng, rand, randRange, pick } from './rng.ts';
+import { CHANNEL_IDS } from './channels.ts';
 import { emptySeries } from './series.ts';
 
 export const SEGMENTS: AudienceSegment[] = [
@@ -141,22 +143,45 @@ export function createWorld(seed: string, config: SimConfig): SimState {
     knowledge: 0.3,
   };
 
-  const lgsId = 'ch_lgs' as ChannelId;
-  s.channels[lgsId] = {
-    id: lgsId,
-    name: 'LGS Network',
-    kind: 'lgs',
-    regionId: REGION_US,
-    relationship: 0.6,
-    capacityUnits: 100_000,
-    marginShare: 0.55,
-    minimumOrder: 1,
-    reliability: 0.8,
-    requiredBrandStanding: 0,
-    unlocked: true,
-    queueCapacity: null,
-  };
-  s.publishers[playerId]!.unlocks.channels.push(lgsId);
+  // The full roster exists from tick 0; only the LGS network is open. The rest
+  // are bought with the `purchaseUnlock` decision once brand standing clears
+  // their gate, in the order CONCEPT.md §9 lays out.
+  const CHANNEL_SEEDS: Array<Omit<Channel, 'lastAllocatedTick'>> = [
+    {
+      id: CHANNEL_IDS.lgs, name: 'LGS Network', kind: 'lgs', regionId: REGION_US,
+      relationship: 0.6, capacityUnits: 12_000, marginShare: 0.55,
+      minimumOrder: 1, reliability: 0.8,
+      requiredBrandStanding: 0, unlocked: true, queueCapacity: null,
+    },
+    {
+      id: CHANNEL_IDS.online, name: 'Online Retail', kind: 'online', regionId: REGION_US,
+      relationship: 0.5, capacityUnits: 40_000, marginShare: 0.5,
+      minimumOrder: 500, reliability: 0.85,
+      requiredBrandStanding: 0.12, unlocked: false, queueCapacity: null,
+    },
+    {
+      id: CHANNEL_IDS.distributor, name: 'National Distributor', kind: 'distributor', regionId: REGION_US,
+      relationship: 0.5, capacityUnits: 120_000, marginShare: 0.38,
+      minimumOrder: 2_000, reliability: 0.9,
+      requiredBrandStanding: 0.25, unlocked: false, queueCapacity: null,
+    },
+    {
+      id: CHANNEL_IDS.bigbox, name: 'Big Box Chains', kind: 'bigbox', regionId: REGION_US,
+      relationship: 0.4, capacityUnits: 250_000, marginShare: 0.3,
+      minimumOrder: 10_000, reliability: 0.75,
+      requiredBrandStanding: 0.45, unlocked: false, queueCapacity: null,
+    },
+    {
+      id: CHANNEL_IDS.direct, name: 'Direct Store', kind: 'direct', regionId: REGION_US,
+      relationship: 1, capacityUnits: 25_000, marginShare: 1,
+      minimumOrder: 1, reliability: 1,
+      requiredBrandStanding: 0.6, unlocked: false, queueCapacity: 5_000,
+    },
+  ];
+  for (const seed of CHANNEL_SEEDS) {
+    s.channels[seed.id] = { ...seed, lastAllocatedTick: null };
+    if (seed.unlocked) s.publishers[playerId]!.unlocks.channels.push(seed.id);
+  }
 
   // Rivals exist from tick 0 and already own most of the audience. They don't
   // release sets, spend attention, or move yet — their policy is recorded for

@@ -19,6 +19,14 @@ export interface RunMetrics {
   flopRate: number;
   fatigue: number;
   brandStanding: number;
+  /** Channels the publisher can still ship to at the end of the run. */
+  channelsUnlocked: number;
+  /** How many times a channel soured all the way out. */
+  channelsLost: number;
+  /** Lowest relationship across the channels still open. */
+  worstRelationship: number;
+  /** Share of every printed unit that actually reached a buyer. */
+  avgSellThrough: number;
 }
 
 const dollars = (cents: number) => cents / 100;
@@ -75,6 +83,18 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
     ? products.filter(p => p.unitsPrinted > 0 && p.unitsRemaining / p.unitsPrinted > 0.5).length / products.length
     : 0;
 
+  const openChannels = pub.unlocks.channels
+    .map(id => s.channels[id])
+    .filter(ch => !!ch && ch.unlocked);
+  const channelsLost = s.events.filter(e => e.kind === 'channelLost').length;
+  const worstRelationship = openChannels.length
+    ? Math.min(...openChannels.map(ch => ch!.relationship))
+    : 0;
+
+  const printedTotal = products.reduce((n, p) => n + p.unitsPrinted, 0);
+  const soldTotal = products.reduce((n, p) => n + (p.unitsPrinted - p.unitsRemaining), 0);
+  const avgSellThrough = printedTotal > 0 ? soldTotal / printedTotal : 0;
+
   const segments = Object.values(s.audience.segments);
   const fatigueAvg = segments.length
     ? segments.reduce((n, seg) => n + seg.fatigue, 0) / segments.length
@@ -95,6 +115,10 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
     flopRate,
     fatigue: fatigueAvg,
     brandStanding: pub.brandStanding,
+    channelsUnlocked: openChannels.length,
+    channelsLost,
+    worstRelationship,
+    avgSellThrough,
   };
 }
 

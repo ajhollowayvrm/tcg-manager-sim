@@ -88,6 +88,10 @@ const table = botNames.map(b => {
     maxCard$: median(r.map(x => x.maxCardPrice)).toFixed(0),
     sealed$: median(r.map(x => x.topSealedPrice)).toFixed(0),
     flopRate: mean(r.map(x => x.flopRate)).toFixed(2),
+    sellThru: mean(r.map(x => x.avgSellThrough)).toFixed(2),
+    chOpen: mean(r.map(x => x.channelsUnlocked)).toFixed(1),
+    chLost: mean(r.map(x => x.channelsLost)).toFixed(2),
+    worstRel: mean(r.map(x => x.worstRelationship)).toFixed(2),
     fatigue: mean(r.map(x => x.fatigue)).toFixed(2),
     brand: mean(r.map(x => x.brandStanding)).toFixed(3),
   };
