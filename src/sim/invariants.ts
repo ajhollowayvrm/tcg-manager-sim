@@ -29,6 +29,52 @@ export function checkInvariants(s: SimState): string[] {
     if (!Number.isFinite(pr.truth.chase) || pr.truth.chase <= 0) {
       bad.push(`printing ${pr.id} bad chase: ${pr.truth.chase}`);
     }
+
+    // Graded copies are a subset of the opened population, not an extra one:
+    // grading moves a copy from the raw pool into a slab.
+    let graded = 0;
+    for (const [gid, byTier] of Object.entries(pr.population.graded)) {
+      if (!s.graders[gid as keyof typeof s.graders]) {
+        bad.push(`printing ${pr.id} pop report under unknown grader ${gid}`);
+      }
+      for (const [tier, count] of Object.entries(byTier)) {
+        if (!Number.isFinite(count) || (count ?? 0) < 0) {
+          bad.push(`printing ${pr.id} bad pop count ${gid}/${tier}: ${count}`);
+        } else graded += count ?? 0;
+      }
+    }
+    if (graded > pr.population.opened) {
+      bad.push(`printing ${pr.id} graded past opened: ${graded}/${pr.population.opened}`);
+    }
+    for (const [gid, byTier] of Object.entries(pr.market.gradedPrices)) {
+      for (const [tier, price] of Object.entries(byTier)) {
+        if (!Number.isFinite(price) || (price ?? 0) <= 0) {
+          bad.push(`printing ${pr.id} bad graded price ${gid}/${tier}: ${price}`);
+        }
+      }
+    }
+  }
+
+  for (const sub of s.market.gradingQueue) {
+    if (!s.printings[sub.printingId]) bad.push(`grading submission for unknown printing ${sub.printingId}`);
+    if (!s.graders[sub.graderId]) bad.push(`grading submission to unknown grader ${sub.graderId}`);
+    if (!Number.isFinite(sub.quantity) || sub.quantity < 1) {
+      bad.push(`grading submission of ${sub.quantity} copies`);
+    }
+    if ((sub.returnsTick as number) < (sub.submittedTick as number)) {
+      bad.push(`grading submission returns before it was sent: ${sub.returnsTick} < ${sub.submittedTick}`);
+    }
+    // A submission that is already due has not been resolved, which means the
+    // return pass skipped it and the copies are stranded in the queue forever.
+    if ((sub.returnsTick as number) <= s.tick) {
+      bad.push(`grading submission overdue: due ${sub.returnsTick}, now ${s.tick}`);
+    }
+  }
+
+  for (const g of Object.values(s.graders)) {
+    if (g.reputation < 0 || g.reputation > 1) bad.push(`grader ${g.id} reputation out of range: ${g.reputation}`);
+    if (g.marketShare < 0 || g.marketShare > 1) bad.push(`grader ${g.id} share out of range: ${g.marketShare}`);
+    if (g.tiers.length === 0) bad.push(`grader ${g.id} has no service tiers`);
   }
 
   for (const p of Object.values(s.products)) {

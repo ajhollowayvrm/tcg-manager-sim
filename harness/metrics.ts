@@ -58,6 +58,30 @@ export interface RunMetrics {
    * and it should rise with the number of previews the campaign ran.
    */
   signalCorrelation: number;
+
+  /** Copies sitting in slabs at the end of the run. */
+  gradedCopies: number;
+  /**
+   * Share of the opened copies that got graded, counted only over printings
+   * anybody submitted at all. Against the whole population this is a number
+   * about bulk commons — most printings never clear the grading fee, which is
+   * the point of the fee.
+   */
+  gradedShare: number;
+  /** Share of all printings carrying a pop report. */
+  gradedPrintingShare: number;
+  /** Share of graded copies that came back a 10. Print quality is what moves this. */
+  gemRate: number;
+  /**
+   * Median premium a 10 carries over the same printing's raw price. This is
+   * the number the grading layer lives on: too low and nobody would submit,
+   * too high and raw prices stop meaning anything.
+   */
+  gem10Premium: number;
+  /** Printings with any pop report at all. Grading is meant to be a minority of them. */
+  printingsGraded: number;
+  /** Graders taking submissions at the end of the run. The third is brand-gated. */
+  gradersActive: number;
 }
 
 /** Pearson r. Returns 0 rather than NaN for a degenerate sample. */
@@ -182,6 +206,28 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
     signalPairs.map(set => set.performance!.chaseIndex),
   );
 
+  // Grading. Read off the pop reports rather than the event log: unlike drops,
+  // a pop report is cumulative state that nothing prunes.
+  let gradedCopies = 0, gems = 0, openedGraded = 0, printingsGraded = 0;
+  const gemPremiums: number[] = [];
+  for (const pr of printings) {
+    let onThis = 0;
+    for (const [gid, byTier] of Object.entries(pr.population.graded)) {
+      for (const [tier, count] of Object.entries(byTier)) {
+        onThis += count ?? 0;
+        if (tier === '10') gems += count ?? 0;
+      }
+      const tenPrice = pr.market.gradedPrices[gid as keyof typeof pr.market.gradedPrices]?.['10'];
+      if (tenPrice && pr.market.rawPrice > 0) gemPremiums.push(tenPrice / pr.market.rawPrice);
+    }
+    gradedCopies += onThis;
+    if (onThis > 0) { printingsGraded += 1; openedGraded += pr.population.opened; }
+  }
+  gemPremiums.sort((a, b) => a - b);
+  const gem10Premium = gemPremiums.length ? gemPremiums[Math.floor(gemPremiums.length / 2)]! : 0;
+  const gradersActive = Object.values(s.graders)
+    .filter(g => (g.activeFromTick as number) <= (s.tick as number)).length;
+
   const segments = Object.values(s.audience.segments);
   const fatigueAvg = segments.length
     ? segments.reduce((n, seg) => n + seg.fatigue, 0) / segments.length
@@ -220,6 +266,13 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
     marketingTotal,
     prereleasesHosted,
     signalCorrelation,
+    gradedCopies,
+    gradedShare: openedGraded > 0 ? gradedCopies / openedGraded : 0,
+    gradedPrintingShare: printings.length > 0 ? printingsGraded / printings.length : 0,
+    gemRate: gradedCopies > 0 ? gems / gradedCopies : 0,
+    gem10Premium,
+    printingsGraded,
+    gradersActive,
   };
 }
 

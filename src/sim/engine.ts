@@ -3,7 +3,7 @@ import type {
   ProductLineId, RegionId, ChannelId, ArtistId, IpEntity, Card, CardSet, Product,
   Printing, SimEvent, EventId, SetType, Rarity, ProductKind, PrintQualityTier,
   Treatment, ArtBrief, UnlockState, ChannelAllocation, Channel, SetPerformance,
-  Drop, DropId,
+  Drop, DropId, Grader, GradeTier, GradingSubmission,
 } from './types.ts';
 import { rand, randRange, randInt, pick, chance, gauss } from './rng.ts';
 import { emptySeries, writePoint, compact } from './series.ts';
@@ -1469,6 +1469,206 @@ function tickArtists(s: SimState): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Grading and pop reports (CONCEPT.md §6.4)
+// ---------------------------------------------------------------------------
+
+/**
+ * The market grades cards; the publisher does not. What the publisher decides
+ * is print quality, which moves the grade distribution, and brand standing,
+ * which is what pulls extra graders into their market. Everything here is an
+ * observer of the raw price: it reads `market.rawPrice` and writes graded
+ * prices and pop reports beside it, and nothing in the value engine reads back.
+ *
+ * All rolls come from `s.gradingRng`. Sharing the main stream would renumber
+ * every later draw in the run, which would move the five value targets for a
+ * reason that has nothing to do with value.
+ */
+const GRADING_STRIDE = 4;
+
+/** Grade boundaries on the latent 1-10 condition score, best first. */
+const GRADE_CUTS: Array<{ tier: GradeTier; min: number }> = [
+  { tier: '10', min: 9.75 },
+  { tier: '9.5', min: 9.25 },
+  { tier: '9', min: 8.5 },
+  { tier: '8', min: 7.5 },
+  { tier: '7', min: 6.5 },
+  { tier: 'below7', min: -Infinity },
+];
+
+/** Abramowitz-Stegun 7.1.26. Good to ~1e-7, which is far past what this needs. */
+function normalCdf(x: number, mean: number, sigma: number): number {
+  const z = (x - mean) / (sigma * Math.SQRT2);
+  const t = 1 / (1 + 0.3275911 * Math.abs(z));
+  const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t
+    + 0.254829592) * t * Math.exp(-z * z);
+  const erf = z >= 0 ? y : -y;
+  return 0.5 * (1 + erf);
+}
+
+/** Copies of this printing sitting in slabs, across every grader and grade. */
+function gradedTotal(pr: Printing): number {
+  let n = 0;
+  for (const byTier of Object.values(pr.population.graded)) {
+    for (const c of Object.values(byTier)) n += c ?? 0;
+  }
+  return n;
+}
+
+/** Graders taking submissions this tick. A dormant one has not entered yet. */
+function activeGraders(s: SimState): Grader[] {
+  const out: Grader[] = [];
+  for (const g of Object.values(s.graders)) {
+    if ((g.activeFromTick as number) <= s.tick) out.push(g);
+  }
+  return out;
+}
+
+/**
+ * Extra graders are something brand standing buys. A dormant grader does not
+ * cover a publisher nobody has heard of, and once it enters it stays.
+ */
+function tickGraderEntry(s: SimState): void {
+  const gate = s.config.grading.sideGraderBrandGate;
+  if (s.publishers[s.playerId]!.brandStanding < gate) return;
+  for (const g of Object.values(s.graders)) {
+    if ((g.activeFromTick as number) <= s.tick) continue;
+    g.activeFromTick = s.tick;
+    emit(s, 'graderEnteredMarket', true, {}, { grader: g.id, reputation: g.reputation });
+  }
+}
+
+/**
+ * The best tier the card can justify. A submitter pays up for a faster
+ * turnaround on a card worth paying up for, and a cheap card either goes bulk
+ * or does not go at all — the fee is the hurdle that keeps bulk commons out of
+ * the pop report.
+ */
+function chooseTier(g: Grader, rawPrice: Cents, worthMultiple: number): Grader['tiers'][number] | null {
+  let best: Grader['tiers'][number] | null = null;
+  for (const t of g.tiers) {
+    if (rawPrice >= t.price * worthMultiple && (best === null || t.price > best.price)) best = t;
+  }
+  return best;
+}
+
+/** Submissions come back graded. Returns land on the tick they are due. */
+function resolveGradingReturns(s: SimState): void {
+  const queue = s.market.gradingQueue;
+  if (queue.length === 0) return;
+  const cfg = s.config.grading;
+  const kept: GradingSubmission[] = [];
+  for (const sub of queue) {
+    if ((sub.returnsTick as number) > s.tick) { kept.push(sub); continue; }
+    const pr = s.printings[sub.printingId];
+    const grader = s.graders[sub.graderId];
+    if (!pr || !grader) continue;
+
+    // Condition is a latent normal: where its mean sits is the print-quality
+    // decision showing up years later, and how far the grader shifts it is
+    // their strictness. Copies wear while they sit in circulation.
+    const ageYears = Math.max(0, (s.tick - pr.releaseTick) / 52);
+    const wear = Math.min(cfg.agePenaltyCap, cfg.agePenaltyPerYear * ageYears);
+    const mean = cfg.conditionMean
+      + cfg.gradeShiftWeight * s.config.printing.qualityGradeShift[pr.printQuality]
+      - cfg.strictnessWeight * (grader.strictness - 1)
+      - wear
+      // One roll for the whole submission: two batches of the same card from
+      // the same press do not grade identically.
+      + gauss(s.gradingRng, 0, cfg.conditionSigma * 0.35);
+
+    const byTier = (pr.population.graded[grader.id] ??= {});
+    let assigned = 0;
+    for (let i = 0; i < GRADE_CUTS.length; i++) {
+      const cut = GRADE_CUTS[i]!;
+      const upper = i === 0 ? 1 : normalCdf(GRADE_CUTS[i - 1]!.min, mean, cfg.conditionSigma);
+      const lower = cut.min === -Infinity ? 0 : normalCdf(cut.min, mean, cfg.conditionSigma);
+      const share = Math.max(0, upper - lower);
+      // The last tier takes the rounding remainder, so a submission never
+      // gains or loses copies to the grade split.
+      const n = i === GRADE_CUTS.length - 1
+        ? sub.quantity - assigned
+        : Math.min(sub.quantity - assigned, Math.round(sub.quantity * share));
+      if (n <= 0) continue;
+      byTier[cut.tier] = (byTier[cut.tier] ?? 0) + n;
+      assigned += n;
+    }
+  }
+  s.market.gradingQueue = kept;
+}
+
+/**
+ * Copies go out for grading, and graded prices are marked. Strided like the
+ * price loop: a pop report moves on the scale of months, not weeks.
+ */
+function tickGrading(s: SimState, printings: Printing[]): void {
+  const cfg = s.config.grading;
+  tickGraderEntry(s);
+  // Returns land every tick. Only the roster walk below is strided.
+  resolveGradingReturns(s);
+  const graders = activeGraders(s);
+  if (graders.length === 0) return;
+  let shareTotal = 0;
+  for (const g of graders) shareTotal += g.marketShare;
+  if (shareTotal <= 0) return;
+
+  const writeThreshold = s.config.history.writeThreshold;
+  const phase = s.tick % GRADING_STRIDE;
+  for (let i = phase; i < printings.length; i += GRADING_STRIDE) {
+    const pr = printings[i]!;
+    const graded = gradedTotal(pr);
+
+    // --- submissions ---
+    const raw = pr.market.rawPrice;
+    const pool = Math.max(0, pr.population.opened - pr.population.destroyed - graded);
+    const room = Math.max(0, cfg.maxGradedShare * pr.population.opened - graded);
+    if (pool > 0 && room >= 1) {
+      // Who takes it is market share, not a coin flip: the big grader grades
+      // most of everything, which is what makes its pop report the crowded one.
+      let roll = rand(s.gradingRng) * shareTotal;
+      let grader = graders[graders.length - 1]!;
+      for (const g of graders) { roll -= g.marketShare; if (roll <= 0) { grader = g; break; } }
+
+      const tier = chooseTier(grader, raw, cfg.feeWorthMultiple);
+      if (tier) {
+        const appetite = Math.min(cfg.appetiteCeiling, raw / (tier.price * cfg.feeWorthMultiple));
+        const wanted = pool * cfg.submitRatePerTick * appetite * GRADING_STRIDE;
+        const quantity = Math.floor(Math.min(wanted, room, pool));
+        if (quantity >= 1) {
+          s.market.gradingQueue.push({
+            printingId: pr.id, graderId: grader.id, tierName: tier.name, quantity,
+            submittedTick: s.tick, returnsTick: T(s.tick + tier.turnaroundWeeks),
+          });
+        }
+      }
+    }
+
+    // --- marking the graded prices ---
+    if (graded === 0) continue;
+    for (const g of graders) {
+      const pops = pr.population.graded[g.id];
+      if (!pops) continue;
+      const prices = (pr.market.gradedPrices[g.id] ??= {});
+      const histories = (pr.market.gradedHistory[g.id] ??= {});
+      // Reputation is what a slab from this grader is trusted for, either way.
+      const rep = 1 + cfg.reputationWeight * (g.reputation - 0.5) * 2;
+      for (const [tier, count] of Object.entries(pops) as Array<[GradeTier, number]>) {
+        if (!count) continue;
+        // Pop report position. A 10 that a thousand other people also have is
+        // not the same card as the only one — CONCEPT.md §5's condition term.
+        const scarcity = Math.max(cfg.popScarcityFloor, Math.min(cfg.popScarcityCeiling,
+          Math.pow(cfg.popScarcityReference / count, cfg.popScarcityExponent)));
+        const target = raw * cfg.tierMultiplier[tier] * rep * scarcity;
+        const prev = prices[tier];
+        const next = C(prev === undefined ? target : prev * (1 - cfg.priceLerp) + target * cfg.priceLerp);
+        prices[tier] = next;
+        (histories[tier] ??= emptySeries(s.tick));
+        writePoint(histories[tier]!, s.tick, next, writeThreshold);
+      }
+    }
+  }
+}
+
 function tickCompaction(s: SimState): void {
   if (s.tick % 52 !== 0) return;
   // Completed drops are feed history, and the feed does not reach back decades.
@@ -1478,7 +1678,14 @@ function tickCompaction(s: SimState): void {
     if (d.status === 'complete' && (d.scheduledTick as number) < dropCutoff) delete s.drops[d.id];
   }
   const { printings, products, ips } = lists(s);
-  for (const pr of printings) compact(pr.market.rawHistory, s.tick, s.config.history);
+  for (const pr of printings) {
+    compact(pr.market.rawHistory, s.tick, s.config.history);
+    for (const byTier of Object.values(pr.market.gradedHistory)) {
+      for (const series of Object.values(byTier)) {
+        if (series) compact(series, s.tick, s.config.history);
+      }
+    }
+  }
   for (const p of products) compact(p.market.history, s.tick, s.config.history);
   for (const ip of ips) compact(ip.affectionHistory, s.tick, s.config.history);
 }
@@ -1566,6 +1773,7 @@ export function tick(s: SimState): void {
   tickChannels(s, products);
   tickSealed(s, products);
   tickPrices(s, printings);
+  tickGrading(s, printings);
   tickAudience(s);
   tickArtists(s);
   tickFinance(s);

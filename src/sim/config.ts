@@ -176,6 +176,42 @@ export const defaultConfig: SimConfig = {
     heatFromHype: 0.8,
   },
 
+  // First-guess numbers. The shape that matters: grading has to be worth doing
+  // only on cards that are already worth something (the fee is a real hurdle),
+  // and a gem has to stay rare enough to be worth chasing — which is what print
+  // quality and grader strictness between them decide.
+  grading: {
+    submitRatePerTick: 0.004,
+    feeWorthMultiple: 5,
+    appetiteCeiling: 4,
+    maxGradedShare: 0.35,
+    // On the familiar 1-10 scale. A standard-quality copy averages a 9, so a
+    // 10 is a tail event rather than the expected outcome of submitting.
+    conditionMean: 9,
+    conditionSigma: 0.7,
+    gradeShiftWeight: 3,
+    strictnessWeight: 0.6,
+    agePenaltyPerYear: 0.02,
+    agePenaltyCap: 0.8,
+    tierMultiplier: { '10': 4.5, '9.5': 2.4, '9': 1.6, '8': 1.1, '7': 0.85, below7: 0.55 },
+    reputationWeight: 0.35,
+    // A pop report of one tier of one printing is counted in tens, not
+    // thousands, so the reference has to sit down where the counts actually
+    // are. At 250 every tier was pinned to `popScarcityCeiling` and the
+    // pop-report term stopped saying anything at all.
+    popScarcityReference: 8,
+    popScarcityExponent: 0.35,
+    popScarcityCeiling: 2.5,
+    popScarcityFloor: 0.5,
+    priceLerp: 0.35,
+    // Swept over 4 seeds x 50 years on `conservative`: 0.4 lets the third
+    // grader in around year 3, before the publisher is anybody, and 0.65 keeps
+    // it out until year 26 in the slower seeds. At 0.55 it arrives between
+    // years 4 and 13 depending on how the run has gone, which is what a
+    // brand-standing reward should look like.
+    sideGraderBrandGate: 0.55,
+  },
+
   region: {
     knowledgeGainPerRelease: 0.02,
     knowledgeGainPerResearch: 0.05,
