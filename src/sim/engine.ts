@@ -59,6 +59,7 @@ export function submit(s: SimState, d: Decision): void { s.inbox.push(d); }
 
 function createIp(s: SimState, id: IpId, name: string, kind: IpEntity['kind']): void {
   const r = s.rng;
+  bumpRoster(s);
   s.ips[id] = {
     id, publisherId: s.playerId, name, kind, createdTick: s.tick, relatedIps: [],
     truth: {
@@ -75,6 +76,7 @@ function createIp(s: SimState, id: IpId, name: string, kind: IpEntity['kind']): 
 }
 
 function createSet(s: SimState, id: SetId, name: string, type: SetType, size: number): void {
+  bumpRoster(s);
   s.sets[id] = {
     id, publisherId: s.playerId, name, type, status: 'design',
     cardIds: [], productIds: [], collabId: null,
@@ -117,6 +119,7 @@ function defineProduct(
   s: SimState, id: ProductId, setId: SetId, kind: ProductKind,
   regionId: RegionId, packs: number, msrp: number, cardsPerPack = 10,
 ): void {
+  bumpRoster(s);
   s.products[id] = {
     id, lineId: `line_${kind}` as ProductLineId, setId, regionId, kind,
     packsPerUnit: packs, cardsPerPack,
@@ -185,6 +188,7 @@ function reprint(s: SimState, cardId: CardId, intoSetId: SetId, quantity: number
       }
     : null;
 
+  bumpRoster(s);
   s.printings[id] = {
     id, cardId, setId: intoSetId, regionId: 'reg_us' as RegionId, releaseTick: s.tick,
     printQuantity: Math.max(1, quantity), pullRate: RARITY_PULL[card.rarity] / 10,
@@ -478,6 +482,7 @@ function releaseSet(s: SimState, setId: SetId, regionId: RegionId): void {
         rawHistory: emptySeries(s.tick), gradedHistory: {} as any,
       },
     };
+    bumpRoster(s);
     s.printings[id] = printing;
     s.printingByCard[cardId] = id;
 
@@ -574,8 +579,18 @@ const PRICE_STRIDE = 4;
 
 function tickPrices(s: SimState, printings: Printing[]): void {
   const cfg = s.config;
+  const v = cfg.value;
   const yearFrac = PRICE_STRIDE / 52;
   const phase = s.tick % PRICE_STRIDE;
+  // Loop invariants. `heatKeep` in particular is a `Math.pow` with two constant
+  // arguments that used to run once per printing per tick.
+  const heatKeep = Math.pow(1 - v.heatDecayPerTick, PRICE_STRIDE);
+  const standingRef = v.baseCardPrice * v.nostalgiaStandingReference;
+  const shockRate = v.shockChancePerTick * PRICE_STRIDE;
+  const resurgenceChance = 0.02 * PRICE_STRIDE;
+  const errorDiscoveryChance = cfg.printing.errorDiscoveryChance;
+  const writeThreshold = cfg.history.writeThreshold;
+  const climate = s.market.climate;
   for (let i = phase; i < printings.length; i += PRICE_STRIDE) {
     const pr = printings[i]!;
     const card = s.cards[pr.cardId]!;
@@ -586,60 +601,59 @@ function tickPrices(s: SimState, printings: Printing[]): void {
     // Rarity's price effect flows only through scarcity (print quantity is
     // already rarity-scaled via RARITY_PULL at release) — see CONCEPT.md §5.
     // RARITY_WEIGHT stays out of price; it's a demand-side signal in tickSales.
-    const scarcity = Math.pow(cfg.value.referencePopulation / surviving, cfg.value.scarcityExponent);
-    const art = 1 + card.artQuality * artist.reputation * cfg.value.artMultiplierWeight;
+    const scarcity = Math.pow(v.referencePopulation / surviving, v.scarcityExponent);
+    const art = 1 + card.artQuality * artist.reputation * v.artMultiplierWeight;
 
-    pr.market.heat = Math.min(cfg.value.heatCeiling,
-      1 + (pr.market.heat - 1) * Math.pow(1 - cfg.value.heatDecayPerTick, PRICE_STRIDE));
+    pr.market.heat = Math.min(v.heatCeiling, 1 + (pr.market.heat - 1) * heatKeep);
 
     // Nostalgia compounds only on a printing the market still wants, and only
     // as fast as it already stands above the pack. A printing nobody wants
     // drifts back toward 1. The old unconditional 5%/year lifted every price
     // together, which set the level far too high and flattened the shape.
-    const standing = pr.market.rawPrice / (cfg.value.baseCardPrice * cfg.value.nostalgiaStandingReference);
-    const gate = Math.min(1, desire / cfg.value.nostalgiaDesireReference) * Math.min(1, standing);
+    const standing = pr.market.rawPrice / standingRef;
+    const gate = Math.min(1, desire / v.nostalgiaDesireReference) * Math.min(1, standing);
     const brand = 0.4 + s.publishers[card.publisherId]!.brandStanding;
-    const nostalgiaRate = cfg.value.nostalgiaRatePerYear * gate * brand
-      - cfg.value.nostalgiaDecayPerYear * (1 - gate);
-    pr.market.nostalgia = Math.max(1, Math.min(cfg.value.nostalgiaCeiling,
+    const nostalgiaRate = v.nostalgiaRatePerYear * gate * brand
+      - v.nostalgiaDecayPerYear * (1 - gate);
+    pr.market.nostalgia = Math.max(1, Math.min(v.nostalgiaCeiling,
       pr.market.nostalgia * (1 + nostalgiaRate * yearFrac)));
 
     // A visible speculation event. The hidden chase roll weights it, so the
     // cards that spike are the cards the market quietly wanted — CONCEPT.md
     // §5, "random commons should occasionally take off".
-    const shockChance = cfg.value.shockChancePerTick * PRICE_STRIDE * pr.truth.chase
-      * Math.min(2, desire / cfg.value.nostalgiaDesireReference);
+    const shockChance = shockRate * pr.truth.chase
+      * Math.min(2, desire / v.nostalgiaDesireReference);
     if (chance(s.rng, shockChance)) {
-      pr.market.heat = Math.min(cfg.value.heatCeiling, pr.market.heat + cfg.value.shockGain);
+      pr.market.heat = Math.min(v.heatCeiling, pr.market.heat + v.shockGain);
       emit(s, 'priceSpike', false, { printingId: pr.id, cardId: pr.cardId }, { heat: pr.market.heat });
     }
     // Errors sit in circulation unnoticed until somebody spots one.
-    if (pr.error && pr.error.discoveredTick === null && chance(s.rng, cfg.printing.errorDiscoveryChance)) {
+    if (pr.error && pr.error.discoveredTick === null && chance(s.rng, errorDiscoveryChance)) {
       pr.error.discoveredTick = s.tick;
       emit(s, 'errorDiscovered', true, { printingId: pr.id, cardId: pr.cardId },
         { kind: pr.error.kind, incidence: pr.error.incidence });
     }
     if (pr.error && pr.error.discoveredTick !== null) {
-      pr.market.heat = Math.min(cfg.value.heatCeiling, pr.market.heat + 0.002 / Math.max(0.0002, pr.error.incidence) * 0.00002);
+      pr.market.heat = Math.min(v.heatCeiling, pr.market.heat + 0.002 / Math.max(0.0002, pr.error.incidence) * 0.00002);
     }
 
-    const noise = 1 + gauss(s.rng, 0, cfg.value.noiseSigma);
+    const noise = 1 + gauss(s.rng, 0, v.noiseSigma);
     const rawMultiplier = scarcity * (desire / 40) * art * pr.truth.chase
-      * pr.market.heat * pr.market.nostalgia * s.market.climate * noise;
-    const cappedMultiplier = softCap(rawMultiplier, cfg.value.priceCeilingMultiple);
-    const target = cfg.value.baseCardPrice * cappedMultiplier;
+      * pr.market.heat * pr.market.nostalgia * climate * noise;
+    const cappedMultiplier = softCap(rawMultiplier, v.priceCeilingMultiple);
+    const target = v.baseCardPrice * cappedMultiplier;
 
     // Prices are sticky; they drift toward target rather than snapping.
-    pr.market.rawPrice = C(pr.market.rawPrice * 0.62 + Math.max(cfg.value.priceFloorCents, target) * 0.38);
-    writePoint(pr.market.rawHistory, s.tick, pr.market.rawPrice, cfg.history.writeThreshold);
+    pr.market.rawPrice = C(pr.market.rawPrice * 0.62 + Math.max(v.priceFloorCents, target) * 0.38);
+    writePoint(pr.market.rawHistory, s.tick, pr.market.rawPrice, writeThreshold);
 
     // Vintage price growth feeds character resurgence. Every printing seeds
     // at a flat baseCardPrice regardless of rarity (see releaseSet), so the
     // baseline here matches that seed, not a rarity-scaled one.
     const ageYears = (s.tick - pr.releaseTick) / 52;
-    if (ageYears > 5 && chance(s.rng, 0.02 * PRICE_STRIDE)) {
+    if (ageYears > 5 && chance(s.rng, resurgenceChance)) {
       const ip = s.ips[card.subjectIp]!;
-      const growth = pr.market.rawPrice / Math.max(1, cfg.value.baseCardPrice);
+      const growth = pr.market.rawPrice / Math.max(1, v.baseCardPrice);
       if (growth > 3) {
         ip.resurgence = Math.min(1, ip.resurgence + cfg.affection.resurgenceFromVintage * 0.02);
         emit(s, 'characterResurgence', false, { ipId: ip.id, printingId: pr.id }, { growth });
@@ -885,6 +899,13 @@ function setChase(s: SimState, set: CardSet): number {
 
 function tickSales(s: SimState, products: Product[]): void {
   const cfg = s.config;
+  // Audience state does not move inside this pass, and `setChase` walks every
+  // card in a set — so both are computed once per tick rather than once per
+  // product. Two products off one set used to pay for the same walk twice.
+  const { attention, fatigue, goodwill } = audienceAverages(s);
+  const fatigueTerm = fatigueResponse(s, fatigue);
+  const goodwillTerm = 0.2 + 0.8 * goodwill;
+  const chaseBySet = new Map<SetId, number>();
   for (const p of products) {
     if (p.unitsRemaining <= 0) continue;
     const set = s.sets[p.setId]!;
@@ -894,8 +915,11 @@ function tickSales(s: SimState, products: Product[]): void {
     const allocs = Object.entries(p.allocations) as Array<[ChannelId, ChannelAllocation]>;
     if (allocs.length === 0) continue;
 
-    const { attention, fatigue, goodwill } = audienceAverages(s);
-    const chase = setChase(s, set);
+    let chase = chaseBySet.get(set.id);
+    if (chase === undefined) {
+      chase = setChase(s, set);
+      chaseBySet.set(set.id, chase);
+    }
 
     // Attention is shared with the rivals. Demand is measured relative to the
     // share the rest of this formula was tuned at, so a publisher sitting at
@@ -910,10 +934,13 @@ function tickSales(s: SimState, products: Product[]): void {
     // Hype multiplies the demand the set would have had. It cannot conjure
     // demand for a set nobody wants: a zero-chase set times any campaign is
     // still nearly zero.
-    const pool = p.unitsPrinted * 0.06 * attention * shareFactor * fatigueResponse(s, fatigue)
-      * (0.2 + 0.8 * goodwill) * (0.3 + pub.brandStanding) * (0.5 + chase) * decay
+    const pool = p.unitsPrinted * 0.06 * attention * shareFactor * fatigueTerm
+      * goodwillTerm * (0.3 + pub.brandStanding) * (0.5 + chase) * decay
       * (1 + (set.hype?.level ?? 0));
-    if (pool <= 0) continue;
+    // Below half a unit every channel's share rounds to zero, so the rest of
+    // this pass cannot sell anything. Old sets sit here for decades: `decay` is
+    // e^(-1.4 * years), so a five-year-old set is already three zeroes down.
+    if (pool < 0.5) continue;
 
     // Reach, relationship, and what the channel is actually charging. A store
     // marking product up above MSRP moves less of it.
@@ -1443,32 +1470,63 @@ function tickCompaction(s: SimState): void {
   for (const d of Object.values(s.drops)) {
     if (d.status === 'complete' && (d.scheduledTick as number) < dropCutoff) delete s.drops[d.id];
   }
-  for (const pr of Object.values(s.printings)) compact(pr.market.rawHistory, s.tick, s.config.history);
-  for (const p of Object.values(s.products)) compact(p.market.history, s.tick, s.config.history);
-  for (const ip of Object.values(s.ips)) compact(ip.affectionHistory, s.tick, s.config.history);
+  const { printings, products, ips } = lists(s);
+  for (const pr of printings) compact(pr.market.rawHistory, s.tick, s.config.history);
+  for (const p of products) compact(p.market.history, s.tick, s.config.history);
+  for (const ip of ips) compact(ip.affectionHistory, s.tick, s.config.history);
 }
 
 // ---------------------------------------------------------------------------
 // Tick
 // ---------------------------------------------------------------------------
 
-interface TickCache { nP: number; nProd: number; nIp: number; printings: Printing[]; products: Product[]; ips: IpEntity[] }
+interface TickCache { version: number; printings: Printing[]; products: Product[]; ips: IpEntity[]; sets: CardSet[] }
 const tickCache = new WeakMap<object, TickCache>();
 
+/**
+ * Validating the cache by counting keys costs an O(n) key array per map per
+ * tick, which on a long run is the second-largest cost in the whole engine.
+ * Every site that mints a printing, product or IP bumps this instead, so the
+ * check is a single integer compare. `checkRosterCache` is the safety net:
+ * a mint that forgets to bump would silently leave the new entity untickable,
+ * so the invariant pass catches it rather than a balance table three sessions
+ * later.
+ */
+const rosterVersion = new WeakMap<object, number>();
+
+function bumpRoster(s: SimState): void {
+  rosterVersion.set(s, (rosterVersion.get(s) ?? 0) + 1);
+}
+
 function lists(s: SimState): TickCache {
-  const nP = Object.keys(s.printings).length;
-  const nProd = Object.keys(s.products).length;
-  const nIp = Object.keys(s.ips).length;
+  const version = rosterVersion.get(s) ?? 0;
   const c = tickCache.get(s);
-  if (c && c.nP === nP && c.nProd === nProd && c.nIp === nIp) return c;
+  if (c && c.version === version) return c;
   const fresh: TickCache = {
-    nP, nProd, nIp,
+    version,
     printings: Object.values(s.printings),
     products: Object.values(s.products),
     ips: Object.values(s.ips),
+    sets: Object.values(s.sets),
   };
   tickCache.set(s, fresh);
   return fresh;
+}
+
+/** Dev check: the cached rosters must still match the state they came from. */
+export function checkRosterCache(s: SimState): string[] {
+  const c = tickCache.get(s);
+  if (!c) return [];
+  const bad: string[] = [];
+  const nP = Object.keys(s.printings).length;
+  const nProd = Object.keys(s.products).length;
+  const nIp = Object.keys(s.ips).length;
+  if (c.printings.length !== nP) bad.push(`printing roster stale: ${c.printings.length} cached, ${nP} live`);
+  if (c.products.length !== nProd) bad.push(`product roster stale: ${c.products.length} cached, ${nProd} live`);
+  if (c.ips.length !== nIp) bad.push(`ip roster stale: ${c.ips.length} cached, ${nIp} live`);
+  const nSet = Object.keys(s.sets).length;
+  if (c.sets.length !== nSet) bad.push(`set roster stale: ${c.sets.length} cached, ${nSet} live`);
+  return bad;
 }
 
 export function tick(s: SimState): void {
@@ -1477,7 +1535,7 @@ export function tick(s: SimState): void {
   for (const d of s.inbox) applyDecision(s, d);
   s.inbox = [];
 
-  for (const set of Object.values(s.sets)) {
+  for (const set of lists(s).sets) {
     if (set.status === 'committed' && set.revealStartTick !== null && s.tick >= set.revealStartTick) {
       set.status = 'revealing';
     }
@@ -1492,6 +1550,8 @@ export function tick(s: SimState): void {
     }
   }
 
+  // Re-read after the set loop: `releaseSet` mints printings mid-loop, and the
+  // rest of the tick has to see them on the tick they appear.
   const { printings, products, ips } = lists(s);
   tickAffection(s, ips);
   tickSales(s, products);

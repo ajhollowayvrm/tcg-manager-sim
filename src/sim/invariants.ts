@@ -4,9 +4,10 @@
  * Returns a list of human-readable violations; empty means clean.
  */
 import type { SimState } from './types.ts';
+import { checkRosterCache } from './engine.ts';
 
 export function checkInvariants(s: SimState): string[] {
-  const bad: string[] = [];
+  const bad: string[] = checkRosterCache(s);
 
   const pub = s.publishers[s.playerId];
   if (!pub) {
