@@ -1,20 +1,24 @@
 /**
  * Headless balance harness.
  *
- *   node --experimental-strip-types harness/run.ts
- *   node --experimental-strip-types harness/run.ts --seeds=200 --years=50 --bot=all
- *   node --experimental-strip-types harness/run.ts --set=value.noiseSigma=0.09 --set=attention.fatigueGain=0.05
+ *   npm run sim -- --seeds=200 --years=50 --bot=all
+ *   npm run sim -- --set=value.noiseSigma=0.09 --set=attention.fatigueGain=0.05
+ *   npm run sim -- --seeds=1 --years=25 --bot=conservative --dist
+ *   npm run sim -- --jobs=1          # force the synchronous path
  *
- * Everything is single-threaded and synchronous on purpose: the fastest thing
- * to change is the thing with no build step and no worker plumbing.
+ * Runs are independent and seeded, so a batch shards across worker threads
+ * without any per-run result moving: the CSV is byte-identical to the
+ * synchronous path, only the wall clock changes. `--jobs=1` keeps the old
+ * single-threaded path for debugging, and `--dist` forces it, since the decile
+ * ladder reads a finished world that would have to cross a thread boundary.
  */
 import { writeFileSync, mkdirSync } from 'node:fs';
-import { createWorld } from '../src/sim/world.ts';
-import { defaultConfig, withOverrides } from '../src/sim/config.ts';
-import { tick } from '../src/sim/engine.ts';
-import { checkInvariants } from '../src/sim/invariants.ts';
+import { cpus } from 'node:os';
+import { Worker } from 'node:worker_threads';
+import type { SimState } from '../src/sim/types.ts';
 import { BOTS } from './bots.ts';
-import { computeMetrics, toCsv, type RunMetrics } from './metrics.ts';
+import { runOne, type RunTask, type RunResult } from './runOne.ts';
+import { toCsv, type RunMetrics } from './metrics.ts';
 
 const args = Object.fromEntries(process.argv.slice(2).map(a => {
   const [k, ...rest] = a.replace(/^--/, '').split('=');
@@ -38,35 +42,61 @@ for (const a of process.argv.slice(2)) {
   if (!Number.isFinite(n)) throw new Error(`--set=${a.slice(6)} is not a number`);
   overrides[path!] = n;
 }
-const config = withOverrides(defaultConfig, overrides);
-
 const showDist = args.dist === 'true';
 
+const requestedJobs = args.jobs === undefined || args.jobs === 'auto'
+  ? Math.max(1, cpus().length)
+  : Math.max(1, Math.floor(Number(args.jobs)));
+if (!Number.isFinite(requestedJobs)) throw new Error(`--jobs=${args.jobs} is not a number`);
+
+const tasks: RunTask[] = [];
+for (const botName of botNames) {
+  if (!BOTS[botName]) throw new Error(`unknown bot: ${botName}`);
+  for (let i = 0; i < seeds; i++) {
+    tasks.push({ botName, seedIndex: i, years, checkEvery, overrides });
+  }
+}
+
+// `--dist` needs a finished world, which does not come back from a worker.
+const jobs = showDist ? 1 : Math.min(requestedJobs, tasks.length);
+
+const started = Date.now();
+const results: (RunResult | undefined)[] = new Array(tasks.length);
+let lastState: SimState | null = null;
+
+if (jobs === 1) {
+  for (let i = 0; i < tasks.length; i++) {
+    const { metrics, violations } = runOne(tasks[i]!, st => { lastState = st; });
+    results[i] = { order: i, metrics, violations };
+  }
+} else {
+  await new Promise<void>((resolve, reject) => {
+    let next = 0;
+    let live = jobs;
+    const workerUrl = new URL('./worker.ts', import.meta.url);
+    for (let w = 0; w < jobs; w++) {
+      const worker = new Worker(workerUrl);
+      const feed = () => {
+        if (next >= tasks.length) { worker.postMessage({ done: true }); return; }
+        const order = next++;
+        worker.postMessage({ task: tasks[order]!, order });
+      };
+      worker.on('message', (r: RunResult) => { results[r.order] = r; feed(); });
+      worker.on('error', reject);
+      worker.on('exit', () => { if (--live === 0) resolve(); });
+      feed();
+    }
+  });
+}
+
+// Reassembled in task order, so the CSV does not depend on which thread
+// finished first.
 const rows: RunMetrics[] = [];
 const violations: string[] = [];
-const started = Date.now();
-let lastState: ReturnType<typeof createWorld> | null = null;
-
-for (const botName of botNames) {
-  const makeBot = BOTS[botName];
-  if (!makeBot) throw new Error(`unknown bot: ${botName}`);
-  for (let i = 0; i < seeds; i++) {
-    const bot = makeBot();
-    const seed = `${botName}-${i}`;
-    const state = createWorld(seed, config);
-    const ticks = years * 52;
-    for (let t = 0; t < ticks; t++) {
-      bot.step(state);
-      tick(state);
-      if (checkEvery > 0 && t % checkEvery === 0) {
-        const bad = checkInvariants(state);
-        if (bad.length) violations.push(`${seed}@${t}: ${bad.slice(0, 3).join('; ')}`);
-      }
-      if (state.publishers[state.playerId]!.deadTick !== null) break;
-    }
-    rows.push(computeMetrics(state, botName, years));
-    lastState = state;
-  }
+for (const r of results) {
+  if (!r) throw new Error('a run produced no result');
+  rows.push(r.metrics);
+  violations.push(...r.violations);
 }
 
 mkdirSync(outDir, { recursive: true });
@@ -81,7 +111,7 @@ const median = (xs: number[]) => {
 };
 const pct = (xs: boolean[]) => (100 * xs.filter(Boolean).length / xs.length).toFixed(0) + '%';
 
-console.log(`\n${rows.length} runs / ${years}y in ${((Date.now() - started) / 1000).toFixed(2)}s\n`);
+console.log(`\n${rows.length} runs / ${years}y on ${jobs} thread${jobs === 1 ? '' : 's'} in ${((Date.now() - started) / 1000).toFixed(2)}s\n`);
 const table = botNames.map(b => {
   const r = rows.filter(x => x.bot === b);
   return {
@@ -123,6 +153,8 @@ const dropRows = botNames
       toScalpers: (100 * mean(ran.map(x => x.scalperShareOfDrops))).toFixed(0) + '%',
       peakPremium: mean(ran.map(x => x.peakDropPremium)).toFixed(2) + 'x',
       scalpers: mean(ran.map(x => x.scalperPopulation)).toFixed(0),
+      peakScalpers: mean(ran.map(x => x.peakScalpers)).toFixed(0),
+      cycles: mean(ran.map(x => x.scalperCycles)).toFixed(1),
     };
   })
   .filter(Boolean);

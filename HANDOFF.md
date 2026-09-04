@@ -17,7 +17,9 @@ src/sim/engine.ts      tick loop + STUB value math
 src/sim/invariants.ts  dev assertions
 harness/bots.ts        seven strategy bots
 harness/metrics.ts     per-run balance metrics + CSV
-harness/run.ts         CLI runner
+harness/runOne.ts      one run, shared by the runner and the workers
+harness/worker.ts      batch worker thread
+harness/run.ts         CLI runner + thread pool
 ```
 
 Run it:
@@ -27,13 +29,21 @@ npm run sim:quick
 npm run sim -- --seeds=40 --years=50 --bot=all
 npm run sim -- --set=value.noiseSigma=0.09 --set=attention.fatigueGain=0.05
 npm run sim -- --seeds=1 --years=25 --bot=conservative --dist
+npm run sim -- --jobs=1          # force the synchronous path
 ```
+
+Batches shard across worker threads by default (one per core). Runs are
+independent and seeded, so the CSV is byte-identical to the synchronous path —
+only the wall clock moves. `--jobs=1` forces the old path for debugging, and
+`--dist` forces it too, since the decile ladder reads a finished world.
 
 `--dist` prints a price decile ladder for the last run. Use it, not the median
 and max columns, when you change anything in the `value` config block: only the
 step between deciles tells a power law from flat mush.
 
-Requires Node 22.6+ (uses `--experimental-strip-types`, no build step). Swap to `tsx` if that ever gets annoying.
+Runs through `tsx`, no build step. Node 22.6+ can also strip the types itself
+(`node --experimental-strip-types harness/run.ts`) if you would rather not have
+the dependency in the loop.
 
 ## Verified working
 
@@ -52,8 +62,8 @@ Requires Node 22.6+ (uses `--experimental-strip-types`, no build step). Swap to 
   |---|---|---|---|---|---|---|---|
   | sets/year | 8.7 | 5.2 | 3.7 | **2.9** | 2.0 | 1.5 | 1.0 |
   | survived | 0/10 | 0/10 | 10/10 | **10/10** | 10/10 | 10/10 | 10/10 |
-  | net worth | — | — | $5.9M | **$22.5M** | $16.7M | $13.6M | $8.9M |
-  | fatigue | 0.89 | 0.96 | 0.76 | **0.61** | 0.37 | 0.35 | 0.22 |
+  | net worth | — | — | $6.2M | **$21.9M** | $17.9M | $12.6M | $8.9M |
+  | fatigue | 0.86 | 0.96 | 0.76 | **0.61** | 0.37 | 0.35 | 0.22 |
 
   Under-releasing is a gentle loss; over-releasing is a cliff. That asymmetry is
   what CONCEPT.md §6.2 asks for.
@@ -134,6 +144,64 @@ Requires Node 22.6+ (uses `--experimental-strip-types`, no build step). Swap to 
 - `SealedMarket.heat` is wired. An oversubscribed drop adds it, scalpers dumping
   their stock takes it back out, and it multiplies the sealed price target. It
   was declared and unread before.
+- Batch runs shard across worker threads. A run is a pure function of
+  (bot, seed, years, config), so the batch was always embarrassingly parallel
+  and simply wasn't taking it. `runOne` is the shared unit, `worker.ts` pulls
+  one task at a time (a static split leaves three threads waiting on
+  `chaseMaxxer` while `flooder` dies in year two), and results reassemble in
+  task order so the CSV never depends on which thread finished first.
+
+  The engine got cheaper first, and byte-identically: the tick cache used to
+  validate itself with `Object.keys().length` over three maps every tick, which
+  in a mature run is a 1750-element key array allocated to prove nothing had
+  changed. It is a version counter now, bumped at every mint site, with
+  `checkRosterCache` in the invariant pass as the safety net — which paid for
+  itself immediately by catching a set roster read before `releaseSet` had
+  minted that tick's printings.
+
+  42 runs x 25 years, 4 cores: 15.8s -> 12.2s on the engine work, -> 5.4s with
+  threads. The CSV hashes identical at every step, which is the whole acceptance
+  test for a change that is supposed to be free. The batch this handoff used to
+  call impractical — 40 seeds x 50 years, all seven bots, 280 runs — now takes
+  2m09s on four cores, invariants clean.
+- The reveal signal is worth paying for. It used to score r = 0.93 on the
+  *default* window with no campaign at all, so every lever in the window bought
+  nothing. Two things were wrong. The error was additive and then clamped at
+  zero (`Math.max(0, truth * (1 + noise))`), and clipping inverted the
+  mechanism outright: swept past sigma 3, a sixteen-preview campaign scored
+  *worse* than no campaign, because its extra draws piled onto the floor and
+  threw away the ordering the previews had bought. It is lognormal now, so the
+  error only ever shrinks with previews. Then `signalNoiseSigma` is 2.0:
+
+  | sigma | 0.55 | 1.0 | 1.5 | **2.0** | 3.0 | 5.0 |
+  |---|---|---|---|---|---|---|
+  | no campaign | 0.93 | 0.81 | 0.67 | **0.55** | 0.39 | 0.22 |
+  | 16 previews | 0.99 | 0.96 | 0.91 | **0.86** | 0.75 | 0.55 |
+
+  A blind publisher explains about a third of the variance; a fully worked
+  window about three quarters. Nothing reads the signal back, so the value
+  targets did not move.
+- The `drops` block is swept. `unitsPerScalperReference` was 1 — a scalper had
+  to flip a unit per stride to count as fully employed, which no drop cadence
+  supplies — so crowding was near zero for everyone, the trade never cleared
+  its hurdle, and the population decayed onto `minScalpers` and stayed. At 0.3
+  scalpers take about a quarter of a drop's units, the population settles near
+  900 with both rails an order of magnitude away, and it still booms and busts
+  about every six years.
+
+  | ref | 1 | 0.5 | **0.3** | 0.2 | 0.1 | 0.03 |
+  |---|---|---|---|---|---|---|
+  | to scalpers | 11% | 18% | **27%** | 36% | 54% | 75% |
+  | population | 127 | 355 | **890** | 1903 | 5974 | 28899 |
+  | cycles / 25y | 13.0 | 9.7 | **4.5** | 2.2 | 1.9 | 2.5 |
+
+  Below ~0.1 it runs away toward `maxScalpers` and stops cycling — the exact
+  failure the per-capita return was built to avoid. It holds over a longer run
+  rather than creeping: at 40 seeds x 50 years the population averages ~2000
+  against a 40,000 cap, takes 39-41% of drop units, and still cycles about
+  twenty times. `scalperCycles` and
+  `peakScalpers` are new harness metrics, read off the crash events, because
+  the end-of-run population alone cannot tell a healthy cycle from a flat line.
 - CSV output + console summary table, plus a separate drops table that prints
   only for runs that opened a direct store
 - Config overrides from CLI without touching code
@@ -141,9 +209,14 @@ Requires Node 22.6+ (uses `--experimental-strip-types`, no build step). Swap to 
 
 ## Known problems — these are the next tasks
 
-**1. Performance.**
-A 50-run, 25-year batch takes about 5s, so a 50-year × 40-seed batch is still
-impractical. Prices already update on a 4-tick stride and entity lists are cached. Next candidates: typed arrays for the hot price loop, skipping printings whose price hasn't moved in N ticks, and worker threads for batch runs.
+**1. Performance — the batch is affordable now, the single run is not much faster.**
+Batches shard across cores, and that is where the 3x came from. What is left is
+the engine itself, where `tickPrices` is still about 20% of a run and the only
+remaining ideas change behaviour: backing a cold printing off to a longer stride
+changes RNG draw counts, so it cannot be validated by hashing the CSV — it has
+to be re-measured against the five value targets and the decile ladder as one
+unit. Typed arrays for the hot price loop are the other candidate and are
+behaviour-neutral, but they mean giving up the object model in `tickPrices`.
 
 **2. Large parts of the model are declared but not simulated.**
 Grading and pop reports, regions beyond `reg_us`, collabs, creators, rival
@@ -158,16 +231,15 @@ behave; `resellers`, `collectors` and `speculators` are still plain numbers.
 `collectors` is read as a demand pool by `resolveDrop` and nothing else.
 `SetPerformance.aftermarketIndex` is still written as 0 and read by nothing.
 
-**3. Two knobs the systems passes left visibly wrong, for the balance pass.**
-Neither is a broken mechanism; both are a constant sitting in the wrong place.
-
-- `hype.signalNoiseSigma` is too small. The signal scores r = 0.90 on the
-  *default* window, with no campaign at all, because the true chase varies far
-  more across sets than the noise does. The reveal lever therefore barely
-  differentiates: a player who spends nothing already knows almost everything.
-  Widen the sigma until the no-campaign read is genuinely poor.
-- The `drops` config block has never been swept. The scalper population settles
-  near its `minScalpers` floor, which is a working equilibrium but a low one.
+**3. What is still unswept.**
+Both knobs this section used to name are done — see "Verified working". What has
+never been swept: the `hype` block beyond the signal sigma (`marketingHypeGain`,
+`prereleaseHypeGain` and `heatFromHype` are all first guesses), and
+`drops.breakEvenPremium` / `populationGrowth`, which set how sharply the scalper
+population reacts rather than where it settles. `heatFromHype` is the one with a
+measured consequence already: it is what moved `yearsToFirst100Dollar` from 7.6
+to 4.9, because every set now opens at `1.6 + hype * heatFromHype` instead of a
+flat 1.6.
 
 
 ## Things not to break
@@ -209,6 +281,14 @@ Neither is a broken mechanism; both are a constant sitting in the wrong place.
 - Every set reveals. The reveal window is a phase of the core loop in
   CONCEPT.md §2, not an unlock: a set with no campaign still runs the default
   drip, still pays the attention, and still gets its (small) hype
+- A batch is only shardable because a run touches nothing shared. Keep `runOne`
+  a pure function of (bot, seed, years, config): the moment a run reads or
+  writes anything outside its own state, the threads stop agreeing with
+  `--jobs=1` and the CSV hash stops being a usable acceptance test
+- The tick cache is validated by a version counter, not by counting keys. Any
+  new site that mints a printing, product, set or IP must call `bumpRoster`, or
+  the entity will not be ticked until something else mints one.
+  `checkRosterCache` in the invariant pass is what catches that
 - Events store data, not prose
 - The LGS network and the direct store can sour but can never be lost. CONCEPT.md
   §7 makes LGS-only volume the floor that relationship death collapses you *to*
@@ -218,14 +298,15 @@ Neither is a broken mechanism; both are a constant sitting in the wrong place.
 
 ## Suggested next session
 
-Problem 1 above: performance. `npm run sim -- --seeds=10 --years=25 --bot=all`
-takes about 5s, so a 50-year x 40-seed batch is still impractical. The drops
-pass did not move that: 36 runs x 25 years takes 3.7s, the same ~0.1s per run it
-took before.
+Problem 2: the model that is declared and not simulated. Roughly in order of how
+self-contained each slice is — grading and pop reports, then rivals and regions,
+then the remaining secondary-market actors (`resellers`, `collectors` and
+`speculators` are still plain numbers; `collectors` is read as a demand pool by
+`resolveDrop` and nothing else).
 
-The other open slices of problem 2, roughly in order of how self-contained they
-are: grading and pop reports, then rivals and regions, then the remaining
-secondary-market actors.
+Performance is no longer the thing in the way. A batch shards across cores, and
+the remaining engine cost is concentrated in `tickPrices`, where every idea left
+either changes behaviour (see problem 1) or means giving up the object model.
 
 Re-run these before you touch the value engine again:
 
@@ -234,31 +315,30 @@ npm run sim -- --seeds=30 --years=25 --bot=conservative   # the five value targe
 npm run sim -- --seeds=1 --years=25 --bot=conservative --dist   # the decile ladder
 ```
 
-The value targets after both systems passes, 30 seeds x 25 years,
-`conservative`. All four are still inside their bands, but read the last row:
+The value targets, 30 seeds x 25 years, `conservative`. The balance pass moved
+none of them, which is what it should have done: the signal is measured and
+never read back, and the scalper population prices sealed product only.
 
-| Metric | Band | Before | After drops | After reveal window |
-|---|---|---|---|---|
-| `surpriseGrail` | 15–40% | 33% | 33% | 23% |
-| `top1PctShare` | 0.4–0.7 | 0.59 | 0.594 | 0.575 |
-| `medianCardPrice` | a few dollars | $3.82 | $4 | $4 |
-| `yearsToFirst100Dollar` | 3–8 | 7.6 | 7.6 | 4.9 |
+| Metric | Band | Before | After drops | After reveal window | After balance pass |
+|---|---|---|---|---|---|
+| `surpriseGrail` | 15–40% | 33% | 33% | 23% | 23% |
+| `top1PctShare` | 0.4–0.7 | 0.59 | 0.594 | 0.575 | 0.575 |
+| `medianCardPrice` | a few dollars | $3.82 | $4 | $4 | $4 |
+| `yearsToFirst100Dollar` | 3–8 | 7.6 | 7.6 | 4.9 | 4.9 |
 
-Drops moved nothing, as they should not: `SealedMarket.heat` prices sealed
-product only and singles never see it. The reveal window moved
-`yearsToFirst100Dollar` from 7.6 to 4.9, and the cause is not subtle — every set
-now opens at `1.6 + hype * heatFromHype` instead of a flat 1.6, so even the
-small default campaign starts the whole population slightly hotter. If that is
-too fast, `hype.heatFromHype` is the knob, and the five targets get re-measured
-as one unit afterwards.
+`yearsToFirst100Dollar` at 4.9 is still the row to watch. The cause is not
+subtle — every set opens at `1.6 + hype * heatFromHype` instead of a flat 1.6,
+so even the small default campaign starts the whole population hotter. If that
+is too fast, `hype.heatFromHype` is the knob, and the five targets get
+re-measured as one unit afterwards.
 
-Neither pass cost anything worth having: 30 runs x 25 years went from 3.86s to
-4.02s across both, about 4%.
-
-The release-cadence sweep is the other regression. It still puts the profit
-optimum at 18 weeks after the value rework:
+The release-cadence sweep is the other regression, and cadence is a bot
+constant rather than a config path, so it needs a scratch script that calls
+`makeSetBot` with the cadence under test. It still puts the profit optimum at 18
+weeks, and over-releasing is still a cliff where under-releasing is a slope:
 
 | cadence | 6wk | 10wk | 14wk | **18wk** | 26wk | 34wk | 52wk | 78wk |
 |---|---|---|---|---|---|---|---|---|
 | survived | 0/10 | 0/10 | 10/10 | **10/10** | 10/10 | 10/10 | 10/10 | 10/10 |
-| net worth | — | — | $2.9M | **$24.4M** | $17.8M | $13.5M | $8.7M | $6.0M |
+| net worth | — | — | $6.2M | **$21.9M** | $17.9M | $12.6M | $8.9M | $6.1M |
+| fatigue | 0.86 | 0.96 | 0.76 | **0.61** | 0.37 | 0.35 | 0.22 | 0.18 |

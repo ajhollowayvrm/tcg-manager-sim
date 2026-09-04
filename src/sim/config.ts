@@ -94,9 +94,10 @@ export const defaultConfig: SimConfig = {
     heatCeiling: 4,
   },
 
-  // First-guess numbers. This block was wired for behaviour, not swept for
-  // balance: the loop it has to produce is scalpers arriving when resale pays,
-  // buying the drop out, and leaving again once they have closed the premium.
+  // Swept on `unitsPerScalperReference`, which was the knob holding the whole
+  // population on its floor. The loop this block has to produce is scalpers
+  // arriving when resale pays, buying the drop out, and leaving again once they
+  // have closed the premium; it now does that about every six years.
   drops: {
     cadenceWeeks: 6,
     collectorReach: 0.06,
@@ -105,7 +106,15 @@ export const defaultConfig: SimConfig = {
     breakEvenPremium: 0.15,
     baseResaleRate: 0.04,
     holdLimitWeeks: 26,
-    unitsPerScalperReference: 1,
+    // Units a scalper has to be flipping per stride to count as fully
+    // employed. At 1 no realistic drop cadence could ever supply that, so
+    // crowding was near zero for everybody, the trade never cleared its
+    // hurdle, and the population sat on its floor taking 11% of a drop. At
+    // 0.3 it settles near 900, cycles about every six years, and scalpers
+    // take about a quarter of the units — a real force at the queue with
+    // collectors still taking the majority. Below ~0.1 it runs away toward
+    // `maxScalpers` and stops cycling at all.
+    unitsPerScalperReference: 0.3,
     resaleUrgency: 0.5,
     populationGrowth: 0.06,
     minScalpers: 50,
@@ -158,7 +167,12 @@ export const defaultConfig: SimConfig = {
     prereleaseRelationshipGain: 0.04,
     ceiling: 3,
     decayPerTickAfterRelease: 0.06,
-    signalNoiseSigma: 0.55,
+    // Wide on purpose. The read has to be genuinely poor without a campaign,
+    // or the reveal window is a solved problem and its levers buy nothing: at
+    // 0.55 a publisher who spent nothing already scored r = 0.93. Error shrinks
+    // as 1/sqrt(previews), so 2.0 puts a default three-preview window at
+    // r = 0.55 and a sixteen-preview campaign at r = 0.86.
+    signalNoiseSigma: 2.0,
     heatFromHype: 0.8,
   },
 

@@ -274,7 +274,8 @@ export const BOTS: Record<string, () => Bot> = {
   }),
 
   // Releases constantly, cheap quality, large runs. Per CONCEPT.md §6.2 this
-  // must lose — HANDOFF.md flags that it currently wins instead (bug, not spec).
+  // must lose, and since the fatigue curve landed it does: it dies in year two
+  // in every seed. It stays in the roster as the flood-death regression.
   flooder: () => makeSetBot({
     label: 'Flooder', cadenceWeeks: 6, cardsPerSet: 40, setType: 'main',
     quality: 'budget', units: 15000, packsPerUnit: 24, msrp: 11000, productKind: 'boosterBox',
