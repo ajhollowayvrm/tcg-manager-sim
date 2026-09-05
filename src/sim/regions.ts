@@ -67,15 +67,17 @@ export function setFit(s: SimState, region: Region, set: CardSet, p: Product): n
   // `tasteBias` runs about -0.3..+0.3 and `rarityAppetite` about 0.5..1.5, so
   // both are folded onto a 0..1 scale here rather than multiplied raw. A region
   // with no opinion at all lands on exactly 1.
-  const tasteFit = clamp01(0.5 + taste);
-  const appetiteFit = clamp01(appetite / 1.5);
-  const productFit = clamp01((t.productPreference[p.kind] ?? 1) / 1.5);
+  const cfg = s.config.region;
+  const tasteFit = clamp01(cfg.tasteFitCentre + taste);
+  const appetiteFit = clamp01(appetite / cfg.appetiteFitDivisor);
+  const productFit = clamp01((t.productPreference[p.kind] ?? 1) / cfg.productFitDivisor);
 
   // Price tolerance is a ratio, not a preference: a region that tolerates 0.6
   // of what the US will pay walks away from a US-priced booster box.
-  const priceFit = clamp01(t.priceTolerance * 1.2);
+  const priceFit = clamp01(t.priceTolerance * cfg.priceFitGain);
 
-  return clamp01(0.25 * tasteFit + 0.25 * appetiteFit + 0.25 * productFit + 0.25 * priceFit);
+  return clamp01(cfg.fitTasteWeight * tasteFit + cfg.fitAppetiteWeight * appetiteFit
+    + cfg.fitProductWeight * productFit + cfg.fitPriceWeight * priceFit);
 }
 
 /**
@@ -89,7 +91,8 @@ export function setFit(s: SimState, region: Region, set: CardSet, p: Product): n
 export function regionDemandFactor(s: SimState, region: Region, set: CardSet, p: Product): number {
   const fit = setFit(s, region, set, p);
   const penalty = s.config.region.mismatchPenalty;
-  return region.marketSize * (0.4 + 0.6 * region.wealth) * (1 - penalty * (1 - fit));
+  const floor = s.config.region.wealthFloor;
+  return region.marketSize * (floor + (1 - floor) * region.wealth) * (1 - penalty * (1 - fit));
 }
 
 /**
@@ -111,7 +114,7 @@ export function readRegion(s: SimState, regionId: RegionId): RegionReading | nul
 
   const tasteBias = {} as Record<IpKind, number>;
   for (const [k, v] of Object.entries(t.tasteBias)) {
-    tasteBias[k as IpKind] = v + gauss(s.regionRng, 0, err * 0.5);
+    tasteBias[k as IpKind] = v + gauss(s.regionRng, 0, err * s.config.region.tasteReadingNoiseScale);
   }
   const rarityAppetite = {} as Record<Rarity, number>;
   for (const [k, v] of Object.entries(t.rarityAppetite)) {
@@ -162,14 +165,15 @@ export function unlockedRegions(s: SimState, publisherId: string): Region[] {
  * reading is never quite the truth.
  */
 export function tickRegionKnowledge(s: SimState): void {
-  if (s.tick % 13 !== 0) return;
+  if (s.tick % s.config.strides.quarterly !== 0) return;
   const pub = s.publishers[s.playerId]!;
   const cfg = s.config.region;
   for (const id of pub.unlocks.regions) {
     const region = s.regions[id];
     if (!region) continue;
     const research = pub.unlocks.marketResearch * cfg.knowledgeGainPerResearch;
-    region.knowledge = Math.min(0.95, region.knowledge + research * 0.25);
+    region.knowledge = Math.min(cfg.knowledgeCeiling,
+      region.knowledge + research * cfg.researchCreditShare);
   }
 }
 
@@ -177,7 +181,8 @@ export function tickRegionKnowledge(s: SimState): void {
 export function creditRelease(s: SimState, regionId: RegionId): void {
   const region = s.regions[regionId];
   if (!region) return;
-  region.knowledge = Math.min(0.95, region.knowledge + s.config.region.knowledgeGainPerRelease);
+  region.knowledge = Math.min(s.config.region.knowledgeCeiling,
+    region.knowledge + s.config.region.knowledgeGainPerRelease);
 }
 
 function clamp01(x: number): number {

@@ -295,8 +295,9 @@ on `harness/worker.mjs`, which installs the TypeScript loader and then imports
   standing arrangement; `retainer` is a weekly bill that buys a discount and
   gets your briefs taken regardless of relationship; `exclusive` is a larger
   weekly bill that sets `exclusiveTo` and locks the artist away from everyone
-  else. That last one is also the CONCEPT.md §7 "a rival takes your artists"
-  hook, built from the player's side.
+  else. Exclusivity is the whole of that mechanism now that rivals are cut:
+  it is a cost the player pays to deny nobody, and it has to earn its bill on
+  the discount and the guaranteed brief alone.
 
   The roster drifts: newcomers arrive unproven and cheap, reputation drags
   rates up behind it, and the established retire. Without that, scouting is a
@@ -417,20 +418,38 @@ death was `flooder` in year one. Three structural causes, all fixed:
   against $442k of revenue on 1.2 million units. Overprint death is unreachable
   without it.
 
-20 seeds x 30 years, 18 bots. Nine survive 100%, `bigBets` and `allIn` 75%,
-`hypeGambler` 55%, and `smallBets`, `globalist` and `flooder` die. Deaths land
-in years 6-20 rather than year one, except `flooder`, which is the flood-death
-regression and is meant to. `hypeGambler` ends on the largest net worth in the
-roster and dies in nearly half its seeds, which is the risk-reward frontier the
-target asked for.
+20 seeds x 30 years, 18 bots. Re-measured on 2026-09-04, after rivals were cut:
 
-Four of CONCEPT.md §7's five death routes now fire: `overprint`, `debt_spiral`,
+| Survival | Bots |
+|---|---|
+| 100% | `licensor`, `chainRunner`, `chainWeaver`, `conservative`, `chaseMaxxer`, `dropRunner`, `scout` |
+| 95% | `hypeBuilder`, `channelHog` |
+| 50-70% | `safeHands` 70%, `hypeGambler` 65%, `bigBets` 50% |
+| under 50% | `allIn` 35% |
+| 0% | `smallBets`, `globalist`, `flooder`, `attentionBurner`, `specialtyOnly` |
+
+Deaths land in years 4-23 rather than year one, except `flooder` (0.9) and
+`attentionBurner` (2.2), which are the flood-death and attention-death
+regressions and are meant to. `hypeGambler` ends on the largest net worth in the
+roster at $14.2M and dies in a third of its seeds, which is the risk-reward
+frontier the target asked for.
+
+**Cutting rivals moved these numbers without changing any formula.** The
+`RIVALS` bootstrap loop drew 15 values off `s.rng`, so removing it renumbered
+every later roll. Measured on the same seeds either side of the cut, survival
+moved `bigBets` 60%->50%, `allIn` 40%->35%, `hypeGambler` 55%->65% and
+`conservative` 100%->100% ($5.7M->$5.8M) — both directions, small, and
+consistent with a reshuffle rather than a shift. The share term it removed was
+`share / referenceShare` = `0.08 / 0.08`, which was exactly 1 for the player on
+every tick of every run.
+
+All four of CONCEPT.md §7's death routes fire: `overprint`, `debt_spiral`,
 `channel_collapse` and `attention_collapse`. The last of those was never
 classified at all, so it could not be reported however often it happened;
 `attentionBurner` floods on `flooder`'s cadence with runs a sixth the size,
 survives the printing bill, and dies of the audience at year 2.2 with fatigue
-0.91 and attention 0.11 in every seed. The fifth route, `irrelevance`, needs
-rivals.
+0.91 and attention 0.11 in every seed. A fifth route, `irrelevance`, was cut
+with rivals.
 
 The reveal window is a real decision space now, and two of the reasons it was
 not were defects rather than balance. `submitMarketing` re-submitted its slice
@@ -452,26 +471,80 @@ A campaign is worth running when it lets you print a bigger run, and that is
 also how it becomes a way to lose. Over-buying demand for the run size you
 committed to is simply waste.
 
+## The per-set price measurement (tuning Round 0, 2026-09-04)
+
+`harness/runOne.ts` now snapshots each set's US, non-reprint price vector at
+ages 1, 2, 3, 8, 15 and 25 years. `out/sets.csv` carries one row per
+(bot, seed, set, age); `runs.csv` carries a median-across-sets reduction at
+age 2. This is the statistic the real-world targets are stated against — one
+set's card list at one age, which is what a Scryfall set list is.
+
+The old price columns pool **every printing ever made across fifty years**, so a
+year-1 common sits beside a year-50 common. They are kept, and they answer a
+different question. Do not compare them to a real set.
+
+**Measured for `conservative`, 30 seeds x 50 years:**
+
+| Age | sets | median | under $1 | top 10% | gini | chase/med | alpha |
+|---|---|---|---|---|---|---|---|
+| 1 | 1470 | $2.78 | 9% | 0.44 | 0.54 | 17 | 2.52 |
+| 2 | 1440 | $3.26 | 6% | 0.45 | 0.54 | 18 | 2.49 |
+| 3 | 1410 | $3.45 | 6% | 0.45 | 0.55 | 19 | 2.46 |
+| 8 | 1260 | $4.13 | 3% | 0.49 | 0.58 | 25 | 2.31 |
+| 15 | 1050 | $4.60 | 3% | 0.60 | 0.66 | 50 | 2.06 |
+| 25 | 750 | $4.85 | 1% | 0.78 | 0.81 | 156 | 1.87 |
+
+Three findings, and the third is the one that matters.
+
+**1. The chase/median ratio was never right.** The whole-catalogue metric read
+~1,125x against a measured real ~1,000x, and this document called it excellent.
+Per set it is **18x at age 2**. The 1,125x was an artefact of pooling fifty
+years — cheap old cards against expensive new ones — not spread within a set.
+
+**2. Nothing ever becomes bulk.** Share under $1 runs 9% at age 1 down to 1% at
+age 25. Real sets run 64% at age 1, rise to about 90% by age 8-15, then fall
+back to 69-82% by age 25. Our cards only ever get more valuable.
+
+**3. Our sets are born flat and slowly separate. Real sets are born unequal and
+then decay.** We start at gini 0.54 and reach 0.81 by age 25. A real set is
+already near 0.85 at age 1-2. The nostalgia engine is doing its job — the
+concentration metrics all move the right way, and by age 25 `top10Share` hits
+0.78 exactly on target — but it is doing it **twenty-three years too late**, and
+it is doing work that rarity and the chase roll should have done on release day.
+
+That reframes the value-block round. It is not only "lower the median 11x". It
+is "make a set born unequal, and let it decay to bulk afterwards". The first
+half points at `value.chaseSigma` (0.65 today; the research names a body log-SD
+of 1.2-1.9) and the rarity ladder, not at the nostalgia triple.
+
+## Tuning reference
+
+`docs/tuning/` carries the reference documents for the balance run:
+
+- `01-knobs.md` — all 207 `SimConfig` paths, with what each one moves and
+  whether it was swept, fitted by eye, or never measured.
+- `02-hardcoded.md` — the tunable values `--set` cannot reach: the constants
+  inside the formulas, `CHANNEL_TRAITS`, the `world.ts` bootstrap, and the bot
+  constants. It also records three duplicated constants and one live defect
+  (newcomer artists are minted at $0.50-$3.00 a card, 100x below the roster
+  `world.ts` seeds).
+- `03-targets.md` — the number each system must produce, and the knob that
+  moves it.
+- `04-workflow.md` — how to run a sweep, and the rules a sweep must obey.
+- `05-real-world.md` — measured industry numbers with sources, and what each
+  one says about a knob. Includes live price vectors for 19 Magic and 8 Pokemon
+  sets, measured 2026-09-04, which show our median card price is about 13x too
+  high and our gem rate about 5x too low.
+
+**Everything is tunable as of 2026-09-04.** Every balance constant moved into
+`SimConfig`; the path count went from 207 to 511. `CHANNEL_TRAITS`, the rarity
+tables, the grade cuts, the demand coefficient, the strides, the world bootstrap
+and the grader roster are all `--set` paths now. The move was verified
+byte-for-byte against a 360-run baseline.
+
 ## Known problems — these are the next tasks
 
-**1. Rivals.** Deliberately out of scope for this pass at the user's
-instruction, and still the load-bearing gap. They are not merely unimplemented,
-they are *decorative*: `world.ts` seeds five with a full `policy` block
-(aggression, `setsPerYearTarget`, chaseHeaviness, qualityBias,
-reprintWillingness) and an audience share, and the engine reads none of it. The
-player's `shareByPublisher` is assigned once and only ever read, so attention
-share is a constant for the whole run and nothing the player does moves it.
-
-Two consequences worth writing down. CONCEPT.md §7's "irrelevance" death is
-unreachable, and it is the one route that never fires. And CONCEPT.md §11 says
-plainly that *"any tuning done in a world without competitors is tuning against
-the wrong numbers"* — which is a standing caveat on every balance figure in this
-document, including all of the difficulty work above.
-
-A visible symptom to watch: creator coverage lands on the player's own cards
-100% of the time, because nobody else prints anything.
-
-**2. What is still declared and not simulated.** The list is short now.
+**1. What is still declared and not simulated.** The list is short now.
 `preorders` and the `illustrationLink` half of the chain system are untouched.
 `UnlockState.marketResearch`, `communityTeam` and `analytics` are read only by
 `tickRegionKnowledge`, so two of the three buy nothing. `Region.segmentMix` is
@@ -479,14 +552,14 @@ seeded and unread — regional demand draws on the global audience rather than o
 a per-region one, which is a real simplification and the obvious next thing to
 do to regions.
 
-**3. Performance.** `tickPrices` is still about 20% of a run, and the remaining
+**2. Performance.** `tickPrices` is still about 20% of a run, and the remaining
 ideas change behaviour: backing a cold printing off to a longer stride changes
 RNG draw counts, so it cannot be validated by hashing the CSV — it has to be
 re-measured against the value targets and the decile ladder as one unit. Typed
 arrays for the hot price loop are behaviour-neutral but mean giving up the
 object model in `tickPrices`.
 
-**4. What is still unswept.** Much less than before. The `art` and `hype` blocks
+**3. What is still unswept.** Much less than before. The `art` and `hype` blocks
 are swept, and so are the two grading knobs this section used to name — they do
 different jobs (`feeWorthMultiple` decides which printings clear the hurdle at
 all, 19.8% of them at 2 and 2.8% at 25; `submitRatePerTick` decides how many
@@ -503,14 +576,184 @@ the `grading` block (`tierMultiplier`, `popScarcityReference`,
 `1.6 + hype * heatFromHype` and is the most likely cause of the steepening top
 tail noted under the power-law bullet.
 
-**5. Two probe bots are unviable and it is not clear they should be.**
+**4. Three probe bots are unviable and it is not clear they should be.**
 `smallBets` dies in 20/20 seeds of `debt_spiral` — under-printing means never
 clearing the `minimumOrder` on the distributor or the big box, so a small
 printer is locked out of reach and cannot cover its overhead. `globalist` dies
 in 20/20, of `channel_collapse` in most: expanding doubles your channel
-obligations and the distributors sour. Both are plausible mechanisms and both
-may simply be too harsh. Neither has been tuned.
+obligations and the distributors sour.
 
+`specialtyOnly` also dies 20/20 of `debt_spiral`, at a median year 21.3, and
+**this contradicts a comment shipped in `config.ts`.** The
+`weeklyOverheadBase` note claims "At $1,000 the base is survivable on its own",
+citing `specialtyOnly` going from 100% to 0% survival at $2,000. At the shipped
+$1,000 it measures 0% over 20 seeds x 30 years — with rivals present as well as
+without, so the cut did not cause it. Either the overhead sweep was run at a
+shorter horizon than 30 years, or something has moved under it since. The knob
+is not necessarily wrong; the claim attached to it is.
+
+All three are plausible mechanisms and all three may simply be too harsh. None
+has been tuned.
+
+
+## The audience system (tuning Round 2, 2026-09-04)
+
+The audience model existed and was dead: six segments each carried a `size`
+nothing ever wrote, `audienceAverages` meaned them into one number, demand read
+one global scalar, and `Region.truth.segmentMix` was seeded per region and never
+read. It is now three layers per (region, segment) — `population`, `reached`,
+`engaged` — with demand reading `engaged`, weighted by each segment's affinity
+for the set's IPs. `src/sim/audience.ts` owns the loop.
+
+`lapsed` is no longer a segment. With the split it *is* `reached - engaged`
+across every segment, so keeping it as a seventh name double-counted the same
+people. The five that remain are three age cohorts that flow — kids to teens to
+adults to out, on a demographic clock — and two motivations that do not.
+
+### It works, and here is the evidence
+
+**The growth arc.** Mean print run by decade, `conservative`, 20 seeds x 50
+years: **17k, 60k, 119k, 158k, 184k**. The plan asked for 8-25k in years 1-5,
+60-150k in years 20-25 and 150-250k in years 45-50. All three bands hit.
+Engaged audience goes 600,000 to about 15,000,000.
+
+**Scale-coupling holds, which is why the round exists.** Print runs grew tenfold
+and the price shape did not move: a year-45 set prices at an age-2 median of
+$3.80 against a year-5 set at $3.49, a **1.09x ratio** against a 2.0x
+requirement, with Gini flat at 0.54 across all fifty years. Without it,
+`value.referencePopulation` fixed at 60,000 against a tenfold larger surviving
+population would have priced every late set as bulk.
+
+**Bots do not converge, so the arc is not scenery.** Final engaged audience runs
+from 136,000 (`attentionBurner`) to 13,100,000 (`hypeGambler`) — a 96x spread
+driven entirely by how each bot plays.
+
+**The lapsed reservoir moves.** Lapsed per engaged: `conservative` 0.54,
+`flooder` 1.21, `attentionBurner` **12.22** — it reached 1,670,000 people and
+engaged 137,000, having flooded them into lapsing. That is the mechanism doing
+exactly what it was built for.
+
+**Year-0 demand did not move.** Five segments times 120,000 is exactly
+`attention.referenceAudience`, so `audienceScale` is exactly 1.0 at tick 0.
+
+### Four things this round got wrong first, and what they taught
+
+1. **A bankroll is not a growth engine.** Cash compounds on profit; an audience
+   grows logistically. Sizing print runs off the bankroll made them diverge and
+   the run reached 1.3 million boxes at 0.50 sell-through with six million units
+   in the warehouse. Print runs now scale with `audienceScale` and the bankroll
+   is only an affordability cap.
+2. **Sizing off the previous release is worse.** It is a feedback loop with no
+   floor: one bad set collapses the run, which stops the releases, which
+   collapses engagement, which never recovers. It showed up as a print run of
+   exactly 1 from year 15 onward.
+3. **An affordability cap with no headroom is a trap.** `bankrollFraction` 0.30
+   exactly covered the opening run, so the cap bound every tick and
+   `conservative` died in 70% of seeds while `allIn` at 0.95 sailed through. It
+   is 0.6 now, and the bet-size ladder keeps its own pure `bankroll` policy so
+   `allIn` and `smallBets` do not collapse onto the same run.
+4. **Goodwill was a ratchet.** It drifted toward 1 rather than toward
+   indifference, so high goodwill raised demand, which raised sell-through,
+   which raised goodwill. It pinned at exactly 1.000 from year ten in every
+   seed. `attention.goodwillBaseline` is 0.5 and goodwill mean-reverts to it.
+
+Two scale-couplings from the plan turned out to be wrong and were reverted.
+`drops.unitsPerScalperReference` is already a per-scalper quantity, and scaling
+it made every scalper need a bigger market to be worth the same, which stopped
+the population cycling entirely — the caps carry the scale instead.
+`finance.overprintDeathUnits` as a scaled absolute made a late studio never
+cross it, so every death classified as `debt_spiral` and `channel_collapse`
+stopped firing; the threshold is measured against the studio's own mean print
+run now, which needs no scale-coupling at all.
+
+### Six gates this round moved, deferred with an owner
+
+The suite ends at **28 PASS, 0 FAIL, 18 KNOWN**. Twelve of the known failures
+predate this round. Six are new and each names the round that owns it:
+`conservativeSurvives` (0.90, Round 10), `allInSurvival` (0.80, Round 10),
+`channelHogLosesReach` (7, Round 10), `surpriseGrail` (1.00, Round 4 lowers the
+price body elevenfold), `gem10Premium` (7.80, Round 6) and
+`gradedPrintingShare` (0.121, Round 6). They are `known-fail` rather than
+silenced, so the suite reports `FIXED` the moment the owning round repairs one.
+
+### Round 3 readiness: watch the clock
+
+The regression suite took **28.3s at Round 1 and 52.3s at Round 2**. Nothing
+about the suite changed; the growth arc did it, by giving every run a larger
+catalogue to price. A 50-year `conservative` run now carries **3,500 printings**
+at 70 cards a set.
+
+Round 3 takes `cardsPerSet` from 70 to 280, so expect roughly **14,000
+printings** and a suite somewhere near three minutes. AJ's call was "correctness
+first, optimise only if it hurts". Three minutes per round is the point where it
+starts to hurt, so measure it early in the round rather than at the end.
+
+`tickPrices` is the hot loop and it runs on `strides.price` 4. Raising the
+stride is the lever, and Round 3 is the right place because it renumbers RNG
+anyway — but `value.priceLerp` is **not** stride-invariant, so a price converges
+half as fast in wall-clock years at stride 8. Raise `priceLerp` to compensate,
+and re-fit it in Round 4.
+
+## The balance regression suite (tuning Round 1, 2026-09-04)
+
+`npm run check` runs two fixed sweeps and gates 46 balance bands in about 28
+seconds. `checkInvariants` asserts structure and `tsc` asserts types; neither
+says anything about balance, and a balance regression three rounds back is
+unattributable. This is what makes it attributable.
+
+Bands live in `harness/gates.ts` as typed constants, keyed on `keyof RunMetrics`
+so a renamed column is a compile error, with a required `why` on every one. The
+table in `docs/tuning/03-targets.md` is generated from that file and a
+`static.bandsInSync` gate fails if the two drift. Full guide:
+`docs/tuning/06-regression.md`.
+
+Four verdicts, not two. `KNOWN` is a band the model does not meet yet; **`FIXED`
+is a known failure that started passing**, and the suite names the line to flip.
+Flipping it is what stops the next round undoing the work. `NO-DATA` fails a
+`pass` gate, because a gate that silently stops measuring looks like success.
+
+Standing at Round 1: **34 PASS, 0 FAIL, 12 KNOWN**. The known failures are the
+nine price-shape gates (Round 4), `gemRate` (Round 6), `scalperShare` (Round 5)
+and `idleDies` (Round 10). Anything else failing is a real regression.
+
+### The null-denominator rule
+
+**A metric that is a ratio must emit its denominator as its own column, and must
+return `null` rather than `0` when that denominator is zero.**
+
+`flopRate` returned `0` when no set had been judged, so `flooder` — which dies at
+year 0.9, before any set is a year old — reported the best flop rate in the
+roster against a sell-through proxy of 1.000. `signalCorrelation` had the same
+defect and worse: `correlation()` returned `0` below three samples, and `0` is
+the meaningful value *"the signal is pure noise"*, the exact failure state the
+reveal window exists to avoid. `gemRate`, `gradedShare`, `dropSellOutRate`,
+`scalperShareOfDrops` and `avgSellThrough` all shared it.
+
+All are nullable now, with `flopSetsJudged`, `signalPairs` and
+`regionReadingPairs` as explicit denominators. `toCsv` writes `null` as an empty
+cell and the aggregators drop nulls, so an absent measurement can no longer be
+read as a zero.
+
+### The `idle` bot, and a fourth stale claim
+
+`CONCEPT.md` §7 and the difficulty targets both say doing nothing is a way to
+lose, and nothing measured it, because every bot in the roster released
+something. The `idle` bot releases nothing.
+
+It dies of `debt_spiral` in 20 of 20 seeds — **at year 12, not the "about five
+years" `finance.weeklyOverheadBase`'s comment claims**. At $65k of annual
+overhead the $500,000 lasts 7.7 years, and the borrow ceiling carries it the
+rest. The claim never accounted for borrowing. After `specialtyOnly`, the artist
+rates and the scalper population, that is the fourth config comment that does not
+match its own measurement. Round 10 decides whether the number or the comment is
+wrong; `diff.idleDies` is a known-fail until it does.
+
+### `surpriseGrail` is horizon-dependent
+
+It is a per-run boolean, so a longer run has more chances to trip it: 0.40 over
+30 years and 0.80 over 50. The banked 0.30 came from a 25-year sweep. The gate
+now reads the 30-year roster sweep, and any future comparison must hold the
+horizon fixed.
 
 ## Things not to break
 
@@ -640,21 +883,16 @@ may simply be too harsh. Neither has been tuned.
 
 ## Suggested next session
 
-**Rivals.** They were held back deliberately, and problem 1 says why they are
-not just the next bullet: they are decorative today, the player's attention
-share is a constant, `irrelevance` is the one death route that cannot fire, and
-CONCEPT.md §11 makes every balance figure in this document provisional until
-they move. Every other mechanism CONCEPT.md names is now built.
+**The tuning and balancing run.** Every mechanism CONCEPT.md names is now
+built, rivals are cut, and no balance figure carries a caveat any more. The
+reference documents in `docs/tuning/` say what is measured, what was fitted by
+eye, and what has never been measured at all — `channels`, `region`, `collabs`,
+`creators`, `sealed`, `affection` and `chains` are the untouched blocks.
 
-Expect the difficulty numbers to move when they land. A rival taking attention
-share is a demand cut applied to every strategy at once, and the overhead and
-storage lines were sized against a world where the player has the audience to
-themselves.
-
-After that, in order of how self-contained each slice is: give regions their own
+Alongside it, in order of how self-contained each slice is: give regions their own
 audience (`Region.segmentMix` is seeded and unread, so regional demand currently
 draws on the global pool), make `communityTeam` and `analytics` buy something,
-and tune the two unviable probe bots in problem 5.
+and tune the two unviable probe bots in problem 4.
 
 Re-run these before you touch the value engine again:
 

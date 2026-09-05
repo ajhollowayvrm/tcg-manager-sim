@@ -32,7 +32,7 @@ Then time passes, and everything you already printed keeps moving without you.
 ## 3. Time Model
 
 - Player-chosen skip: **1 week / 1 month / 1 quarter.**
-- Skips are **interruptible**. Any material event (a card spikes, a distributor renegotiates, a creator opens a case on stream, a rival announces a set, an error is discovered) halts the skip and surfaces the event.
+- Skips are **interruptible**. Any material event (a card spikes, a distributor renegotiates, a creator opens a case on stream, an error is discovered) halts the skip and surfaces the event.
 - Run length is **infinite**. There is no end state, only a death state.
 - Design consequence: the first five years should be playable in short skips (dense decisions, tight money), and years 10+ should be quarter-skippable so vintage appreciation actually arrives within a session.
 
@@ -84,8 +84,19 @@ Personality, stats (linework, color, composition, speed, reliability), specialty
 ### Channel
 Distributor, big-box chain, LGS network, online retail, your **direct store**. Each has allocation limits, margin, relationship score, and popularity gates.
 
-### Rival Publisher
-Competing TCGs with their own IP, release calendars, and audience share. You fight for shelf space, artists, and attention until you reach a dominant state — and even then rivals persist and occasionally out-perform you on singles.
+### Rival Publisher — cut
+
+**Rival publishers are not in this game.** They were specified here, seeded as
+three inert entities, and removed on 2026-09-04 without ever being simulated.
+
+The player competes against the audience, the calendar and its own balance
+sheet. Attention is finite because the audience has finite attention, not
+because somebody else is taking it. Every death route the game has is a route
+the player drives into alone.
+
+This is a scope decision, not a deferral. Do not re-add rivals expecting the
+rest of the document to still fit — the sections below were rewritten around
+their absence.
 
 ---
 
@@ -168,7 +179,9 @@ The studio can die.
 - **Attention death** — flooding the market until each release stops mattering
 - **Debt spiral** — leverage on a swing that missed
 - **Relationship death** — losing distributor and chain access, collapsing back to LGS-only volume
-- **Irrelevance** — a rival takes your shelf space and your artists and you can't fund a comeback
+
+These four are the complete set, and all four fire. A fifth route, *irrelevance*
+— a rival taking your shelf space — was cut with rivals.
 
 ---
 
@@ -181,7 +194,6 @@ The studio can die.
 - **Artist roster** — stats, reputation trajectory, availability, rates
 - **Channel board** — allocation, relationship scores, gates
 - **Feeds** — social reactions, creator streams, drop chaos, error discoveries
-- **Rival tracker** — their releases, share, and singles performance
 
 ---
 
@@ -195,7 +207,7 @@ There is no feature cut. Every system ships. What changes is what the player has
 - A small pool of cheap, unproven artists
 - No market research, no community team, no analytics — the vibe reading is at its fuzziest
 - One main-set slot, modest runway, debt available at bad terms
-- **Rival publishers already exist and already have audience share**
+- The full audience is reachable from tick 0 — nobody else is holding any of it
 
 ### Unlock tree
 | Unlock | Gated on |
@@ -215,7 +227,12 @@ There is no feature cut. Every system ships. What changes is what the player has
 | External IP collab offers | brand standing, audience demographics |
 | Self-hosted events + event promos | audience size, capital |
 
-Rivals are not an unlock. They are the environment. Attention is a shared, finite resource from the first tick, and any tuning done in a world without competitors is tuning against the wrong numbers.
+Attention is finite from the first tick, but it is not shared. What limits a
+release is what the audience has left to give after the last one — fatigue,
+spent attention and goodwill — not a competitor spending it first. That makes
+the attention block the load-bearing counterweight in the whole model, and it is
+why `fatigueBite` and `fatigueDecay` matter more here than in a design with
+rivals to soak up the pressure.
 
 ---
 
@@ -241,7 +258,7 @@ This buys four things that are painful to retrofit:
 
 ### Harness capabilities
 - Run 50+ simulated years headless in well under a second
-- Batch across N seeds and dump CSV: price histories, populations, finances, attention, rival share
+- Batch across N seeds and dump CSV: price histories, populations, finances, attention
 - Scriptable AI strategies (conservative printer, chase-maxxer, flooder, specialty-only) to probe for degenerate optima
 - Snapshot/diff a run before and after a tuning change
 
@@ -286,7 +303,7 @@ The game starts in **2026** — the interface doesn't age, it *improves as you b
 
 Even at the top tier the reading carries residual error. It never becomes ground truth.
 
-The same principle applies elsewhere: early price screens show last known sale only; later ones show full charts, graded splits by grader and grade, pop reports, and rival comparisons.
+The same principle applies elsewhere: early price screens show last known sale only; later ones show full charts, graded splits by grader and grade, and pop reports.
 
 ### Procedural card faces
 Cards must feel collectible, so a card is never just a text row. Each face is composed from its own data:

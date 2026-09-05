@@ -12,7 +12,7 @@ if (!port) throw new Error('worker.ts must be run as a worker thread');
 
 port.on('message', (msg: { task: RunTask; order: number } | { done: true }) => {
   if ('done' in msg) { port.close(); return; }
-  const { metrics, violations } = runOne(msg.task);
-  const result: RunResult = { order: msg.order, metrics, violations };
+  const { metrics, violations, snapshots } = runOne(msg.task);
+  const result: RunResult = { order: msg.order, metrics, violations, snapshots };
   port.postMessage(result);
 });

@@ -7,6 +7,10 @@ import type {
   Artist, Publisher, Commission, CommissionId, ArtistTerms,
 } from './types.ts';
 import { rand, randRange, randInt, pick, chance, gauss } from './rng.ts';
+import {
+  segmentsIn, engagedIn, audienceScale, segmentAffinity,
+  creditUnitsSold, seedRegionEntry, tickAudienceSystem, globalAverages,
+} from './audience.ts';
 import { emptySeries, writePoint, compact } from './series.ts';
 import {
   nextId, SEGMENTS, RARITIES, ARTIST_PERSONALITIES, ARTIST_SPECIALTIES, REGION_US,
@@ -26,14 +30,17 @@ const T = (n: number) => n as Tick;
 const C = (n: number) => Math.round(n) as Cents;
 const U = (n: number) => Math.max(0, Math.min(1, n)) as Unit;
 
-const RARITY_WEIGHT: Record<Rarity, number> = {
-  common: 1, uncommon: 1.4, rare: 2.6, doubleRare: 5, ultraRare: 12,
-  illustrationRare: 22, specialIllustrationRare: 60, hyperRare: 90, promo: 8,
-};
-const RARITY_PULL: Record<Rarity, number> = {
-  common: 4, uncommon: 2.2, rare: 0.9, doubleRare: 0.28, ultraRare: 0.09,
-  illustrationRare: 0.035, specialIllustrationRare: 0.008, hyperRare: 0.004, promo: 0.05,
-};
+/**
+ * Copies printed per card of this rarity, per unit of print run.
+ *
+ * Only use this where the original expression was `pull / divisor` on its own.
+ * Where it was `x * pull / divisor`, keep that order: `(x * pull) / d` and
+ * `x * (pull / d)` disagree in the last bits about a third of the time, and the
+ * price engine amplifies that into a different run.
+ */
+function rarityPull(s: SimState, r: Rarity): number {
+  return s.config.rarity.pull[r] / s.config.rarity.pullDivisor;
+}
 
 /**
  * Latent demand for one printing, rolled once and never shown. Lognormal, so
@@ -69,14 +76,16 @@ export function submit(s: SimState, d: Decision): void { s.inbox.push(d); }
 
 function createIp(s: SimState, id: IpId, name: string, kind: IpEntity['kind']): void {
   const r = s.rng;
+  const af = s.config.affection;
   bumpRoster(s);
   s.ips[id] = {
     id, publisherId: s.playerId, name, kind, createdTick: s.tick, relatedIps: [],
     truth: {
       // The whole game lives in this roll. High variance is deliberate.
-      relatability: randRange(r, 8, 96),
-      affinities: Object.fromEntries(SEGMENTS.map(g => [g, randRange(r, -0.8, 0.9)])) as any,
-      longevity: randRange(r, 0.85, 1.18),
+      relatability: randRange(r, af.relatabilityMin, af.relatabilityMax),
+      affinities: Object.fromEntries(
+        SEGMENTS.map(g => [g, randRange(r, af.affinityMin, af.affinityMax)])) as any,
+      longevity: randRange(r, af.longevityMin, af.longevityMax),
       readingNoiseSeed: rand(r),
     },
     exposure: 0, affection: 4, affectionHistory: emptySeries(s.tick),
@@ -182,7 +191,8 @@ function defineProduct(
     packsPerUnit: packs, cardsPerPack,
     msrp: C(msrp), unitCogs: C(0),
     unitsPrinted: 0, unitsRemaining: 0, allocations: {},
-    scalperAppeal: U(kind === 'etb' || kind === 'premiumCollection' ? 0.8 : 0.4),
+    scalperAppeal: U(kind === 'etb' || kind === 'premiumCollection'
+      ? s.config.drops.scalperAppealPremium : s.config.drops.scalperAppealDefault),
     market: {
       price: C(msrp), heat: 1, nostalgia: 1, history: emptySeries(s.tick),
       hidden: { sealedRemaining: 0, ripRate: s.config.sealed.baseRipRatePerTick, heldByCollectors: U(0.35) },
@@ -199,7 +209,8 @@ function commitPrintRun(s: SimState, setId: SetId, quantities: Record<ProductId,
     const p = s.products[pid as ProductId]!;
     p.unitsPrinted = qty;
     p.unitsRemaining = qty;
-    p.unitCogs = C(s.config.printing.unitCost[quality] * p.packsPerUnit * 0.55);
+    p.unitCogs = C(s.config.printing.unitCost[quality] * p.packsPerUnit
+      * s.config.printing.cogsCoefficient);
     p.market.hidden.sealedRemaining = qty;
     cost += p.unitCogs * qty;
   }
@@ -213,7 +224,7 @@ function commitPrintRun(s: SimState, setId: SetId, quantities: Record<ProductId,
   // Blind commitment: reveal and release are scheduled here, before any signal.
   // `scheduleReveal` can move the reveal start inside this window afterwards.
   // The release date and the print run cannot move at all — that is the bet.
-  set.revealStartTick = T(s.tick + 12);
+  set.revealStartTick = T(s.tick + s.config.hype.defaultLeadWeeks);
   // Every region this set has a product in gets a release date, staggered by
   // `entryLeadWeeks`. The home market ships first and the rest follow, which is
   // CONCEPT.md §6.6's "region order is the preview mechanism": a publisher who
@@ -272,14 +283,14 @@ function reprint(s: SimState, cardId: CardId, intoSetId: SetId, quantity: number
   const err = chance(s.rng, cfg.printing.errorRate[set.printQuality])
     ? {
         kind: pick(s.rng, ['miscut', 'inkError', 'missingFoil', 'wrongBack', 'textError', 'crimp'] as const),
-        incidence: randRange(s.rng, 0.0001, 0.004), discoveredTick: null,
+        incidence: randRange(s.rng, s.config.printing.errorIncidenceMin, s.config.printing.errorIncidenceMax), discoveredTick: null,
       }
     : null;
 
   bumpRoster(s);
   s.printings[id] = {
     id, cardId, setId: intoSetId, regionId: 'reg_us' as RegionId, releaseTick: s.tick,
-    printQuantity: Math.max(1, quantity), pullRate: RARITY_PULL[card.rarity] / 10,
+    printQuantity: Math.max(1, quantity), pullRate: rarityPull(s, card.rarity),
     printQuality: set.printQuality,
     isReprintOf: originalId, error: err,
     // A reprint rolls its own chase. It is a different collectible, and the
@@ -299,7 +310,8 @@ function reprint(s: SimState, cardId: CardId, intoSetId: SetId, quantity: number
   // Making the chase accessible again costs the original some of its aura.
   if (originalId) {
     const orig = s.printings[originalId];
-    if (orig) orig.market.nostalgia = Math.max(1, orig.market.nostalgia * 0.85);
+    if (orig) orig.market.nostalgia = Math.max(1,
+      orig.market.nostalgia * s.config.value.reprintNostalgiaPenalty);
   }
 }
 
@@ -326,7 +338,7 @@ function allocate(s: SimState, productId: ProductId, allocations: Record<Channel
     if (ch.regionId !== p.regionId) continue;
 
     const existing = p.allocations[ch.id];
-    const headroom = effectiveCapacity(ch) - (existing ? existing.units : 0);
+    const headroom = effectiveCapacity(s, ch) - (existing ? existing.units : 0);
     const units = Math.min(Math.max(0, Math.floor(requested)), headroom, left);
     if (units < ch.minimumOrder) continue;
 
@@ -439,7 +451,7 @@ function tickCollabOffers(s: SimState): void {
     emit(s, 'collabExpired', false, { publisherId: pub.id, collabId: c.id }, { name: c.name });
   }
 
-  if (s.tick % 13 !== 0) return;
+  if (s.tick % s.config.strides.quarterly !== 0) return;
   const open = Object.values(s.collabs).filter(c => c.signedTick === null).length;
   if (open >= cfg.maxOpenOffers) return;
   if (!chance(s.rng, cfg.offerChancePerQuarter * pub.brandStanding)) return;
@@ -448,9 +460,9 @@ function tickCollabOffers(s: SimState): void {
   // them. A collab that reached everybody equally would be a flat demand
   // multiplier, and choosing between two offers would stop being a decision.
   const reachBonus = Object.fromEntries(SEGMENTS.map(g => [g, 0])) as Record<AudienceSegment, number>;
-  const reached = 1 + randInt(s.rng, 0, 2);
+  const reached = randInt(s.rng, cfg.segmentsReachedMin, cfg.segmentsReachedMax);
   for (let i = 0; i < reached; i++) {
-    reachBonus[pick(s.rng, SEGMENTS)] += randRange(s.rng, 0.15, 0.6);
+    reachBonus[pick(s.rng, SEGMENTS)] += randRange(s.rng, cfg.reachBonusMin, cfg.reachBonusMax);
   }
 
   const id = nextId(s, 'collab') as CollabId;
@@ -460,7 +472,7 @@ function tickCollabOffers(s: SimState): void {
     name: `${kind === 'externalIp' ? 'Licensed IP' : kind === 'event' ? 'Event' : 'Retail'} Collab ${id}`,
     licenseFee: C(randRange(s.rng, cfg.feeMin, cfg.feeMax)),
     reachBonus,
-    requiredBrandStanding: U(randRange(s.rng, 0.1, 0.6)),
+    requiredBrandStanding: U(randRange(s.rng, cfg.gateMin, cfg.gateMax)),
     expiresTick: T(s.tick + cfg.offerWindowWeeks),
     signedForSetId: null, signedTick: null,
   };
@@ -479,11 +491,14 @@ function collabDemandFactor(s: SimState, set: CardSet): number {
   if (!set.collabId) return 1;
   const collab = s.collabs[set.collabId];
   if (!collab) return 1;
-  const total = SEGMENTS.reduce((n, g) => n + s.audience.segments[g].size, 0);
+  // Weighted by who is out there, not by who is already buying: a licence
+  // reaches people the studio has not reached, which is the whole point of one.
+  const home = segmentsIn(s, s.homeRegionId);
+  const total = SEGMENTS.reduce((n, g) => n + home[g].population, 0);
   if (total <= 0) return 1;
   let weighted = 0;
   for (const g of SEGMENTS) {
-    weighted += collab.reachBonus[g] * s.audience.segments[g].size / total;
+    weighted += collab.reachBonus[g] * home[g].population / total;
   }
   return 1 + s.config.collabs.reachToDemand * weighted;
 }
@@ -510,6 +525,10 @@ function unlockRegion(s: SimState, regionId: RegionId): void {
   });
   region.unlockedTick = s.tick;
   pub.unlocks.regions.push(regionId);
+  // A known studio arrives with a foothold rather than from nothing. Without
+  // this, entering a market is years of acquisition before a single sale, and
+  // every region is a losing bet whatever its taste.
+  seedRegionEntry(s, regionId);
   emit(s, 'regionUnlocked', true, { publisherId: pub.id, regionId },
     { cost: region.unlockCost, marketSize: region.marketSize });
 }
@@ -749,9 +768,9 @@ function releaseSet(s: SimState, setId: SetId, regionId: RegionId): void {
       const p = s.products[pid]!;
       return n + p.unitsPrinted * p.packsPerUnit;
     }, 0);
-    const pullRate = RARITY_PULL[card.rarity] / 10;
+    const pullRate = rarityPull(s, card.rarity);
     const err = chance(s.rng, cfg.printing.errorRate[set.printQuality])
-      ? { kind: pick(s.rng, ['miscut', 'inkError', 'missingFoil', 'wrongBack', 'textError', 'crimp'] as const), incidence: randRange(s.rng, 0.0001, 0.004), discoveredTick: null }
+      ? { kind: pick(s.rng, ['miscut', 'inkError', 'missingFoil', 'wrongBack', 'textError', 'crimp'] as const), incidence: randRange(s.rng, s.config.printing.errorIncidenceMin, s.config.printing.errorIncidenceMax), discoveredTick: null }
       : null;
 
     const printing: Printing = {
@@ -788,7 +807,7 @@ function releaseSet(s: SimState, setId: SetId, regionId: RegionId): void {
     for (const seg of SEGMENTS) {
       const bonus = collab.reachBonus[seg];
       if (bonus <= 0) continue;
-      const st = s.audience.segments[seg];
+      const st = segmentsIn(s, regionId)[seg];
       st.goodwill = Math.min(1, st.goodwill + s.config.collabs.goodwillPerReach * bonus);
     }
   }
@@ -797,8 +816,9 @@ function releaseSet(s: SimState, setId: SetId, regionId: RegionId): void {
   // burns harder the less attention has recovered since the last release —
   // releasing into an already-exhausted audience is what a flood looks like.
   let goodwillBurn = 0;
+  const releaseSegs = segmentsIn(s, regionId);
   for (const seg of SEGMENTS) {
-    const st = s.audience.segments[seg];
+    const st = releaseSegs[seg];
     const floodPenalty = Math.max(0, 1 - st.attention / cfg.attention.perReleaseCost);
     const before = st.goodwill;
     st.goodwill = Math.max(0, st.goodwill - cfg.attention.goodwillSensitivity * 0.06 * (0.3 + floodPenalty));
@@ -836,7 +856,7 @@ function tickAffection(s: SimState, ips: IpEntity[]): void {
       const target = ip.truth.relatability;
       const conv = Math.min(1, ip.exposure / cfg.exposureToConvergence);
       ip.affection += (target - ip.affection) * cfg.convergenceRate * conv;
-      ip.exposure *= 0.985;
+      ip.exposure *= (1 - cfg.exposureDecayPerTick);
     } else {
       ip.affection *= (1 - cfg.decayPerTickUnexposed);
     }
@@ -879,23 +899,23 @@ function castDesire(s: SimState, card: Card): number {
  * Prices update on a 4-tick rotation rather than every tick. Nothing in the
  * fiction moves weekly anyway, and it is the single biggest cost in a long run.
  */
-const PRICE_STRIDE = 4;
 
 function tickPrices(s: SimState, printings: Printing[]): void {
   const cfg = s.config;
   const v = cfg.value;
-  const yearFrac = PRICE_STRIDE / 52;
-  const phase = s.tick % PRICE_STRIDE;
+  const scale = audienceScale(s);
+  const yearFrac = s.config.strides.price / 52;
+  const phase = s.tick % s.config.strides.price;
   // Loop invariants. `heatKeep` in particular is a `Math.pow` with two constant
   // arguments that used to run once per printing per tick.
-  const heatKeep = Math.pow(1 - v.heatDecayPerTick, PRICE_STRIDE);
+  const heatKeep = Math.pow(1 - v.heatDecayPerTick, s.config.strides.price);
   const standingRef = v.baseCardPrice * v.nostalgiaStandingReference;
-  const shockRate = v.shockChancePerTick * PRICE_STRIDE;
-  const resurgenceChance = 0.02 * PRICE_STRIDE;
+  const shockRate = v.shockChancePerTick * s.config.strides.price;
+  const resurgenceChance = v.resurgenceCheckChance * s.config.strides.price;
   const errorDiscoveryChance = cfg.printing.errorDiscoveryChance;
   const writeThreshold = cfg.history.writeThreshold;
   const climate = s.market.climate;
-  for (let i = phase; i < printings.length; i += PRICE_STRIDE) {
+  for (let i = phase; i < printings.length; i += s.config.strides.price) {
     const pr = printings[i]!;
     const card = s.cards[pr.cardId]!;
     const artist = s.artists[card.artistId]!;
@@ -907,9 +927,14 @@ function tickPrices(s: SimState, printings: Printing[]): void {
     // This is the grading feedback loop and the collector floor in one term.
     const surviving = tradeablePopulation(s, pr, gradedTotal(pr));
     // Rarity's price effect flows only through scarcity (print quantity is
-    // already rarity-scaled via RARITY_PULL at release) — see CONCEPT.md §5.
-    // RARITY_WEIGHT stays out of price; it's a demand-side signal in tickSales.
-    const scarcity = Math.pow(v.referencePopulation / surviving, v.scarcityExponent);
+    // already rarity-scaled via `rarity.pull` at release) — see CONCEPT.md §5.
+    // `rarity.weight` stays out of price; it's a demand-side signal in tickSales.
+    // Scale-coupled. `referencePopulation` is calibrated to a year-0 print run,
+    // so on a market grown thirty times over it would price every late set as
+    // bulk. Dividing the reference by the same scale the runs grew on keeps a
+    // set's shape stable while its absolute size moves.
+    const scarcity = Math.pow(
+      (v.referencePopulation * scale) / surviving, v.scarcityExponent);
     const art = 1 + card.artQuality * artist.reputation * v.artMultiplierWeight;
 
     pr.market.heat = Math.min(v.heatCeiling, 1 + (pr.market.heat - 1) * heatKeep);
@@ -924,7 +949,7 @@ function tickPrices(s: SimState, printings: Printing[]): void {
     // together, which set the level far too high and flattened the shape.
     const standing = pr.market.rawPrice / standingRef;
     const gate = Math.min(1, desire / v.nostalgiaDesireReference) * Math.min(1, standing);
-    const brand = 0.4 + s.publishers[card.publisherId]!.brandStanding;
+    const brand = v.nostalgiaBrandFloor + s.publishers[card.publisherId]!.brandStanding;
     const nostalgiaRate = v.nostalgiaRatePerYear * gate * brand
       - v.nostalgiaDecayPerYear * (1 - gate);
     pr.market.nostalgia = Math.max(1, Math.min(v.nostalgiaCeiling,
@@ -946,42 +971,44 @@ function tickPrices(s: SimState, printings: Printing[]): void {
         { kind: pr.error.kind, incidence: pr.error.incidence });
     }
     if (pr.error && pr.error.discoveredTick !== null) {
-      pr.market.heat = Math.min(v.heatCeiling, pr.market.heat + 0.002 / Math.max(0.0002, pr.error.incidence) * 0.00002);
+      pr.market.heat = Math.min(v.heatCeiling,
+        pr.market.heat + v.errorHeatGain / Math.max(v.errorIncidenceFloor, pr.error.incidence));
     }
 
     const noise = 1 + gauss(s.rng, 0, v.noiseSigma);
-    const rawMultiplier = scarcity * (desire / 40) * art * pr.truth.chase
+    const rawMultiplier = scarcity * (desire / v.desireReference) * art * pr.truth.chase
       * pr.market.heat * pr.market.nostalgia * climate * noise;
     const cappedMultiplier = softCap(rawMultiplier, v.priceCeilingMultiple);
     const target = v.baseCardPrice * cappedMultiplier;
 
     // Prices are sticky; they drift toward target rather than snapping.
-    pr.market.rawPrice = C(pr.market.rawPrice * 0.62 + Math.max(v.priceFloorCents, target) * 0.38);
+    pr.market.rawPrice = C(pr.market.rawPrice * (1 - v.priceLerp)
+      + Math.max(v.priceFloorCents, target) * v.priceLerp);
     writePoint(pr.market.rawHistory, s.tick, pr.market.rawPrice, writeThreshold);
 
     // Vintage price growth feeds character resurgence. Every printing seeds
     // at a flat baseCardPrice regardless of rarity (see releaseSet), so the
     // baseline here matches that seed, not a rarity-scaled one.
     const ageYears = (s.tick - pr.releaseTick) / 52;
-    if (ageYears > 5 && chance(s.rng, resurgenceChance)) {
+    if (ageYears > cfg.affection.resurgenceMinAgeYears && chance(s.rng, resurgenceChance)) {
       const ip = s.ips[card.subjectIp]!;
       const growth = pr.market.rawPrice / Math.max(1, v.baseCardPrice);
-      if (growth > 3) {
-        ip.resurgence = Math.min(1, ip.resurgence + cfg.affection.resurgenceFromVintage * 0.02);
+      if (growth > cfg.affection.resurgenceMinGrowth) {
+        ip.resurgence = Math.min(1, ip.resurgence
+          + cfg.affection.resurgenceFromVintage * cfg.affection.resurgenceGainScale);
         emit(s, 'characterResurgence', false, { ipId: ip.id, printingId: pr.id }, { growth });
       }
     }
   }
 }
 
-const SEALED_STRIDE = 4;
 /** Expected-contents value is expensive and slow-moving; cache it per product. */
 const contentsCache = new WeakMap<object, number>();
 
 function tickSealed(s: SimState, products: Product[]): void {
   const cfg = s.config.sealed;
-  const yearFrac = SEALED_STRIDE / 52;
-  if (s.tick % SEALED_STRIDE !== 0) return;
+  const yearFrac = s.config.strides.sealed / 52;
+  if (s.tick % s.config.strides.sealed !== 0) return;
   for (const p of products) {
     const h = p.market.hidden;
     if (h.sealedRemaining <= 0) continue;
@@ -990,12 +1017,13 @@ function tickSealed(s: SimState, products: Product[]): void {
 
     // Expected contents value drives sealed price. Recomputed occasionally.
     let contents = contentsCache.get(p) ?? 0;
-    if (s.tick % (SEALED_STRIDE * 6) === 0 || contents === 0) {
+    if (s.tick % (s.config.strides.sealed * 6) === 0 || contents === 0) {
       contents = 0;
       for (const cardId of set.cardIds) {
         const card = s.cards[cardId]!;
         const pr = s.printings[s.printingByCard[cardId]!];
-        if (pr) contents += pr.market.rawPrice * RARITY_PULL[card.rarity] / 10;
+        if (pr) contents += pr.market.rawPrice
+          * s.config.rarity.pull[card.rarity] / s.config.rarity.pullDivisor;
       }
       contents *= p.packsPerUnit;
       contentsCache.set(p, contents);
@@ -1006,10 +1034,13 @@ function tickSealed(s: SimState, products: Product[]): void {
     // clear and `tickScalpers` takes it back out as they dump; this is the
     // decay that stops either from compounding.
     p.market.heat = Math.min(cfg.heatCeiling,
-      1 + (p.market.heat - 1) * Math.pow(1 - cfg.heatDecayPerTick, SEALED_STRIDE));
-    const scarcity = Math.pow(Math.max(1, p.unitsPrinted) / Math.max(1, h.sealedRemaining), 0.5);
-    const target = (contents * cfg.contentsWeight + p.msrp * 0.6) * scarcity * p.market.nostalgia * p.market.heat;
-    p.market.price = C(p.market.price * 0.9 + Math.max(p.msrp * 0.4, target) * 0.1);
+      1 + (p.market.heat - 1) * Math.pow(1 - cfg.heatDecayPerTick, s.config.strides.sealed));
+    const scarcity = Math.pow(
+      Math.max(1, p.unitsPrinted) / Math.max(1, h.sealedRemaining), cfg.scarcityExponent);
+    const target = (contents * cfg.contentsWeight + p.msrp * cfg.msrpWeight)
+      * scarcity * p.market.nostalgia * p.market.heat;
+    p.market.price = C(p.market.price * (1 - cfg.priceLerp)
+      + Math.max(p.msrp * cfg.priceFloorMultiple, target) * cfg.priceLerp);
     writePoint(p.market.history, s.tick, p.market.price, s.config.history.writeThreshold);
 
     // Ripping destroys sealed supply and adds singles supply. Rising price slows it.
@@ -1026,7 +1057,8 @@ function tickSealed(s: SimState, products: Product[]): void {
       const card = s.cards[cardId]!;
       const pr = s.printings[s.printingByCard[cardId]!];
       if (!pr) continue;
-      const pulled = opened * p.packsPerUnit * RARITY_PULL[card.rarity] / 10;
+      const pulled = opened * p.packsPerUnit
+        * s.config.rarity.pull[card.rarity] / s.config.rarity.pullDivisor;
       pr.population.sealed = Math.max(0, pr.population.sealed - pulled);
       pr.population.opened += pulled;
     }
@@ -1137,8 +1169,9 @@ function hostPrerelease(s: SimState, setId: SetId, scale: number, budget: Cents)
   set.hype.prereleaseScale += actual;
   recomputeHype(s, set);
 
+  const homeSegs = segmentsIn(s, s.homeRegionId);
   for (const g of SEGMENTS) {
-    const st = s.audience.segments[g];
+    const st = homeSegs[g];
     st.goodwill = U(st.goodwill + cfg.prereleaseGoodwillGain * actual);
   }
   lgs.relationship = U(lgs.relationship + cfg.prereleaseRelationshipGain * actual);
@@ -1166,14 +1199,15 @@ function tickReveal(s: SimState, set: CardSet): void {
 
   // Diminishing: hype already earned makes the next preview worth less.
   const card = s.cards[set.cardIds[h.cardsRevealed - 1]!];
-  const pull = card ? RARITY_WEIGHT[card.rarity] / 10 : 1;
+  const pull = card ? s.config.rarity.weight[card.rarity] / s.config.rarity.weightDivisor : 1;
   h.revealHype += cfg.revealHypePerCard * pull / (1 + h.revealHype / cfg.revealHalfLife);
   recomputeHype(s, set);
 
   // Previews are not free. They spend the same finite attention a release does,
   // so a long campaign into a tired audience is waste.
+  const revealSegs = segmentsIn(s, s.homeRegionId);
   for (const g of SEGMENTS) {
-    const st = s.audience.segments[g];
+    const st = revealSegs[g];
     st.attention = Math.max(0, st.attention - cfg.revealAttentionCost);
   }
 
@@ -1198,10 +1232,11 @@ function tickReveal(s: SimState, set: CardSet): void {
  */
 interface AudienceAverages { attention: number; fatigue: number; goodwill: number }
 
-function audienceAverages(s: SimState): AudienceAverages {
+function audienceAverages(s: SimState, regionId: RegionId = s.homeRegionId): AudienceAverages {
   let attention = 0, fatigue = 0, goodwill = 0;
+  const segs = segmentsIn(s, regionId);
   for (const g of SEGMENTS) {
-    const st = s.audience.segments[g];
+    const st = segs[g];
     attention += st.attention;
     fatigue += st.fatigue;
     goodwill += st.goodwill;
@@ -1215,7 +1250,7 @@ function setChase(s: SimState, set: CardSet): number {
   let total = 0;
   for (const cid of set.cardIds) {
     const card = s.cards[cid]!;
-    total += castDesire(s, card) * RARITY_WEIGHT[card.rarity] / 100;
+    total += castDesire(s, card) * s.config.rarity.weight[card.rarity] / s.config.rarity.chaseWeightDivisor;
   }
   return total / Math.max(1, set.cardIds.length);
 }
@@ -1242,11 +1277,27 @@ function tickSales(s: SimState, products: Product[]): void {
   // Audience state does not move inside this pass, and `setChase` walks every
   // card in a set — so both are computed once per tick rather than once per
   // product. Two products off one set used to pay for the same walk twice.
-  const { attention, fatigue, goodwill } = audienceAverages(s);
-  const totalAudience = SEGMENTS.reduce((n, g) => n + s.audience.segments[g].size, 0);
-  const fatigueTerm = fatigueResponse(s, fatigue);
-  const goodwillTerm = 0.2 + 0.8 * goodwill;
+  // Audience state is per region now, so it is cached per region rather than
+  // computed once per tick: a market that is tired is tired on its own.
+  const byRegion = new Map<RegionId, {
+    attention: number; fatigueTerm: number; goodwillTerm: number;
+  }>();
+  const regionState = (rid: RegionId) => {
+    let v = byRegion.get(rid);
+    if (!v) {
+      const a = audienceAverages(s, rid);
+      v = {
+        attention: a.attention,
+        fatigueTerm: fatigueResponse(s, a.fatigue),
+        goodwillTerm: cfg.attention.goodwillDemandFloor
+          + (1 - cfg.attention.goodwillDemandFloor) * a.goodwill,
+      };
+      byRegion.set(rid, v);
+    }
+    return v;
+  };
   const chaseBySet = new Map<SetId, number>();
+  const audienceBySet = new Map<string, number>();
   for (const p of products) {
     if (p.unitsRemaining <= 0) continue;
     const set = s.sets[p.setId]!;
@@ -1267,16 +1318,10 @@ function tickSales(s: SimState, products: Product[]): void {
       chaseBySet.set(set.id, chase);
     }
 
-    // Attention is shared with the rivals. Demand is measured relative to the
-    // share the rest of this formula was tuned at, so a publisher sitting at
-    // referenceShare behaves exactly as it did before rivals existed.
-    const share = s.audience.shareByPublisher[pub.id] ?? 0;
-    const shareFactor = share / cfg.attention.referenceShare;
-
     // Decay runs from this region's own release, not from the set's first one:
     // a market that opened two years later has not had two years to go cold.
     const weeksOut = (s.tick - sched.releaseTick) / 52;
-    const decay = Math.exp(-weeksOut * 1.4);
+    const decay = Math.exp(-weeksOut * cfg.attention.demandDecayPerYear);
     // What this region is worth, and how much of it this set forfeits by not
     // suiting it. A region with no opinion and average wealth lands on 1.
     const region = s.regions[p.regionId];
@@ -1296,19 +1341,35 @@ function tickSales(s: SimState, products: Product[]): void {
     // The reference run and the reference audience are set so that a
     // reference-sized run into the starting audience behaves exactly as it did
     // before, and anything larger no longer conjures its own buyers.
-    const audienceScale = totalAudience / cfg.attention.referenceAudience;
+    // The engaged audience of THIS region, weighted by how much each segment
+    // wants this set. Two fields that were seeded and never read now decide it:
+    // `Region.truth.segmentMix` split the people, and `IpEntity.truth.affinities`
+    // says which of them care. A set can suit one market and miss another.
+    const audKey = `${set.id}:${p.regionId}`;
+    let weightedAudience = audienceBySet.get(audKey);
+    if (weightedAudience === undefined) {
+      const segs = segmentsIn(s, p.regionId);
+      weightedAudience = 0;
+      for (const g of SEGMENTS) {
+        weightedAudience += segs[g].engaged * 2 * segmentAffinity(s, set.id, g);
+      }
+      audienceBySet.set(audKey, weightedAudience);
+    }
+    const regionScale = weightedAudience / cfg.attention.referenceAudience;
+    const { attention, fatigueTerm, goodwillTerm } = regionState(p.regionId);
     // Several products in one region split that region's demand rather than
     // each collecting all of it. Across regions they do not: a second market is
     // its own audience, which is the entire reason to open one.
     const regionShare = productShareOfRegion(s, set, p);
-    const pool = cfg.attention.referenceRunUnits * regionShare * audienceScale
-      * 0.06 * attention * shareFactor * fatigueTerm
-      * goodwillTerm * (0.3 + pub.brandStanding) * (0.5 + chase) * decay
+    const pool = cfg.attention.referenceRunUnits * regionShare * regionScale
+      * cfg.attention.demandCoefficient * attention * fatigueTerm
+      * goodwillTerm * (cfg.attention.brandDemandFloor + pub.brandStanding)
+      * (cfg.attention.chaseDemandFloor + chase) * decay
       * (1 + (set.hype?.level ?? 0)) * regionFactor * collabDemandFactor(s, set);
     // Below half a unit every channel's share rounds to zero, so the rest of
     // this pass cannot sell anything. Old sets sit here for decades: `decay` is
     // e^(-1.4 * years), so a five-year-old set is already three zeroes down.
-    if (pool < 0.5) continue;
+    if (pool < cfg.attention.demandCutoff) continue;
 
     // Reach, relationship, and what the channel is actually charging. A store
     // marking product up above MSRP moves less of it.
@@ -1317,9 +1378,11 @@ function tickSales(s: SimState, products: Product[]): void {
     for (const [cid, a] of allocs) {
       const ch = s.channels[cid];
       if (!ch || a.unitsRemaining <= 0) { weights.push(0); continue; }
-      const traits = traitsFor(ch);
+      const traits = traitsFor(s, ch);
       const priceResponse = Math.pow(p.msrp / Math.max(1, a.streetPrice), traits.priceElasticity);
-      const w = a.unitsRemaining * traits.reach * (0.5 + 0.5 * ch.relationship) * priceResponse;
+      const relFloor = cfg.channels.demandRelationshipFloor;
+      const w = a.unitsRemaining * traits.reach
+        * (relFloor + (1 - relFloor) * ch.relationship) * priceResponse;
       weights.push(w);
       totalWeight += w;
     }
@@ -1342,6 +1405,7 @@ function tickSales(s: SimState, products: Product[]): void {
       if (sold <= 0) continue;
       a.unitsRemaining -= sold;
       soldTotal += sold;
+      creditUnitsSold(s, p.regionId, sold);
 
       // The publisher is paid on MSRP, never on street price. A store that marks
       // up hot product keeps that upside — CONCEPT.md §4.
@@ -1372,7 +1436,8 @@ function tickSales(s: SimState, products: Product[]): void {
     const exposureShare = set.collabId ? s.config.collabs.exposureShare : 1;
     for (const cid of set.cardIds) {
       const ip = s.ips[s.cards[cid]!.subjectIp];
-      if (ip) ip.exposure += soldTotal * exposureShare / 20000;
+      if (ip) ip.exposure += soldTotal * exposureShare
+        / (cfg.affection.unitsPerExposurePoint * audienceScale(s));
     }
   }
 }
@@ -1411,16 +1476,17 @@ function resolveDrop(s: SimState, drop: Drop): void {
   if (offered <= 0) return;
 
   const { attention, fatigue, goodwill } = audienceAverages(s);
-  const share = s.audience.shareByPublisher[pub.id] ?? 0;
-  const shareFactor = share / s.config.attention.referenceShare;
   const weeksOut = (s.tick - set.regionSchedule[0]!.releaseTick) / 52;
-  const decay = Math.exp(-weeksOut * 1.4);
-  const traits = traitsFor(ch);
+  const decay = Math.exp(-weeksOut * s.config.attention.demandDecayPerYear);
+  const traits = traitsFor(s, ch);
 
   // Same forces as a shelf sale, concentrated into one moment.
   const collectorDemand = s.audience.actors.collectors * cfg.collectorReach
-    * attention * shareFactor * fatigueResponse(s, fatigue)
-    * (0.2 + 0.8 * goodwill) * (0.3 + pub.brandStanding) * (0.5 + setChase(s, set))
+    * attention * fatigueResponse(s, fatigue)
+    * (s.config.attention.goodwillDemandFloor
+       + (1 - s.config.attention.goodwillDemandFloor) * goodwill)
+    * (s.config.attention.brandDemandFloor + pub.brandStanding)
+    * (s.config.attention.chaseDemandFloor + setChase(s, set))
     * decay * traits.reach * (1 + (set.hype?.level ?? 0));
 
   // Scalpers price off the sealed market, which is the only public number they
@@ -1450,6 +1516,7 @@ function resolveDrop(s: SimState, drop: Drop): void {
 
   if (sold > 0) {
     a.unitsRemaining -= sold;
+    creditUnitsSold(s, p.regionId, sold);
     p.unitsRemaining = Math.max(0, p.unitsRemaining - sold);
 
     // Full margin. The direct store is the point of owning one.
@@ -1460,7 +1527,8 @@ function resolveDrop(s: SimState, drop: Drop): void {
 
     for (const cid of set.cardIds) {
       const ip = s.ips[s.cards[cid]!.subjectIp];
-      if (ip) ip.exposure += sold / 20000;
+      if (ip) ip.exposure += sold
+        / (s.config.affection.unitsPerExposurePoint * audienceScale(s));
     }
 
     if (toScalpers > 0) {
@@ -1492,8 +1560,9 @@ function resolveDrop(s: SimState, drop: Drop): void {
   const goodwillDelta = cfg.goodwillPerCollectorDrop * (1 - scalperShare) * (sold / offered)
     - cfg.goodwillPerScalperDrop * scalperShare
     - cfg.goodwillPerShortage * shortage;
+  const dropSegs = segmentsIn(s, p.regionId);
   for (const g of SEGMENTS) {
-    const st = s.audience.segments[g];
+    const st = dropSegs[g];
     st.goodwill = U(st.goodwill + goodwillDelta);
   }
   if (set.performance) set.performance.goodwillDelta += goodwillDelta;
@@ -1546,7 +1615,6 @@ function scheduleAutomaticDrops(s: SimState, products: Product[]): void {
 }
 
 /** Scalper stock trades on the sealed market, so it moves on the sealed cadence. */
-const SCALPER_STRIDE = 4;
 
 /**
  * The other half of the loop. Scalpers resell what they bought, and what they
@@ -1555,7 +1623,7 @@ const SCALPER_STRIDE = 4;
  * rather than a one-way ratchet.
  */
 function tickScalpers(s: SimState, products: Product[]): void {
-  if (s.tick % SCALPER_STRIDE !== 0) return;
+  if (s.tick % s.config.strides.scalper !== 0) return;
   const cfg = s.config.drops;
   const hidden = s.audience.hidden;
 
@@ -1597,6 +1665,9 @@ function tickScalpers(s: SimState, products: Product[]): void {
     // Reading the per-unit premium instead makes the population a one-way
     // ratchet that pins at its cap and never leaves.
     const perCapita = realizedUnits / Math.max(1, s.audience.actors.scalpers);
+    // NOT scale-coupled: this is already a per-scalper quantity, so scaling it
+    // made every scalper need a bigger market to be worth the same, and the
+    // population stopped cycling entirely. The caps below carry the scale.
     const crowding = Math.min(1, perCapita / cfg.unitsPerScalperReference);
     const avg = (realized / realizedUnits) * crowding;
     hidden.scalperProfitability += (avg - hidden.scalperProfitability) * cfg.profitabilitySmoothing;
@@ -1607,8 +1678,12 @@ function tickScalpers(s: SimState, products: Product[]): void {
   }
 
   const edge = hidden.scalperProfitability - cfg.breakEvenPremium;
-  s.audience.actors.scalpers = Math.max(cfg.minScalpers, Math.min(cfg.maxScalpers,
-    s.audience.actors.scalpers * (1 + cfg.populationGrowth * edge)));
+  // The caps carry the market's scale: a market thirty times larger supports
+  // thirty times the resellers.
+  const popScale = audienceScale(s);
+  s.audience.actors.scalpers = Math.max(cfg.minScalpers * popScale,
+    Math.min(cfg.maxScalpers * popScale,
+      s.audience.actors.scalpers * (1 + cfg.populationGrowth * edge)));
 
   // Latched, so the crash fires on the crossing and not every tick after it.
   const boom = hidden.scalperProfitability > cfg.breakEvenPremium;
@@ -1627,7 +1702,6 @@ function tickDrops(s: SimState, products: Product[]): void {
   tickScalpers(s, products);
 }
 
-const CHANNEL_STRIDE = 4;
 
 /**
  * Street price, relationship drift, and souring. Runs on the same stride as the
@@ -1639,7 +1713,7 @@ const CHANNEL_STRIDE = 4;
  * to discount it.
  */
 function tickChannels(s: SimState, products: Product[]): void {
-  if (s.tick % CHANNEL_STRIDE !== 0) return;
+  if (s.tick % s.config.strides.channel !== 0) return;
   const cfg = s.config.channels;
 
   // Per-channel accumulators for this evaluation.
@@ -1660,7 +1734,7 @@ function tickChannels(s: SimState, products: Product[]): void {
     for (const [cid, a] of Object.entries(p.allocations) as Array<[ChannelId, ChannelAllocation]>) {
       const ch = s.channels[cid];
       if (!ch) continue;
-      const traits = traitsFor(ch);
+      const traits = traitsFor(s, ch);
 
       const moved = a.units - a.unitsRemaining;
       const pressure = a.units > 0 ? moved / a.units : 0;
@@ -1668,7 +1742,7 @@ function tickChannels(s: SimState, products: Product[]): void {
       if (a.unitsRemaining > 0) {
         const target = p.msrp
           * (1 + traits.markupSensitivity * pressure - traits.discountFloor * (1 - pressure) * staleness);
-        a.streetPrice = C(Math.max(p.msrp * 0.25,
+        a.streetPrice = C(Math.max(p.msrp * cfg.streetPriceFloorMultiple,
           a.streetPrice + (target - a.streetPrice) * cfg.streetPriceLerp));
       }
 
@@ -1706,7 +1780,7 @@ function tickChannels(s: SimState, products: Product[]): void {
     if (!ch.unlocked) continue;
     const before = ch.relationship;
     const acc = sellThrough.get(ch.id);
-    const traits = traitsFor(ch);
+    const traits = traitsFor(s, ch);
 
     if (acc && acc.held > 0) {
       const rate = acc.moved / acc.held;
@@ -1714,8 +1788,9 @@ function tickChannels(s: SimState, products: Product[]): void {
         ch.relationship = U(ch.relationship + cfg.relationshipGainPerSellThrough * (rate - cfg.sellThroughTarget + 0.2));
         // Selling through your channels is what pays the goodwill back.
         const gain = traits.goodwillPerSellThrough * rate;
+        const chSegs = segmentsIn(s, ch.regionId);
         for (const g of SEGMENTS) {
-          const st = s.audience.segments[g];
+          const st = chSegs[g];
           st.goodwill = U(st.goodwill + gain);
         }
       }
@@ -1757,8 +1832,9 @@ function loseChannel(s: SimState, ch: Channel): void {
 
 function tickAudience(s: SimState): void {
   const cfg = s.config.attention;
+  for (const segs of Object.values(s.audience.regions)) {
   for (const g of SEGMENTS) {
-    const st = s.audience.segments[g];
+    const st = segs[g];
     st.attention = Math.min(1, st.attention + cfg.regenPerTick);
     // Proportional, not a flat subtraction. A constant decay makes fatigue
     // bimodal: below the break-even cadence it saturates, above it sits at
@@ -1768,11 +1844,19 @@ function tickAudience(s: SimState): void {
     st.fatigue = Math.max(0, st.fatigue * (1 - cfg.fatigueDecay));
     // Long-memory trust. Deliberately much slower than fatigue recovery —
     // flood damage should stay felt long after attention has refilled.
-    st.goodwill = Math.min(1, st.goodwill + cfg.goodwillRegenPerTick * (1 - st.goodwill));
+    // Drifts toward indifference, not toward affection. Sustained goodwill has
+    // to be earned every year; it does not accumulate into a permanent asset.
+    st.goodwill = Math.max(0, Math.min(1,
+      st.goodwill + cfg.goodwillRegenPerTick * (cfg.goodwillBaseline - st.goodwill)));
   }
+  }
+
+  // The population, cohort and engagement loop. It reads `market.climate`, so
+  // it runs after the climate walk below would be wrong — see `tick`.
+  tickAudienceSystem(s);
   // Fatigue is now the sharpest penalty in the model, so the player has to be
   // able to see it coming. `fatigueWarning` was declared and never emitted.
-  const fatigueAvg = SEGMENTS.reduce((n, g) => n + s.audience.segments[g].fatigue, 0) / SEGMENTS.length;
+  const fatigueAvg = globalAverages(s).fatigue;
   const warn = fatigueAvg >= cfg.fatigueWarnThreshold;
   if (warn !== s.audience.fatigueWarned) {
     s.audience.fatigueWarned = warn;
@@ -1781,9 +1865,30 @@ function tickAudience(s: SimState): void {
     }
   }
 
-  s.market.climate = Math.max(0.5, Math.min(1.8,
-    s.market.climate + gauss(s.rng, 0, 0.012) + (1 - s.market.climate) * 0.008));
-  writePoint(s.market.climateHistory, s.tick, s.market.climate, 0.02);
+  const mk = s.config.market;
+  s.market.climate = Math.max(mk.climateFloor, Math.min(mk.climateCeiling,
+    s.market.climate + gauss(s.rng, 0, mk.climateNoiseSigma)
+    + (1 - s.market.climate) * mk.climateReversion));
+  writePoint(s.market.climateHistory, s.tick, s.market.climate, mk.climateWriteThreshold);
+}
+
+/**
+ * Unsold stock above which a death reads as an overprint rather than a debt
+ * spiral.
+ *
+ * Measured against the studio's own recent print volume, not an absolute count.
+ * An absolute threshold has to be scale-coupled to stay meaningful, and once it
+ * was, a late-game studio never crossed it and every death classified as
+ * `debt_spiral` — `channel_collapse` stopped firing altogether.
+ */
+function overprintUnitsThreshold(s: SimState): number {
+  let printed = 0;
+  let runs = 0;
+  for (const p of Object.values(s.products)) {
+    if (p.unitsPrinted > 0) { printed += p.unitsPrinted; runs++; }
+  }
+  const meanRun = runs > 0 ? printed / runs : 0;
+  return Math.max(s.config.finance.overprintDeathUnits, meanRun * 2.5);
 }
 
 function tickFinance(s: SimState): void {
@@ -1812,14 +1917,15 @@ function tickFinance(s: SimState): void {
     pub.ledger.push({ t: s.tick, amount: C(-storage), category: 'storage', note: `${Math.round(unsold)} units` });
   }
 
-  if (s.tick % 4 === 0) {
-    const rate = (cfg.interestBase - pub.credit * cfg.creditToRate) / 13;
+  if (s.tick % s.config.strides.interest === 0) {
+    const periods = 52 / s.config.strides.interest;
+    const rate = (cfg.interestBase - pub.credit * cfg.creditToRate) / periods;
     const interest = pub.debt * rate;
     pub.cash = C(pub.cash - interest);
     if (interest > 0) pub.ledger.push({ t: s.tick, amount: C(-interest), category: 'interest', note: 'debt service' });
   }
 
-  const ceiling = 500_000_00 * cfg.borrowCeilingMultiple * (0.3 + pub.credit);
+  const ceiling = cfg.borrowCeilingBase * cfg.borrowCeilingMultiple * (0.3 + pub.credit);
   if (pub.cash < 0) {
     const need = -pub.cash;
     if (pub.debt + need <= ceiling) {
@@ -1839,37 +1945,41 @@ function tickFinance(s: SimState): void {
       // because there was too much of it: fatigue saturated and attention
       // spent. Checked before the stock test, because a flooded audience also
       // leaves a warehouse behind and the warehouse is the symptom.
-      const fatigueAvg = SEGMENTS.reduce((n, g) => n + s.audience.segments[g].fatigue, 0)
-        / SEGMENTS.length;
-      const attentionAvg = SEGMENTS.reduce((n, g) => n + s.audience.segments[g].attention, 0)
-        / SEGMENTS.length;
+      const avgs = globalAverages(s);
+      const fatigueAvg = avgs.fatigue;
+      const attentionAvg = avgs.attention;
       const cfgA = s.config.attention;
       pub.deathCause =
         (fatigueAvg >= cfgA.deathFatigueThreshold && attentionAvg <= cfgA.deathAttentionThreshold)
           ? 'attention_collapse'
-        : unsold > 20000
+        : unsold > overprintUnitsThreshold(s)
           ? (lostAChannel ? 'channel_collapse' : 'overprint')
           : 'debt_spiral';
       emit(s, 'studioDead', true, { publisherId: pub.id }, { cause: pub.deathCause, tick: s.tick });
     }
   }
   if (pub.debt > pub.peakDebt) pub.peakDebt = pub.debt;
-  pub.credit = U(pub.credit + (pub.cash > 0 ? 0.0006 : -0.002));
+  pub.credit = U(pub.credit
+    + (pub.cash > 0 ? cfg.creditGainPerTick : -cfg.creditLossPerTick));
 
   // brandStanding mean-reverts toward a target driven by average affection and
   // goodwill, rather than accumulating without limit — that's what was pinning
   // it at 1.0 for any publisher that survived long enough to build affection.
   const ipsArr = Object.values(s.ips);
   const affectionAvg = ipsArr.length ? ipsArr.reduce((n, ip) => n + ip.affection, 0) / ipsArr.length : 0;
-  const goodwillAvg = SEGMENTS.reduce((n, g) => n + s.audience.segments[g].goodwill, 0) / SEGMENTS.length;
-  const brandTarget = U(0.15 + 0.55 * (affectionAvg / 100) + 0.30 * goodwillAvg);
+  const goodwillAvg = globalAverages(s).goodwill;
+  const brandTarget = U(cfg.brandBase
+    + cfg.brandFromAffection * (affectionAvg / cfg.brandAffectionReference)
+    + cfg.brandFromGoodwill * goodwillAvg);
   pub.brandStanding = U(pub.brandStanding + (brandTarget - pub.brandStanding) * cfg.brandConvergenceRate);
 }
 
 function tickArtists(s: SimState): void {
+  const ca = s.config.art;
   for (const a of Object.values(s.artists)) {
-    a.reputation = U(a.reputation + a.growth * (0.6 + rand(s.rng) * 0.8));
-    if (a.reputation > 0.85 && chance(s.rng, 0.002)) {
+    a.reputation = U(a.reputation
+      + a.growth * (ca.reputationGrowthFloor + rand(s.rng) * ca.reputationGrowthRange));
+    if (a.reputation > ca.retireReputationThreshold && chance(s.rng, ca.retireAtPeakChance)) {
       emit(s, 'artistBreakout', true, { artistId: a.id }, { reputation: a.reputation });
     }
   }
@@ -1897,7 +2007,6 @@ function tickArtists(s: SimState): void {
  * targets no matter what — but keeping the stream separate means the movement
  * is attributable to the art multiplier instead of to renumbered noise.
  */
-const ART_STRIDE = 2;
 
 /** The mean of the three stats that decide how good the picture is. */
 function artistCraft(a: Artist): number {
@@ -2006,7 +2115,7 @@ function hireArtist(s: SimState, artistId: ArtistId, terms: ArtistTerms): void {
  * the stride cannot change what a retainer costs per year.
  */
 function tickArt(s: SimState): void {
-  if (s.tick % ART_STRIDE !== 0) return;
+  if (s.tick % s.config.strides.art !== 0) return;
   const cfg = s.config.art;
 
   // 1. Art that has come back.
@@ -2043,7 +2152,7 @@ function tickArt(s: SimState): void {
     for (const r of Object.values(pub.retainers)) {
       const artist = s.artists[r.artistId];
       if (!artist || !artist.available) { delete pub.retainers[r.artistId]; continue; }
-      bill += r.weeklyFee * ART_STRIDE;
+      bill += r.weeklyFee * s.config.strides.art;
     }
     if (bill > 0) {
       pub.cash = C(pub.cash - bill);
@@ -2053,7 +2162,7 @@ function tickArt(s: SimState): void {
 
   // 3. Relationships cool when you stop calling.
   for (const a of Object.values(s.artists)) {
-    a.relationship = U(a.relationship - cfg.relationshipDecayPerTick * ART_STRIDE);
+    a.relationship = U(a.relationship - cfg.relationshipDecayPerTick * s.config.strides.art);
   }
 }
 
@@ -2064,7 +2173,7 @@ function tickArt(s: SimState): void {
  * think about again for the next forty-nine.
  */
 function tickRoster(s: SimState): void {
-  if (s.tick % 13 !== 0) return;
+  if (s.tick % s.config.strides.quarterly !== 0) return;
   const cfg = s.config.art;
   const artists = Object.values(s.artists);
 
@@ -2074,10 +2183,10 @@ function tickRoster(s: SimState): void {
     // they started at, never off today's. Compounding a career's worth of
     // reputation onto the current rate produces a bill in the billions.
     const target = a.baseRate * (1 + a.reputation * cfg.rateGrowthPerReputation);
-    a.rate = C(a.rate + (target - a.rate) * cfg.rateAdjustRate * 13);
+    a.rate = C(a.rate + (target - a.rate) * cfg.rateAdjustRate * s.config.strides.quarterly);
     // Retirement takes the artist off the board. Their old cards keep the
     // reputation they earned — the value engine reads it live either way.
-    if (a.reputation > 0.5 && chance(s.artRng, cfg.retireChancePerTick * 13)) {
+    if (a.reputation > 0.5 && chance(s.artRng, cfg.retireChancePerTick * s.config.strides.quarterly)) {
       a.available = false;
       for (const pub of Object.values(s.publishers)) delete pub.retainers[a.id];
       if (a.exclusiveTo !== null) a.exclusiveTo = null;
@@ -2086,28 +2195,29 @@ function tickRoster(s: SimState): void {
   }
 
   if (artists.filter(a => a.available).length < cfg.maxRosterSize
-      && chance(s.artRng, cfg.newcomerChancePerTick * 13)) {
+      && chance(s.artRng, cfg.newcomerChancePerTick * s.config.strides.quarterly)) {
     const id = nextId(s, 'art') as ArtistId;
-    const newcomerRate = Math.round(randRange(s.artRng, 50, 300)) as Cents;
+    const newcomerRate = Math.round(
+      randRange(s.artRng, cfg.newcomerRateMin, cfg.newcomerRateMax)) as Cents;
     s.artists[id] = {
       id,
       name: `Artist ${Object.keys(s.artists).length + 1}`,
       personality: pick(s.artRng, ARTIST_PERSONALITIES),
       specialty: pick(s.artRng, ARTIST_SPECIALTIES),
       stats: {
-        linework: randRange(s.artRng, 0.2, 0.7),
-        color: randRange(s.artRng, 0.2, 0.7),
-        composition: randRange(s.artRng, 0.2, 0.7),
-        speed: randRange(s.artRng, 0.3, 0.8),
-        reliability: randRange(s.artRng, 0.4, 0.9),
+        linework: randRange(s.artRng, cfg.newcomerStatMin, cfg.newcomerStatMax),
+        color: randRange(s.artRng, cfg.newcomerStatMin, cfg.newcomerStatMax),
+        composition: randRange(s.artRng, cfg.newcomerStatMin, cfg.newcomerStatMax),
+        speed: randRange(s.artRng, cfg.speedMin, cfg.speedMax),
+        reliability: randRange(s.artRng, cfg.reliabilityMin, cfg.reliabilityMax),
       },
       rate: newcomerRate,
       baseRate: newcomerRate,
       turnaroundWeeks: Math.round(randRange(s.artRng, 2, 8)),
-      reputation: randRange(s.artRng, 0.03, 0.2),
+      reputation: randRange(s.artRng, cfg.newcomerReputationMin, cfg.newcomerReputationMax),
       // The gamble. Hidden, and the whole reason scouting is not solved.
-      growth: randRange(s.artRng, 0.0005, 0.004),
-      relationship: 0.5,
+      growth: randRange(s.artRng, cfg.growthMin, cfg.growthMax),
+      relationship: cfg.openingRelationship,
       exclusiveTo: null,
       available: true,
     };
@@ -2130,17 +2240,19 @@ function tickRoster(s: SimState): void {
  * every later draw in the run, which would move the five value targets for a
  * reason that has nothing to do with value.
  */
-const GRADING_STRIDE = 4;
 
 /** Grade boundaries on the latent 1-10 condition score, best first. */
-const GRADE_CUTS: Array<{ tier: GradeTier; min: number }> = [
-  { tier: '10', min: 9.75 },
-  { tier: '9.5', min: 9.25 },
-  { tier: '9', min: 8.5 },
-  { tier: '8', min: 7.5 },
-  { tier: '7', min: 6.5 },
-  { tier: 'below7', min: -Infinity },
-];
+function gradeCuts(s: SimState): Array<{ tier: GradeTier; min: number }> {
+  const g = s.config.grading.gradeCuts;
+  return [
+    { tier: '10', min: g['10'] },
+    { tier: '9.5', min: g['9.5'] },
+    { tier: '9', min: g['9'] },
+    { tier: '8', min: g['8'] },
+    { tier: '7', min: g['7'] },
+    { tier: 'below7', min: -Infinity },
+  ];
+}
 
 /** Abramowitz-Stegun 7.1.26. Good to ~1e-7, which is far past what this needs. */
 function normalCdf(x: number, mean: number, sigma: number): number {
@@ -2225,14 +2337,15 @@ function resolveGradingReturns(s: SimState): void {
 
     const byTier = (pr.population.graded[grader.id] ??= {});
     let assigned = 0;
-    for (let i = 0; i < GRADE_CUTS.length; i++) {
-      const cut = GRADE_CUTS[i]!;
-      const upper = i === 0 ? 1 : normalCdf(GRADE_CUTS[i - 1]!.min, mean, cfg.conditionSigma);
+    const cuts = gradeCuts(s);
+    for (let i = 0; i < cuts.length; i++) {
+      const cut = cuts[i]!;
+      const upper = i === 0 ? 1 : normalCdf(cuts[i - 1]!.min, mean, cfg.conditionSigma);
       const lower = cut.min === -Infinity ? 0 : normalCdf(cut.min, mean, cfg.conditionSigma);
       const share = Math.max(0, upper - lower);
       // The last tier takes the rounding remainder, so a submission never
       // gains or loses copies to the grade split.
-      const n = i === GRADE_CUTS.length - 1
+      const n = i === cuts.length - 1
         ? sub.quantity - assigned
         : Math.min(sub.quantity - assigned, Math.round(sub.quantity * share));
       if (n <= 0) continue;
@@ -2259,8 +2372,8 @@ function tickGrading(s: SimState, printings: Printing[]): void {
   if (shareTotal <= 0) return;
 
   const writeThreshold = s.config.history.writeThreshold;
-  const phase = s.tick % GRADING_STRIDE;
-  for (let i = phase; i < printings.length; i += GRADING_STRIDE) {
+  const phase = s.tick % s.config.strides.grading;
+  for (let i = phase; i < printings.length; i += s.config.strides.grading) {
     const pr = printings[i]!;
     const graded = gradedTotal(pr);
 
@@ -2278,7 +2391,7 @@ function tickGrading(s: SimState, printings: Printing[]): void {
       const tier = chooseTier(grader, raw, cfg.feeWorthMultiple);
       if (tier) {
         const appetite = Math.min(cfg.appetiteCeiling, raw / (tier.price * cfg.feeWorthMultiple));
-        const wanted = pool * cfg.submitRatePerTick * appetite * GRADING_STRIDE;
+        const wanted = pool * cfg.submitRatePerTick * appetite * s.config.strides.grading;
         const quantity = Math.floor(Math.min(wanted, room, pool));
         if (quantity >= 1) {
           s.market.gradingQueue.push({
@@ -2303,7 +2416,7 @@ function tickGrading(s: SimState, printings: Printing[]): void {
         // Pop report position. A 10 that a thousand other people also have is
         // not the same card as the only one — CONCEPT.md §5's condition term.
         const scarcity = Math.max(cfg.popScarcityFloor, Math.min(cfg.popScarcityCeiling,
-          Math.pow(cfg.popScarcityReference / count, cfg.popScarcityExponent)));
+          Math.pow((cfg.popScarcityReference * audienceScale(s)) / count, cfg.popScarcityExponent)));
         const target = raw * cfg.tierMultiplier[tier] * rep * scarcity;
         const prev = prices[tier];
         const next = C(prev === undefined ? target : prev * (1 - cfg.priceLerp) + target * cfg.priceLerp);
@@ -2316,7 +2429,7 @@ function tickGrading(s: SimState, printings: Printing[]): void {
 }
 
 function tickCompaction(s: SimState): void {
-  if (s.tick % 52 !== 0) return;
+  if (s.tick % s.config.strides.annual !== 0) return;
   // Completed drops are feed history, and the feed does not reach back decades.
   // Without this a long run keeps every queue it ever ran.
   const dropCutoff = s.tick - s.config.history.weeklyRetentionTicks;

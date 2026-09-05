@@ -5,6 +5,7 @@
 import type { SimState, RegionId } from '../src/sim/types.ts';
 import { setFit } from '../src/sim/regions.ts';
 import { collectorHeldShare } from '../src/sim/actors.ts';
+import { globalAverages, engagedTotal, lapsedIn } from '../src/sim/audience.ts';
 
 export interface RunMetrics {
   bot: string;
@@ -48,7 +49,12 @@ export interface RunMetrics {
   p99CardPrice: number;
   maxCardPrice: number;
   topSealedPrice: number;
-  flopRate: number;
+  /** Null when no set has had a year on the market to be judged. */
+  flopRate: number | null;
+  /** Sets old enough to judge. `flopRate`'s denominator. */
+  flopSetsJudged: number;
+  /** The old sell-through proxy, kept one round so the change is visible. */
+  flopRateSellThrough: number | null;
   fatigue: number;
   brandStanding: number;
   /** Channels the publisher can still ship to at the end of the run. */
@@ -56,16 +62,18 @@ export interface RunMetrics {
   /** How many times a channel soured all the way out. */
   channelsLost: number;
   /** Lowest relationship across the channels still open. */
-  worstRelationship: number;
+  worstRelationship: number | null;
+  /** Channels still open at the end. Reads `worstRelationship`'s null. */
+  channelsOpenAtEnd: number;
   /** Share of every printed unit that actually reached a buyer. */
-  avgSellThrough: number;
+  avgSellThrough: number | null;
 
   /** Drops that ran at all. Zero means the run never opened a direct store. */
   dropsRun: number;
   /** Share of those drops whose queue cleared the stock. */
-  dropSellOutRate: number;
+  dropSellOutRate: number | null;
   /** Share of every unit sold through a drop that a scalper took. */
-  scalperShareOfDrops: number;
+  scalperShareOfDrops: number | null;
   /** Widest resale premium over MSRP any drop was camped for. */
   peakDropPremium: number;
   /** Scalper population at the end of the run. Starts at 500. */
@@ -87,7 +95,9 @@ export interface RunMetrics {
    * 0 means it is noise the player should ignore. It wants to be in between,
    * and it should rise with the number of previews the campaign ran.
    */
-  signalCorrelation: number;
+  signalCorrelation: number | null;
+  /** Sets carrying both a signal and a truth. `signalCorrelation`'s sample. */
+  signalPairs: number;
 
   /** Copies sitting in slabs at the end of the run. */
   gradedCopies: number;
@@ -97,11 +107,11 @@ export interface RunMetrics {
    * about bulk commons — most printings never clear the grading fee, which is
    * the point of the fee.
    */
-  gradedShare: number;
+  gradedShare: number | null;
   /** Share of all printings carrying a pop report. */
   gradedPrintingShare: number;
   /** Share of graded copies that came back a 10. Print quality is what moves this. */
-  gemRate: number;
+  gemRate: number | null;
   /**
    * Median premium a 10 carries over the same printing's raw price. This is
    * the number the grading layer lives on: too low and nobody would submit,
@@ -145,7 +155,9 @@ export interface RunMetrics {
    * window asks: a reading nobody can score is a reading nobody can tune, and
    * one that is always right makes market entry arithmetic.
    */
-  regionReadingCorrelation: number;
+  regionReadingCorrelation: number | null;
+  /** Region readings scored against truth. The correlation's sample. */
+  regionReadingPairs: number;
 
   /** Collector population at the end of the run. The stable floor. */
   collectors: number;
@@ -155,8 +167,10 @@ export interface RunMetrics {
   resellers: number;
   /** Speculator population. This one is meant to swing. */
   speculators: number;
-  /** Widest and narrowest the speculator population got, as a ratio. */
-  speculatorSwing: number;
+  /** Widest over narrowest the speculator population got. Null if never sampled. */
+  speculatorSwing: number | null;
+  speculatorMin: number;
+  speculatorMax: number;
   /**
    * Mean `SetPerformance.aftermarketIndex` across released sets — how the sets
    * did as cards rather than as product. It was written as 0 and read by
@@ -179,8 +193,12 @@ export interface RunMetrics {
 
   /** Times a named creator covered any printing. */
   creatorCoverage: number;
-  /** Share of that coverage that landed on this publisher's own cards. */
-  creatorOwnShare: number;
+  /**
+   * Share of printings that got any coverage at all. Replaces `creatorOwnShare`,
+   * which was 1.0 by construction once rivals were cut: every card in the world
+   * is the player's, so the filter could never exclude anything.
+   */
+  creatorCoverageShareOfPrintings: number;
   /** Best relationship with any creator at the end of the run. */
   bestCreatorRelationship: number;
 
@@ -190,12 +208,54 @@ export interface RunMetrics {
   chainsSpanningSets: number;
   /** Mean printed members per chain. */
   meanChainLength: number;
+
+  // ---- Per-set price shape, measured at age 2 -----------------------------
+  // These are the columns the real-world targets are stated against. Every
+  // one is a median across the sets this run snapshotted, so a single freak
+  // set cannot carry the number. See docs/tuning/03-targets.md.
+  /**
+   * Mean print run by decade of the run. The growth arc is only visible as a
+   * curve: a single mean over fifty years says nothing about whether the studio
+   * grew or merely printed a lot once.
+   */
+  meanPrintRunByDecade1: number | null;
+  meanPrintRunByDecade2: number | null;
+  meanPrintRunByDecade3: number | null;
+  meanPrintRunByDecade4: number | null;
+  meanPrintRunByDecade5: number | null;
+  /** Engaged audience at the end of the run, across every open region. */
+  engagedAudience: number;
+  /** Reached but not currently active, in the home market. The lapsed reservoir. */
+  lapsedHome: number;
+  /** Sets that reached at least one snapshot age. */
+  setsSnapshotted: number;
+  /**
+   * Sets that reached age 2 with a non-empty price vector. **Zero makes every
+   * `...Age2` column below meaningless** — a studio that died in year two has
+   * no two-year-old sets, and 0.00 must not be read as a measurement.
+   */
+  setsAtAge2: number;
+  setMedianAge2: number | null;
+  setShareUnder1Age2: number | null;
+  setShareUnder25cAge2: number | null;
+  setTop1ShareAge2: number | null;
+  setTop10ShareAge2: number | null;
+  setGiniAge2: number | null;
+  setChaseOverMedianAge2: number | null;
+  setTailAlphaAge2: number | null;
 }
 
-/** Pearson r. Returns 0 rather than NaN for a degenerate sample. */
-function correlation(xs: number[], ys: number[]): number {
+/**
+ * Pearson r, or `null` for a sample too small to have one.
+ *
+ * Null rather than 0. Zero is a real answer here — it is "the signal is pure
+ * noise", the exact failure state the reveal window exists to avoid — so
+ * returning it for "there was nothing to correlate" hides the difference
+ * between a broken signal and an unmeasured one.
+ */
+function correlation(xs: number[], ys: number[]): number | null {
   const n = Math.min(xs.length, ys.length);
-  if (n < 3) return 0;
+  if (n < 3) return null;
   const mx = xs.reduce((a, b) => a + b, 0) / n;
   const my = ys.reduce((a, b) => a + b, 0) / n;
   let sxy = 0, sxx = 0, syy = 0;
@@ -204,12 +264,123 @@ function correlation(xs: number[], ys: number[]): number {
     sxy += dx * dy; sxx += dx * dx; syy += dy * dy;
   }
   const d = Math.sqrt(sxx * syy);
-  return d > 0 ? sxy / d : 0;
+  return d > 0 ? sxy / d : null;
+}
+
+
+// ---------------------------------------------------------------------------
+// Price vector statistics
+//
+// These describe ONE set's price list at ONE age, which is the shape the
+// real-world measurement in docs/tuning/05-real-world.md reports. The
+// whole-catalogue statistics further down answer a different question: they
+// pool every printing the studio ever made, across fifty years, so a year-1
+// common sits in the same vector as a year-50 common. Both are useful. Only
+// this one is comparable to a Scryfall set list.
+// ---------------------------------------------------------------------------
+
+export interface PriceVectorStats {
+  /** Cards in the vector. */
+  n: number;
+  median: number;
+  /** Bulk share. The measured band for a modern set is 0.64-0.92. */
+  shareUnder1: number;
+  shareUnder25c: number;
+  /** Value concentration. Measured: top 1% holds ~0.35, top 10% holds ~0.78. */
+  top1Share: number;
+  top10Share: number;
+  /** Gini of the price vector. Measured central value 0.85. */
+  gini: number;
+  /** Chase card over median card. Measured central value ~1000x. */
+  chaseOverMedian: number;
+  /**
+   * Hill tail index over the top decile. Measured 1.6-2.7, central 2.0.
+   * An index near 2 means the mean is finite and the variance is not, which is
+   * why a set's total value is hostage to two to five cards.
+   */
+  tailAlpha: number;
+}
+
+const EMPTY_STATS: PriceVectorStats = {
+  n: 0, median: 0, shareUnder1: 0, shareUnder25c: 0, top1Share: 0,
+  top10Share: 0, gini: 0, chaseOverMedian: 0, tailAlpha: 0,
+};
+
+/** Statistics of one price vector, in dollars. The input is not mutated. */
+export function priceVectorStats(pricesDollars: number[]): PriceVectorStats {
+  const xs = pricesDollars.filter(Number.isFinite).slice().sort((a, b) => a - b);
+  const n = xs.length;
+  if (n === 0) return { ...EMPTY_STATS };
+
+  const at = (q: number) => xs[Math.min(n - 1, Math.floor(n * q))]!;
+  const median = at(0.5);
+  const max = xs[n - 1]!;
+  const total = xs.reduce((a, b) => a + b, 0);
+
+  const shareOfTop = (frac: number) => {
+    if (total <= 0) return 0;
+    const k = Math.max(1, Math.ceil(n * frac));
+    let sum = 0;
+    for (let i = n - k; i < n; i++) sum += xs[i]!;
+    return sum / total;
+  };
+
+  // Gini over a sorted ascending vector. Zero-priced entries are legal here
+  // and contribute nothing, which is the correct behaviour for a free card.
+  let weighted = 0;
+  for (let i = 0; i < n; i++) weighted += (i + 1) * xs[i]!;
+  const gini = total > 0 ? (2 * weighted) / (n * total) - (n + 1) / n : 0;
+
+  // Hill estimator over the top decile. It needs at least two points above a
+  // strictly positive threshold, or the logarithm is undefined.
+  let tailAlpha = 0;
+  const k = Math.floor(n * 0.1);
+  if (k >= 2) {
+    const threshold = xs[n - k - 1] ?? 0;
+    if (threshold > 0) {
+      let sumLogs = 0;
+      for (let i = n - k; i < n; i++) sumLogs += Math.log(xs[i]! / threshold);
+      if (sumLogs > 0) tailAlpha = 1 + k / sumLogs;
+    }
+  }
+
+  return {
+    n,
+    median,
+    shareUnder1: xs.filter(x => x < 1).length / n,
+    shareUnder25c: xs.filter(x => x < 0.25).length / n,
+    top1Share: shareOfTop(0.01),
+    top10Share: shareOfTop(0.10),
+    gini,
+    chaseOverMedian: median > 0 ? max / median : 0,
+    tailAlpha,
+  };
+}
+
+/** One set, priced at one age. A row of `out/sets.csv`. */
+export interface SetSnapshot extends PriceVectorStats {
+  bot: string;
+  seed: string;
+  setId: string;
+  /** Set age in years at the moment of the snapshot. */
+  ageYears: number;
+  releaseTick: number;
+}
+
+/** What the tick loop observed that end-of-run state cannot reconstruct. */
+export interface RunExtras {
+  snapshots: SetSnapshot[];
+  /** Speculator population range, sampled every tick. */
+  speculatorMin: number;
+  speculatorMax: number;
+  speculatorSamples: number;
 }
 
 const dollars = (cents: number) => cents / 100;
 
-export function computeMetrics(s: SimState, bot: string, _years: number): RunMetrics {
+export function computeMetrics(
+  s: SimState, bot: string, _years: number, extras: RunExtras,
+): RunMetrics {
   const pub = s.publishers[s.playerId]!;
   const printings = Object.values(s.printings);
   const prices = printings.map(p => dollars(p.market.rawPrice)).sort((a, b) => a - b);
@@ -258,20 +429,39 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
   const sealedPrices = Object.values(s.products).map(p => dollars(p.market.price));
   const topSealedPrice = sealedPrices.length ? Math.max(...sealedPrices) : 0;
 
-  // engine.ts never populates CardSet.performance, so flops are inferred from
-  // sell-through instead: most of the print run still sitting unsold.
   const products = Object.values(s.products);
-  const flopRate = products.length
+  // The old proxy: most of the print run still sitting unsold. Kept for one
+  // round beside the economic definition, so the change in the number is
+  // visible rather than silent.
+  const flopRateSellThrough = products.length
     ? products.filter(p => p.unitsPrinted > 0 && p.unitsRemaining / p.unitsPrinted > 0.5).length / products.length
-    : 0;
+    : null;
+
+  // A flop is a set that did not make its print run back. `CardSet.performance`
+  // is populated at release and `actualCost` at commit, so this is a real
+  // profit-and-loss test rather than an inventory one. Only sets with a year on
+  // the market are judged: a set released last month has not had its chance.
+  let judgedSets = 0;
+  let floppedSets = 0;
+  for (const set of Object.values(s.sets)) {
+    const perf = set.performance;
+    if (!perf) continue;
+    const sched = set.regionSchedule[0];
+    if (!sched || (s.tick as number) - (sched.releaseTick as number) < 52) continue;
+    judgedSets++;
+    if (perf.revenue < set.actualCost) floppedSets++;
+  }
+  const flopRate = judgedSets > 0 ? floppedSets / judgedSets : null;
 
   const openChannels = pub.unlocks.channels
     .map(id => s.channels[id])
     .filter(ch => !!ch && ch.unlocked);
   const channelsLost = s.events.filter(e => e.kind === 'channelLost').length;
+  // Null, not zero. A studio with no channels left and a studio whose last
+  // channel sits at zero are different outcomes, and 0 conflated them.
   const worstRelationship = openChannels.length
     ? Math.min(...openChannels.map(ch => ch!.relationship))
-    : 0;
+    : null;
 
   // Finance. Inventory is valued at cost, which is the conservative reading:
   // unsold stock is worth at most what it cost, and usually less.
@@ -284,7 +474,7 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
 
   const printedTotal = products.reduce((n, p) => n + p.unitsPrinted, 0);
   const soldTotal = products.reduce((n, p) => n + (p.unitsPrinted - p.unitsRemaining), 0);
-  const avgSellThrough = printedTotal > 0 ? soldTotal / printedTotal : 0;
+  const avgSellThrough = printedTotal > 0 ? soldTotal / printedTotal : null;
 
   // Drops are read off the event log, not off `s.drops`: completed drops are
   // pruned as feed history, and a 50-year run would lose most of them.
@@ -317,10 +507,10 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
   // which `releaseSet` freezes at launch. Scoring it against sell-through
   // instead measures the economy's variance, not the signal's accuracy, and in
   // a run where every set sells through it returns noise whatever the signal did.
-  const signalPairs = releasedSets.filter(set => set.hype!.cardsRevealed > 0);
+  const signalSets = releasedSets.filter(set => set.hype!.cardsRevealed > 0);
   const signalCorrelation = correlation(
-    signalPairs.map(set => set.hype!.signal),
-    signalPairs.map(set => set.performance!.chaseIndex),
+    signalSets.map(set => set.hype!.signal),
+    signalSets.map(set => set.performance!.chaseIndex),
   );
 
   // Grading. Read off the pop reports rather than the event log: unlike drops,
@@ -345,10 +535,7 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
   const gradersActive = Object.values(s.graders)
     .filter(g => (g.activeFromTick as number) <= (s.tick as number)).length;
 
-  const segments = Object.values(s.audience.segments);
-  const fatigueAvg = segments.length
-    ? segments.reduce((n, seg) => n + seg.fatigue, 0) / segments.length
-    : 0;
+  const fatigueAvg = globalAverages(s).fatigue;
 
   // The art pipeline. Spend comes off the ledger rather than the queue: a
   // commission that missed its release was still paid for, and pretending
@@ -411,12 +598,12 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
   // The secondary-market actors. The speculator swing is the one that says
   // whether the population is a population or a constant: read at the end of
   // the run it can only ever say where it stopped.
-  const specSeries = s.events
-    .filter(e => e.kind === 'speculatorSwing')
-    .map(e => Number(e.data.speculators ?? 0))
-    .filter(n => n > 0);
-  const speculatorSwing = specSeries.length >= 2
-    ? Math.max(...specSeries) / Math.max(1, Math.min(...specSeries)) : 1;
+  // Sampled every tick by the runner, not read off the event log. The old
+  // derivation defaulted to 1 below two events, so "never cycled" and "cycled
+  // by a factor of one" were the same number.
+  const speculatorSwing = extras.speculatorSamples >= 2 && extras.speculatorMin > 0
+    ? extras.speculatorMax / extras.speculatorMin
+    : null;
   const releasedWithPerf = Object.values(s.sets).filter(set => set.performance);
   const aftermarket = releasedWithPerf.length
     ? releasedWithPerf.reduce((n, set) => n + set.performance!.aftermarketIndex, 0)
@@ -431,15 +618,42 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
     ? allIps.reduce((n, ip) => n + ip.affection, 0) / allIps.length : 0;
 
   const coverage = s.events.filter(e => e.kind === 'creatorOpened');
-  const ownCoverage = coverage.filter(e => {
-    const card = e.refs.cardId ? s.cards[e.refs.cardId as never] : undefined;
-    return card?.publisherId === pub.id;
-  }).length;
+  // How much of the catalogue coverage actually reaches. Whether it landed on
+  // "our own" cards is not a question any more: they all are.
+  const coveredPrintings = new Set<string>();
+  for (const e of coverage) {
+    if (e.refs.printingId) coveredPrintings.add(e.refs.printingId as string);
+  }
   const creatorRels = Object.values(s.creators).map(c => c.relationship);
 
   const chains = Object.values(s.chains);
   const printedMembers = chains.map(
     c => c.cardIds.filter(cid => !!s.printingByCard[cid]).length);
+
+  /** Mean units printed by products released in one decade of the run. */
+  const printRunInDecade = (decade: number): number | null => {
+    const lo = (decade - 1) * 520, hi = decade * 520;
+    const runs: number[] = [];
+    for (const p of Object.values(s.products)) {
+      if (p.unitsPrinted <= 0) continue;
+      const set = s.sets[p.setId];
+      const sched = set?.regionSchedule.find(r => r.regionId === p.regionId)
+        ?? set?.regionSchedule[0];
+      if (!sched) continue;
+      const t = sched.releaseTick as number;
+      if (t >= lo && t < hi) runs.push(p.unitsPrinted);
+    }
+    return runs.length ? runs.reduce((a, b) => a + b, 0) / runs.length : null;
+  };
+
+  // Median across the age-2 snapshots. A median, not a mean: these statistics
+  // are heavy-tailed across sets, and one runaway set would carry a mean.
+  const age2Rows = extras.snapshots.filter(x => x.ageYears === 2 && x.n > 0);
+  const age2 = (pick: (x: SetSnapshot) => number): number | null => {
+    if (age2Rows.length === 0) return null;
+    const v = age2Rows.map(pick).filter(Number.isFinite).sort((a, b) => a - b);
+    return v.length ? v[Math.floor(v.length / 2)]! : null;
+  };
 
   return {
     bot,
@@ -463,15 +677,18 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
     maxCardPrice: max,
     topSealedPrice,
     flopRate,
+    flopSetsJudged: judgedSets,
+    flopRateSellThrough,
     fatigue: fatigueAvg,
     brandStanding: pub.brandStanding,
     channelsUnlocked: openChannels.length,
     channelsLost,
     worstRelationship,
+    channelsOpenAtEnd: openChannels.length,
     avgSellThrough,
     dropsRun,
-    dropSellOutRate: dropsRun > 0 ? dropSoldOut / dropsRun : 0,
-    scalperShareOfDrops: dropUnits > 0 ? dropScalperUnits / dropUnits : 0,
+    dropSellOutRate: dropsRun > 0 ? dropSoldOut / dropsRun : null,
+    scalperShareOfDrops: dropUnits > 0 ? dropScalperUnits / dropUnits : null,
     peakDropPremium,
     scalperPopulation: s.audience.actors.scalpers,
     scalperCycles: crashes.length,
@@ -481,10 +698,11 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
     marketingTotal,
     prereleasesHosted,
     signalCorrelation,
+    signalPairs: signalSets.length,
     gradedCopies,
-    gradedShare: openedGraded > 0 ? gradedCopies / openedGraded : 0,
+    gradedShare: openedGraded > 0 ? gradedCopies / openedGraded : null,
     gradedPrintingShare: printings.length > 0 ? printingsGraded / printings.length : 0,
-    gemRate: gradedCopies > 0 ? gems / gradedCopies : 0,
+    gemRate: gradedCopies > 0 ? gems / gradedCopies : null,
     gem10Premium,
     printingsGraded,
     gradersActive,
@@ -502,24 +720,46 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
     regionKnowledge,
     exportShare,
     regionReadingCorrelation,
+    regionReadingPairs: readingPairs.length,
     collectors: s.audience.actors.collectors,
     collectorHeldShare: collectorHeldShare(s),
     resellers: s.audience.actors.resellers,
     speculators: s.audience.actors.speculators,
     speculatorSwing,
+    speculatorMin: extras.speculatorMin,
+    speculatorMax: extras.speculatorMax,
     aftermarketIndex: aftermarket,
     collabOffers,
     collabsSigned,
     collabSpend,
     meanIpAffection,
     creatorCoverage: coverage.length,
-    creatorOwnShare: coverage.length > 0 ? ownCoverage / coverage.length : 0,
+    creatorCoverageShareOfPrintings: printings.length > 0
+      ? coveredPrintings.size / printings.length : 0,
     bestCreatorRelationship: creatorRels.length ? Math.max(...creatorRels) : 0,
     chains: chains.length,
     chainsSpanningSets: chains.length
       ? chains.filter(c => c.spansSets).length / chains.length : 0,
     meanChainLength: printedMembers.length
       ? printedMembers.reduce((a, b) => a + b, 0) / printedMembers.length : 0,
+
+    meanPrintRunByDecade1: printRunInDecade(1),
+    meanPrintRunByDecade2: printRunInDecade(2),
+    meanPrintRunByDecade3: printRunInDecade(3),
+    meanPrintRunByDecade4: printRunInDecade(4),
+    meanPrintRunByDecade5: printRunInDecade(5),
+    engagedAudience: Math.round(engagedTotal(s)),
+    lapsedHome: Math.round(lapsedIn(s, s.homeRegionId)),
+    setsSnapshotted: extras.snapshots.length,
+    setsAtAge2: age2Rows.length,
+    setMedianAge2: age2(x => x.median),
+    setShareUnder1Age2: age2(x => x.shareUnder1),
+    setShareUnder25cAge2: age2(x => x.shareUnder25c),
+    setTop1ShareAge2: age2(x => x.top1Share),
+    setTop10ShareAge2: age2(x => x.top10Share),
+    setGiniAge2: age2(x => x.gini),
+    setChaseOverMedianAge2: age2(x => x.chaseOverMedian),
+    setTailAlphaAge2: age2(x => x.tailAlpha),
   };
 }
 

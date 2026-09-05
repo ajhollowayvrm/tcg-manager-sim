@@ -11,6 +11,7 @@ harness, and `CONCEPT.md` is the design contract both answer to.
 ```
 CONCEPT.md             the design contract
 HANDOFF.md             what is built, what is measured, what is left
+docs/tuning/           the tuning reference: every knob, every target
 
 src/sim/types.ts       full domain model (the contract in type form)
 src/sim/rng.ts         seeded PRNG, serializable

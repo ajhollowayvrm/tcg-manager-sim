@@ -45,6 +45,20 @@ export const defaultConfig: SimConfig = {
     nostalgiaDecayPerYear: 0.05,
     shockChancePerTick: 0.0015,
     shockGain: 1.1,
+    // Cast desire at which the demand term equals 1. A second reference point
+    // alongside `referencePopulation`, on the desire axis rather than the
+    // supply one. It was a bare `/ 40` inside the price stack.
+    desireReference: 40,
+    priceLerp: 0.38,
+    nostalgiaBrandFloor: 0.4,
+    // A discovered error adds heat inversely to how common it is: a one-in-a-
+    // million misprint is a story, a one-in-fifty is a defect.
+    errorHeatGain: 0.00000004,
+    errorIncidenceFloor: 0.0002,
+    resurgenceCheckChance: 0.02,
+    openingHeat: 1.6,
+    openingLiquidity: 0.5,
+    reprintNostalgiaPenalty: 0.85,
   },
 
   affection: {
@@ -54,6 +68,19 @@ export const defaultConfig: SimConfig = {
     resurgenceFromVintage: 0.4,
     resurgenceToModernDemand: 0.3,
     resurgenceDecayPerTick: 0.02,
+    unitsPerExposurePoint: 20_000,
+    exposureDecayPerTick: 0.015,
+    resurgenceMinAgeYears: 5,
+    resurgenceMinGrowth: 3,
+    resurgenceGainScale: 0.02,
+    // An IP's ceiling on affection. The spread between a dud character and a
+    // hit, and the reason two sets built the same way perform differently.
+    relatabilityMin: 8,
+    relatabilityMax: 96,
+    affinityMin: -0.8,
+    affinityMax: 0.9,
+    longevityMin: 0.85,
+    longevityMax: 1.18,
   },
 
   attention: {
@@ -92,12 +119,25 @@ export const defaultConfig: SimConfig = {
     fatigueWarnThreshold: 0.45,
     goodwillSensitivity: 0.6,
     goodwillRegenPerTick: 0.001,
-    // Must match the player's starting share in world.ts, or the demand curve
-    // shifts away from what the value pass was tuned against.
-    referenceShare: 0.08,
+    goodwillBaseline: 0.5,
+    // The master demand coefficient. Every unit of demand in the model passes
+    // through this number, which makes it the largest single lever there is.
+    // It was a bare `* 0.06` in the middle of the demand stack.
+    demandCoefficient: 0.06,
+    // e^(-1.4 * years). A five-year-old set is three zeroes down, which is what
+    // stops a back catalogue selling forever.
+    demandDecayPerYear: 1.4,
+    goodwillDemandFloor: 0.2,
+    brandDemandFloor: 0.3,
+    chaseDemandFloor: 0.5,
+    demandCutoff: 0.5,
   },
 
   printing: {
+    // What a print run actually costs, against the list unit cost.
+    cogsCoefficient: 0.55,
+    errorIncidenceMin: 0.0001,
+    errorIncidenceMax: 0.004,
     qualityGradeShift: { budget: -0.15, standard: 0, premium: 0.12, archival: 0.2 },
     errorRate: { budget: 0.02, standard: 0.008, premium: 0.002, archival: 0.0005 },
     unitCost: { budget: C(80), standard: C(140), premium: C(240), archival: C(400) },
@@ -160,9 +200,61 @@ export const defaultConfig: SimConfig = {
     /** A rising reputation drags the rate up behind it. */
     rateGrowthPerReputation: 2.5,
     rateAdjustRate: 0.02,
+    // $75 to $450 for an unproven newcomer. This used to be 50 to 300 *cents*,
+    // which made a 25-year art budget about $7,800 against a $22M net worth —
+    // art was a rounding error rather than a budget line.
+    openingRateMin: C(7_500),
+    openingRateMax: C(45_000),
+    // NOTE: the engine's roster drift still mints newcomers at the old cents
+    // range. It is preserved here so this refactor changes no behaviour. See
+    // docs/tuning/02-hardcoded.md, "Inconsistencies".
+    newcomerRateMin: C(50),
+    newcomerRateMax: C(300),
+    openingStatMin: 0.2,
+    openingStatMax: 0.6,
+    newcomerStatMin: 0.2,
+    newcomerStatMax: 0.7,
+    speedMin: 0.3,
+    speedMax: 0.8,
+    reliabilityMin: 0.4,
+    reliabilityMax: 0.9,
+    openingTurnaroundMin: 2,
+    openingTurnaroundMax: 8,
+    openingReputationMin: 0.05,
+    openingReputationMax: 0.25,
+    newcomerReputationMin: 0.03,
+    newcomerReputationMax: 0.2,
+    growthMin: 0.0005,
+    growthMax: 0.004,
+    reputationGrowthFloor: 0.6,
+    reputationGrowthRange: 0.8,
+    retireReputationThreshold: 0.85,
+    retireAtPeakChance: 0.002,
+    openingRosterSize: 6,
+    openingRelationship: 0.5,
   },
 
   finance: {
+    // $500,000. Everything in the model is cents, so the `_00` suffix is
+    // load-bearing: without it this reads as $5,000, which does not cover a
+    // single print run.
+    startingCash: C(500_000_00),
+    startingCredit: 0.2,
+    // You are nobody. Every channel gate is measured against this.
+    startingBrandStanding: 0.02,
+    // The borrow ceiling used to carry its own copy of the starting cash as a
+    // literal, so changing one did not change the other.
+    borrowCeilingBase: C(500_000_00),
+    overprintDeathUnits: 20_000,
+    creditGainPerTick: 0.0006,
+    creditLossPerTick: 0.002,
+    // brandStanding mean-reverts toward this target rather than accumulating
+    // without limit. These three weights gate every `requiredBrandStanding` in
+    // the game, including the channel tree and the third grader.
+    brandBase: 0.15,
+    brandFromAffection: 0.55,
+    brandFromGoodwill: 0.30,
+    brandAffectionReference: 100,
     interestBase: 0.14,
     creditToRate: 0.08,
     borrowCeilingMultiple: 2.5,
@@ -202,6 +294,10 @@ export const defaultConfig: SimConfig = {
   },
 
   sealed: {
+    scarcityExponent: 0.5,
+    priceLerp: 0.1,
+    priceFloorMultiple: 0.4,
+    msrpWeight: 0.6,
     contentsWeight: 0.6,
     baseRipRatePerTick: 0.01,
     ripPriceElasticity: 0.8,
@@ -215,6 +311,9 @@ export const defaultConfig: SimConfig = {
   // arriving when resale pays, buying the drop out, and leaving again once they
   // have closed the premium; it now does that about every six years.
   drops: {
+    // An ETB or a premium collection is camped harder than a booster box.
+    scalperAppealPremium: 0.8,
+    scalperAppealDefault: 0.4,
     cadenceWeeks: 6,
     collectorReach: 0.06,
     scalperReach: 0.5,
@@ -244,6 +343,81 @@ export const defaultConfig: SimConfig = {
   },
 
   channels: {
+    // Per-kind traits, moved here from a constant table in channels.ts. The two
+    // ratios that carry the design: the LGS earns goodwill at 12x the
+    // distributor's rate, and the distributor sours 2.7x faster than the LGS.
+    traits: {
+      // Small volume, huge goodwill, prices hot product at whatever it will bear.
+      lgs: {
+        reach: 1.0, markupSensitivity: 0.9, discountFloor: 0.1,
+        priceElasticity: 0.7, goodwillPerSellThrough: 0.006, strainSensitivity: 0.6,
+      },
+      // Volume at a thin margin. Over-allocate or under-deliver and it sours fast.
+      distributor: {
+        reach: 1.35, markupSensitivity: 0.1, discountFloor: 0.25,
+        priceElasticity: 0.4, goodwillPerSellThrough: 0.0005, strainSensitivity: 1.6,
+      },
+      // Reach and legitimacy, brutal terms, and it holds the line at MSRP.
+      bigbox: {
+        reach: 1.8, markupSensitivity: 0, discountFloor: 0.35,
+        priceElasticity: 0.5, goodwillPerSellThrough: 0.001, strainSensitivity: 1.1,
+      },
+      // Floats freely in both directions.
+      online: {
+        reach: 1.5, markupSensitivity: 0.6, discountFloor: 0.4,
+        priceElasticity: 1.2, goodwillPerSellThrough: 0.0015, strainSensitivity: 0.8,
+      },
+      // Your own store. Full margin, always MSRP, never sours.
+      direct: {
+        reach: 0.8, markupSensitivity: 0, discountFloor: 0,
+        priceElasticity: 0.6, goodwillPerSellThrough: 0.004, strainSensitivity: 0.2,
+      },
+    },
+    // A fully soured channel keeps 40% of its capacity. This is the mechanism
+    // behind the channel-collapse death route.
+    capacityFloor: 0.4,
+    streetPriceFloorMultiple: 0.25,
+    // A channel with no relationship still moves half of what its reach and
+    // stock would otherwise win it. Relationship scales the other half.
+    demandRelationshipFloor: 0.5,
+    // The opening state of every channel. `minimumOrder` is load-bearing: a
+    // studio printing under 2,000 units cannot reach the distributor at all,
+    // which is why an under-printing strategy is locked out of reach.
+    seeds: {
+      ch_lgs: {
+        relationship: 0.6, capacityUnits: 12_000, marginShare: 0.55,
+        minimumOrder: 1, reliability: 0.8, requiredBrandStanding: 0, queueCapacity: 0,
+      },
+      ch_online: {
+        relationship: 0.5, capacityUnits: 40_000, marginShare: 0.5,
+        minimumOrder: 500, reliability: 0.85, requiredBrandStanding: 0.12, queueCapacity: 0,
+      },
+      ch_dist: {
+        relationship: 0.5, capacityUnits: 120_000, marginShare: 0.38,
+        minimumOrder: 2_000, reliability: 0.9, requiredBrandStanding: 0.25, queueCapacity: 0,
+      },
+      ch_bigbox: {
+        relationship: 0.4, capacityUnits: 250_000, marginShare: 0.3,
+        minimumOrder: 10_000, reliability: 0.75, requiredBrandStanding: 0.45, queueCapacity: 0,
+      },
+      ch_direct: {
+        relationship: 1, capacityUnits: 25_000, marginShare: 1,
+        minimumOrder: 1, reliability: 1, requiredBrandStanding: 0.6, queueCapacity: 5_000,
+      },
+      // Abroad. Capacity is scaled by the region's `marketSize` on top of this.
+      abroadLgs: {
+        relationship: 0.45, capacityUnits: 12_000, marginShare: 0.55,
+        minimumOrder: 1, reliability: 0.75, requiredBrandStanding: 0, queueCapacity: 0,
+      },
+      abroadOnline: {
+        relationship: 0.45, capacityUnits: 40_000, marginShare: 0.5,
+        minimumOrder: 500, reliability: 0.8, requiredBrandStanding: 0.12, queueCapacity: 0,
+      },
+      abroadDist: {
+        relationship: 0.4, capacityUnits: 120_000, marginShare: 0.38,
+        minimumOrder: 2_000, reliability: 0.85, requiredBrandStanding: 0.25, queueCapacity: 0,
+      },
+    },
     relationshipGainPerSellThrough: 0.02,
     relationshipLossPerUnsold: 0.03,
     unsoldGraceWeeks: 26,
@@ -271,6 +445,7 @@ export const defaultConfig: SimConfig = {
   // matters: every lever diminishes, and none of them can rescue a set the
   // audience does not want — hype multiplies demand, it does not create it.
   hype: {
+    defaultLeadWeeks: 12,
     defaultCadenceWeeks: 2,
     revealHypePerCard: 0.05,
     revealHalfLife: 0.8,
@@ -308,6 +483,10 @@ export const defaultConfig: SimConfig = {
   // and a gem has to stay rare enough to be worth chasing — which is what print
   // quality and grader strictness between them decide.
   grading: {
+    // Grade boundaries on the latent 1-10 condition score. With `conditionMean`
+    // and `conditionSigma` these are what set the gem rate: tune them together
+    // or you are tuning half the problem.
+    gradeCuts: { '10': 9.75, '9.5': 9.25, '9': 8.5, '8': 7.5, '7': 6.5 },
     submitRatePerTick: 0.004,
     feeWorthMultiple: 5,
     appetiteCeiling: 4,
@@ -354,6 +533,21 @@ export const defaultConfig: SimConfig = {
     readingNoiseSigma: 0.8,
     /** Weeks between a region unlock and the first release the player can ship there. */
     entryLeadWeeks: 26,
+    // `tasteBias` runs about -0.3..+0.3 and `rarityAppetite` about 0.5..1.5, so
+    // both are folded onto a 0..1 scale rather than multiplied raw. A region
+    // with no opinion at all lands on exactly 1.
+    fitTasteWeight: 0.25,
+    fitAppetiteWeight: 0.25,
+    fitProductWeight: 0.25,
+    fitPriceWeight: 0.25,
+    tasteFitCentre: 0.5,
+    appetiteFitDivisor: 1.5,
+    productFitDivisor: 1.5,
+    priceFitGain: 1.2,
+    wealthFloor: 0.4,
+    knowledgeCeiling: 0.95,
+    researchCreditShare: 0.25,
+    tasteReadingNoiseScale: 0.5,
   },
 
   // First-guess numbers, wired for behaviour rather than swept. Each population
@@ -405,6 +599,16 @@ export const defaultConfig: SimConfig = {
   // not have and cannot buy affection you have not earned — the licensor keeps
   // the IP equity, so a studio that lives on collabs owns nothing at the end.
   collabs: {
+    // Reach one offer carries, and the brand standing it demands. With
+    // `reachToDemand` these decide whether a licence is ever worth its fee.
+    reachBonusMin: 0.15,
+    reachBonusMax: 0.6,
+    gateMin: 0.1,
+    gateMax: 0.6,
+    // A collab that reached everybody equally would be a flat demand
+    // multiplier, and choosing between two offers would stop being a decision.
+    segmentsReachedMin: 1,
+    segmentsReachedMax: 3,
     /** Chance per quarter that an offer arrives, at full brand standing. */
     offerChancePerQuarter: 0.35,
     offerWindowWeeks: 26,
@@ -438,6 +642,15 @@ export const defaultConfig: SimConfig = {
 
   creators: {
     rosterSize: 8,
+    // A couple of large channels and a lot of small ones, which is what a
+    // creator ecosystem looks like and what makes picking one worth doing.
+    audienceBase: 20_000,
+    audienceGrowth: 1.6,
+    audienceExponentMax: 6,
+    influenceMin: 0.2,
+    influenceMax: 0.9,
+    openingRelationshipMin: 0.05,
+    openingRelationshipMax: 0.3,
     coverChancePerStride: 0.25,
     /** Weeks a printing counts as new enough to be worth covering. */
     freshnessWeeks: 60,
@@ -454,6 +667,165 @@ export const defaultConfig: SimConfig = {
   history: {
     weeklyRetentionTicks: 520,
     writeThreshold: 0.03,
+  },
+
+  // The rarity model, moved here from two constant tables in engine.ts.
+  // `weight` is a demand-side signal and never touches price. `pull` is copies
+  // printed per card, and is how rarity reaches price, through scarcity.
+  // Changing either table moves everything.
+  rarity: {
+    weight: {
+      common: 1, uncommon: 1.4, rare: 2.6, doubleRare: 5, ultraRare: 12,
+      illustrationRare: 22, specialIllustrationRare: 60, hyperRare: 90, promo: 8,
+    },
+    pull: {
+      common: 4, uncommon: 2.2, rare: 0.9, doubleRare: 0.28, ultraRare: 0.09,
+      illustrationRare: 0.035, specialIllustrationRare: 0.008, hyperRare: 0.004, promo: 0.05,
+    },
+    pullDivisor: 10,
+    weightDivisor: 10,
+    chaseWeightDivisor: 100,
+  },
+
+  market: {
+    climateNoiseSigma: 0.012,
+    climateReversion: 0.008,
+    climateFloor: 0.5,
+    climateCeiling: 1.8,
+    climateWriteThreshold: 0.02,
+  },
+
+  // NOT free to change. A stride decides how many RNG draws a run makes, so
+  // moving one renumbers every later roll and invalidates every banked
+  // measurement. It also rescales any `PerTick` rate multiplied by the stride.
+  strides: {
+    price: 4,
+    sealed: 4,
+    scalper: 4,
+    channel: 4,
+    grading: 4,
+    art: 2,
+    interest: 4,
+    quarterly: 13,
+    annual: 52,
+  },
+
+  // First-guess numbers, every one of them. This block landed with the growth
+  // arc and has never been swept. The shape that matters: acquisition must be
+  // driven by what the studio does, or the growth arc is scenery; and churn
+  // must be recoverable, or one bad decade ends the run.
+  audience: {
+    // x1.5 over fifty years. The hobby grows; it does not multiply.
+    populationGrowthPerTick: 0.00016,
+    // Set against agingAdultsOut so the pyramid stays a pyramid, plus a little.
+    birthRatePerTick: 0.00035,
+    climateToPopulation: 0.6,
+    // A cohort spans roughly 6, 7 and 40 years, so a share of 1/(years*52)
+    // leaves it on schedule.
+    agingKidsToTeens: 0.0032,
+    agingTeensToAdults: 0.0027,
+    agingAdultsOut: 0.00048,
+
+    // Derived, not guessed: to convert a 24,000,000 population from a 1,200,000
+    // start to 90% reached over 2,600 ticks needs 0.00087 per tick on the
+    // unreached pool, and the typical drive below is about 1.09.
+    acquisitionRate: 0.0008,
+    // Endogenous-dominant with a small exogenous floor. A purely exogenous
+    // curve makes every bot end the same size and the growth arc becomes
+    // scenery; a purely endogenous one makes a bad early decade unrecoverable.
+    acquisitionFloor: 0.15,
+    acquisitionFromReach: 0.55,
+    acquisitionFromBrand: 0.35,
+    acquisitionFromGoodwill: 0.30,
+    reachPerCapitaReference: 0.004,
+    recentUnitsDecayPerTick: 0.02,
+
+    engagedFloor: 0.35,
+    engagedFromFreshness: 0.45,
+    engagementRate: 0.05,
+    freshnessWeeks: 78,
+    winBackAdvantage: 3,
+
+    churnRate: 0.004,
+    churnGoodwillFloor: 0.45,
+
+    entrySeedShare: 0.08,
+  },
+
+  world: {
+    // 5 segments x 120,000 = 600,000 = attention.referenceAudience, so year-0
+    // demand is exactly what it was before the audience system landed.
+    segmentSize: 120_000,
+    openingReachedMultiple: 2,
+    // 40x headroom on engaged. That is what a 200,000-box print run needs,
+    // because the demand pool scales linearly in engaged over referenceAudience.
+    openingPopulationMultiple: 40,
+    segmentAttention: 1,
+    segmentFatigue: 0,
+    segmentGoodwill: 0.5,
+    startingScalpers: 500,
+    startingResellers: 300,
+    startingCollectors: 5_000,
+    startingSpeculators: 800,
+    startingClimate: 1,
+    startingIndex: 100,
+    // Each region is a different shape of bet rather than a bigger version of
+    // the same one. Japan is small, rich and opinionated; Latin America is
+    // large, poor and cheap to enter; Europe is the safe middle. The taste
+    // itself is rolled per seed, so these are the constants and the specifics
+    // are what a run has to learn.
+    regions: {
+      reg_us: { marketSize: 1, wealth: 0.8, unlockCost: C(0), priceTolerance: 1, knowledge: 0.3 },
+      reg_eu: { marketSize: 0.85, wealth: 0.75, unlockCost: C(600_000_00), priceTolerance: 0.95, knowledge: 0 },
+      reg_jp: { marketSize: 0.55, wealth: 0.9, unlockCost: C(900_000_00), priceTolerance: 1.15, knowledge: 0 },
+      reg_latam: { marketSize: 1.1, wealth: 0.35, unlockCost: C(250_000_00), priceTolerance: 0.6, knowledge: 0 },
+    },
+    productPreference: {
+      pack: 1, boosterBox: 0.8, etb: 0.6, collectionBox: 0.5, tin: 0.4,
+      premiumCollection: 0.3, bundle: 0.4, blister: 0.5, surpriseBox: 0.2,
+    },
+    segmentMixMin: 0.05,
+    segmentMixMax: 0.3,
+    tasteBiasMin: -0.3,
+    tasteBiasMax: 0.3,
+    rarityAppetiteMin: 0.5,
+    rarityAppetiteMax: 1.5,
+    productPreferenceJitterMin: 0.6,
+    productPreferenceJitterMax: 1.4,
+    homeTasteBias: { character: 0.2, location: -0.1, faction: 0.05, concept: -0.2, event: 0 },
+    foreignChannelScale: 1,
+  },
+
+  // Two graders cover the market from day one. The third does not look at a
+  // publisher nobody has heard of, and enters when brand standing clears
+  // `grading.sideGraderBrandGate`.
+  graders: {
+    // The strict, expensive one. Fewer 10s, and the 10s it hands out carry the
+    // reputation premium.
+    grd_pinnacle: {
+      reputation: 0.85, strictness: 1.15, marketShare: 0.55,
+      tiers: {
+        bulk: { price: C(12_00), turnaroundWeeks: 16 },
+        standard: { price: C(30_00), turnaroundWeeks: 8 },
+        express: { price: C(90_00), turnaroundWeeks: 3 },
+      },
+    },
+    // Cheaper, softer, faster. Grades more copies and is trusted less for it.
+    grd_cardsafe: {
+      reputation: 0.6, strictness: 0.9, marketShare: 0.32,
+      tiers: {
+        bulk: { price: C(8_00), turnaroundWeeks: 12 },
+        standard: { price: C(20_00), turnaroundWeeks: 6 },
+        express: { price: C(60_00), turnaroundWeeks: 2 },
+      },
+    },
+    grd_apex: {
+      reputation: 0.7, strictness: 1, marketShare: 0.13,
+      tiers: {
+        standard: { price: C(25_00), turnaroundWeeks: 7 },
+        express: { price: C(75_00), turnaroundWeeks: 2 },
+      },
+    },
   },
 };
 

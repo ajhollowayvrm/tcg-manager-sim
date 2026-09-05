@@ -6,14 +6,14 @@
 import type {
   SimState, SimConfig, Tick, Cents, PublisherId, RegionId, ArtistId, GraderId,
   AudienceSegment, Rarity, ArtistPersonality, ArtistSpecialty, IpKind, ProductKind,
-  Channel, ChannelId, Unit, CreatorId,
+  Channel, ChannelId, Unit, CreatorId, SegmentState,
 } from './types.ts';
 import { seedRng, rand, randRange, pick } from './rng.ts';
 import { CHANNEL_IDS } from './channels.ts';
 import { emptySeries } from './series.ts';
 
 export const SEGMENTS: AudienceSegment[] = [
-  'kids', 'teens', 'adults', 'lapsed', 'investors', 'artFans',
+  'kids', 'teens', 'adults', 'investors', 'artFans',
 ];
 
 /** Shared with the engine, which mints newcomers into the same roster. */
@@ -44,36 +44,10 @@ export const REGION_LATAM = 'reg_latam' as RegionId;
  * learn.
  */
 export const REGION_SEEDS = [
-  {
-    id: REGION_EU, name: 'Europe',
-    marketSize: 0.85, wealth: 0.75, unlockCost: 600_000_00 as Cents,
-    priceTolerance: 0.95,
-  },
-  {
-    id: REGION_JP, name: 'Japan',
-    marketSize: 0.55, wealth: 0.9, unlockCost: 900_000_00 as Cents,
-    priceTolerance: 1.15,
-  },
-  {
-    id: REGION_LATAM, name: 'Latin America',
-    marketSize: 1.1, wealth: 0.35, unlockCost: 250_000_00 as Cents,
-    priceTolerance: 0.6,
-  },
+  { id: REGION_EU, name: 'Europe' },
+  { id: REGION_JP, name: 'Japan' },
+  { id: REGION_LATAM, name: 'Latin America' },
 ] as const;
-
-/**
- * Share of audience attention the player starts with. Rivals hold the rest
- * from the first tick — they are the environment, not an unlock
- * (CONCEPT.md §9). Keep this in step with `config.attention.referenceShare`.
- */
-export const PLAYER_START_SHARE = 0.08;
-
-/** Established competitors. Inert this pass: they hold share and nothing else. */
-const RIVALS: Array<{ id: string; name: string; brandStanding: number; share: number }> = [
-  { id: 'pub_rival_1', name: 'Meridian Cards', brandStanding: 0.55, share: 0.42 },
-  { id: 'pub_rival_2', name: 'Halcyon Games', brandStanding: 0.45, share: 0.30 },
-  { id: 'pub_rival_3', name: 'Third Coast TCG', brandStanding: 0.35, share: 0.20 },
-];
 
 /** Monotonic, deterministic id generation — same seed, same ids, every time. */
 export function nextId(s: SimState, prefix: string): string {
@@ -104,21 +78,21 @@ export function createWorld(seed: string, config: SimConfig): SimState {
     idCounter: 0,
     printingByCard: {},
     playerId,
+    homeRegionId: REGION_US,
 
     publishers: {
       [playerId]: {
         id: playerId,
         name: 'Player Studio',
-        isPlayer: true,
         foundedTick: t0,
         // $500,000. Everything in the model is cents, so the `_00` suffix is
         // load-bearing: without it this reads as $5,000, which does not cover a
         // single print run and disagrees with the borrow ceiling in tickFinance.
-        cash: 500_000_00 as Cents,
+        cash: config.finance.startingCash,
         debt: 0 as Cents,
         peakDebt: 0 as Cents,
-        credit: 0.2,
-        brandStanding: 0.02,
+        credit: config.finance.startingCredit,
+        brandStanding: config.finance.startingBrandStanding as Unit,
         unlocks: {
           channels: [],
           regions: [REGION_US],
@@ -130,7 +104,6 @@ export function createWorld(seed: string, config: SimConfig): SimState {
           canHostEvents: false,
           directStore: false,
         },
-        policy: null,
         retainers: {},
         ledger: [],
         deadTick: null,
@@ -153,20 +126,27 @@ export function createWorld(seed: string, config: SimConfig): SimState {
     drops: {},
 
     audience: {
-      segments: Object.fromEntries(
-        SEGMENTS.map(g => [g, { size: 100_000, attention: 1, fatigue: 0, goodwill: 0.5 }]),
-      ) as SimState['audience']['segments'],
-      // The player starts with almost no audience; the rivals below hold the rest.
-      shareByPublisher: { [playerId]: PLAYER_START_SHARE },
+      // Filled once the region table exists, below.
+      regions: {} as SimState['audience']['regions'],
+      recentUnitsByRegion: {} as SimState['audience']['recentUnitsByRegion'],
       fatigueWarned: false,
-      actors: { scalpers: 500, resellers: 300, collectors: 5000, speculators: 800 },
+      actors: {
+        scalpers: config.world.startingScalpers,
+        resellers: config.world.startingResellers,
+        collectors: config.world.startingCollectors,
+        speculators: config.world.startingSpeculators,
+      },
       hidden: { scalperInventory: {}, scalperProfitability: 0, scalperBoom: false },
     },
 
     market: {
-      climate: 1,
+      climate: config.world.startingClimate,
       climateHistory: emptySeries(t0),
-      indexes: { allCards: 100, byPublisher: { [playerId]: 100 }, bySet: {} },
+      indexes: {
+        allCards: config.world.startingIndex,
+        byPublisher: { [playerId]: config.world.startingIndex },
+        bySet: {},
+      },
       gradingQueue: [],
       commissionQueue: [],
     },
@@ -176,26 +156,27 @@ export function createWorld(seed: string, config: SimConfig): SimState {
     config,
   };
 
-  const productPreference: Record<ProductKind, number> = {
-    pack: 1, boosterBox: 0.8, etb: 0.6, collectionBox: 0.5, tin: 0.4,
-    premiumCollection: 0.3, bundle: 0.4, blister: 0.5, surpriseBox: 0.2,
-  };
+  const w = config.world;
+  const productPreference = w.productPreference;
 
+  const usSeed = w.regions[REGION_US]!;
   s.regions[REGION_US] = {
     id: REGION_US,
     name: 'United States',
-    marketSize: 1,
-    wealth: 0.8,
-    unlockCost: 0 as Cents,
+    marketSize: usSeed.marketSize,
+    wealth: usSeed.wealth,
+    unlockCost: usSeed.unlockCost,
     truth: {
-      segmentMix: Object.fromEntries(SEGMENTS.map(g => [g, randRange(rng, 0.05, 0.3)])) as Record<AudienceSegment, number>,
-      tasteBias: { character: 0.2, location: -0.1, faction: 0.05, concept: -0.2, event: 0 },
-      rarityAppetite: Object.fromEntries(RARITIES.map(r => [r, randRange(rng, 0.5, 1.5)])) as Record<Rarity, number>,
+      segmentMix: Object.fromEntries(SEGMENTS.map(
+        g => [g, randRange(rng, w.segmentMixMin, w.segmentMixMax)])) as Record<AudienceSegment, number>,
+      tasteBias: { ...w.homeTasteBias },
+      rarityAppetite: Object.fromEntries(RARITIES.map(
+        r => [r, randRange(rng, w.rarityAppetiteMin, w.rarityAppetiteMax)])) as Record<Rarity, number>,
       productPreference,
-      priceTolerance: 1,
+      priceTolerance: usSeed.priceTolerance,
       readingNoiseSeed: rand(rng),
     },
-    knowledge: 0.3,
+    knowledge: usSeed.knowledge,
     unlockedTick: t0,
   };
 
@@ -205,30 +186,72 @@ export function createWorld(seed: string, config: SimConfig): SimState {
   // same rule that keeps the grader roster on literals applies here.
   const rrng = s.regionRng;
   for (const seed of REGION_SEEDS) {
+    const rs = w.regions[seed.id]!;
     s.regions[seed.id] = {
       id: seed.id,
       name: seed.name,
-      marketSize: seed.marketSize,
-      wealth: seed.wealth,
-      unlockCost: seed.unlockCost,
+      marketSize: rs.marketSize,
+      wealth: rs.wealth,
+      unlockCost: rs.unlockCost,
       truth: {
-        segmentMix: Object.fromEntries(
-          SEGMENTS.map(g => [g, randRange(rrng, 0.05, 0.3)])) as Record<AudienceSegment, number>,
-        tasteBias: Object.fromEntries(
-          IP_KINDS.map(k => [k, randRange(rrng, -0.3, 0.3)])) as Record<IpKind, number>,
-        rarityAppetite: Object.fromEntries(
-          RARITIES.map(r => [r, randRange(rrng, 0.5, 1.5)])) as Record<Rarity, number>,
+        segmentMix: Object.fromEntries(SEGMENTS.map(
+          g => [g, randRange(rrng, w.segmentMixMin, w.segmentMixMax)])) as Record<AudienceSegment, number>,
+        tasteBias: Object.fromEntries(IP_KINDS.map(
+          k => [k, randRange(rrng, w.tasteBiasMin, w.tasteBiasMax)])) as Record<IpKind, number>,
+        rarityAppetite: Object.fromEntries(RARITIES.map(
+          r => [r, randRange(rrng, w.rarityAppetiteMin, w.rarityAppetiteMax)])) as Record<Rarity, number>,
         productPreference: Object.fromEntries(
           Object.keys(productPreference).map(
-            k => [k, productPreference[k as ProductKind]! * randRange(rrng, 0.6, 1.4)],
+            k => [k, productPreference[k as ProductKind]!
+              * randRange(rrng, w.productPreferenceJitterMin, w.productPreferenceJitterMax)],
           )) as Record<ProductKind, number>,
-        priceTolerance: seed.priceTolerance,
+        priceTolerance: rs.priceTolerance,
         readingNoiseSeed: rand(rrng),
       },
       // A region you have never sold into is a region you know nothing about.
-      knowledge: 0,
+      knowledge: rs.knowledge,
       unlockedTick: null,
     };
+  }
+
+  // Every region gets its own audience, split across the segments by the taste
+  // the region was rolled with. `Region.truth.segmentMix` was seeded from the
+  // first pass and read by nothing until now.
+  //
+  // The home market opens with exactly `referenceAudience` engaged people, so
+  // year-0 demand is what it was before this system existed. Every other region
+  // has people but none of them reached: entering a market is an act of
+  // acquisition, not a size multiplier applied to somebody else's audience.
+  const w2 = config.world;
+  const homeEngaged = w2.segmentSize * SEGMENTS.length;
+  for (const region of Object.values(s.regions)) {
+    const mix = region.truth.segmentMix;
+    let mixTotal = 0;
+    for (const g of SEGMENTS) mixTotal += Math.max(0, mix[g] ?? 0);
+    if (mixTotal <= 0) mixTotal = 1;
+
+    const isHome = region.id === REGION_US;
+    const engagedHere = isHome ? homeEngaged : 0;
+    // Population follows the region's own size, so a large poor market has more
+    // people to reach than a small rich one, which is what makes the entry bet
+    // a shape rather than a ranking.
+    const populationHere = homeEngaged * w2.openingPopulationMultiple * region.marketSize;
+
+    const segs = {} as Record<AudienceSegment, SegmentState>;
+    for (const g of SEGMENTS) {
+      const share = Math.max(0, mix[g] ?? 0) / mixTotal;
+      const engaged = engagedHere * share;
+      segs[g] = {
+        population: populationHere * share,
+        reached: isHome ? engaged * w2.openingReachedMultiple : 0,
+        engaged,
+        attention: w2.segmentAttention,
+        fatigue: w2.segmentFatigue,
+        goodwill: w2.segmentGoodwill,
+      };
+    }
+    s.audience.regions[region.id] = segs;
+    s.audience.recentUnitsByRegion[region.id] = 0;
   }
 
   // The creator roster. Drawn from `regionRng` rather than `rng`, for the same
@@ -247,47 +270,46 @@ export function createWorld(seed: string, config: SimConfig): SimState {
       // A long tail: a couple of large channels and a lot of small ones, which
       // is what a creator ecosystem looks like and what makes cultivating the
       // right one worth doing.
-      audienceSize: Math.round(20_000 * Math.pow(1.6, randRange(rrng, 0, 6))),
-      influence: randRange(rrng, 0.2, 0.9) as Unit,
+      audienceSize: Math.round(config.creators.audienceBase
+        * Math.pow(config.creators.audienceGrowth,
+          randRange(rrng, 0, config.creators.audienceExponentMax))),
+      influence: randRange(rrng, config.creators.influenceMin, config.creators.influenceMax) as Unit,
       affinityIps: [],
-      relationship: randRange(rrng, 0.05, 0.3) as Unit,
+      relationship: randRange(rrng,
+        config.creators.openingRelationshipMin, config.creators.openingRelationshipMax) as Unit,
     };
   }
 
   // The full roster exists from tick 0; only the LGS network is open. The rest
   // are bought with the `purchaseUnlock` decision once brand standing clears
   // their gate, in the order CONCEPT.md §9 lays out.
+  const chSeeds = config.channels.seeds;
+  /** Builds one channel from its config seed. `queueCapacity` 0 means "no queue". */
+  const makeChannel = (
+    id: ChannelId, name: string, kind: Channel['kind'], regionId: RegionId,
+    key: string, unlocked: boolean, capacityScale = 1,
+  ): Omit<Channel, 'lastAllocatedTick'> => {
+    const cs = chSeeds[key]!;
+    return {
+      id, name, kind, regionId,
+      relationship: cs.relationship,
+      capacityUnits: capacityScale === 1
+        ? cs.capacityUnits : Math.round(cs.capacityUnits * capacityScale),
+      marginShare: cs.marginShare,
+      minimumOrder: cs.minimumOrder,
+      reliability: cs.reliability,
+      requiredBrandStanding: cs.requiredBrandStanding,
+      unlocked,
+      queueCapacity: cs.queueCapacity > 0 ? cs.queueCapacity : null,
+    };
+  };
+
   const CHANNEL_SEEDS: Array<Omit<Channel, 'lastAllocatedTick'>> = [
-    {
-      id: CHANNEL_IDS.lgs, name: 'LGS Network', kind: 'lgs', regionId: REGION_US,
-      relationship: 0.6, capacityUnits: 12_000, marginShare: 0.55,
-      minimumOrder: 1, reliability: 0.8,
-      requiredBrandStanding: 0, unlocked: true, queueCapacity: null,
-    },
-    {
-      id: CHANNEL_IDS.online, name: 'Online Retail', kind: 'online', regionId: REGION_US,
-      relationship: 0.5, capacityUnits: 40_000, marginShare: 0.5,
-      minimumOrder: 500, reliability: 0.85,
-      requiredBrandStanding: 0.12, unlocked: false, queueCapacity: null,
-    },
-    {
-      id: CHANNEL_IDS.distributor, name: 'National Distributor', kind: 'distributor', regionId: REGION_US,
-      relationship: 0.5, capacityUnits: 120_000, marginShare: 0.38,
-      minimumOrder: 2_000, reliability: 0.9,
-      requiredBrandStanding: 0.25, unlocked: false, queueCapacity: null,
-    },
-    {
-      id: CHANNEL_IDS.bigbox, name: 'Big Box Chains', kind: 'bigbox', regionId: REGION_US,
-      relationship: 0.4, capacityUnits: 250_000, marginShare: 0.3,
-      minimumOrder: 10_000, reliability: 0.75,
-      requiredBrandStanding: 0.45, unlocked: false, queueCapacity: null,
-    },
-    {
-      id: CHANNEL_IDS.direct, name: 'Direct Store', kind: 'direct', regionId: REGION_US,
-      relationship: 1, capacityUnits: 25_000, marginShare: 1,
-      minimumOrder: 1, reliability: 1,
-      requiredBrandStanding: 0.6, unlocked: false, queueCapacity: 5_000,
-    },
+    makeChannel(CHANNEL_IDS.lgs, 'LGS Network', 'lgs', REGION_US, 'ch_lgs', true),
+    makeChannel(CHANNEL_IDS.online, 'Online Retail', 'online', REGION_US, 'ch_online', false),
+    makeChannel(CHANNEL_IDS.distributor, 'National Distributor', 'distributor', REGION_US, 'ch_dist', false),
+    makeChannel(CHANNEL_IDS.bigbox, 'Big Box Chains', 'bigbox', REGION_US, 'ch_bigbox', false),
+    makeChannel(CHANNEL_IDS.direct, 'Direct Store', 'direct', REGION_US, 'ch_direct', false),
   ];
   for (const seed of CHANNEL_SEEDS) {
     s.channels[seed.id] = { ...seed, lastAllocatedTick: null };
@@ -302,77 +324,25 @@ export function createWorld(seed: string, config: SimConfig): SimState {
   //
   // The home market keeps the big box and the direct store to itself. A
   // publisher's own store is singular by definition, and a chain deal abroad is
-  // CONCEPT.md §7's "a rival takes your chains" hook rather than a purchase.
+  // not something a studio this size buys.
   for (const seed of REGION_SEEDS) {
     const region = s.regions[seed.id]!;
-    const scale = seed.marketSize;
+    const scale = w.regions[seed.id]!.marketSize * w.foreignChannelScale;
     const abroad: Array<Omit<Channel, 'lastAllocatedTick'>> = [
-      {
-        id: `ch_lgs_${seed.id}` as ChannelId, name: `${seed.name} LGS Network`,
-        kind: 'lgs', regionId: region.id,
-        relationship: 0.45, capacityUnits: Math.round(12_000 * scale), marginShare: 0.55,
-        minimumOrder: 1, reliability: 0.75,
-        requiredBrandStanding: 0, unlocked: false, queueCapacity: null,
-      },
-      {
-        id: `ch_online_${seed.id}` as ChannelId, name: `${seed.name} Online Retail`,
-        kind: 'online', regionId: region.id,
-        relationship: 0.45, capacityUnits: Math.round(40_000 * scale), marginShare: 0.5,
-        minimumOrder: 500, reliability: 0.8,
-        requiredBrandStanding: 0.12, unlocked: false, queueCapacity: null,
-      },
-      {
-        id: `ch_dist_${seed.id}` as ChannelId, name: `${seed.name} Distributor`,
-        kind: 'distributor', regionId: region.id,
-        relationship: 0.4, capacityUnits: Math.round(120_000 * scale), marginShare: 0.38,
-        minimumOrder: 2_000, reliability: 0.85,
-        requiredBrandStanding: 0.25, unlocked: false, queueCapacity: null,
-      },
+      makeChannel(`ch_lgs_${seed.id}` as ChannelId, `${seed.name} LGS Network`,
+        'lgs', region.id, 'abroadLgs', false, scale),
+      makeChannel(`ch_online_${seed.id}` as ChannelId, `${seed.name} Online Retail`,
+        'online', region.id, 'abroadOnline', false, scale),
+      makeChannel(`ch_dist_${seed.id}` as ChannelId, `${seed.name} Distributor`,
+        'distributor', region.id, 'abroadDist', false, scale),
     ];
     for (const ch of abroad) s.channels[ch.id] = { ...ch, lastAllocatedTick: null };
   }
 
-  // Rivals exist from tick 0 and already own most of the audience. They don't
-  // release sets, spend attention, or move yet — their policy is recorded for
-  // a later pass; what bites today is the share of attention they hold.
-  for (const r of RIVALS) {
-    const id = r.id as PublisherId;
-    s.publishers[id] = {
-      id,
-      name: r.name,
-      isPlayer: false,
-      foundedTick: t0,
-      // $2,000,000. Inert today — rivals never spend — but kept in the same
-      // cents convention as the player so it stays right when they do.
-      cash: 2_000_000_00 as Cents,
-      debt: 0 as Cents,
-      peakDebt: 0 as Cents,
-      credit: 0.6,
-      brandStanding: r.brandStanding,
-      unlocks: {
-        channels: [], regions: [REGION_US],
-        marketResearch: 0, communityTeam: 0, analytics: 0,
-        printQualityTiers: ['budget', 'standard', 'premium'],
-        specialtySetSlots: 0, canHostEvents: false, directStore: false,
-      },
-      policy: {
-        aggression: randRange(rng, 0.3, 0.8),
-        setsPerYearTarget: Math.round(randRange(rng, 1, 4)),
-        chaseHeaviness: randRange(rng, 0.2, 0.8),
-        qualityBias: randRange(rng, 0.2, 0.8),
-        reprintWillingness: randRange(rng, 0.1, 0.6),
-      },
-      retainers: {},
-      ledger: [],
-      deadTick: null,
-      deathCause: null,
-    };
-    s.audience.shareByPublisher[id] = r.share;
-  }
-
   const personalities = ARTIST_PERSONALITIES;
   const specialties = ARTIST_SPECIALTIES;
-  for (let i = 0; i < 6; i++) {
+  const ca = config.art;
+  for (let i = 0; i < ca.openingRosterSize; i++) {
     const id = nextId(s, 'art') as ArtistId;
     // $75 to $450 for an unproven newcomer, and reputation drags it up from
     // there. It used to be 50 to 300 *cents* — fifty cents to three dollars a
@@ -385,26 +355,26 @@ export function createWorld(seed: string, config: SimConfig): SimState {
     // unknowns are cheap, and `safeHands` 26.9% buying reputation it can see —
     // and that last one now costs it four seeds in fifteen. Three times higher
     // and `safeHands` stops being viable at all.
-    const rate0 = Math.round(randRange(rng, 7_500, 45_000)) as Cents;
+    const rate0 = Math.round(randRange(rng, ca.openingRateMin, ca.openingRateMax)) as Cents;
     s.artists[id] = {
       id,
       name: `Artist ${i + 1}`,
       personality: pick(rng, personalities),
       specialty: pick(rng, specialties),
       stats: {
-        linework: randRange(rng, 0.2, 0.6),
-        color: randRange(rng, 0.2, 0.6),
-        composition: randRange(rng, 0.2, 0.6),
-        speed: randRange(rng, 0.3, 0.8),
-        reliability: randRange(rng, 0.4, 0.9),
+        linework: randRange(rng, ca.openingStatMin, ca.openingStatMax),
+        color: randRange(rng, ca.openingStatMin, ca.openingStatMax),
+        composition: randRange(rng, ca.openingStatMin, ca.openingStatMax),
+        speed: randRange(rng, ca.speedMin, ca.speedMax),
+        reliability: randRange(rng, ca.reliabilityMin, ca.reliabilityMax),
       },
       // Cheap and unproven, per CONCEPT.md's opening state.
       rate: rate0,
       baseRate: rate0,
-      turnaroundWeeks: Math.round(randRange(rng, 2, 8)),
-      reputation: randRange(rng, 0.05, 0.25),
-      growth: randRange(rng, 0.0005, 0.004),
-      relationship: 0.5,
+      turnaroundWeeks: Math.round(randRange(rng, ca.openingTurnaroundMin, ca.openingTurnaroundMax)),
+      reputation: randRange(rng, ca.openingReputationMin, ca.openingReputationMax),
+      growth: randRange(rng, ca.growthMin, ca.growthMax),
+      relationship: ca.openingRelationship,
       exclusiveTo: null,
       available: true,
     };
@@ -418,10 +388,19 @@ export function createWorld(seed: string, config: SimConfig): SimState {
   // publisher nobody has heard of, and enters when brand standing clears
   // `grading.sideGraderBrandGate` (CONCEPT.md §7).
   for (const g of GRADER_SEEDS) {
+    const gs = config.graders[g.id]!;
     s.graders[g.id] = {
-      ...g,
-      reputation: g.reputation as Unit,
-      marketShare: g.marketShare as Unit,
+      id: g.id,
+      name: g.name,
+      activeFromTick: g.activeFromTick,
+      strictness: gs.strictness,
+      reputation: gs.reputation as Unit,
+      marketShare: gs.marketShare as Unit,
+      tiers: g.tierOrder.map(name => ({
+        name,
+        price: gs.tiers[name]!.price,
+        turnaroundWeeks: gs.tiers[name]!.turnaroundWeeks,
+      })),
     };
   }
 
@@ -432,40 +411,21 @@ export function createWorld(seed: string, config: SimConfig): SimState {
 export const GRADER_DORMANT = Number.MAX_SAFE_INTEGER as Tick;
 
 const GRADER_SEEDS: Array<{
-  id: GraderId; name: string; reputation: number; strictness: number;
-  marketShare: number; tiers: Array<{ name: string; price: Cents; turnaroundWeeks: number }>;
-  activeFromTick: Tick;
+  id: GraderId; name: string; tierOrder: string[]; activeFromTick: Tick;
 }> = [
+  // The strict, expensive one. Fewer 10s, and the 10s it does hand out carry
+  // the reputation premium.
   {
-    // The strict, expensive one. Fewer 10s, and the 10s it does hand out carry
-    // the reputation premium.
     id: 'grd_pinnacle' as GraderId, name: 'Pinnacle Grading',
-    reputation: 0.85, strictness: 1.15, marketShare: 0.55,
-    tiers: [
-      { name: 'bulk', price: 12_00 as Cents, turnaroundWeeks: 16 },
-      { name: 'standard', price: 30_00 as Cents, turnaroundWeeks: 8 },
-      { name: 'express', price: 90_00 as Cents, turnaroundWeeks: 3 },
-    ],
-    activeFromTick: 0 as Tick,
+    tierOrder: ['bulk', 'standard', 'express'], activeFromTick: 0 as Tick,
   },
+  // Cheaper, softer, faster. Grades more copies and is trusted less for it.
   {
-    // Cheaper, softer, faster. Grades more copies and is trusted less for it.
     id: 'grd_cardsafe' as GraderId, name: 'Cardsafe',
-    reputation: 0.6, strictness: 0.9, marketShare: 0.32,
-    tiers: [
-      { name: 'bulk', price: 8_00 as Cents, turnaroundWeeks: 12 },
-      { name: 'standard', price: 20_00 as Cents, turnaroundWeeks: 6 },
-      { name: 'express', price: 60_00 as Cents, turnaroundWeeks: 2 },
-    ],
-    activeFromTick: 0 as Tick,
+    tierOrder: ['bulk', 'standard', 'express'], activeFromTick: 0 as Tick,
   },
   {
     id: 'grd_apex' as GraderId, name: 'Apex Authentication',
-    reputation: 0.7, strictness: 1, marketShare: 0.13,
-    tiers: [
-      { name: 'standard', price: 25_00 as Cents, turnaroundWeeks: 7 },
-      { name: 'express', price: 75_00 as Cents, turnaroundWeeks: 2 },
-    ],
-    activeFromTick: GRADER_DORMANT,
+    tierOrder: ['standard', 'express'], activeFromTick: GRADER_DORMANT,
   },
 ];

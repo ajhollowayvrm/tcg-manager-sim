@@ -1,9 +1,9 @@
 /**
  * Channel traits, capacity, and the default allocation split.
  *
- * The per-kind numbers live here as constants rather than on `Channel`, so
- * `SimState` stays small and serializable. Anything a player can tune or sour —
- * relationship, capacity, margin — stays on the entity in `world.ts`.
+ * The per-kind numbers live in `config.channels.traits` rather than on
+ * `Channel`, so `SimState` stays small and serializable. Anything a player can
+ * tune or sour — relationship, capacity, margin — stays on the entity.
  *
  * Shapes follow CONCEPT.md §6.5: the LGS is small and loyal and marks up hot
  * product freely, the distributor is volume at a thin margin and sours fastest,
@@ -13,6 +13,7 @@
 import type {
   SimState, Channel, ChannelId, ChannelKind, Product, PublisherId, Cents,
 } from './types.ts';
+import { audienceScale } from './audience.ts';
 
 export interface ChannelKindTraits {
   /** Demand weight per allocated unit. Reach, not capacity. */
@@ -29,36 +30,8 @@ export interface ChannelKindTraits {
   strainSensitivity: number;
 }
 
-export const CHANNEL_TRAITS: Record<ChannelKind, ChannelKindTraits> = {
-  // Small volume, huge goodwill, prices hot product at whatever it will bear.
-  lgs: {
-    reach: 1.0, markupSensitivity: 0.9, discountFloor: 0.1,
-    priceElasticity: 0.7, goodwillPerSellThrough: 0.006, strainSensitivity: 0.6,
-  },
-  // Volume at a thin margin. Over-allocate or under-deliver and it sours fast.
-  distributor: {
-    reach: 1.35, markupSensitivity: 0.1, discountFloor: 0.25,
-    priceElasticity: 0.4, goodwillPerSellThrough: 0.0005, strainSensitivity: 1.6,
-  },
-  // Reach and legitimacy, brutal terms, and it holds the line at MSRP.
-  bigbox: {
-    reach: 1.8, markupSensitivity: 0, discountFloor: 0.35,
-    priceElasticity: 0.5, goodwillPerSellThrough: 0.001, strainSensitivity: 1.1,
-  },
-  // Floats freely in both directions.
-  online: {
-    reach: 1.5, markupSensitivity: 0.6, discountFloor: 0.4,
-    priceElasticity: 1.2, goodwillPerSellThrough: 0.0015, strainSensitivity: 0.8,
-  },
-  // Your own store. Full margin, always MSRP, never sours.
-  direct: {
-    reach: 0.8, markupSensitivity: 0, discountFloor: 0,
-    priceElasticity: 0.6, goodwillPerSellThrough: 0.004, strainSensitivity: 0.2,
-  },
-};
-
-export function traitsFor(ch: Channel): ChannelKindTraits {
-  return CHANNEL_TRAITS[ch.kind];
+export function traitsFor(s: SimState, ch: Channel): ChannelKindTraits {
+  return s.config.channels.traits[ch.kind];
 }
 
 /** Channels this publisher can ship to right now. */
@@ -78,8 +51,14 @@ export function unlockedChannels(s: SimState, publisherId: PublisherId): Channel
  * relationship costs allocation capacity, which is the mechanism behind the
  * "collapsing back to LGS-only volume" failure state in CONCEPT.md §7.
  */
-export function effectiveCapacity(ch: Channel): number {
-  return Math.floor(ch.capacityUnits * (0.4 + 0.6 * ch.relationship));
+export function effectiveCapacity(s: SimState, ch: Channel): number {
+  const floor = s.config.channels.capacityFloor;
+  // Scale-coupled. A shelf holds what the market in front of it will buy, so a
+  // market that has grown thirty times over is thirty times the shelf. Without
+  // this the whole channel tree is a hard wall the growth arc hits around year
+  // 30, and everything printed past it goes straight to the warehouse.
+  return Math.floor(
+    ch.capacityUnits * audienceScale(s) * (floor + (1 - floor) * ch.relationship));
 }
 
 export function allocatedUnits(p: Product): number {
@@ -104,7 +83,7 @@ export function autoAllocate(s: SimState, p: Product, publisherId: PublisherId):
   const channels = unlockedChannels(s, publisherId).filter(ch => ch.regionId === p.regionId);
   if (channels.length === 0) return;
 
-  const caps = channels.map(ch => effectiveCapacity(ch));
+  const caps = channels.map(ch => effectiveCapacity(s, ch));
   const totalCap = caps.reduce((a, b) => a + b, 0);
   if (totalCap <= 0) return;
 

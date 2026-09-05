@@ -14,6 +14,7 @@ import { api } from '../src/sim/engine.ts';
 import { rand, pick, chance } from '../src/sim/rng.ts';
 import { REGION_US, IP_KINDS } from '../src/sim/world.ts';
 import { readRegion } from '../src/sim/regions.ts';
+import { segmentsIn, audienceScale } from '../src/sim/audience.ts';
 import { CHANNEL_IDS, effectiveCapacity, unlockCost } from '../src/sim/channels.ts';
 
 export interface Bot {
@@ -73,7 +74,11 @@ export interface SetBotOptions {
    * - `fixed` prints `units` regardless of anything, which is what every bot
    *   in the original roster did.
    * - `bankroll` commits `bankrollFraction` of the cash on hand to the print
-   *   run and prints whatever that buys.
+   *   run and prints whatever that buys. This is the bet-size ladder, and it
+   *   must stay purely cash-driven: it is the only policy that can lose
+   *   everything, because it scales the downside with the bankroll.
+   * - `market` sizes the run to how far the audience has grown and uses the
+   *   bankroll only as an affordability cap. This is the growth arc.
    *
    * The size of the print run is the wager the whole game is about, so a
    * roster where nothing varies it cannot measure difficulty. `bankroll` is
@@ -81,9 +86,15 @@ export interface SetBotOptions {
    * downside with the bankroll rather than holding it at a constant the
    * starting cash always covers.
    */
-  unitsPolicy?: 'fixed' | 'bankroll';
+  unitsPolicy?: 'fixed' | 'bankroll' | 'market';
   /** Share of cash committed per print run under `bankroll`. Ignored by `fixed`. */
   bankrollFraction?: number;
+  /**
+   * How far a `bankroll` run may grow on the previous release's sales. Above 1
+   * the studio scales into demand; at 1 it never grows past what it already
+   * sells. This is the growth arc's throttle.
+   */
+  bankrollRunGrowth?: number;
   packsPerUnit: number;
   msrp: number;
   productKind: ProductKind;
@@ -263,7 +274,8 @@ function maybeUnlock(s: SimState, reserve: number, runUnits: number, order = UNL
 
 /** What one unit costs to print, using the engine's own COGS formula. */
 function unitCost(s: SimState, opts: SetBotOptions): number {
-  return s.config.printing.unitCost[opts.quality] * opts.packsPerUnit * 0.55;
+  return s.config.printing.unitCost[opts.quality] * opts.packsPerUnit
+    * s.config.printing.cogsCoefficient;
 }
 
 /**
@@ -276,10 +288,32 @@ function unitCost(s: SimState, opts: SetBotOptions): number {
  * route rather than a bug: `tickFinance` is what decides whether it survives it.
  */
 function printRunUnits(s: SimState, opts: SetBotOptions): number {
-  if (opts.unitsPolicy !== 'bankroll') return opts.units;
+  if (opts.unitsPolicy !== 'bankroll' && opts.unitsPolicy !== 'market') return opts.units;
   const pub = s.publishers[s.playerId]!;
   const budget = Math.max(0, pub.cash) * (opts.bankrollFraction ?? 0.25);
-  return Math.max(1, Math.floor(budget / unitCost(s, opts)));
+  const affordable = Math.max(1, Math.floor(budget / unitCost(s, opts)));
+
+  // Sized to the market, capped by the wallet.
+  //
+  // Cash compounds on profit; an audience grows logistically. Sizing off the
+  // bankroll alone makes the two diverge and the run runs away — decade 3 hit
+  // 1.3 million boxes at 0.50 sell-through with six million in the warehouse.
+  // Sizing off the previous release's sales is worse: it is a feedback loop
+  // with no floor, so one bad set collapses the run to nothing, which stops the
+  // releases, which collapses engagement, which never recovers. That one showed
+  // up as a print run of exactly 1 from year 15 onward.
+  //
+  // So scale the opening run by how much the market has grown. That states the
+  // growth arc directly, it is monotonic in the audience, and it leaves the
+  // bankroll as what it should always have been: an affordability cap, not a
+  // growth engine.
+  // The bet-size ladder stays purely cash-driven. Giving it the market cap too
+  // collapsed the ladder: `allIn` and `smallBets` both hit the same cap and
+  // `allIn` went from 35% survival to 100%, which is the opposite of its job.
+  if (opts.unitsPolicy === 'bankroll') return affordable;
+
+  const wanted = Math.round(opts.units * audienceScale(s));
+  return Math.max(1, Math.min(affordable, wanted));
 }
 
 /** What this bot's next print run will cost, using the engine's own COGS formula. */
@@ -310,7 +344,7 @@ function submitAllocation(s: SimState, productId: ProductId, units: number, opts
       : open[open.length - 1]!;
     plan[target.id] = units;
   } else {
-    const caps = open.map(effectiveCapacity);
+    const caps = open.map(ch => effectiveCapacity(s, ch));
     const total = caps.reduce((a, b) => a + b, 0);
     if (total <= 0) return;
     for (let i = 0; i < open.length; i++) {
@@ -436,7 +470,7 @@ export function makeSetBot(opts: SetBotOptions): Bot {
       const reachByRegion = shipTo.map(regionId => {
         const caps = openChannels(s)
           .filter(ch => ch.regionId === regionId)
-          .map(effectiveCapacity);
+          .map(ch => effectiveCapacity(s, ch));
         return caps.reduce((a, b) => a + b, 0);
       });
       const totalReach = reachByRegion.reduce((a, b) => a + b, 0);
@@ -548,7 +582,8 @@ function maybeSignCollab(s: SimState, opts: SetBotOptions, setId: SetId): boolea
   if (opts.collabPolicy !== 'sign') return false;
   const pub = s.publishers[s.playerId]!;
   const reserve = printRunCost(s, opts);
-  const total = Object.values(s.audience.segments).reduce((n, g) => n + g.size, 0);
+  const home = segmentsIn(s, s.homeRegionId);
+  const total = Object.values(home).reduce((n, g) => n + g.population, 0);
   if (total <= 0) return false;
 
   let best: { id: CollabId; score: number } | null = null;
@@ -558,7 +593,7 @@ function maybeSignCollab(s: SimState, opts: SetBotOptions, setId: SetId): boolea
     if (pub.cash - c.licenseFee < reserve) continue;
     let weighted = 0;
     for (const [seg, bonus] of Object.entries(c.reachBonus)) {
-      weighted += bonus * (s.audience.segments[seg as AudienceSegment]?.size ?? 0) / total;
+      weighted += bonus * (home[seg as AudienceSegment]?.population ?? 0) / total;
     }
     const score = weighted / Math.max(1, c.licenseFee);
     if (!best || score > best.score) best = { id: c.id, score };
@@ -612,6 +647,19 @@ function betSizeBot(label: string, fraction: number): () => Bot {
 }
 
 export const BOTS: Record<string, () => Bot> = {
+  /**
+   * Does nothing at all. It designs no cards, prints nothing and buys nothing.
+   *
+   * CONCEPT.md §7 and the difficulty targets both claim that doing nothing is a
+   * way to lose, and until now nothing measured it, because every bot in the
+   * roster released something. This one turns "a studio that releases nothing
+   * runs out of its $500,000 in about five years" from prose into a row.
+   *
+   * It is also the cheapest possible regression on the standing bill: if the
+   * overhead lines ever stop biting, this bot stops dying and says so.
+   */
+  idle: () => ({ step() { /* the whole point */ } }),
+
   // The size-of-the-bet ladder. See `betSizeBot`.
   smallBets: betSizeBot('SmallBets', 0.10),
   bigBets: betSizeBot('BigBets', 0.50),
@@ -625,6 +673,12 @@ export const BOTS: Record<string, () => Bot> = {
     quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000,
     productKind: 'boosterBox', allocationPolicy: 'spread',
     regionPolicy: 'expand',
+    // The market sizes the run; the bankroll only caps it. 0.30 exactly covered
+    // 8,000 boxes at the opening cash, which left no headroom at all to grow
+    // into, so the cap bound every tick and the studio died in 70% of seeds
+    // while `allIn` at 0.95 sailed through. 0.6 leaves the cap as a safety
+    // limit, which is what it should always have been.
+    unitsPolicy: 'market', bankrollFraction: 0.6,
   }),
 
   // `conservative` in every respect except that it licenses. Any difference in
@@ -635,6 +689,12 @@ export const BOTS: Record<string, () => Bot> = {
     quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000,
     productKind: 'boosterBox', allocationPolicy: 'spread',
     collabPolicy: 'sign', collabRunMultiple: 1.5,
+    // The market sizes the run; the bankroll only caps it. 0.30 exactly covered
+    // 8,000 boxes at the opening cash, which left no headroom at all to grow
+    // into, so the cap bound every tick and the studio died in 70% of seeds
+    // while `allIn` at 0.95 sailed through. 0.6 leaves the cap as a safety
+    // limit, which is what it should always have been.
+    unitsPolicy: 'market', bankrollFraction: 0.6,
   }),
 
   // The two shapes of collectible chain, both `conservative` in every other
@@ -646,12 +706,24 @@ export const BOTS: Record<string, () => Bot> = {
     quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000,
     productKind: 'boosterBox', allocationPolicy: 'spread',
     chainPolicy: 'inSet', chainLength: 3,
+    // The market sizes the run; the bankroll only caps it. 0.30 exactly covered
+    // 8,000 boxes at the opening cash, which left no headroom at all to grow
+    // into, so the cap bound every tick and the studio died in 70% of seeds
+    // while `allIn` at 0.95 sailed through. 0.6 leaves the cap as a safety
+    // limit, which is what it should always have been.
+    unitsPolicy: 'market', bankrollFraction: 0.6,
   }),
   chainWeaver: () => makeSetBot({
     label: 'ChainWeaver', cadenceWeeks: 52, cardsPerSet: 70, setType: 'main',
     quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000,
     productKind: 'boosterBox', allocationPolicy: 'spread',
     chainPolicy: 'acrossSets', chainLength: 6,
+    // The market sizes the run; the bankroll only caps it. 0.30 exactly covered
+    // 8,000 boxes at the opening cash, which left no headroom at all to grow
+    // into, so the cap bound every tick and the studio died in 70% of seeds
+    // while `allIn` at 0.95 sailed through. 0.6 leaves the cap as a safety
+    // limit, which is what it should always have been.
+    unitsPolicy: 'market', bankrollFraction: 0.6,
   }),
 
   // Few, well-supported sets. The steady baseline.
@@ -659,6 +731,12 @@ export const BOTS: Record<string, () => Bot> = {
     label: 'Conservative', cadenceWeeks: 52, cardsPerSet: 70, setType: 'main',
     quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000, productKind: 'boosterBox',
     allocationPolicy: 'spread',
+    // The market sizes the run; the bankroll only caps it. 0.30 exactly covered
+    // 8,000 boxes at the opening cash, which left no headroom at all to grow
+    // into, so the cap bound every tick and the studio died in 70% of seeds
+    // while `allIn` at 0.95 sailed through. 0.6 leaves the cap as a safety
+    // limit, which is what it should always have been.
+    unitsPolicy: 'market', bankrollFraction: 0.6,
   }),
 
   // Fewer, smaller cards-per-set skewed toward chase rarities, premium quality.
@@ -706,6 +784,12 @@ export const BOTS: Record<string, () => Bot> = {
     allocationPolicy: 'spread',
     revealLeadWeeks: 16, revealCadenceWeeks: 1,
     marketingPerSet: 50_000_00, prereleaseScale: 2, campaignRunMultiple: 1.6,
+    // The market sizes the run; the bankroll only caps it. 0.30 exactly covered
+    // 8,000 boxes at the opening cash, which left no headroom at all to grow
+    // into, so the cap bound every tick and the studio died in 70% of seeds
+    // while `allIn` at 0.95 sailed through. 0.6 leaves the cap as a safety
+    // limit, which is what it should always have been.
+    unitsPolicy: 'market', bankrollFraction: 0.6,
   }),
 
   // The same campaign, sized for greed. It prints 2.2x rather than 1.6x, and
@@ -719,6 +803,12 @@ export const BOTS: Record<string, () => Bot> = {
     allocationPolicy: 'spread',
     revealLeadWeeks: 16, revealCadenceWeeks: 1,
     marketingPerSet: 50_000_00, prereleaseScale: 2, campaignRunMultiple: 2.2,
+    // The market sizes the run; the bankroll only caps it. 0.30 exactly covered
+    // 8,000 boxes at the opening cash, which left no headroom at all to grow
+    // into, so the cap bound every tick and the studio died in 70% of seeds
+    // while `allIn` at 0.95 sailed through. 0.6 leaves the cap as a safety
+    // limit, which is what it should always have been.
+    unitsPolicy: 'market', bankrollFraction: 0.6,
   }),
 
   // `conservative` in every respect except that it saves for the direct store
@@ -730,6 +820,12 @@ export const BOTS: Record<string, () => Bot> = {
     allocationPolicy: 'spread',
     unlockOrder: [CHANNEL_IDS.direct, CHANNEL_IDS.online, CHANNEL_IDS.distributor, CHANNEL_IDS.bigbox],
     dropUnits: 2500, dropCadenceWeeks: 4,
+    // The market sizes the run; the bankroll only caps it. 0.30 exactly covered
+    // 8,000 boxes at the opening cash, which left no headroom at all to grow
+    // into, so the cap bound every tick and the studio died in 70% of seeds
+    // while `allIn` at 0.95 sailed through. 0.6 leaves the cap as a safety
+    // limit, which is what it should always have been.
+    unitsPolicy: 'market', bankrollFraction: 0.6,
   }),
 
   // The two ends of the scouting gamble. Both are `conservative` in every other
@@ -746,6 +842,12 @@ export const BOTS: Record<string, () => Bot> = {
     quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000, productKind: 'boosterBox',
     allocationPolicy: 'spread',
     artistPolicy: 'cheapest', artistTerms: 'exclusive',
+    // The market sizes the run; the bankroll only caps it. 0.30 exactly covered
+    // 8,000 boxes at the opening cash, which left no headroom at all to grow
+    // into, so the cap bound every tick and the studio died in 70% of seeds
+    // while `allIn` at 0.95 sailed through. 0.6 leaves the cap as a safety
+    // limit, which is what it should always have been.
+    unitsPolicy: 'market', bankrollFraction: 0.6,
   }),
 
   // `safeHands` buys the reputation it can already see, pays over the rate for
@@ -755,6 +857,12 @@ export const BOTS: Record<string, () => Bot> = {
     quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000, productKind: 'boosterBox',
     allocationPolicy: 'spread',
     artistPolicy: 'established', artBudgetMultiple: 2.5, artistTerms: 'retainer',
+    // The market sizes the run; the bankroll only caps it. 0.30 exactly covered
+    // 8,000 boxes at the opening cash, which left no headroom at all to grow
+    // into, so the cap bound every tick and the studio died in 70% of seeds
+    // while `allIn` at 0.95 sailed through. 0.6 leaves the cap as a safety
+    // limit, which is what it should always have been.
+    unitsPolicy: 'market', bankrollFraction: 0.6,
   }),
 
   // `conservative` in every respect except allocation: it dumps each whole run
@@ -766,5 +874,11 @@ export const BOTS: Record<string, () => Bot> = {
     label: 'ChannelHog', cadenceWeeks: 52, cardsPerSet: 70, setType: 'main',
     quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000, productKind: 'boosterBox',
     allocationPolicy: 'hog', hogChannel: CHANNEL_IDS.distributor,
+    // The market sizes the run; the bankroll only caps it. 0.30 exactly covered
+    // 8,000 boxes at the opening cash, which left no headroom at all to grow
+    // into, so the cap bound every tick and the studio died in 70% of seeds
+    // while `allIn` at 0.95 sailed through. 0.6 leaves the cap as a safety
+    // limit, which is what it should always have been.
+    unitsPolicy: 'market', bankrollFraction: 0.6,
   }),
 };

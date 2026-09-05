@@ -12,7 +12,8 @@
     "ios:project": "cd ios && xcodegen generate",
     "sim": "tsx harness/run.ts",
     "sim:quick": "tsx harness/run.ts --seeds=5 --years=15 --bot=all",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check": "tsx harness/check.ts"
   },
   "dependencies": {
     "react": "^18.3.1",

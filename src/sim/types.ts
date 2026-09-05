@@ -106,6 +106,8 @@ export interface SimState {
   printingByCard: Record<string, PrintingId>;
 
   playerId: PublisherId;
+  /** The market the studio starts in. Every global fallback resolves here. */
+  homeRegionId: RegionId;
 
   publishers: Record<PublisherId, Publisher>;
   ips: Record<IpId, IpEntity>;
@@ -141,7 +143,6 @@ export interface SimState {
 export interface Publisher {
   id: PublisherId;
   name: string;
-  isPlayer: boolean;
   foundedTick: Tick;
 
   cash: Cents;
@@ -157,10 +158,7 @@ export interface Publisher {
   /** 0..1. Gates channels, collabs, artist interest, grader attention. */
   brandStanding: Unit;
 
-  /** Only meaningful for the player; rivals use scripted policy instead. */
   unlocks: UnlockState;
-  /** Rival behaviour profile. Null for the player. */
-  policy: RivalPolicy | null;
 
   /**
    * Standing arrangements with artists. A retainer or an exclusive is a weekly
@@ -178,8 +176,7 @@ export type DeathCause =
   | 'overprint'
   | 'attention_collapse'
   | 'debt_spiral'
-  | 'channel_collapse'
-  | 'irrelevance';
+  | 'channel_collapse';
 
 export interface UnlockState {
   channels: ChannelId[];
@@ -192,14 +189,6 @@ export interface UnlockState {
   specialtySetSlots: number;
   canHostEvents: boolean;
   directStore: boolean;
-}
-
-export interface RivalPolicy {
-  aggression: Unit;
-  setsPerYearTarget: number;
-  chaseHeaviness: Unit;
-  qualityBias: Unit;
-  reprintWillingness: Unit;
 }
 
 export interface LedgerEntry {
@@ -223,8 +212,23 @@ export interface LedgerEntry {
 
 export type IpKind = 'character' | 'location' | 'faction' | 'concept' | 'event';
 
+/**
+ * The audience segments.
+ *
+ * `lapsed` was one of these and is not any more. With the population / reached
+ * / engaged split it *is* `reached - engaged`, across every segment at once, so
+ * keeping it as a seventh name double-counted the same people.
+ *
+ * Two kinds. The age cohorts flow into each other on a demographic clock, so a
+ * kid who starts at eight is an adult twenty years into a fifty-year run. The
+ * motivation segments do not age, because "investor" is not a stage of life.
+ */
 export type AudienceSegment =
-  | 'kids' | 'teens' | 'adults' | 'lapsed' | 'investors' | 'artFans';
+  | 'kids' | 'teens' | 'adults'          // cohorts, which flow
+  | 'investors' | 'artFans';             // motivations, which do not
+
+/** The cohort chain, oldest last. Aging walks it in order. */
+export const AGE_COHORTS = ['kids', 'teens', 'adults'] as const;
 
 export interface IpEntity {
   id: IpId;
@@ -761,9 +765,15 @@ export interface Collab {
 // ---------------------------------------------------------------------------
 
 export interface AudienceState {
-  segments: Record<AudienceSegment, SegmentState>;
-  /** Attention share by publisher. Sums to 1. The thing you actually fight for. */
-  shareByPublisher: Record<PublisherId, Unit>;
+  /**
+   * Per region, per segment. A region is its own market with its own people,
+   * which is what makes opening one an act of acquisition rather than a size
+   * multiplier applied to somebody else's audience.
+   */
+  regions: Record<RegionId, Record<AudienceSegment, SegmentState>>;
+
+  /** Units sold into each region lately, decaying. Drives acquisition. */
+  recentUnitsByRegion: Record<RegionId, number>;
 
   /**
    * Latched, so `fatigueWarning` fires on the crossing rather than every tick
@@ -808,8 +818,27 @@ export interface ScalperPosition {
   openedTick: Tick;
 }
 
+/**
+ * One audience segment, in one region.
+ *
+ * Three layers, because "how many people are there" and "how many are buying"
+ * are different questions and the growth arc is the distance between them:
+ *
+ *   population  people who could play. Demographics, not marketing.
+ *   reached     people who know the game and have bought at least once.
+ *   engaged     people currently active. THIS is what demand reads.
+ *
+ * `engaged <= reached <= population` always; `checkInvariants` enforces it.
+ *
+ * The gap between `reached` and `engaged` is the lapsed reservoir. It is not a
+ * segment of its own — a lapsed teenager is still a teenager — and re-engaging
+ * it is cheaper than acquiring somebody new, which is what gives a collab or a
+ * vintage price run a second job beyond raw reach.
+ */
 export interface SegmentState {
-  size: number;
+  population: number;
+  reached: number;
+  engaged: number;
   /** Finite. Every release consumes it. */
   attention: number;
   /** Rises with over-releasing. Suppresses chase demand. Slow to recover. */
@@ -949,7 +978,6 @@ export type SimEventKind =
   | 'errorDiscovered' | 'creatorOpened' | 'collabOffer'
   | 'artistOffer' | 'artistBreakout'
   | 'channelStrained' | 'channelLost' | 'channelUnlocked'
-  | 'rivalRelease' | 'rivalDominance'
   | 'debtWarning' | 'studioDead'
   | 'fatigueWarning' | 'graderEnteredMarket'
   | 'dropScheduled' | 'dropSoldOut' | 'dropUndersold' | 'scalperCrash'
@@ -1013,6 +1041,24 @@ export interface SimConfig {
     shockChancePerTick: number;
     /** Size of that spike. */
     shockGain: number;
+    /** Cast desire at which the demand term of the price stack equals 1. */
+    desireReference: number;
+    /** Share of the way a raw price moves toward its target each price tick. */
+    priceLerp: number;
+    /** Brand standing's floor in the nostalgia rate. Brand adds on top. */
+    nostalgiaBrandFloor: number;
+    /** Heat a discovered error adds, divided by its incidence. */
+    errorHeatGain: number;
+    /** Incidence floor in that division, so a vanishingly rare error is bounded. */
+    errorIncidenceFloor: number;
+    /** Chance per price tick that an old printing is checked for a resurgence. */
+    resurgenceCheckChance: number;
+    /** Heat a printing opens at before hype is added. */
+    openingHeat: number;
+    /** Liquidity a printing opens at. */
+    openingLiquidity: number;
+    /** What a reprint multiplies the original printing's nostalgia by. */
+    reprintNostalgiaPenalty: number;
   };
 
   affection: {
@@ -1024,6 +1070,25 @@ export interface SimConfig {
     /** How strongly resurgence lifts demand for a modern card featuring the IP. */
     resurgenceToModernDemand: number;
     resurgenceDecayPerTick: number;
+    /** Units sold per point of IP exposure. */
+    unitsPerExposurePoint: number;
+    /** Exposure decay applied to every IP each affection tick. */
+    exposureDecayPerTick: number;
+    /** Minimum printing age, in years, before a vintage run can feed resurgence. */
+    resurgenceMinAgeYears: number;
+    /** Price growth over base a printing needs before it feeds resurgence. */
+    resurgenceMinGrowth: number;
+    /** Scale on `resurgenceFromVintage` when it fires. */
+    resurgenceGainScale: number;
+    /** Range an IP's `relatability` is rolled in. Its ceiling on affection. */
+    relatabilityMin: number;
+    relatabilityMax: number;
+    /** Range a per-segment affinity is rolled in. */
+    affinityMin: number;
+    affinityMax: number;
+    /** Range an IP's `longevity` is rolled in. How well it ages. */
+    longevityMin: number;
+    longevityMax: number;
   };
 
   attention: {
@@ -1060,19 +1125,41 @@ export interface SimConfig {
     /** Average fatigue that fires `fatigueWarning`, so the player sees it coming. */
     fatigueWarnThreshold: number;
     goodwillSensitivity: number;
-    /** Passive per-tick recovery of goodwill, deliberately much slower than fatigueDecay. */
+    /** Passive per-tick drift of goodwill, deliberately much slower than fatigueDecay. */
     goodwillRegenPerTick: number;
     /**
-     * The player's `shareByPublisher` value that the demand constant in
-     * tickSales was tuned against. Demand scales by share / referenceShare, so
-     * a player sitting at exactly this share behaves as if rivals weren't there.
+     * What goodwill drifts toward when nothing is happening: indifference, not
+     * affection. Pulling toward 1 made trust a ratchet — high goodwill raised
+     * demand, which raised sell-through, which raised goodwill — and it pinned
+     * at exactly 1.000 from year ten in every seed, which is a constant wearing
+     * a population's clothes.
      */
-    referenceShare: number;
+    goodwillBaseline: number;
+    /**
+     * The master demand coefficient. Every unit of demand in the model passes
+     * through it, so it is the largest single lever there is.
+     */
+    demandCoefficient: number;
+    /** Exponential demand decay per year since a region's own release date. */
+    demandDecayPerYear: number;
+    /** Goodwill's floor in the demand stack. Goodwill scales the rest. */
+    goodwillDemandFloor: number;
+    /** Brand standing's floor in the demand stack. */
+    brandDemandFloor: number;
+    /** Set chase's floor in the demand stack. */
+    chaseDemandFloor: number;
+    /** Demand pool below which a product stops selling entirely. */
+    demandCutoff: number;
   };
 
   printing: {
     qualityGradeShift: Record<PrintQualityTier, number>;
     errorRate: Record<PrintQualityTier, number>;
+    /** Share of list unit cost that becomes cost of goods sold. */
+    cogsCoefficient: number;
+    /** Range a print error's incidence is rolled in. */
+    errorIncidenceMin: number;
+    errorIncidenceMax: number;
     unitCost: Record<PrintQualityTier, Cents>;
     /** Per-price-tick chance that an undiscovered error on a printing gets found. */
     errorDiscoveryChance: number;
@@ -1100,9 +1187,66 @@ export interface SimConfig {
     maxRosterSize: number;
     rateGrowthPerReputation: number;
     rateAdjustRate: number;
+    /** Range the opening roster's per-card rate is rolled in. */
+    openingRateMin: Cents;
+    openingRateMax: Cents;
+    /** Range a newcomer's per-card rate is rolled in. */
+    newcomerRateMin: Cents;
+    newcomerRateMax: Cents;
+    /** Range the opening roster's craft stats are rolled in. */
+    openingStatMin: number;
+    openingStatMax: number;
+    /** Range a newcomer's craft stats are rolled in. */
+    newcomerStatMin: number;
+    newcomerStatMax: number;
+    /** Range any artist's speed and reliability are rolled in. */
+    speedMin: number;
+    speedMax: number;
+    reliabilityMin: number;
+    reliabilityMax: number;
+    /** Range the opening roster's turnaround, in weeks, is rolled in. */
+    openingTurnaroundMin: number;
+    openingTurnaroundMax: number;
+    /** Range an artist's starting reputation is rolled in. */
+    openingReputationMin: number;
+    openingReputationMax: number;
+    newcomerReputationMin: number;
+    newcomerReputationMax: number;
+    /** Range an artist's hidden weekly reputation growth is rolled in. */
+    growthMin: number;
+    growthMax: number;
+    /** Floor and range of the multiplier on weekly reputation growth. */
+    reputationGrowthFloor: number;
+    reputationGrowthRange: number;
+    /** Reputation above which an artist may retire at the top. */
+    retireReputationThreshold: number;
+    /** Weekly chance they do. */
+    retireAtPeakChance: number;
+    /** Artists the world opens with. */
+    openingRosterSize: number;
+    /** Relationship every artist starts on, opening roster and newcomers alike. */
+    openingRelationship: number;
   };
 
   finance: {
+    /** Cash the studio opens with. */
+    startingCash: Cents;
+    /** Credit and brand standing the studio opens with. */
+    startingCredit: number;
+    startingBrandStanding: number;
+    /** Cash base the borrow ceiling is a multiple of. */
+    borrowCeilingBase: Cents;
+    /** Unsold units at death above which the cause is overprint, not debt. */
+    overprintDeathUnits: number;
+    /** Weekly credit drift, in the black and in the red. */
+    creditGainPerTick: number;
+    creditLossPerTick: number;
+    /** The brand-standing target: a base plus affection and goodwill terms. */
+    brandBase: number;
+    brandFromAffection: number;
+    brandFromGoodwill: number;
+    /** Mean IP affection at which `brandFromAffection` is paid in full. */
+    brandAffectionReference: number;
     interestBase: number;
     creditToRate: number;
     borrowCeilingMultiple: number;
@@ -1117,6 +1261,14 @@ export interface SimConfig {
   };
 
   sealed: {
+    /** Exponent on printed-over-remaining in the sealed scarcity term. */
+    scarcityExponent: number;
+    /** Share of the way a sealed price moves toward its target each tick. */
+    priceLerp: number;
+    /** Price floor, as a multiple of MSRP. */
+    priceFloorMultiple: number;
+    /** MSRP's weight in the sealed price target, beside `contentsWeight`. */
+    msrpWeight: number;
     /** How strongly expected singles value pulls sealed price. */
     contentsWeight: number;
     baseRipRatePerTick: number;
@@ -1136,6 +1288,9 @@ export interface SimConfig {
    * until it closes, and the population shrinks again when it stops paying.
    */
   drops: {
+    /** `scalperAppeal` given to an ETB or premium collection, and to everything else. */
+    scalperAppealPremium: number;
+    scalperAppealDefault: number;
     /** Weeks between automatic drops while a direct allocation still holds stock. */
     cadenceWeeks: number;
     /** Share of the collector population that considers any one drop. */
@@ -1178,6 +1333,31 @@ export interface SimConfig {
   };
 
   channels: {
+    /** Per-kind traits: reach, pricing behaviour and how hard each one sours. */
+    traits: Record<ChannelKind, {
+      reach: number;
+      markupSensitivity: number;
+      discountFloor: number;
+      priceElasticity: number;
+      goodwillPerSellThrough: number;
+      strainSensitivity: number;
+    }>;
+    /** Capacity a fully soured channel keeps. Relationship scales the rest. */
+    capacityFloor: number;
+    /** Street price floor, as a multiple of MSRP. */
+    streetPriceFloorMultiple: number;
+    /** Opening state of every channel in the world, by id. */
+    seeds: Record<string, {
+      relationship: number;
+      capacityUnits: number;
+      marginShare: number;
+      minimumOrder: number;
+      reliability: number;
+      requiredBrandStanding: number;
+      queueCapacity: number;
+    }>;
+    /** Relationship's floor in a channel's share of the demand pool. */
+    demandRelationshipFloor: number;
     /** Relationship gained per evaluation when sell-through beats `sellThroughTarget`. */
     relationshipGainPerSellThrough: number;
     /** Relationship lost per evaluation for allocation still sitting unsold past the grace period. */
@@ -1220,6 +1400,8 @@ export interface SimConfig {
    * paying attention to you, so the second million buys less than the first.
    */
   hype: {
+    /** Weeks before release that a set's reveal window opens by default. */
+    defaultLeadWeeks: number;
     /** Weeks between preview drops when a set is revealed without a schedule. */
     defaultCadenceWeeks: number;
     /** Hype one preview adds, before the diminishing term. */
@@ -1257,6 +1439,8 @@ export interface SimConfig {
    * bother covering their cards.
    */
   grading: {
+    /** Minimum latent condition score for each grade tier, best first. */
+    gradeCuts: Record<'10' | '9.5' | '9' | '8' | '7', number>;
     /** Share of the raw pool submitted per tick at full appetite. */
     submitRatePerTick: number;
     /** A copy is only worth grading once its raw price clears the fee this many times over. */
@@ -1299,6 +1483,26 @@ export interface SimConfig {
     readingNoiseSigma: number;
     /** Weeks between one region's release wave and the next. */
     entryLeadWeeks: number;
+    /** Weights on the four halves of `setFit`. They should sum to 1. */
+    fitTasteWeight: number;
+    fitAppetiteWeight: number;
+    fitProductWeight: number;
+    fitPriceWeight: number;
+    /** Centre of the taste-fit fold. A region with no opinion lands here. */
+    tasteFitCentre: number;
+    /** Divisors folding rarity appetite and product preference onto 0..1. */
+    appetiteFitDivisor: number;
+    productFitDivisor: number;
+    /** Multiplier folding price tolerance onto 0..1. */
+    priceFitGain: number;
+    /** Wealth's floor in the region demand factor. */
+    wealthFloor: number;
+    /** Ceiling on region knowledge. A reading is never quite the truth. */
+    knowledgeCeiling: number;
+    /** Share of the research rate credited each quarterly tick. */
+    researchCreditShare: number;
+    /** Reading error on the signed taste axis, relative to the rest. */
+    tasteReadingNoiseScale: number;
   };
 
   /**
@@ -1346,6 +1550,15 @@ export interface SimConfig {
 
   creators: {
     rosterSize: number;
+    /** Audience roll: `base * growth ^ U(0, exponentMax)`. A long tail. */
+    audienceBase: number;
+    audienceGrowth: number;
+    audienceExponentMax: number;
+    /** Range a creator's influence and starting relationship are rolled in. */
+    influenceMin: number;
+    influenceMax: number;
+    openingRelationshipMin: number;
+    openingRelationshipMax: number;
     coverChancePerStride: number;
     freshnessWeeks: number;
     affinityTries: number;
@@ -1371,6 +1584,15 @@ export interface SimConfig {
   };
 
   collabs: {
+    /** Range the weighted reach bonus on one offer is rolled in. */
+    reachBonusMin: number;
+    reachBonusMax: number;
+    /** Range the brand standing an offer demands is rolled in. */
+    gateMin: number;
+    gateMax: number;
+    /** How many audience segments one offer reaches. */
+    segmentsReachedMin: number;
+    segmentsReachedMax: number;
     offerChancePerQuarter: number;
     offerWindowWeeks: number;
     maxOpenOffers: number;
@@ -1389,4 +1611,185 @@ export interface SimConfig {
     /** Minimum fractional price move required to write a point. */
     writeThreshold: number;
   };
+
+  /**
+   * The rarity model. `weight` is a demand-side signal and never touches price;
+   * `pull` is copies printed per card, and is how rarity reaches price through
+   * the scarcity term. Changing either table moves everything.
+   */
+  rarity: {
+    weight: Record<Rarity, number>;
+    pull: Record<Rarity, number>;
+    /** Divisor applied to `pull` to get a per-card pull rate. */
+    pullDivisor: number;
+    /** Divisor applied to `weight` in the reveal-window term. */
+    weightDivisor: number;
+    /** Divisor applied to `weight` in the set-chase term. */
+    chaseWeightDivisor: number;
+  };
+
+  /** The global price climate. A random walk nothing else controls. */
+  market: {
+    climateNoiseSigma: number;
+    climateReversion: number;
+    climateFloor: number;
+    climateCeiling: number;
+    /** Minimum fractional move required to write a climate history point. */
+    climateWriteThreshold: number;
+  };
+
+  /**
+   * Tick rotations. A subsystem on stride N processes one Nth of its population
+   * per tick.
+   *
+   * These are NOT free to change. A stride decides how many RNG draws a run
+   * makes, so moving one renumbers every later roll and invalidates every
+   * banked measurement. It also rescales any `PerTick` rate that is multiplied
+   * by the stride.
+   */
+  strides: {
+    price: number;
+    sealed: number;
+    scalper: number;
+    channel: number;
+    grading: number;
+    art: number;
+    /** Interest is charged on this rotation. */
+    interest: number;
+    /** Collab offers, region knowledge and artist roster drift. */
+    quarterly: number;
+    /** History compaction. */
+    annual: number;
+  };
+
+  /**
+   * The audience system: how people arrive, engage, lapse and leave.
+   *
+   * Every rate here is per tick unless the name says otherwise. All of it is
+   * first-guess and unswept — it landed with the growth arc, immediately before
+   * the tuning run that owns it.
+   */
+  audience: {
+    /** Weekly population growth of the motivation segments. */
+    populationGrowthPerTick: number;
+    /** Births into `kids`, as a share of the region's cohort population. */
+    birthRatePerTick: number;
+    /**
+     * How far `market.climate` moves population growth. One shared "how hot is
+     * the hobby" signal drives prices and player counts together, which is what
+     * the 2020-21 boom actually did.
+     */
+    climateToPopulation: number;
+    /** Share of a cohort that ages into the next one each tick. */
+    agingKidsToTeens: number;
+    agingTeensToAdults: number;
+    agingAdultsOut: number;
+
+    /** Share of the unreached pool converted per tick at full drive. */
+    acquisitionRate: number;
+    /** Acquisition drive: a floor plus what reach, brand and goodwill add. */
+    acquisitionFloor: number;
+    acquisitionFromReach: number;
+    acquisitionFromBrand: number;
+    acquisitionFromGoodwill: number;
+    /**
+     * Units sold per head of a region's population for the reach term to reach 1.
+     *
+     * Per capita, not a flat unit count. Against a fixed 8,000 units the term
+     * saturated in year one — a startup shipping its first print run looked as
+     * reaching as a major — which front-loaded the whole growth arc. Measured
+     * against the population it runs about 0.0003 at the opening and 0.007 at
+     * full scale, so the curve is slow early and accelerates, which is the
+     * shape a real audience grows in.
+     */
+    reachPerCapitaReference: number;
+    /** Weekly decay on the recent-units figure that feeds reach. */
+    recentUnitsDecayPerTick: number;
+
+    /** Share of `reached` that is engaged when nothing is going on. */
+    engagedFloor: number;
+    /** What a fresh, well-matched release adds to that share. */
+    engagedFromFreshness: number;
+    /** How fast `engaged` moves toward its target. */
+    engagementRate: number;
+    /** Weeks after a release that count as fresh. */
+    freshnessWeeks: number;
+    /**
+     * Discount on re-engaging somebody already reached, against acquiring
+     * somebody new. Winning a lapsed player back is cheaper than finding one.
+     */
+    winBackAdvantage: number;
+
+    /** Share of `reached` that churns back to unreached per tick, at zero goodwill. */
+    churnRate: number;
+    /** Goodwill below which churn starts. */
+    churnGoodwillFloor: number;
+
+    /** On region entry, the share of population seeded as reached, times brand standing. */
+    entrySeedShare: number;
+  };
+
+  /** The opening state of the world. */
+  world: {
+    /**
+     * Engaged people per segment in the home market at tick 0.
+     *
+     * Five segments times this must equal `attention.referenceAudience`, or
+     * year-0 demand moves and the value block is fitted against a shifted
+     * baseline. The coupling holds at world creation only; after that the
+     * audience grows and `referenceAudience` stays put as the denominator.
+     */
+    segmentSize: number;
+    /** Reached per segment, as a multiple of engaged. The lapsed reservoir. */
+    openingReachedMultiple: number;
+    /** Population per segment, as a multiple of engaged. The room to grow into. */
+    openingPopulationMultiple: number;
+    /** Starting attention, fatigue and goodwill in every segment. */
+    segmentAttention: number;
+    segmentFatigue: number;
+    segmentGoodwill: number;
+    /** Starting populations. */
+    startingScalpers: number;
+    startingResellers: number;
+    startingCollectors: number;
+    startingSpeculators: number;
+    /** Opening market climate and index level. */
+    startingClimate: number;
+    startingIndex: number;
+    /** Per-region shape. `knowledge` is what the studio starts knowing. */
+    regions: Record<string, {
+      marketSize: number;
+      wealth: number;
+      unlockCost: Cents;
+      priceTolerance: number;
+      knowledge: number;
+    }>;
+    /** Per-product-kind preference, before each region jitters it. */
+    productPreference: Record<ProductKind, number>;
+    /** Range a region's per-segment mix is rolled in. */
+    segmentMixMin: number;
+    segmentMixMax: number;
+    /** Range a foreign region's taste bias is rolled in. */
+    tasteBiasMin: number;
+    tasteBiasMax: number;
+    /** Range any region's rarity appetite is rolled in. */
+    rarityAppetiteMin: number;
+    rarityAppetiteMax: number;
+    /** Range a foreign region jitters `productPreference` by. */
+    productPreferenceJitterMin: number;
+    productPreferenceJitterMax: number;
+    /** The home market's taste bias, which is a literal rather than a roll. */
+    homeTasteBias: Record<IpKind, number>;
+    /** Capacity scale applied to a foreign region's channels. */
+    foreignChannelScale: number;
+  };
+
+  /** The grader roster. Fees are per submitted copy. */
+  graders: Record<string, {
+    reputation: number;
+    strictness: number;
+    marketShare: number;
+    /** Fee and turnaround for each service level this grader offers. */
+    tiers: Record<string, { price: Cents; turnaroundWeeks: number }>;
+  }>;
 }

@@ -121,10 +121,20 @@ export function checkInvariants(s: SimState): string[] {
     if (!Number.isFinite(ip.resurgence)) bad.push(`ip ${ip.id} resurgence not finite`);
   }
 
-  for (const [seg, st] of Object.entries(s.audience.segments)) {
-    if (st.attention < -1e-6 || st.attention > 1.0001) bad.push(`segment ${seg} attention out of range: ${st.attention}`);
-    if (st.fatigue < -1e-6 || st.fatigue > 1.0001) bad.push(`segment ${seg} fatigue out of range: ${st.fatigue}`);
-    if (st.goodwill < -1e-6 || st.goodwill > 1.0001) bad.push(`segment ${seg} goodwill out of range: ${st.goodwill}`);
+  for (const [rid, segs] of Object.entries(s.audience.regions)) {
+    for (const [seg, st] of Object.entries(segs)) {
+      const at = `${rid}/${seg}`;
+      if (st.attention < -1e-6 || st.attention > 1.0001) bad.push(`segment ${at} attention out of range: ${st.attention}`);
+      if (st.fatigue < -1e-6 || st.fatigue > 1.0001) bad.push(`segment ${at} fatigue out of range: ${st.fatigue}`);
+      if (st.goodwill < -1e-6 || st.goodwill > 1.0001) bad.push(`segment ${at} goodwill out of range: ${st.goodwill}`);
+      // The three layers are nested by definition. A breach means somebody
+      // wrote one of them without the others, which silently inflates demand.
+      if (!Number.isFinite(st.population) || st.population < -1e-6) bad.push(`segment ${at} bad population: ${st.population}`);
+      if (!Number.isFinite(st.reached) || st.reached < -1e-6) bad.push(`segment ${at} bad reached: ${st.reached}`);
+      if (!Number.isFinite(st.engaged) || st.engaged < -1e-6) bad.push(`segment ${at} bad engaged: ${st.engaged}`);
+      if (st.reached > st.population * 1.0001 + 1) bad.push(`segment ${at} reached ${st.reached} exceeds population ${st.population}`);
+      if (st.engaged > st.reached * 1.0001 + 1) bad.push(`segment ${at} engaged ${st.engaged} exceeds reached ${st.reached}`);
+    }
   }
 
   for (const set of Object.values(s.sets)) {

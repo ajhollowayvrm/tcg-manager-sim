@@ -13,12 +13,12 @@
  * ladder reads a finished world that would have to cross a thread boundary.
  */
 import { writeFileSync, mkdirSync } from 'node:fs';
-import { cpus } from 'node:os';
-import { Worker } from 'node:worker_threads';
 import type { SimState } from '../src/sim/types.ts';
 import { BOTS } from './bots.ts';
-import { runOne, type RunTask, type RunResult } from './runOne.ts';
-import { toCsv, type RunMetrics } from './metrics.ts';
+import { DEFAULT_SNAPSHOT_AGES, type RunTask } from './runOne.ts';
+import { runBatch, defaultJobs } from './batch.ts';
+import { REGION_US } from '../src/sim/world.ts';
+import { toCsv, type RunMetrics, type SetSnapshot } from './metrics.ts';
 
 const args = Object.fromEntries(process.argv.slice(2).map(a => {
   const [k, ...rest] = a.replace(/^--/, '').split('=');
@@ -43,9 +43,19 @@ for (const a of process.argv.slice(2)) {
   overrides[path!] = n;
 }
 const showDist = args.dist === 'true';
+const setsOut = String(args['sets-out'] ?? 'on') !== 'off';
+const snapshotAges = args['snapshot-ages'] === undefined
+  ? DEFAULT_SNAPSHOT_AGES
+  : String(args['snapshot-ages']).split(',').map(x => {
+      const n = Number(x);
+      if (!Number.isFinite(n) || n <= 0) throw new Error(`--snapshot-ages=${args['snapshot-ages']} is not a list of positive numbers`);
+      return n;
+    });
+/** The age the per-set targets in docs/tuning/03-targets.md are stated at. */
+const TARGET_AGE = 2;
 
 const requestedJobs = args.jobs === undefined || args.jobs === 'auto'
-  ? Math.max(1, cpus().length)
+  ? defaultJobs(Number.MAX_SAFE_INTEGER)
   : Math.max(1, Math.floor(Number(args.jobs)));
 if (!Number.isFinite(requestedJobs)) throw new Error(`--jobs=${args.jobs} is not a number`);
 
@@ -53,7 +63,7 @@ const tasks: RunTask[] = [];
 for (const botName of botNames) {
   if (!BOTS[botName]) throw new Error(`unknown bot: ${botName}`);
   for (let i = 0; i < seeds; i++) {
-    tasks.push({ botName, seedIndex: i, years, checkEvery, overrides });
+    tasks.push({ botName, seedIndex: i, years, checkEvery, overrides, snapshotAges });
   }
 }
 
@@ -61,39 +71,12 @@ for (const botName of botNames) {
 const jobs = showDist ? 1 : Math.min(requestedJobs, tasks.length);
 
 const started = Date.now();
-const results: (RunResult | undefined)[] = new Array(tasks.length);
 // Held in a box rather than a bare `let`: the only writer is the `keep`
-// callback below, and TypeScript cannot see through that, so a bare binding
-// narrows to `null` for the rest of the file and `--dist` stops compiling.
+// callback, and TypeScript cannot see through that, so a bare binding narrows
+// to `null` for the rest of the file and `--dist` stops compiling.
 const kept: { state: SimState | null } = { state: null };
+const results = await runBatch(tasks, jobs, st => { kept.state = st; });
 
-if (jobs === 1) {
-  for (let i = 0; i < tasks.length; i++) {
-    const { metrics, violations } = runOne(tasks[i]!, st => { kept.state = st; });
-    results[i] = { order: i, metrics, violations };
-  }
-} else {
-  await new Promise<void>((resolve, reject) => {
-    let next = 0;
-    let live = jobs;
-    const workerUrl = new URL('./worker.mjs', import.meta.url);
-    for (let w = 0; w < jobs; w++) {
-      const worker = new Worker(workerUrl);
-      const feed = () => {
-        if (next >= tasks.length) { worker.postMessage({ done: true }); return; }
-        const order = next++;
-        worker.postMessage({ task: tasks[order]!, order });
-      };
-      worker.on('message', (r: RunResult) => { results[r.order] = r; feed(); });
-      worker.on('error', reject);
-      worker.on('exit', () => { if (--live === 0) resolve(); });
-      feed();
-    }
-  });
-}
-
-// Reassembled in task order, so the CSV does not depend on which thread
-// finished first.
 const rows: RunMetrics[] = [];
 const violations: string[] = [];
 for (const r of results) {
@@ -105,10 +88,24 @@ for (const r of results) {
 mkdirSync(outDir, { recursive: true });
 writeFileSync(`${outDir}/runs.csv`, toCsv(rows as unknown as Record<string, unknown>[]));
 
+// One row per (bot, seed, set, age). `runs.csv` carries a scalar reduction of
+// this, which is what the regression suite gates on; the age curve only exists
+// here, because a scalar at one age cannot show a curve.
+const snapshots: SetSnapshot[] = [];
+for (const r of results) if (r) snapshots.push(...r.snapshots);
+if (setsOut && snapshots.length > 0) {
+  writeFileSync(`${outDir}/sets.csv`, toCsv(snapshots as unknown as Record<string, unknown>[]));
+}
+
 // --- console summary -------------------------------------------------------
-const num = (xs: number[]) => xs.filter(Number.isFinite);
-const mean = (xs: number[]) => num(xs).length ? num(xs).reduce((a, b) => a + b, 0) / num(xs).length : NaN;
-const median = (xs: number[]) => {
+// `null` is a real answer here, not a missing one: a run with no channels left
+// has no worst relationship, and a run that never sampled has no swing. Both
+// drop out of the aggregate rather than being counted as zero.
+const num = (xs: Array<number | null>): number[] =>
+  xs.filter((x): x is number => x !== null && Number.isFinite(x));
+const mean = (xs: Array<number | null>) =>
+  num(xs).length ? num(xs).reduce((a, b) => a + b, 0) / num(xs).length : NaN;
+const median = (xs: Array<number | null>) => {
   const v = num(xs).sort((a, b) => a - b);
   return v.length ? v[Math.floor(v.length / 2)]! : NaN;
 };
@@ -236,7 +233,7 @@ const cultureRows = botNames
     return {
       bot: b,
       coverage: mean(ran.map(x => x.creatorCoverage)).toFixed(0),
-      onOwnCards: (100 * mean(ran.map(x => x.creatorOwnShare))).toFixed(0) + '%',
+      ofPrintings: (100 * mean(ran.map(x => x.creatorCoverageShareOfPrintings))).toFixed(1) + '%',
       bestRelation: mean(ran.map(x => x.bestCreatorRelationship)).toFixed(2),
       chains: mean(ran.map(x => x.chains)).toFixed(0),
       spanning: (100 * mean(ran.map(x => x.chainsSpanningSets))).toFixed(0) + '%',
@@ -347,17 +344,66 @@ if (artRows.length) {
   console.table(artRows);
 }
 
-// A decile ladder for the last run. Median and max alone cannot tell a power
-// law from flat mush; the step between deciles can. Each step should widen.
+// Per-set price shape. These are the columns the real-world targets are stated
+// against — one set's card list at a fixed age, which is what a Scryfall set
+// list is. The whole-catalogue columns in the main table pool fifty years of
+// printings and answer a different question.
+const shapeRows = botNames.map(b => {
+  // Filter on age-2 coverage, not on snapshots taken. A bot that dies in year
+  // two has snapshots but no age-2 sets, and its zeros are not measurements.
+  const r = rows.filter(x => x.bot === b && x.setsAtAge2 > 0);
+  if (r.length === 0) return null;
+  return {
+    bot: b,
+    sets: mean(r.map(x => x.setsAtAge2)).toFixed(0),
+    median$: median(r.map(x => x.setMedianAge2)).toFixed(2),
+    under1: (100 * median(r.map(x => x.setShareUnder1Age2))).toFixed(0) + '%',
+    under25c: (100 * median(r.map(x => x.setShareUnder25cAge2))).toFixed(0) + '%',
+    top1: median(r.map(x => x.setTop1ShareAge2)).toFixed(2),
+    top10: median(r.map(x => x.setTop10ShareAge2)).toFixed(2),
+    gini: median(r.map(x => x.setGiniAge2)).toFixed(2),
+    chaseOverMed: median(r.map(x => x.setChaseOverMedianAge2)).toFixed(0),
+    tailAlpha: median(r.map(x => x.setTailAlphaAge2)).toFixed(2),
+  };
+}).filter(Boolean);
+if (shapeRows.length) {
+  console.log(`per-set price shape at age ${TARGET_AGE} (target: median $0.30, under1 75%, top10 0.78, gini 0.85, alpha 2.0):`);
+  console.table(shapeRows);
+}
+
+// A decile ladder. Median and max alone cannot tell a power law from flat mush;
+// the step between deciles can. Each step should widen.
+//
+// The per-set ladder is the one to read against the real-world targets. The
+// whole-catalogue ladder below it is kept so that readings banked before the
+// measurement was rebuilt stay comparable.
 if (showDist && kept.state) {
-  const prices = Object.values(kept.state.printings)
+  const st = kept.state;
+  const lastRun = results[results.length - 1];
+  const target = (lastRun?.snapshots ?? []).filter(x => x.ageYears === TARGET_AGE && x.n > 0);
+  const pick = target[target.length - 1];
+  if (pick) {
+    const setPrices = Object.values(st.printings)
+      .filter(pr => pr.setId === pick.setId && pr.isReprintOf === null && pr.regionId === REGION_US)
+      .map(pr => pr.market.rawPrice / 100)
+      .sort((a, b) => a - b);
+    ladder(`one set at age ${TARGET_AGE} (${pick.setId}, ${setPrices.length} cards)`, setPrices);
+  } else {
+    console.log(`\nno set reached age ${TARGET_AGE} in the last run; skipping the per-set ladder.`);
+  }
+
+  const prices = Object.values(st.printings)
     .map(pr => pr.market.rawPrice / 100)
     .sort((a, b) => a - b);
-  console.log(`\nprice deciles, last run (${prices.length} printings):`);
+  ladder(`whole catalogue, all ages (${prices.length} printings)`, prices);
+}
+
+function ladder(label: string, prices: number[]): void {
+  console.log(`\nprice deciles, ${label}:`);
   const at = (q: number) => prices[Math.min(prices.length - 1, Math.floor(prices.length * q))] ?? 0;
-  const ladder = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99, 1];
+  const rungs = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99, 1];
   let prev = 0;
-  for (const q of ladder) {
+  for (const q of rungs) {
     const v = at(q === 1 ? 0.999999 : q);
     const step = prev > 0 ? (v / prev).toFixed(2) + 'x' : '—';
     console.log(`  p${String(Math.round(q * 100)).padStart(3)}  $${v.toFixed(2).padStart(10)}   step ${step}`);
@@ -372,3 +418,6 @@ if (violations.length) {
   console.log('invariants: clean');
 }
 console.log(`\nwrote ${outDir}/runs.csv`);
+if (setsOut && snapshots.length > 0) {
+  console.log(`wrote ${outDir}/sets.csv (${snapshots.length} set snapshots)`);
+}

@@ -25,6 +25,7 @@
  * separate stream is there so the movement is attributable to the mechanism
  * rather than to reshuffled noise.
  */
+import { engagedTotal, globalAverages } from './audience.ts';
 import type { SimState, Printing, Product, CardSet, SimEvent, IpId } from './types.ts';
 import { gauss, rand } from './rng.ts';
 import { nextId } from './world.ts';
@@ -56,7 +57,9 @@ export function tradeablePopulation(s: SimState, pr: Printing, graded: number): 
  */
 export function collectorHeldShare(s: SimState): number {
   const cfg = s.config.actors;
-  const audience = Object.values(s.audience.segments).reduce((n, g) => n + g.size, 0);
+  // Density against the ENGAGED audience across every open market: a collector
+  // is a share of the people actually buying, not of everybody who might.
+  const audience = engagedTotal(s);
   if (audience <= 0) return cfg.collectorHoldFloor;
   const density = s.audience.actors.collectors / audience;
   const share = cfg.collectorHoldFloor
@@ -91,12 +94,8 @@ export function tickActors(s: SimState, products: Product[], printings: Printing
   const cfg = s.config.actors;
   const a = s.audience.actors;
 
-  const segments = Object.values(s.audience.segments);
-  const audience = segments.reduce((n, g) => n + g.size, 0);
-  const goodwill = segments.length
-    ? segments.reduce((n, g) => n + g.goodwill, 0) / segments.length : 0;
-  const fatigue = segments.length
-    ? segments.reduce((n, g) => n + g.fatigue, 0) / segments.length : 0;
+  const audience = engagedTotal(s);
+  const { goodwill, fatigue } = globalAverages(s);
 
   // --- Collectors ---------------------------------------------------------
   // The floor, so they track the audience rather than a profit. Goodwill is
