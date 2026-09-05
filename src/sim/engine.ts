@@ -1022,10 +1022,15 @@ function tickSealed(s: SimState, products: Product[]): void {
     if (s.tick % (s.config.strides.sealed * 6) === 0 || contents === 0) {
       contents = 0;
       for (const cardId of set.cardIds) {
-        const card = s.cards[cardId]!;
         const pr = s.printings[s.printingByCard[cardId]!];
-        if (pr) contents += pr.market.rawPrice
-          * s.config.rarity.pull[card.rarity] / s.config.rarity.pullDivisor;
+        // `pr.pullRate`, not the raw rarity table. This is the second half of
+        // the Round 4a bug and it survived that fix: the table is copies per
+        // pack at `rarity.referenceSetSize`, so at 280 cards it counts four
+        // times the cards a pack really holds. `expectedSinglesValue` in
+        // actors.ts already reads `pullRate`, so the sealed price and the
+        // reseller model disagreed by exactly four times about what a box
+        // holds. Ripping was priced off one number and valued off the other.
+        if (pr) contents += pr.market.rawPrice * pr.pullRate;
       }
       contents *= p.packsPerUnit;
       contentsCache.set(p, contents);
