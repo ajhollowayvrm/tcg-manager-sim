@@ -101,7 +101,8 @@ export function tickActors(s: SimState, products: Product[], printings: Printing
   // The floor, so they track the audience rather than a profit. Goodwill is
   // what converts an audience into collectors, and fatigue is what stops it.
   const collectorTarget = audience * cfg.collectorShareOfAudience
-    * (0.3 + 1.4 * goodwill) * (1 - 0.5 * fatigue);
+    * (cfg.collectorGoodwillFloor + cfg.collectorGoodwillWeight * goodwill)
+    * (1 - cfg.collectorFatiguePenalty * fatigue);
   a.collectors = Math.max(cfg.minCollectors,
     a.collectors + (collectorTarget - a.collectors) * cfg.collectorConvergence);
 
@@ -138,8 +139,17 @@ export function tickActors(s: SimState, products: Product[], printings: Printing
   // printing ever made returns ~0 in any mature run — thousands of dead cards
   // sitting at 1 drown the handful that are moving — so only the heat that
   // exists is counted.
+  // The heat they did NOT create. `market.speculatorHeat` is their own standing
+  // contribution, and counting it here is what made the loop degenerate: the
+  // push raised the pool, the pool raised the population, and the population
+  // raised the push. Subtracting it makes the population converge on an
+  // external driver, which is the shape workflow rule 9 asks for, and it takes
+  // `speculatorHeatGain` out of the stability question entirely - it is now a
+  // pure amplification knob.
   let heatPool = 0;
-  for (const pr of printings) heatPool += Math.max(0, pr.market.heat - 1);
+  for (const pr of printings) {
+    heatPool += Math.max(0, pr.market.heat - 1 - pr.market.speculatorHeat);
+  }
 
   // Return is per-capita, exactly as it is for scalpers, and for the same
   // reason: their own buying adds heat, so a per-unit reading is a positive

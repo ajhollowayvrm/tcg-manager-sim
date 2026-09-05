@@ -627,20 +627,34 @@ export const defaultConfig: SimConfig = {
     collectorShareOfAudience: 0.02,
     collectorConvergence: 0.08,
     minCollectors: 500,
+    // Collectors per head of audience is this floor plus this weight times
+    // goodwill, less this penalty times fatigue. They were literals in
+    // `collectorTarget` until Round 5b, which is why nothing could sweep them.
+    // Goodwill runs 0.43 to 1.00 across the bot roster, so the pair below is
+    // the whole reason a collector base reads the strategy. Fatigue does not:
+    // it measures 0.220 to 0.223 in every bot at every decade, so the penalty
+    // term is a constant of 0.89 wearing a variable's clothes. Whichever round
+    // owns fatigue should read that before trusting this knob.
+    collectorGoodwillFloor: 0.3,
+    collectorGoodwillWeight: 1.4,
+    collectorFatiguePenalty: 0.5,
     // Collectors per head of audience at which holding reaches its ceiling.
     // At 0.03 a healthy run sits exactly on it and every seed reports the
     // ceiling, which is a constant wearing a population's clothes.
     //
-    // Round 5 measured what this ramp can actually reach, and the answer is
-    // not much. Density is `collectorShareOfAudience` times a goodwill and
-    // fatigue term, so it is bounded by 0.006 to 0.034 by construction, and
-    // every bot converges on 0.0283 by year 40 - `conservative`, `dropRunner`
-    // and `hypeGambler` all within 2% of each other. So the reference decides
-    // where on the ramp every run sits, and no reference makes holding respond
-    // to play. Fixing that needs the goodwill and fatigue coefficients in
-    // `collectorTarget`, which are literals rather than config paths, and it
-    // belongs to whichever round owns goodwill.
-    collectorDensityReference: 0.09,
+    // Round 5b measured the ramp across the whole roster. Density is
+    // `collectorShareOfAudience` times a goodwill and fatigue term, so it is
+    // bounded by 0.006 to 0.034 by construction, and at 30 years it runs 0.0151
+    // for `channelHog` to 0.0271 for `scout` - a 1.8x spread that is entirely
+    // goodwill. Against a reference of 0.09 every run sat in the bottom third
+    // of the ramp and that spread arrived as 0.250 against 0.290. At 0.035 the
+    // same runs read 0.330 against 0.432. At 0.025 a healthy run pins on the
+    // ceiling, which is the failure the round-3 note recorded.
+    //
+    // Round 5's first reading of this said no reference could make holding
+    // respond to play. That was measured on three bots which all happened to
+    // sit near goodwill 1.0, and it was wrong.
+    collectorDensityReference: 0.035,
     // A third of opened copies off the market at the floor is not a guess about
     // this game — it is roughly what any collectible market looks like, and it
     // is the term that makes a loyal audience worth money.
@@ -660,6 +674,16 @@ export const defaultConfig: SimConfig = {
     // earns on the stream and on the retail spread, not only on the pull.
     ripBreakEven: 0.5,
     ripPerReseller: 0.5,
+    // Units one reseller opens per stride, scaled to the market. This is the
+    // second consumer of the reseller population, and it is the reason the
+    // population's LEVEL means anything: `ripMultiplier` reads the pool only as
+    // a ratio to `resellerReference`, so scaling both leaves every rate
+    // identical and the reported number was decoration.
+    //
+    // Fitted so the ration bites when the pool is depressed rather than always.
+    // Measured on `conservative` over 50 years, the reseller-driven demand runs
+    // 3 to 6 times under the capacity at 0.5, so it never bound at all.
+    ripUnitsPerReseller: 0.1,
 
     // Speculators per printing at which their push runs at full strength. Not
     // an absolute population: see `speculatorCrowd`. The loop is stable at
@@ -676,6 +700,20 @@ export const defaultConfig: SimConfig = {
     // many speculators a market of a given size supports.
     speculatorHeatPerCapita: 0.3,
     speculatorMomentumGain: 0.35,
+    // Pure amplification, and no longer a stability question: since the
+    // population's return reads `market.speculatorHeat` out of the pool, this
+    // knob cannot feed itself. Measured on `conservative` at 50 years, the
+    // share of the heat pool the speculators supply runs 2% at 0.05, 12% at
+    // 0.25, 29% at 0.6 and 96% at 2.5. Before the split it could not pass 15%
+    // at any stable value, and the loop detonated between 0.25 and 0.35.
+    //
+    // It stays at 0.05, and the reason has moved. Stability no longer binds;
+    // `shape.yearsTo100` does. More heat on a young printing reaches $100
+    // sooner, and the gate measures 2.442 at 0.05, 1.981 at 0.08 through 0.12,
+    // 1.673 at 0.3 and 1.423 at 0.6, against a floor of 2.0. Buying more
+    // amplification means lowering the price body to pay for it, which reopens
+    // the Round 4 value fit, or revisiting that band with the round that owns
+    // it. Do not raise this knob on its own.
     speculatorHeatGain: 0.05,
     speculatorSensitivity: 1.5,
     speculatorNoise: 0.004,

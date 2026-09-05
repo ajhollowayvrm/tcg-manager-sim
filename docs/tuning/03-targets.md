@@ -36,6 +36,8 @@ line to flip — flipping it is what stops the next round undoing the work.
 | `struct.channelCollapseDeaths` | structural | 8 – 70 | 12 | pass |
 | `struct.attentionCollapseDeaths` | structural | 8 – 60 | 20 | pass |
 | `struct.speculatorMoves` | structural | 1.2 – 500 | 3.6413 | pass |
+| `struct.heatNotPinned` | structural | 0 – 0.1 | 0 | pass |
+| `struct.ripRationBinds` | structural | 0.2 – 0.95 | 0.641 | pass |
 | `struct.collectorNotPinned` | structural | 5 – 1000000000 | 20 | pass |
 | `struct.printRunVaries` | structural | 4 – 100 | 19 | pass |
 | `diff.botsAlwaysSurvive` | difficulty | 3 – 11 | 1 | known-fail |

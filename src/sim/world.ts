@@ -136,7 +136,8 @@ export function createWorld(seed: string, config: SimConfig): SimState {
         collectors: config.world.startingCollectors,
         speculators: config.world.startingSpeculators,
       },
-      hidden: { scalperInventory: {}, scalperProfitability: 0, scalperBoom: false },
+      hidden: { scalperInventory: {}, scalperProfitability: 0, scalperBoom: false,
+        ripRationSum: 0, ripRationSamples: 0 },
     },
 
     market: {

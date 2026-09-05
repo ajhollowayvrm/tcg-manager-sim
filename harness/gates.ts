@@ -155,6 +155,32 @@ export const GATES: Gate[] = [
     measure: c => medOf(c.roster, 'conservative', 'speculatorSwing'),
   },
   {
+    id: 'struct.heatNotPinned', category: 'structural', band: [0, 0.10], expect: 'pass',
+    banked: 0, bankedOn: DATE,
+    why: 'Share of printings sitting at value.heatCeiling after 50 years. The speculator '
+       + 'push is a positive feedback loop, and this is what a detonation looks like from '
+       + 'outside. Round 5 measured 82% here at year 50 on a loop that read healthy at year '
+       + '40, and no gate saw it because nothing measured the catalogue past the gated '
+       + 'horizon. Round 5b split market.speculatorHeat out of the population\'s return so '
+       + 'the loop cannot feed itself; this gate is what stops the next round rebuilding it.',
+    measure: c => medOf(c.shape, 'conservative', 'printingsAtHeatCeiling'),
+  },
+  {
+    id: 'struct.ripRationBinds', category: 'structural', band: [0.20, 0.95], expect: 'pass',
+    banked: 0.641, bankedOn: DATE,
+    why: 'Rule 9 again, from the other side. The reseller population is read by exactly one '
+       + 'thing, ripMultiplier, and only as a ratio to its own reference, so scaling the '
+       + 'pool and the reference together leaves every rate identical and the level says '
+       + 'nothing. Round 5b gave it a second consumer: a finite throughput on opening '
+       + 'sealed product, actors.ripUnitsPerReseller. This gate reads the bot whose pool '
+       + 'collapses. At 1 the throughput never binds and the level is decoration again; '
+       + 'below 0.2 it is the whole story and nothing else moves supply. Across the roster '
+       + 'the ration runs 0.52 for hypeGambler to 1.00 for safeHands, and it tracks the '
+       + 'volume the pool must serve as well as its headcount - chaseMaxxer has fewer '
+       + 'resellers than hypeGambler and is never rationed.',
+    measure: c => medOf(c.roster, 'hypeGambler', 'sealedRipRation'),
+  },
+  {
     id: 'struct.collectorNotPinned', category: 'structural', band: [5, 1e9], expect: 'pass',
     banked: 20, bankedOn: DATE,
     why: 'Same rule. collectorDensityReference at 0.03 once pinned every seed to the '

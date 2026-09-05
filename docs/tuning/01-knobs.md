@@ -1,6 +1,6 @@
 # The config knobs
 
-Every path in `src/sim/config.ts`. There are **539** numeric ones, counted by
+Every path in `src/sim/config.ts`. There are **543** numeric ones, counted by
 walking the shipped `defaultConfig`. (The page said 511 from Round 2 to Round 4;
 that figure was stale, not a different counting rule.) Each one is reachable with
 `--set=<path>=<number>`; `withOverrides` throws on a path it does not know, and
@@ -13,7 +13,7 @@ nested paths work to any depth:
 --set=graders.grd_pinnacle.tiers.standard.price=5000
 ```
 
-Values are the shipped defaults on 2026-09-05, after tuning Round 5.
+Values are the shipped defaults on 2026-09-05, after tuning Round 5b.
 
 This page documents the knobs that were already here before the config move,
 with what each one does and whether it was measured. The blocks added by the
@@ -362,7 +362,7 @@ Knowledge is capped at 0.95. A reading is never quite the truth.
 
 ---
 
-## `actors` — the four populations (22 paths)
+## `actors` — the four populations (26 paths)
 
 Each population must be able to move **and to come back**. One that only grows
 is a price multiplier with extra steps.
@@ -372,7 +372,10 @@ is a price multiplier with extra steps.
 | `actors.collectorShareOfAudience` | 0.02 | Collectors as a share of the audience. | first-guess |
 | `actors.collectorConvergence` | 0.08 | How fast the population follows. | first-guess |
 | `actors.minCollectors` | 500 | Floor. | structural |
-| `actors.collectorDensityReference` | 0.09 | Collector density at which holding hits its ceiling. At 0.03 a healthy run sat exactly on the ceiling in every seed, which is a constant wearing a population's clothes. | fitted |
+| `actors.collectorGoodwillFloor` | 0.3 | Collector density at zero goodwill, as a multiple of `collectorShareOfAudience`. | first-guess |
+| `actors.collectorGoodwillWeight` | 1.4 | The goodwill half of the same term. Goodwill runs 0.43 (`channelHog`) to 1.00 (`scout`) across the roster, so this pair is the whole reason a collector base reads the strategy. Literals inside `collectorTarget` until Round 5b, which is why nothing could sweep them. | first-guess |
+| `actors.collectorFatiguePenalty` | 0.5 | The fatigue half. **Inert:** fatigue measures 0.220 to 0.223 in every bot at every decade, so this term is a constant of 0.89. Read it before trusting the knob. | first-guess |
+| `actors.collectorDensityReference` | 0.035 | Collector density at which holding hits its ceiling. Density is bounded 0.006-0.034 by construction and runs 0.0151 to 0.0271 across the roster, all of it goodwill. At 0.09 every run sat in the bottom third of the ramp and that 1.8x spread arrived as 0.250 against 0.290; at 0.035 the same runs read 0.330 against 0.432; at 0.025 a healthy run pins on the ceiling. | swept, round 5b |
 | `actors.collectorHoldFloor` | 0.2 | Share of opened copies off the market at the floor. Roughly what any collectible market looks like. Feeds `scarcity` in `tickPrices`. | fitted |
 | `actors.collectorHoldCeiling` | 0.5 | The same, at full density. | fitted |
 | `actors.resellerReference` | 300 | Reference reseller population. | first-guess |
@@ -380,14 +383,15 @@ is a price multiplier with extra steps.
 | `actors.minResellers` | 20 | Floor. | structural |
 | `actors.maxResellers` | 20000 | Cap. | structural |
 | `actors.ripBreakEven` | 0.5 | Singles-to-sealed ratio at which ripping stops paying. The measured weighted ratio runs 0.7-1.0, so a break-even of 1 pins the population on its floor for every strategy except a flooder. Below 1 is also honest: a streamer earns on the stream and the retail spread, not only the pull. | fitted |
-| `actors.ripPerReseller` | 0.5 | Units ripped per reseller per stride. | first-guess |
+| `actors.ripPerReseller` | 0.5 | Coefficient on the rip-rate multiplier, against `resellerReference`. A ratio, so it says nothing about the population's level. | first-guess |
+| `actors.ripUnitsPerReseller` | 0.1 | Units of sealed product one reseller opens per stride, scaled to the market. **The only place the reseller population's absolute level is load-bearing** — `ripMultiplier` reads the pool as a ratio to its own reference, so before this the level was decoration. At 0.5 the throughput never bound; at 0.1 it rations 34% of strides for `conservative` and 92% for `hypeGambler`. Read it through the `sealedRipRation` column. | swept, round 5b |
 | `actors.speculatorsPerPrinting` | 1 | Speculators per printing at which their heat push runs at full strength. Replaces the absolute `speculatorReference`, which gave the heat loop no brake: heat feeds the pool, the pool feeds the population, the population feeds the heat. It held to year 40 and then detonated - 82% of a 14,000-printing catalogue pinned at `value.heatCeiling` by year 50, in every bot and every seed. | fitted, round 5 |
 | `actors.speculatorConvergence` | 0.1 | | first-guess |
 | `actors.minSpeculators` | 50 | Floor. | structural |
 | `actors.maxSpeculators` | 30000 | Cap. Pinned in 65% of 50-year seeds before the round-5 heat fix; the population now ends near 2,500. | structural |
 | `actors.speculatorHeatPerCapita` | 0.3 | Heat above the pack per speculator at which the population holds still. At 0.02 it settled near 25,000 against a 30,000 cap — the runaway this per-capita form exists to prevent. This decides how many speculators a market of a given size supports. | fitted |
 | `actors.speculatorMomentumGain` | 0.35 | How hard speculators chase what is already moving. | first-guess |
-| `actors.speculatorHeatGain` | 0.05 | Heat they add. Amplify-and-crash lives here. **This is the loop gain.** At `speculatorsPerPrinting` 1 the loop is stable at 0.2 and detonates by 0.5, so the shipped value keeps about a four times margin. Speculators now supply about 5% of the heat pool. | swept, round 5 |
+| `actors.speculatorHeatGain` | 0.05 | Heat they add. Amplify-and-crash lives here. **No longer a stability knob:** Round 5b split `PrintingMarket.speculatorHeat` out of the population's return, so it cannot feed itself and the old cliff between 0.25 and 0.35 is gone. It stays at 0.05 because `shape.yearsTo100` now binds instead — 2.442 at 0.05, 1.981 at 0.08 through 0.12, 1.423 at 0.6, against a floor of 2.0. Buying more amplification means paying for it in the price body. | swept, round 5b |
 | `actors.speculatorSensitivity` | 1.5 | Population response to the signal. | first-guess |
 | `actors.speculatorNoise` | 0.004 | | first-guess |
 

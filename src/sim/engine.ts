@@ -301,7 +301,7 @@ function reprint(s: SimState, cardId: CardId, intoSetId: SetId, quantity: number
     population: { sealed: Math.max(1, quantity), opened: 0, destroyed: 0, graded: {} as any },
     market: {
       rawPrice: C(cfg.value.baseCardPrice), gradedPrices: {} as any,
-      heat: 1.6, nostalgia: 1, liquidity: U(0.5), lastTradeTick: s.tick,
+      heat: 1.6, speculatorHeat: 0, nostalgia: 1, liquidity: U(0.5), lastTradeTick: s.tick,
       rawHistory: emptySeries(s.tick), gradedHistory: {} as any,
     },
   };
@@ -787,6 +787,7 @@ function releaseSet(s: SimState, setId: SetId, regionId: RegionId): void {
         // A hyped set launches hot. This is where the reveal window reaches the
         // value engine; a set with no campaign opens at exactly 1.6 as before.
         heat: 1.6 + launchHype * cfg.hype.heatFromHype,
+        speculatorHeat: 0,
         nostalgia: 1, liquidity: U(0.5), lastTradeTick: s.tick,
         rawHistory: emptySeries(s.tick), gradedHistory: {} as any,
       },
@@ -941,10 +942,19 @@ function tickPrices(s: SimState, printings: Printing[]): void {
     const art = 1 + card.artQuality * artist.reputation * v.artMultiplierWeight;
 
     pr.market.heat = Math.min(v.heatCeiling, 1 + (pr.market.heat - 1) * heatKeep);
+    // Their own contribution decays on the same clock, so it stays a share of
+    // the heat that is still standing rather than a running total.
+    pr.market.speculatorHeat *= heatKeep;
     // Speculators amplify what is already moving, in whichever direction it is
     // already moving. They cannot start a run on a printing sitting at 1.
+    const before = pr.market.heat;
     pr.market.heat = Math.max(v.heatFloor,
       Math.min(v.heatCeiling, pr.market.heat + speculatorHeatDelta(s, pr, crowd)));
+    // Clamped to what the printing actually carries: a push that ran into the
+    // ceiling or the floor did not land, and claiming it did would let them pay
+    // themselves with a bid the market refused.
+    pr.market.speculatorHeat = Math.max(0, Math.min(pr.market.heat - 1,
+      pr.market.speculatorHeat + (pr.market.heat - before)));
 
     // Nostalgia compounds only on a printing the market still wants, and only
     // as fast as it already stands above the pack. A printing nobody wants
@@ -1012,6 +1022,9 @@ function tickSealed(s: SimState, products: Product[]): void {
   const cfg = s.config.sealed;
   const yearFrac = s.config.strides.sealed / 52;
   if (s.tick % s.config.strides.sealed !== 0) return;
+  // One read for the whole market, as before: it is a market-wide quantity.
+  const ripMult = ripMultiplier(s);
+  const wanted: Array<{ p: Product; h: Product['market']['hidden']; set: CardSet; units: number }> = [];
   for (const p of products) {
     const h = p.market.hidden;
     if (h.sealedRemaining <= 0) continue;
@@ -1056,9 +1069,40 @@ function tickSealed(s: SimState, products: Product[]): void {
     // The base rate is the shelf ripping itself open; the multiplier is the
     // rip-and-ship population on top of it. Rising sealed price still slows
     // both — a box worth more unopened stays unopened.
-    h.ripRate = Math.min(1, cfg.baseRipRatePerTick * ripMultiplier(s)
+    h.ripRate = Math.min(1, cfg.baseRipRatePerTick * ripMult
       / Math.pow(Math.max(0.3, priceRatio), cfg.ripPriceElasticity));
-    const opened = Math.min(h.sealedRemaining, h.sealedRemaining * h.ripRate);
+    // Wanted, not yet opened. The reseller pool has a finite throughput and it
+    // is shared across every product on the market, so the split happens after
+    // the whole market has asked. See `resellerCapacity`.
+    wanted.push({ p, h, set, units: Math.min(h.sealedRemaining, h.sealedRemaining * h.ripRate) });
+  }
+
+  // The consumer half of the rate is people opening what they bought, and it is
+  // never rationed. The rip-and-ship half above it is a business with a
+  // headcount: `actors.ripPerReseller` units per reseller per stride, scaled to
+  // the market. This is the only place the reseller population's ABSOLUTE level
+  // reaches anything — `ripMultiplier` reads it as a ratio to its own
+  // reference, so before this the level could not be fitted against a
+  // measurement and the reported population was decoration.
+  const consumerShare = ripMult > 0 ? 1 / ripMult : 1;
+  let resellerWanted = 0;
+  for (const w of wanted) resellerWanted += w.units * (1 - consumerShare);
+  const capacity = s.audience.actors.resellers * s.config.actors.ripUnitsPerReseller
+    * audienceScale(s) * s.config.strides.sealed;
+  // Rationed in proportion, so no product is starved by its position in the
+  // array. A market whose print runs have outgrown its reseller pool leaves
+  // sealed stock sitting, which is the honest consequence of overprinting.
+  const ration = resellerWanted > capacity && resellerWanted > 0
+    ? capacity / resellerWanted : 1;
+  if (resellerWanted > 0) {
+    s.audience.hidden.ripRationSum += ration;
+    s.audience.hidden.ripRationSamples++;
+  }
+
+  for (const { p, h, set, units } of wanted) {
+    const opened = Math.min(h.sealedRemaining,
+      units * (consumerShare + (1 - consumerShare) * ration));
+    if (opened <= 0) continue;
     h.sealedRemaining -= opened;
 
     for (const cardId of set.cardIds) {

@@ -581,6 +581,20 @@ export interface PrintingMarket {
   gradedPrices: Record<GraderId, Partial<Record<GradeTier, Cents>>>;
   /** Short-term speculative multiplier. Decays toward 1. */
   heat: number;
+  /**
+   * The part of `heat - 1` that the speculators themselves pushed in, decayed
+   * on the same clock as `heat`. It exists so their return can read the heat
+   * they did NOT create.
+   *
+   * Without it the loop is degenerate: the push raises the pool, the pool
+   * raises the population, and the population raises the push, so the
+   * population is `E / (heatPerCapita - a)` and it either damps to the
+   * exogenous level or diverges to its cap, with nothing usable in between.
+   * Round 5 measured that cliff between `speculatorHeatGain` 0.25 and 0.35, and
+   * even at 0.25 they supplied only 15% of the pool. You cannot pay a
+   * speculator with their own bid.
+   */
+  speculatorHeat: number;
   /** Slow compounding vintage multiplier. The Skyridge term. */
   nostalgia: number;
   liquidity: Unit;
@@ -798,6 +812,14 @@ export interface AudienceState {
     scalperInventory: Record<ProductId, ScalperPosition>;
     /** Rolling realized resale premium. Drives the population. */
     scalperProfitability: number;
+    /**
+     * Running mean of the rip ration — the share of the reseller-driven demand
+     * to open sealed product that the reseller pool could actually serve. It is
+     * the only reading of the population's absolute LEVEL, so without it
+     * `actors.ripUnitsPerReseller` cannot be fitted against anything.
+     */
+    ripRationSum: number;
+    ripRationSamples: number;
     /** Latched, so `scalperCrash` fires on the crossing and not every tick after. */
     scalperBoom: boolean;
   };
@@ -1526,6 +1548,9 @@ export interface SimConfig {
     collectorShareOfAudience: number;
     collectorConvergence: number;
     minCollectors: number;
+    collectorGoodwillFloor: number;
+    collectorGoodwillWeight: number;
+    collectorFatiguePenalty: number;
     /** Collectors per head of audience at which holding reaches its ceiling. */
     collectorDensityReference: number;
     /** Share of opened copies held out of the market at the extremes. */
@@ -1539,6 +1564,11 @@ export interface SimConfig {
     maxResellers: number;
     /** Singles-to-sealed value ratio at which ripping stops paying. */
     ripBreakEven: number;
+    /**
+     * Units of sealed product one reseller can open per stride, scaled to the
+     * market. The only place the population's absolute level is load-bearing.
+     */
+    ripUnitsPerReseller: number;
     /** Extra rip rate per reseller, against `resellerReference`. */
     ripPerReseller: number;
 

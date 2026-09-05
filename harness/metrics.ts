@@ -243,6 +243,26 @@ export interface RunMetrics {
   setGiniAge2: number | null;
   setChaseOverMedianAge2: number | null;
   setTailAlphaAge2: number | null;
+
+  // ---- The speculator heat loop -------------------------------------------
+  /**
+   * Share of every printing sitting at `value.heatCeiling` at the end of the
+   * run. The speculator push is a positive feedback loop, and this is what a
+   * detonation looks like from outside: Round 5 measured 82% here at year 50,
+   * on a loop that looked healthy at year 40. A gate reads it so the next
+   * round cannot re-create it silently.
+   */
+  printingsAtHeatCeiling: number | null;
+
+  /**
+   * Mean share of the reseller-driven demand to open sealed product that the
+   * reseller pool could serve. 1 means the pool was never the binding
+   * constraint. This is the only column the reseller population's absolute
+   * level reaches, so it is what `actors.ripUnitsPerReseller` is fitted
+   * against.
+   */
+  sealedRipRation: number | null;
+  sealedRipRationSamples: number;
 }
 
 /**
@@ -760,6 +780,13 @@ export function computeMetrics(
     setGiniAge2: age2(x => x.gini),
     setChaseOverMedianAge2: age2(x => x.chaseOverMedian),
     setTailAlphaAge2: age2(x => x.tailAlpha),
+    sealedRipRation: s.audience.hidden.ripRationSamples > 0
+      ? s.audience.hidden.ripRationSum / s.audience.hidden.ripRationSamples : null,
+    sealedRipRationSamples: s.audience.hidden.ripRationSamples,
+    printingsAtHeatCeiling: printings.length > 0
+      ? printings.filter(pr => pr.market.heat >= s.config.value.heatCeiling - 1e-6).length
+        / printings.length
+      : null,
   };
 }
 

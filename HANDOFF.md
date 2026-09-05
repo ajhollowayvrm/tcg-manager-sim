@@ -599,6 +599,127 @@ All three are plausible mechanisms and all three may simply be too harsh. None
 has been tuned.
 
 
+## The three loose ends (tuning Round 5b, 2026-09-05)
+
+Round 5 recorded three things rather than fixing them. This round fixes all
+three, and one of the three findings turned out to be wrong.
+
+**The suite goes from 46 gates to 48, and from 39 PASS to 41 PASS, 0 FAIL,
+7 KNOWN, 0 DRIFT.** Two new structural gates, and every price gate held.
+
+```
+actors.collectorDensityReference  0.09  -> 0.035
+actors.collectorGoodwillFloor        -  -> 0.3    (new, was a literal)
+actors.collectorGoodwillWeight       -  -> 1.4    (new, was a literal)
+actors.collectorFatiguePenalty       -  -> 0.5    (new, was a literal)
+actors.ripUnitsPerReseller           -  -> 0.1    (new)
+PrintingMarket.speculatorHeat        -  -> new field
+```
+
+### Round 5 was wrong about collector holding
+
+It said no reference value could make holding respond to play. That was
+measured on `conservative`, `dropRunner` and `hypeGambler`, which all sit near
+goodwill 1.0. Across the roster goodwill runs 0.43 to 1.00 and density with it:
+
+| Bot | goodwill at y30 | density | holding at 0.09 | holding at 0.035 |
+|---|---|---|---|---|
+| `channelHog` | 0.655 | 0.0151 | 0.250 | 0.330 |
+| `hypeGambler` | 0.785 | 0.0254 | 0.285 | 0.415 |
+| `conservative` | 1.000 | 0.0267 | 0.289 | 0.428 |
+| `scout` | 1.000 | 0.0271 | 0.290 | 0.432 |
+
+Density is bounded by 0.006 to 0.034 by construction, so a reference of 0.09
+put every run in the bottom third of the ramp and crushed a 1.8x spread into
+4%. At 0.035 the spread arrives. At 0.025 a healthy run pins on the ceiling,
+which is the failure the Round 3 note recorded, so this knob has a floor as
+well as a ceiling.
+
+`shape.median` moved 0.220 to 0.230 and nothing else moved. Holding more copies
+off the market makes every card scarcer, which is the mechanism behind
+"goodwill is worth money", and it now costs a bad strategy something.
+
+**The fatigue half of the same term is inert.** Fatigue measures 0.220 to 0.223
+in every bot at every decade, so `(1 - 0.5 * fatigue)` is a constant of 0.89
+wearing a variable's clothes. The three coefficients are config paths now, so
+whichever round owns fatigue can sweep them.
+
+### You cannot pay a speculator with their own bid
+
+Round 5 left `speculatorHeatGain` four times under a cliff and called the trade
+deliberate. It did not have to be. The loop was degenerate for a structural
+reason: the population's return read the whole heat pool, including the heat the
+population had just pushed in. Solve it and the equilibrium is
+`S = E / (heatPerCapita - a)`, which either damps to the exogenous level or
+diverges to the cap, with nothing usable in between. Measured, that is exactly
+what happens - the pool reads 1,049 at gain 0.25 and 37,595 at 0.35.
+
+`PrintingMarket.speculatorHeat` now carries their own standing contribution,
+decayed on the same clock as `heat` and clamped to what the printing actually
+carries, so a push that ran into the ceiling did not land. `tickActors`
+subtracts it from the pool. The population then converges on an external driver,
+which is the shape workflow rule 9 asks for, and the gain stops being a
+stability question:
+
+| `speculatorHeatGain` | 0.05 | 0.25 | 0.6 | 1.2 | 2.5 |
+|---|---|---|---|---|---|
+| speculators at y50, before | 2,564 | 2,974 | **30,000 (cap)** | cap | cap |
+| speculators at y50, after | 2,416 | 2,423 | 2,424 | 2,426 | 2,455 |
+| share of the heat pool they supply | 2% | 12% | 29% | 59% | 96% |
+
+**The gain still ships at 0.05, and the reason has moved.** `shape.yearsTo100`
+binds now: more heat on a young printing reaches $100 sooner, and the gate reads
+2.442 at 0.05, 1.981 at 0.08 through 0.12, 1.673 at 0.3 and 1.423 at 0.6,
+against a floor of 2.0. So amplification is buyable at last, and its price is
+paid in the value block. Do not raise this knob on its own.
+
+That 1.981 is worth a second look: it is identical at 0.08, 0.10 and 0.12
+because the metric is a median of a small set of discrete per-seed values, and
+it is the same 1.981 the Round 4 section recorded for a 20-seed sample. The gate
+moves in steps, not smoothly.
+
+**`struct.heatNotPinned` is new** and reads the share of printings sitting at
+`value.heatCeiling` after 50 years. It is 0 now and it was 0.82 before the Round
+5 fix. No gate could see that detonation, because nothing measured the catalogue
+past the gated horizon.
+
+### The reseller population now has a second consumer
+
+`actors.resellers` was read by exactly one thing, `ripMultiplier`, and only as
+`resellers / resellerReference`. Scale both and every rate is identical, so the
+level could not be fitted against anything.
+
+`tickSealed` now rations. The consumer half of the rip rate is people opening
+what they bought and is never rationed; the rip-and-ship half above it is a
+business with a headcount, `actors.ripUnitsPerReseller` units per reseller per
+stride, scaled to the market and shared across every product. That needed the
+opening pass split in two — every product asks first, then the pool is divided
+in proportion, so no product is starved by its position in the array. With the
+throughput unbound the arithmetic is identical to before.
+
+The new `sealedRipRation` column is what makes the level readable, and it
+separates the roster on the pool AND on the volume it has to serve:
+
+| Bot | `sealedRipRation` | resellers |
+|---|---|---|
+| `hypeGambler` | 0.522 | 84 |
+| `attentionBurner` | 0.778 | 158 |
+| `conservative` | 0.978 | 189 |
+| `chaseMaxxer` | 1.000 | 139 |
+| `safeHands` | 1.000 | 367 |
+
+`chaseMaxxer` has fewer resellers than `hypeGambler` and is never rationed, so
+this is not headcount with extra steps. `struct.ripRationBinds` gates it.
+
+**State the effect honestly: it is small.** Rationing changes WHEN sealed
+product opens, not WHETHER, and over fifty years nearly all of it opens either
+way. Measured on `hypeGambler` at 20 seeds x 50 years, turning the throughput
+off moves `topSealedPrice` about 11% and moves the median card price, the p90
+and net worth by nothing at all. Making it a first-order force would mean
+raising `ripPerReseller` until rip-and-ship dominates opening, which moves the
+whole singles supply and reopens the Round 4 value fit. The level is load-
+bearing and measurable now; it is not yet important.
+
 ## The populations (tuning Round 5, 2026-09-05)
 
 **The suite goes from 37 PASS to 39 PASS, 0 FAIL, 7 KNOWN, 0 DRIFT.** Both
@@ -714,8 +835,10 @@ cap, and nothing pins at the ceiling.
 `speculatorsPerPrinting` 1 the loop is stable at 0.2 and detonates by 0.5. It
 stays at 0.05, which keeps about a four times margin. The cost is that
 speculators now supply about 5% of the heat pool, so "amplify and crash"
-(CONCEPT.md) is a small effect. Buying more of it means moving the gain toward
-a bifurcation, and that trade should be made deliberately.
+(CONCEPT.md) is a small effect.
+
+> **Round 5b removed the cliff.** The gain is no longer a stability knob at all;
+> see below.
 
 ### Two populations that cannot answer a question
 
@@ -724,12 +847,13 @@ a bifurcation, and that trade should be made deliberately.
 density is `collectorShareOfAudience` times a goodwill and fatigue term, so it
 is bounded by 0.006 to 0.034 by construction. Measured, every bot converges on
 0.0283 by year 40 - `conservative`, `dropRunner` and `hypeGambler` all within 2%
-of each other. The reference only decides where on the ramp every run sits
-together. `struct.collectorNotPinned` passes and `collectorHeldShare` does vary
-across seeds, 0.261 to 0.295, so the exit criterion is met; the mechanism is
-still asleep. Waking it needs the goodwill and fatigue coefficients in
-`collectorTarget`, which are literals rather than config paths, and it belongs
-to whichever round owns goodwill.
+of each other.
+
+> **Corrected by Round 5b, below. The second sentence is wrong.** It was
+> measured on three bots which all happen to sit near goodwill 1.0. Across the
+> whole roster density runs 0.0151 (`channelHog`) to 0.0271 (`scout`), and
+> lowering the reference to 0.035 turns that 1.8x spread into holding of 0.330
+> against 0.432.
 
 **The reseller population's level is unobservable.** `actors.resellers` is read
 by exactly one thing, `ripMultiplier`, and only as `resellers / resellerReference`.
@@ -1252,8 +1376,17 @@ horizon fixed.
   not divide its heat push by anything, so heat fed the pool, the pool fed the
   population, and the population fed the heat. It held for forty years and then
   pinned 82% of the catalogue at `value.heatCeiling`. `speculatorCrowd` now
-  divides by the catalogue the pressure is spread across. `actors.speculatorHeatGain`
-  is the gain of that loop: stable at 0.2, detonating by 0.5, shipped at 0.05
+  divides by the catalogue the pressure is spread across
+- **A population must not be paid with its own bid.** `PrintingMarket.speculatorHeat`
+  is the heat the speculators themselves pushed in, and `tickActors` subtracts it
+  before reading the pool as a return. Put it back and the loop is degenerate
+  again — the population becomes `E / (heatPerCapita - a)`, which damps to the
+  exogenous level or diverges to its cap with nothing usable between.
+  `struct.heatNotPinned` is the gate that catches it
+- **The reseller pool's level only reaches the world through
+  `actors.ripUnitsPerReseller`.** Everything else reads the population as a ratio
+  to its own reference, where scaling both changes nothing. Remove the throughput
+  and the level is decoration again; `struct.ripRationBinds` is the gate
 - The engine keeps at most one pending drop per (product, channel). A caller
   that submits `scheduleDrop` every tick relies on that guard to not stack a
   dozen drops onto one tick
@@ -1357,8 +1490,8 @@ at `~/.claude/plans/let-s-start-the-tuning-zesty-magpie.md`, and it holds the
 ordering and the reasoning for all twelve rounds. Read it first, then the Round
 5 section above, then run `npm run check` to see where the gates stand.
 
-Rounds 0 to 5 are done and banked. The suite stands at **39 PASS, 0 FAIL,
-7 KNOWN, 0 DRIFT**.
+Rounds 0 to 5b are done and banked. The suite stands at **41 PASS, 0 FAIL,
+7 KNOWN, 0 DRIFT** across 48 gates.
 
 Round 6 owns three of the seven remaining known-fails:
 
@@ -1375,17 +1508,18 @@ The plan also asks for two new columns, `gemRateByQuality` and `gemRateVintage`.
 `strides.grading` at 8 is the one stride that moves the suite runtime (185s to
 about 43s on the measurement in the Round 3 section), and Round 6 owns it.
 
-**Two things Round 5 hands forward.**
+**Two things Round 5b hands forward.**
 
-- **`actors.speculatorHeatGain` is a loop gain sitting near a cliff.** It is
-  stable at 0.2 and detonates by 0.5. Speculators now supply about 5% of the
-  heat pool, so CONCEPT.md's "amplify and crash" is a small effect. Buying more
-  of it means moving toward the bifurcation deliberately, with the heat pool and
-  the share of printings at `value.heatCeiling` measured on a 50-year run.
-- **Collector holding cannot respond to play.** Density is bounded by 0.006 to
-  0.034 by construction and every bot converges on 0.0283. The fix is the
-  goodwill and fatigue coefficients in `collectorTarget`, which are literals
-  rather than config paths. It belongs to whichever round owns goodwill.
+- **`actors.speculatorHeatGain` is now priced in the value block, not in
+  stability.** Round 5b made it a pure amplification knob, and
+  `shape.yearsTo100` is what stops it rising: 2.442 at 0.05, 1.981 at 0.08
+  through 0.12, 1.423 at 0.6, against a floor of 2.0. A round that wants
+  CONCEPT.md's "amplify and crash" to be a real force has to pay for it in the
+  price body, and should do that together with whoever owns `value`.
+- **`actors.collectorFatiguePenalty` is inert.** Fatigue measures 0.220 to 0.223
+  in every bot at every decade, so the term is a constant of 0.89. It is a
+  config path now, so whichever round owns fatigue can sweep it — but the knob
+  is not the problem, the pinned fatigue is.
 
 The four still-open `diff.*` gates — `botsAlwaysSurvive`, `conservativeSurvives`,
 `allInSurvival`, `idleDies` — belong to Round 10.
@@ -1401,7 +1535,7 @@ The four still-open `diff.*` gates — `botsAlwaysSurvive`, `conservativeSurvive
 Before you touch the value engine again:
 
 ```
-npm run check                                                   # all 46 gates
+npm run check                                                   # all 48 gates
 npm run sim -- --seeds=1 --years=25 --bot=conservative --dist   # the ladder
 ```
 
