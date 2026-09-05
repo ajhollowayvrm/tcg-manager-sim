@@ -599,6 +599,88 @@ All three are plausible mechanisms and all three may simply be too harsh. None
 has been tuned.
 
 
+## The screen (tuning Round 5c, 2026-09-05)
+
+Round 5 owns 46 config paths and Rounds 5 and 5b fitted twelve of them. This
+round measures the rest rather than leaving them unswept, because a gate that
+passes at one point in a space nobody has explored is not the same as a gate
+that passes.
+
+**Method.** Every remaining first-guess path, run at 3x and 1/3x its shipped
+value, 20 seeds x 30 years over `conservative`, `dropRunner` and `hypeGambler`,
+reporting the largest move on thirteen metrics. Nothing shipped changed. The
+script is a scratch job under `out/scratch/`, not repo code.
+
+### The `drops` block is a closed room
+
+Every one of its remaining paths moves its own subsystem hard and moves nothing
+outside it. Not one moved `medianCardPrice`, `setMedianAge2`, `setGiniAge2`,
+`netWorth` or survival by more than measurement noise.
+
+**That cuts both ways.** The subsystem is safe to tune — nothing else is
+downstream of it — and the two gates Round 5 fixed sit at the bottom of a band
+inside it, with five unswept knobs able to push them out. Measured on
+`dropRunner`, 20 seeds x 30 years, against `sub.scalperShare` [0.10, 0.50] and
+`sub.scalperCycles` [3, 35]:
+
+| Path | shipped | low | at shipped | high |
+|---|---|---|---|---|
+| `holdLimitWeeks` | 26 | 9: **0.044, 0 cycles** | 0.132, 4 | 78: 0.417, 3 |
+| `cadenceWeeks` | 6 | 2: **0.055** | 0.132, 4 | 18: 0.420, 5 |
+| `heatPerOversubscription` | 0.35 | 0.12: **0.054** | 0.132, 4 | 1.0: 0.341, 5 |
+| `scalperAppealDefault` | 0.4 | 0.15: **0.022** | 0.132, 4 | 0.8: 0.253, 5 |
+| `baseResaleRate` | 0.04 | 0.013: **0.056** | 0.132, 4 | 0.12: 0.181, 4 |
+| `collectorReach` | 0.06 | 0.02: **0.092** | 0.132, 4 | 0.18: **0.048** |
+
+Bold is out of band. **The shipped share is 0.132 against a floor of 0.10, so
+the fit has almost no room underneath it**, and every knob above breaks it on
+the low side. `collectorReach` breaks it on both sides, because collectors
+crowd scalpers out of the queue at high reach and stop the drops selling at
+all at low reach.
+
+The clean fix is not another knob. The share drifts up with the horizon —
+0.132 at 30 years and 0.389 at 50 — so centring the 30-year figure in the band
+would push the 50-year figure through the ceiling. What would buy margin at
+both ends is tying the scalper population to the collector base rather than to
+the drop flow, which is a mechanism change and belongs to a round that wants
+it.
+
+### Two coverage gaps the screen found
+
+**`drops.scalperAppealPremium` is untested by the whole roster.** It reads 0%
+on every metric at 3x and 1/3x because it only applies to an ETB or a premium
+collection, and no bot in `harness/bots.ts` drops one. `dropRunner` sells
+booster boxes. A knob the roster cannot reach is not a knob that has been
+measured, and the fix is a bot, not a value.
+
+**The `actors` block is invisible to difficulty.** `survivedFraction` moved 0%
+for all sixteen actor paths at both multipliers. Populations move prices and
+supply; they do not decide whether a studio lives. That is worth knowing before
+Round 10 goes looking for difficulty knobs in here.
+
+### What the screen says is load-bearing
+
+| Path | Biggest move | Reading |
+|---|---|---|
+| `actors.collectorHoldCeiling` | `medianCardPrice` **+67%**, `setMedianAge2` +10% | A price knob living in the actors block. The strongest single lever the screen found, and it is marked `fitted` with no sweep behind it |
+| `actors.collectorShareOfAudience` | `collectors` +199%, `scalperShareOfDrops` -68% | Collectors crowd scalpers out of the drop queue. The two subsystems are coupled through the queue and nowhere else |
+| `actors.collectorGoodwillWeight` | `collectors` +164%, `scalperShareOfDrops` -65% | Same path, one term further back |
+| `actors.ripBreakEven` | `resellers` **+432%** | The reseller population's whole range sits on this one knob |
+| `actors.resellerReference` | `sealedRipRation` -46% | Confirms Round 5b: the reseller level reaches this column and nothing else |
+| `actors.speculatorHeatPerCapita` | `speculators` +199%, everything downstream 0% | After the Round 5b split the speculator headcount is decoupled from price. Their heat push is `speculatorHeatGain`, and that is the knob `shape.yearsTo100` binds |
+
+`actors.speculatorConvergence`, `speculatorMomentumGain`, `speculatorSensitivity`
+and `speculatorNoise` move nothing but the speculator count. They are shape
+knobs on a population that currently supplies 2% of the heat pool.
+
+### The plan's exit criterion, stated exactly
+
+The round plan asks for `scalperCycles` in 5 to 30. The gate band is [3, 35] and
+`harness/gates.ts` is the single source of truth, so the suite passes at 4. On
+the round's own stated sample — 20 seeds x 50 years — it is 14. Both readings
+are recorded because they disagree, and the disagreement is the horizon and not
+the health of the population.
+
 ## The three loose ends (tuning Round 5b, 2026-09-05)
 
 Round 5 recorded three things rather than fixing them. This round fixes all

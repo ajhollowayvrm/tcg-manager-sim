@@ -333,6 +333,12 @@ can win a share of a queue that its own numbers do not already win.
 **Metrics:** `dropsRun`, `dropSellOutRate`, `scalperShareOfDrops`,
 `peakDropPremium`, `scalperPopulation`, `scalperCycles`, `peakScalpers`.
 
+Two columns added in Round 5b sit beside these and gate the other two
+populations: `printingsAtHeatCeiling` (`struct.heatNotPinned`) is what a
+speculator detonation looks like from outside, and `sealedRipRation`
+(`struct.ripRationBinds`) is the only reading of the reseller population's
+absolute level.
+
 `scalperCycles` of 0 means the population never moved. That is the failure this
 whole block exists to avoid.
 

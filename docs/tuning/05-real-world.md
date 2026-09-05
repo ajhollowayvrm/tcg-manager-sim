@@ -28,7 +28,7 @@ right place and the mismatches below are local rather than systemic.
 | `packsPerUnit 24` | 24 packs per box is the industry default. Pokemon 36 and MTG Play Boosters 30 are the exceptions | Correct default [documented] |
 | `channels.seeds.ch_dist.marginShare 0.38` | Publisher receives 35–40% of MSRP through distribution | Almost exact [reported] |
 | `art.openingTurnaroundMin/Max` 2–8 weeks | 6–8 weeks brief-to-delivery is the freelance benchmark; a fast professional paints in 3 days | Right range [reported] |
-| `scalperShareOfDrops` ≈ 25% measured | Bots take 10–50% of entries on a high-demand drop | In band [documented, from sneakers] |
+| `scalperShareOfDrops` 0.13 over 30 years, 0.39 over 50 | Bots take 10–50% of entries on a high-demand drop | In band at both horizons [documented, from sneakers] |
 | `finance.interestBase 0.14` | GTS Distribution charges 18% per annum from 21 days past terms | Right order [documented] |
 
 **Sources:** [Wargamer](https://www.wargamer.com/pokemon-trading-card-game/cards-retail-price),

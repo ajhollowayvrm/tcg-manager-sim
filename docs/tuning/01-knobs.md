@@ -229,7 +229,7 @@ A four-channel studio pays ~$156k/year of overhead.
 
 ---
 
-## `drops` — the direct store and scalpers (20 paths)
+## `drops` — the direct store and scalpers (22 paths)
 
 The loop this block must produce: scalpers arrive when resale pays, buy the drop
 out, and leave once they have closed the premium. It cycles about every 6 years.
@@ -237,25 +237,27 @@ out, and leave once they have closed the premium. It cycles about every 6 years.
 | Path | Value | What it moves | Status |
 |---|---|---|---|
 | `drops.unitsPerScalperReference` | 0.03 | Units per stride a scalper must flip to count as employed. **The knob that sets the population's level.** The equilibrium sits where realized premium times crowding meets `breakEvenPremium`, so the population lands near the drop flow divided by this number. At 0.3 the drop flow could never supply it, crowding read 0.02-0.05, and the population sat on its floor. Measured on `dropRunner`, 20 seeds x 50 years: 0.02 takes 47% of drop units, 0.03 takes 39%, 0.05 takes 22%. | swept, round 5 |
-| `drops.cadenceWeeks` | 6 | Automatic drop cadence when a bot schedules none. | first-guess |
-| `drops.collectorReach` | 0.06 | Share of collectors who reach a queue. | first-guess |
+| `drops.scalperAppealPremium` | 0.8 | How hard scalpers camp an ETB or a premium collection. **Untested by the whole roster:** it applies only to those two product kinds and no bot in `harness/bots.ts` drops one, so the Round 5c screen reads 0% on every metric at 3x and 1/3x. The fix is a bot, not a value. | first-guess, unreachable |
+| `drops.scalperAppealDefault` | 0.4 | The same for every other product kind. 0.15 takes `sub.scalperShare` to 0.022 and 0.8 takes it to 0.253, against a band of 0.10 to 0.50. | first-guess, screened round 5c |
+| `drops.cadenceWeeks` | 6 | Automatic drop cadence when a bot schedules none. | first-guess, screened round 5c |
+| `drops.collectorReach` | 0.06 | Share of collectors who reach a queue. | first-guess, screened round 5c |
 | `drops.scalperReach` | 0.9 | Share of scalpers who reach a queue. Scalpers camp; collectors do not. | swept, round 5 |
 | `drops.scalperSpeed` | 8 | Queue weight per scalper. Why they take a share larger than their numbers. With `scalperReach` it decides whether the population can ever win a share its own numbers do not already win. | swept, round 5 |
 | `drops.breakEvenPremium` | 0.15 | Resale premium at which flipping starts to pay. Sets how sharply the population reacts. Swept 0.0-0.15 in round 5 and left where it was: about 13% of a resale goes to fees, so this is a measured number and not a free knob. | swept, round 5 |
 | `drops.shortagePremiumWeight` | 0.2 | What a scalper reads off the queue itself, per unit of oversubscription. Without it appetite reads only the CURRENT sealed premium, and a fresh product opens at MSRP by construction, so a release-day drop could never be worth camping - and a release-day drop is the only kind anybody camps. | swept, round 5 |
-| `drops.shortagePremiumCap` | 4 | How far up the queue that reading is allowed to go. | first-guess |
-| `drops.baseResaleRate` | 0.04 | Weekly share of held stock a scalper resells. | first-guess |
-| `drops.holdLimitWeeks` | 26 | How long a scalper holds before dumping. | first-guess |
-| `drops.resaleUrgency` | 0.5 | How hard the premium drives resale speed. | first-guess |
+| `drops.shortagePremiumCap` | 4 | How far up the queue that reading is allowed to go. | first-guess, screened round 5c |
+| `drops.baseResaleRate` | 0.04 | Weekly share of held stock a scalper resells. | first-guess, screened round 5c |
+| `drops.holdLimitWeeks` | 26 | How long a scalper holds before dumping. | first-guess, screened round 5c |
+| `drops.resaleUrgency` | 0.5 | How hard the premium drives resale speed. | first-guess, screened round 5c |
 | `drops.populationGrowth` | 0.25 | Per-stride population response to profitability. The cycle clock, not the level: at 0.06 one boom took longer than the run. | swept, round 5 |
 | `drops.minScalpers` | 50 | Floor. | structural |
 | `drops.maxScalpers` | 40000 | Cap. Reached only if `unitsPerScalperReference` is too low. | structural |
-| `drops.profitabilitySmoothing` | 0.1 | Smoothing on the profitability signal the population follows. | first-guess |
-| `drops.goodwillPerCollectorDrop` | 0.01 | Goodwill earned when a collector gets the product. | first-guess |
-| `drops.goodwillPerScalperDrop` | 0.014 | Goodwill lost per collector a scalper shuts out. | first-guess |
-| `drops.goodwillPerShortage` | 0.006 | Goodwill lost to a drop that is far too small. Stops "print nothing" being a free win. | first-guess |
-| `drops.heatPerOversubscription` | 0.35 | Heat from a drop that sells out hard. | first-guess |
-| `drops.dumpHeatDrag` | 1.5 | Heat lost when scalpers dump held stock. | first-guess |
+| `drops.profitabilitySmoothing` | 0.1 | Smoothing on the profitability signal the population follows. | first-guess, screened round 5c |
+| `drops.goodwillPerCollectorDrop` | 0.01 | Goodwill earned when a collector gets the product. | first-guess, screened round 5c |
+| `drops.goodwillPerScalperDrop` | 0.014 | Goodwill lost per collector a scalper shuts out. | first-guess, screened round 5c |
+| `drops.goodwillPerShortage` | 0.006 | Goodwill lost to a drop that is far too small. Stops "print nothing" being a free win. | first-guess, screened round 5c |
+| `drops.heatPerOversubscription` | 0.35 | Heat from a drop that sells out hard. | first-guess, screened round 5c |
+| `drops.dumpHeatDrag` | 1.5 | Heat lost when scalpers dump held stock. | first-guess, screened round 5c |
 
 ---
 
@@ -362,38 +364,38 @@ Knowledge is capped at 0.95. A reading is never quite the truth.
 
 ---
 
-## `actors` — the four populations (26 paths)
+## `actors` — the four populations (25 paths)
 
 Each population must be able to move **and to come back**. One that only grows
 is a price multiplier with extra steps.
 
 | Path | Value | What it moves | Status |
 |---|---|---|---|
-| `actors.collectorShareOfAudience` | 0.02 | Collectors as a share of the audience. | first-guess |
-| `actors.collectorConvergence` | 0.08 | How fast the population follows. | first-guess |
+| `actors.collectorShareOfAudience` | 0.02 | Collectors as a share of the audience. | first-guess, screened round 5c |
+| `actors.collectorConvergence` | 0.08 | How fast the population follows. | first-guess, screened round 5c |
 | `actors.minCollectors` | 500 | Floor. | structural |
-| `actors.collectorGoodwillFloor` | 0.3 | Collector density at zero goodwill, as a multiple of `collectorShareOfAudience`. | first-guess |
-| `actors.collectorGoodwillWeight` | 1.4 | The goodwill half of the same term. Goodwill runs 0.43 (`channelHog`) to 1.00 (`scout`) across the roster, so this pair is the whole reason a collector base reads the strategy. Literals inside `collectorTarget` until Round 5b, which is why nothing could sweep them. | first-guess |
-| `actors.collectorFatiguePenalty` | 0.5 | The fatigue half. **Inert:** fatigue measures 0.220 to 0.223 in every bot at every decade, so this term is a constant of 0.89. Read it before trusting the knob. | first-guess |
+| `actors.collectorGoodwillFloor` | 0.3 | Collector density at zero goodwill, as a multiple of `collectorShareOfAudience`. | first-guess, screened round 5c |
+| `actors.collectorGoodwillWeight` | 1.4 | The goodwill half of the same term. Goodwill runs 0.43 (`channelHog`) to 1.00 (`scout`) across the roster, so this pair is the whole reason a collector base reads the strategy. Literals inside `collectorTarget` until Round 5b, which is why nothing could sweep them. | first-guess, screened round 5c |
+| `actors.collectorFatiguePenalty` | 0.5 | The fatigue half. **Inert:** fatigue measures 0.220 to 0.223 in every bot at every decade, so this term is a constant of 0.89. Read it before trusting the knob. | first-guess, screened round 5c |
 | `actors.collectorDensityReference` | 0.035 | Collector density at which holding hits its ceiling. Density is bounded 0.006-0.034 by construction and runs 0.0151 to 0.0271 across the roster, all of it goodwill. At 0.09 every run sat in the bottom third of the ramp and that 1.8x spread arrived as 0.250 against 0.290; at 0.035 the same runs read 0.330 against 0.432; at 0.025 a healthy run pins on the ceiling. | swept, round 5b |
 | `actors.collectorHoldFloor` | 0.2 | Share of opened copies off the market at the floor. Roughly what any collectible market looks like. Feeds `scarcity` in `tickPrices`. | fitted |
-| `actors.collectorHoldCeiling` | 0.5 | The same, at full density. | fitted |
-| `actors.resellerReference` | 300 | Reference reseller population. | first-guess |
-| `actors.resellerConvergence` | 0.12 | | first-guess |
+| `actors.collectorHoldCeiling` | 0.5 | The same, at full density. **The strongest single lever the Round 5c screen found:** 3x moves `medianCardPrice` 67% and `setMedianAge2` 10%. It is a price knob living in the actors block, and it has never been swept against a target. | fitted, screened round 5c |
+| `actors.resellerReference` | 300 | Reference reseller population. | first-guess, screened round 5c |
+| `actors.resellerConvergence` | 0.12 | | first-guess, screened round 5c |
 | `actors.minResellers` | 20 | Floor. | structural |
 | `actors.maxResellers` | 20000 | Cap. | structural |
-| `actors.ripBreakEven` | 0.5 | Singles-to-sealed ratio at which ripping stops paying. The measured weighted ratio runs 0.7-1.0, so a break-even of 1 pins the population on its floor for every strategy except a flooder. Below 1 is also honest: a streamer earns on the stream and the retail spread, not only the pull. | fitted |
-| `actors.ripPerReseller` | 0.5 | Coefficient on the rip-rate multiplier, against `resellerReference`. A ratio, so it says nothing about the population's level. | first-guess |
+| `actors.ripBreakEven` | 0.5 | Singles-to-sealed ratio at which ripping stops paying. Measured after Round 4 the weighted ratio runs 0.53-1.30 and differs by strategy, near 1.0 for `conservative` and 0.6 for `hypeGambler`. A break-even of 1 pins the population on its floor for every strategy except a flooder. **The reseller population's whole range sits on this knob:** 3x moves the population 432%, and nothing downstream. | fitted, screened round 5c |
+| `actors.ripPerReseller` | 0.5 | Coefficient on the rip-rate multiplier, against `resellerReference`. A ratio, so it says nothing about the population's level. | first-guess, screened round 5c |
 | `actors.ripUnitsPerReseller` | 0.1 | Units of sealed product one reseller opens per stride, scaled to the market. **The only place the reseller population's absolute level is load-bearing** — `ripMultiplier` reads the pool as a ratio to its own reference, so before this the level was decoration. At 0.5 the throughput never bound; at 0.1 it rations 34% of strides for `conservative` and 92% for `hypeGambler`. Read it through the `sealedRipRation` column. | swept, round 5b |
 | `actors.speculatorsPerPrinting` | 1 | Speculators per printing at which their heat push runs at full strength. Replaces the absolute `speculatorReference`, which gave the heat loop no brake: heat feeds the pool, the pool feeds the population, the population feeds the heat. It held to year 40 and then detonated - 82% of a 14,000-printing catalogue pinned at `value.heatCeiling` by year 50, in every bot and every seed. | fitted, round 5 |
-| `actors.speculatorConvergence` | 0.1 | | first-guess |
+| `actors.speculatorConvergence` | 0.1 | | first-guess, screened round 5c |
 | `actors.minSpeculators` | 50 | Floor. | structural |
 | `actors.maxSpeculators` | 30000 | Cap. Pinned in 65% of 50-year seeds before the round-5 heat fix; the population now ends near 2,500. | structural |
 | `actors.speculatorHeatPerCapita` | 0.3 | Heat above the pack per speculator at which the population holds still. At 0.02 it settled near 25,000 against a 30,000 cap — the runaway this per-capita form exists to prevent. This decides how many speculators a market of a given size supports. | fitted |
-| `actors.speculatorMomentumGain` | 0.35 | How hard speculators chase what is already moving. | first-guess |
+| `actors.speculatorMomentumGain` | 0.35 | How hard speculators chase what is already moving. | first-guess, screened round 5c |
 | `actors.speculatorHeatGain` | 0.05 | Heat they add. Amplify-and-crash lives here. **No longer a stability knob:** Round 5b split `PrintingMarket.speculatorHeat` out of the population's return, so it cannot feed itself and the old cliff between 0.25 and 0.35 is gone. It stays at 0.05 because `shape.yearsTo100` now binds instead — 2.442 at 0.05, 1.981 at 0.08 through 0.12, 1.423 at 0.6, against a floor of 2.0. Buying more amplification means paying for it in the price body. | swept, round 5b |
-| `actors.speculatorSensitivity` | 1.5 | Population response to the signal. | first-guess |
-| `actors.speculatorNoise` | 0.004 | | first-guess |
+| `actors.speculatorSensitivity` | 1.5 | Population response to the signal. | first-guess, screened round 5c |
+| `actors.speculatorNoise` | 0.004 | | first-guess, screened round 5c |
 
 ---
 
