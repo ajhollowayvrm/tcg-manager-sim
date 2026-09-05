@@ -1739,6 +1739,27 @@ function tickFinance(s: SimState): void {
   const pub = s.publishers[s.playerId]!;
   if (pub.deadTick !== null) return;
 
+  // The standing bill. Overhead is what the studio costs to exist, and it grows
+  // with the reach it has bought: every channel is a relationship somebody
+  // manages, and every region past the home market is an office. Storage is
+  // what unsold stock costs to keep, which is the line that turns an overprint
+  // from capital locked up into capital bleeding.
+  const pubChannels = pub.unlocks.channels.length;
+  const abroad = Math.max(0, pub.unlocks.regions.length - 1);
+  const overhead = cfg.weeklyOverheadBase
+    + cfg.weeklyOverheadPerChannel * pubChannels
+    + cfg.weeklyOverheadPerRegion * abroad;
+  pub.cash = C(pub.cash - overhead);
+  pub.ledger.push({ t: s.tick, amount: C(-overhead), category: 'overhead', note: 'studio' });
+
+  let unsold = 0;
+  for (const p of Object.values(s.products)) unsold += p.unitsRemaining;
+  const storage = unsold * cfg.storagePerUnitPerTick;
+  if (storage > 0) {
+    pub.cash = C(pub.cash - storage);
+    pub.ledger.push({ t: s.tick, amount: C(-storage), category: 'storage', note: `${Math.round(unsold)} units` });
+  }
+
   if (s.tick % 4 === 0) {
     const rate = (cfg.interestBase - pub.credit * cfg.creditToRate) / 13;
     const interest = pub.debt * rate;
@@ -1754,16 +1775,29 @@ function tickFinance(s: SimState): void {
       emit(s, 'debtWarning', true, { publisherId: pub.id }, { debt: pub.debt });
     } else {
       pub.deadTick = s.tick;
-      const unsold = Object.values(s.products).reduce((n, p) => n + p.unitsRemaining, 0);
       // Dying on unsold stock is overprint death by default. It is only
       // `channel_collapse` if the channels actually went away — a publisher that
       // never had the reach in the first place simply printed too much.
       const lostAChannel = s.events.some(
         e => e.kind === 'channelLost' && (e.refs.publisherId ?? pub.id) === pub.id,
       );
-      pub.deathCause = unsold > 20000
-        ? (lostAChannel ? 'channel_collapse' : 'overprint')
-        : 'debt_spiral';
+      // Attention death is its own thing and was never classified, so it could
+      // not be reported however often it happened. It is the publisher whose
+      // stock did not sell because the audience had stopped caring rather than
+      // because there was too much of it: fatigue saturated and attention
+      // spent. Checked before the stock test, because a flooded audience also
+      // leaves a warehouse behind and the warehouse is the symptom.
+      const fatigueAvg = SEGMENTS.reduce((n, g) => n + s.audience.segments[g].fatigue, 0)
+        / SEGMENTS.length;
+      const attentionAvg = SEGMENTS.reduce((n, g) => n + s.audience.segments[g].attention, 0)
+        / SEGMENTS.length;
+      const cfgA = s.config.attention;
+      pub.deathCause =
+        (fatigueAvg >= cfgA.deathFatigueThreshold && attentionAvg <= cfgA.deathAttentionThreshold)
+          ? 'attention_collapse'
+        : unsold > 20000
+          ? (lostAChannel ? 'channel_collapse' : 'overprint')
+          : 'debt_spiral';
       emit(s, 'studioDead', true, { publisherId: pub.id }, { cause: pub.deathCause, tick: s.tick });
     }
   }

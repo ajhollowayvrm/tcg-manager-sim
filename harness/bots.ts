@@ -115,6 +115,17 @@ export interface SetBotOptions {
   /** Prerelease scale hosted per set. */
   prereleaseScale?: number;
   /**
+   * How much larger a print run gets when the bot is running a reveal campaign.
+   *
+   * The same arithmetic that governs a collab governs this. A campaign can only
+   * ever sell the part of a print run that would otherwise have sat unsold, so
+   * against a run that already clears 91% it is worth at most nine points
+   * however much it costs — and every campaign priced above that loses by
+   * construction. A campaign is worth running when it lets you print a bigger
+   * run, and that is also how it becomes a way to lose.
+   */
+  campaignRunMultiple?: number;
+  /**
    * How the bot picks an illustrator. `random` is the historical behaviour and
    * the default; `cheapest` scouts unproven newcomers, betting on the hidden
    * `growth` roll; `established` pays for reputation it can already see.
@@ -342,6 +353,7 @@ function submitCampaign(s: SimState, setId: SetId, opts: SetBotOptions): void {
 export function makeSetBot(opts: SetBotOptions): Bot {
   let nextRelease = 8; // small startup delay so world init settles first
   const campaigned = new Set<SetId>();
+  const marketingSpent = new Map<SetId, number>();
   return {
     step(s: SimState) {
       const pub = s.publishers[s.playerId]!;
@@ -362,7 +374,7 @@ export function makeSetBot(opts: SetBotOptions): Bot {
         maybeExpand(s, opts, printRunCost(s, opts));
       }
       submitDrops(s, opts);
-      submitMarketing(s, opts);
+      submitMarketing(s, opts, marketingSpent);
       if (s.tick < nextRelease) return;
       nextRelease = s.tick + opts.cadenceWeeks;
 
@@ -399,9 +411,12 @@ export function makeSetBot(opts: SetBotOptions): Bot {
       // second region opens with one small LGS against four US channels, so an
       // even split ships most of the run into a market that cannot move it —
       // which measures a careless allocator rather than measuring regions.
-      const committedUnits = signedCollab
-        ? Math.round(runUnits * (opts.collabRunMultiple ?? 1.5))
-        : runUnits;
+      const campaigning = opts.revealLeadWeeks !== undefined
+        || (opts.marketingPerSet ?? 0) > 0
+        || (opts.prereleaseScale ?? 0) > 0;
+      const committedUnits = Math.round(runUnits
+        * (signedCollab ? (opts.collabRunMultiple ?? 1.5) : 1)
+        * (campaigning ? (opts.campaignRunMultiple ?? 1) : 1));
 
       const reachByRegion = shipTo.map(regionId => {
         const caps = openChannels(s)
@@ -500,15 +515,30 @@ function maybeSignCollab(s: SimState, opts: SetBotOptions, setId: SetId): boolea
   return true;
 }
 
-/** Drips marketing into every set still inside its reveal window. */
-function submitMarketing(s: SimState, opts: SetBotOptions): void {
+/**
+ * Drips marketing into every set still inside its reveal window.
+ *
+ * Split across the window rather than dumped in one tick: the spend curve is
+ * logarithmic in the cumulative total, so the timing is free but the player
+ * still has to survive the outlay.
+ *
+ * The budget is a budget. Submitting a fixed slice every tick without tracking
+ * what has already gone out spends it once per tick of the window instead of
+ * once per set — an 18-week window turned a stated $50,000 into $150,000, and
+ * every measurement of whether marketing pays was made against a bill three
+ * times the one being tested.
+ */
+function submitMarketing(s: SimState, opts: SetBotOptions, spent: Map<SetId, number>): void {
   if (!opts.marketingPerSet) return;
+  const slice = Math.round(opts.marketingPerSet / 6);
   for (const set of Object.values(s.sets)) {
     if (set.status !== 'committed' && set.status !== 'revealing') continue;
-    // Split across the window rather than dumped in one tick: the spend curve
-    // is logarithmic in the cumulative total, so the timing is free but the
-    // player still has to survive the outlay.
-    api.marketingSpend(s, set.id, Math.round(opts.marketingPerSet / 6) as Cents);
+    const already = spent.get(set.id) ?? 0;
+    const left = opts.marketingPerSet - already;
+    if (left <= 0) continue;
+    const amount = Math.min(slice, left);
+    spent.set(set.id, already + amount);
+    api.marketingSpend(s, set.id, amount as Cents);
   }
 }
 
@@ -578,6 +608,17 @@ export const BOTS: Record<string, () => Bot> = {
     allocationPolicy: 'auto',
   }),
 
+  // Floods the calendar with runs small enough to pay for. `flooder` dies of
+  // cash in year one and so never reaches the fatigue its cadence is building,
+  // which is why attention death stayed unreachable however hard anybody
+  // flooded. This one prints a sixth as much on the same cadence: it survives
+  // the printing bill and finds out what the audience does about it.
+  attentionBurner: () => makeSetBot({
+    label: 'Burner', cadenceWeeks: 6, cardsPerSet: 40, setType: 'main',
+    quality: 'standard', units: 2500, packsPerUnit: 24, msrp: 14000,
+    productKind: 'boosterBox', allocationPolicy: 'spread',
+  }),
+
   // Small, expensive, high-margin specialty sets only.
   specialtyOnly: () => makeSetBot({
     label: 'Specialty', cadenceWeeks: 20, cardsPerSet: 20, setType: 'specialty',
@@ -594,7 +635,20 @@ export const BOTS: Record<string, () => Bot> = {
     quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000, productKind: 'boosterBox',
     allocationPolicy: 'spread',
     revealLeadWeeks: 16, revealCadenceWeeks: 1,
-    marketingPerSet: 300_000_00, prereleaseScale: 4,
+    marketingPerSet: 50_000_00, prereleaseScale: 2, campaignRunMultiple: 1.6,
+  }),
+
+  // The same campaign, sized for greed. It prints 2.2x rather than 1.6x, and
+  // over 20 seeds x 30 years it makes more money than `hypeBuilder` and dies in
+  // six seeds out of twenty doing it. It is in the roster to hold that edge:
+  // if the greedy campaign ever stops dying, the reveal window has stopped
+  // being a bet.
+  hypeGambler: () => makeSetBot({
+    label: 'HypeGambler', cadenceWeeks: 52, cardsPerSet: 70, setType: 'main',
+    quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000, productKind: 'boosterBox',
+    allocationPolicy: 'spread',
+    revealLeadWeeks: 16, revealCadenceWeeks: 1,
+    marketingPerSet: 50_000_00, prereleaseScale: 2, campaignRunMultiple: 2.2,
   }),
 
   // `conservative` in every respect except that it saves for the direct store

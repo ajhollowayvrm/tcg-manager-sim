@@ -207,7 +207,12 @@ export interface LedgerEntry {
   amount: Cents;
   category:
     | 'print_run' | 'art_commission' | 'staff' | 'marketing' | 'event'
-    | 'licensing' | 'sales' | 'interest' | 'principal' | 'unlock' | 'misc';
+    | 'licensing' | 'sales' | 'interest' | 'principal' | 'unlock'
+    /** The studio exists. Payable whether or not it releases anything. */
+    | 'overhead'
+    /** Warehousing unsold stock. The bill an overprint keeps paying. */
+    | 'storage'
+    | 'misc';
   note: string;
   refId?: string;
 }
@@ -1015,6 +1020,10 @@ export interface SimConfig {
     referenceRunUnits: number;
     /** The audience that reference run was calibrated at. */
     referenceAudience: number;
+    /** Fatigue at or above this at death makes it attention death. */
+    deathFatigueThreshold: number;
+    /** Attention at or below this at death makes it attention death. */
+    deathAttentionThreshold: number;
     perReleaseCost: number;
     regenPerTick: number;
     fatigueGain: number;
@@ -1088,6 +1097,12 @@ export interface SimConfig {
     borrowCeilingMultiple: number;
     /** How fast brandStanding converges toward its affection/goodwill-driven target each tick. */
     brandConvergenceRate: number;
+    /** Weekly cost of the studio existing at all. */
+    weeklyOverheadBase: Cents;
+    weeklyOverheadPerChannel: Cents;
+    weeklyOverheadPerRegion: Cents;
+    /** Warehousing, per unsold unit per week. */
+    storagePerUnitPerTick: Cents;
   };
 
   sealed: {

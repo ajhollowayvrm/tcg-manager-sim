@@ -63,7 +63,21 @@ export const defaultConfig: SimConfig = {
      * a reference-sized run into the starting audience sells exactly as it did
      * before, and a larger one no longer brings its own buyers with it.
      */
-    referenceRunUnits: 8000,
+    // Swept over 20 seeds x 25 years on `conservative`. At 8000 a
+    // reference-sized run cleared 96% of its stock and flopped 2% of the time,
+    // so the blind bet had no variance and no demand-side lever could buy
+    // anything — there was never unmet demand to reach. At 5000 the same run
+    // sells 87% and flops 11% of the time, which makes how much to print a
+    // decision with a wrong answer.
+    referenceRunUnits: 5000,
+    /**
+     * What attention death looks like at the moment of failure: the audience
+     * saturated with fatigue and out of attention to give. CONCEPT.md §7 lists
+     * it as a death route and nothing ever classified it, so it could not be
+     * reported however often it happened.
+     */
+    deathFatigueThreshold: 0.75,
+    deathAttentionThreshold: 0.25,
     referenceAudience: 600_000,
     perReleaseCost: 0.22,
     regenPerTick: 0.02,
@@ -148,6 +162,38 @@ export const defaultConfig: SimConfig = {
     creditToRate: 0.08,
     borrowCeilingMultiple: 2.5,
     brandConvergenceRate: 0.01,
+
+    // Time is not free. Every outflow in the model used to be discretionary —
+    // print runs, marketing, unlocks, art — so a publisher that released
+    // nothing paid almost nothing and could not die, and four of the five death
+    // routes in CONCEPT.md §7 were unreachable. These three lines are the
+    // standing bill.
+    //
+    // Sized against measured revenue: `conservative` earns about $442k a year
+    // and spends about $148k of it printing, so a four-channel studio paying
+    // about $156k a year in overhead is under real pressure and still ahead.
+    // A studio that releases nothing runs out of its $500,000 in about five
+    // years, which is what makes doing nothing a way to lose.
+    // Swept over 20 seeds x 30 years. At $2,000 a week the base alone is
+    // $104k a year and it kills every small studio outright — `specialtyOnly`
+    // went from 100% survival to 0%. At $1,000 the base is survivable on its
+    // own and the per-channel line is what makes a large studio expensive,
+    // which is the right way round: reach is what costs money to run.
+    weeklyOverheadBase: C(1_000_00),
+    weeklyOverheadPerChannel: C(250_00),
+    /** Per region past the home market. An office abroad is a standing cost. */
+    weeklyOverheadPerRegion: C(600_00),
+    /**
+     * Warehousing, per unsold unit per week. Deliberately small: it is nothing
+     * to a publisher holding a normal tail of stock and ruinous to one holding
+     * a million units, which is the difference between capital locked up and
+     * capital bleeding. Overprint death is unreachable without it.
+     */
+    // One cent per unit per week. A publisher holding a normal 20,000-unit
+    // tail pays about $10k a year and never notices; one holding 1.2 million
+    // units pays about $624k a year against revenue of $442k and does not
+    // survive it. That gap is the whole design of this line.
+    storagePerUnitPerTick: C(1),
   },
 
   sealed: {
@@ -225,13 +271,24 @@ export const defaultConfig: SimConfig = {
     revealHalfLife: 0.8,
     revealAttentionCost: 0.004,
     marketingReference: C(100_000_00),
-    marketingHypeGain: 0.35,
+    // Swept over 20 seeds x 30 years at equal spend against a prerelease. At
+    // 0.35 marketing was strictly dominated — the same hype cost twice what
+    // the LGS route charged for it, so there was never a reason to buy it. At
+    // 1.2 it is competitive and still the more expensive way to the same
+    // number, which is the right relationship: attention bought with cash
+    // should cost more than attention earned through the stores.
+    marketingHypeGain: 1.2,
     prereleaseCostPerScale: C(25_000_00),
     prereleaseHypeGain: 0.12,
     prereleaseGoodwillGain: 0.02,
     prereleaseRelationshipGain: 0.04,
     ceiling: 3,
-    decayPerTickAfterRelease: 0.06,
+    // Swept over 20 seeds x 30 years. At 0.06 launch hype is gone inside a
+    // couple of months while the print run it was built for sells over years,
+    // so a campaign could not reach the sales it paid for and every lever in
+    // the reveal window lost money at every price. At 0.02 hype lasts about a
+    // year, which is the horizon a print run actually sells over.
+    decayPerTickAfterRelease: 0.02,
     // Wide on purpose. The read has to be genuinely poor without a campaign,
     // or the reveal window is a solved problem and its levers buy nothing: at
     // 0.55 a publisher who spent nothing already scored r = 0.93. Error shrinks
