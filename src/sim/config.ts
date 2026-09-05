@@ -16,10 +16,24 @@ export const defaultConfig: SimConfig = {
   // nostalgia triple decides who climbs it afterwards, and `chaseSigma` sets
   // how far the luckiest card gets. Move one and re-measure all five targets.
   value: {
-    baseCardPrice: C(150),
+    // The level knob, and it carries no shape at all. Swept 30/50/80/110/150
+    // in Round 4: the age-2 set median is exactly linear in it at 0.052 cents
+    // per cent, and `top1`, `top10`, `gini`, `chaseOverMedian` and the tail
+    // index do not move to three decimals, because the nostalgia gate
+    // normalises against `baseCardPrice * nostalgiaStandingReference`. So set
+    // the shape with `chaseSigma` first and land the level with this last.
+    // 6 puts the age-2 median at $0.28, inside the measured $0.24-$0.34.
+    baseCardPrice: C(6),
     cameoWeight: 0.15,
     // Deliberately shallow. A steep day-one ladder puts a $100 card in year 2
     // and leaves nothing for the next twenty years to discover.
+    // Round 4 swept 0.30/0.45/0.60 and the knob is NOT inert: it takes the Gini
+    // from 0.695 to 0.820 and the top-10% share from 0.634 to 0.768. It is a
+    // second shape knob nearly as strong as `chaseSigma`. It stays at 0.45 on
+    // the measurement, not on non-responsiveness: the measured per-rarity
+    // medians put a common and an uncommon at almost the same price, and
+    // `printQuantity` is already rarity-scaled, so a steeper exponent would
+    // separate the body by rarity in a way the real price vectors reject.
     scarcityExponent: 0.45,
     artMultiplierWeight: 0.6,
     nostalgiaRatePerYear: 0.16,
@@ -27,7 +41,17 @@ export const defaultConfig: SimConfig = {
     noiseSigma: 0.12,
     // Bulk commons are worth cents. A floor at a dollar piles half the
     // population onto one price and calls it a distribution.
-    priceFloorCents: C(20),
+    // Round 4 dropped this 20 -> 5, and the plan was wrong to leave it alone.
+    // A 20-cent floor never binds against the old $8.47 median, but against
+    // the fitted $0.26 median it pinned 40% of a set within a cent of it: the
+    // decile ladder read 1.00x from p10 to p20 and again from p30 to p40.
+    // The measured minima of a real set run $0.02-$0.07 and its most common
+    // single price holds only 3-6% of the set, so the spike was ours, not the
+    // market's. At 5 the Gini, the top-1% and the top-10% shares all move
+    // closer to the measured centre and nothing else moves at all.
+    // No gate caught this. `under25c` counts cards below $0.25 and cannot tell
+    // a spread from a stack, which is why rule 2 asks for the ladder.
+    priceFloorCents: C(5),
     priceCeilingMultiple: 5000,
     // Speculators can push heat below 1, and a crash has to be able to
     // overshoot for the amplify-and-crash shape to mean anything. It cannot go
@@ -41,14 +65,34 @@ export const defaultConfig: SimConfig = {
     // rises. The gate that decides who falls is already there: it reads desire
     // and price standing, so the cheap half decays and the top keeps climbing.
     nostalgiaFloor: 0.2,
-    chaseSigma: 0.65,
+    // The shape knob. `rollChase` is `exp(gauss(0, chaseSigma))`, whose median
+    // is 1 at any sigma, so widening it pushes the bottom of a set down and the
+    // top up without moving the level. Swept 0.65/0.9/1.2/1.5/1.9 in Round 4
+    // against a researched body log-SD of 1.2-1.9. At 0.65 the Gini is 0.55 and
+    // a set is born flat; at 1.9 the tail index falls under 1.9 and the first
+    // $100 card arrives in year 1.2. 1.5 fits the measured distribution best.
+    // This is also the answer to the Round 4b question, stated carefully: a
+    // single lognormal reaches every target SUMMARY STATISTIC at this sigma,
+    // so the three-part mixture was not needed. It is not a distributional
+    // result. The research rejected lognormality by KS test in 13 of 13 sets
+    // and no gate here tests a distribution, so a later round that wants the
+    // measured shape rather than its moments may still have to build it.
+    chaseSigma: 1.5,
     referencePopulation: 60_000,
     // The gate is tight on purpose. Nostalgia is the engine that separates the
     // top 1% from the rest over twenty years; open it wider and it stops
     // separating anything, because it lifts the whole population together.
     nostalgiaDesireReference: 90,
     nostalgiaStandingReference: 80,
-    nostalgiaDecayPerYear: 0.05,
+    // What turns a set into bulk. Swept 0.05/0.12/0.20/0.30/0.45 in Round 4
+    // against `shape.ageCurveDirection`, which asks that the bulk share RISE
+    // from age 1 to age 8 the way a real set's does. At 0.05 an ungated
+    // printing only falls to 0.72x over seven years, which the climb in
+    // scarcity outruns, and the curve ran backwards for the whole project up
+    // to this point. 0.20 is the first value that turns it: the direction
+    // reads +0.06 and the age-25 bulk share reaches 0.80, against a measured
+    // 69-82%. Past 0.30 the median drops under the measured floor.
+    nostalgiaDecayPerYear: 0.20,
     shockChancePerTick: 0.0015,
     shockGain: 1.1,
     // Cast desire at which the demand term equals 1. A second reference point
@@ -64,7 +108,10 @@ export const defaultConfig: SimConfig = {
     resurgenceCheckChance: 0.02,
     openingHeat: 1.6,
     openingLiquidity: 0.5,
-    reprintNostalgiaPenalty: 0.85,
+    // The measured average value drop from a reprint is about 27%, and the
+    // older printing typically falls 20-50% on announcement
+    // (05-real-world.md §2). This was 0.85, a 15% haircut, fitted by eye.
+    reprintNostalgiaPenalty: 0.73,
   },
 
   affection: {
@@ -76,7 +123,10 @@ export const defaultConfig: SimConfig = {
     resurgenceDecayPerTick: 0.02,
     unitsPerExposurePoint: 20_000,
     exposureDecayPerTick: 0.015,
-    resurgenceMinAgeYears: 5,
+    // The measured vintage turn is near 20 years, not 5: a real set's bulk
+    // share keeps rising until about age 20 and only then falls back as
+    // scarcity and nostalgia lift a widening group (05-real-world.md §2).
+    resurgenceMinAgeYears: 18,
     resurgenceMinGrowth: 3,
     resurgenceGainScale: 0.02,
     // An IP's ceiling on affection. The spread between a dud character and a
