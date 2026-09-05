@@ -2,13 +2,43 @@
  * Per-run balance metrics (CONCEPT.md §10 "Balance metrics to track") plus
  * CSV export for cross-seed / cross-bot comparison.
  */
-import type { SimState } from '../src/sim/types.ts';
+import type { SimState, RegionId } from '../src/sim/types.ts';
+import { setFit } from '../src/sim/regions.ts';
+import { collectorHeldShare } from '../src/sim/actors.ts';
 
 export interface RunMetrics {
   bot: string;
   seed: string;
   survived: boolean;
   deathYear: number | null;
+  /**
+   * Which of CONCEPT.md §7's death routes actually fired. Empty for a survivor.
+   * The publisher has carried this since the engine was written; nothing
+   * reported it, so "four of the five routes are unreachable" was invisible.
+   */
+  deathCause: string;
+
+  /**
+   * Cash, less debt, plus unsold stock at what it cost to print. Inventory is
+   * an asset at cost, so a publisher that printed a warehouse it cannot sell
+   * still books it here — which is why `unsoldUnits` sits beside it. Read the
+   * two together: net worth alone cannot tell a full warehouse from a full bank.
+   */
+  netWorth: number;
+  /** Cash less debt. Net worth with the warehouse taken out of it. */
+  liquidNetWorth: number;
+  /** The widest the debt ever got, not where it ended. */
+  peakDebt: number;
+  /** Unsold units at the end of the run, across every product. */
+  unsoldUnits: number;
+  /** What that stock cost to print. The overprint half of `netWorth`. */
+  inventoryValue: number;
+  /**
+   * Units printed across the run divided by the number of print runs. The bet
+   * the game is about is how big to print, and a bot roster where every bot
+   * prints the same fixed number never makes it.
+   */
+  meanPrintRun: number;
   surpriseGrail: boolean;
   topMultiple: number;
   top1PctShare: number;
@@ -82,6 +112,84 @@ export interface RunMetrics {
   printingsGraded: number;
   /** Graders taking submissions at the end of the run. The third is brand-gated. */
   gradersActive: number;
+
+  /** Art commissions and standing arrangements, in dollars. */
+  artSpend: number;
+  /** Share of the studio's cards that shipped with house filler art. */
+  houseArtShare: number;
+  /** Mean `artQuality` across the cards that got a real commission. */
+  meanArtQuality: number;
+  /** Mean reputation of the artists this studio actually used. */
+  meanArtistReputation: number;
+  /**
+   * Reputation those artists gained since this studio first commissioned them.
+   * The scouting bet is measured here: buying low should gain more of this and
+   * still lose about half the seeds on top card.
+   */
+  artistReputationGained: number;
+  artistsRetained: number;
+  /** Artists on the board at the end of the run. The roster drifts. */
+  rosterSize: number;
+
+  /** Regions the publisher has opened, including the home market. */
+  regionsOpen: number;
+  /** Cash paid at the doors of those regions, in dollars. */
+  regionUnlockSpend: number;
+  /** Mean `knowledge` across the opened regions. Zero on a home-market-only run. */
+  regionKnowledge: number;
+  /** Share of units sold that went to a market other than the home one. */
+  exportShare: number;
+  /**
+   * Correlation between what a region reading said a set was worth and what it
+   * was actually worth. This is the region half of the same question the reveal
+   * window asks: a reading nobody can score is a reading nobody can tune, and
+   * one that is always right makes market entry arithmetic.
+   */
+  regionReadingCorrelation: number;
+
+  /** Collector population at the end of the run. The stable floor. */
+  collectors: number;
+  /** Share of opened copies sitting in collections rather than on the market. */
+  collectorHeldShare: number;
+  /** Reseller population. Rip-and-ship follows whether ripping pays. */
+  resellers: number;
+  /** Speculator population. This one is meant to swing. */
+  speculators: number;
+  /** Widest and narrowest the speculator population got, as a ratio. */
+  speculatorSwing: number;
+  /**
+   * Mean `SetPerformance.aftermarketIndex` across released sets — how the sets
+   * did as cards rather than as product. It was written as 0 and read by
+   * nothing before this pass.
+   */
+  aftermarketIndex: number;
+
+  /** Collab offers that arrived across the run. */
+  collabOffers: number;
+  /** Offers signed. */
+  collabsSigned: number;
+  /** Licence fees paid, in dollars. */
+  collabSpend: number;
+  /**
+   * Mean IP affection at the end of the run. The collab trade is reach now
+   * against equity later, and this is the equity half — a studio that lives on
+   * collabs should sell well and own little.
+   */
+  meanIpAffection: number;
+
+  /** Times a named creator covered any printing. */
+  creatorCoverage: number;
+  /** Share of that coverage that landed on this publisher's own cards. */
+  creatorOwnShare: number;
+  /** Best relationship with any creator at the end of the run. */
+  bestCreatorRelationship: number;
+
+  /** Collectible chains built. */
+  chains: number;
+  /** Share of them that span more than one set — the cross-set hedge. */
+  chainsSpanningSets: number;
+  /** Mean printed members per chain. */
+  meanChainLength: number;
 }
 
 /** Pearson r. Returns 0 rather than NaN for a degenerate sample. */
@@ -164,6 +272,15 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
   const worstRelationship = openChannels.length
     ? Math.min(...openChannels.map(ch => ch!.relationship))
     : 0;
+
+  // Finance. Inventory is valued at cost, which is the conservative reading:
+  // unsold stock is worth at most what it cost, and usually less.
+  const unsoldUnits = products.reduce((n, p) => n + p.unitsRemaining, 0);
+  const inventoryValue = dollars(products.reduce((n, p) => n + p.unitsRemaining * p.unitCogs, 0));
+  const liquidNetWorth = dollars(pub.cash - pub.debt);
+  const printRuns = products.filter(p => p.unitsPrinted > 0);
+  const meanPrintRun = printRuns.length
+    ? printRuns.reduce((n, p) => n + p.unitsPrinted, 0) / printRuns.length : 0;
 
   const printedTotal = products.reduce((n, p) => n + p.unitsPrinted, 0);
   const soldTotal = products.reduce((n, p) => n + (p.unitsPrinted - p.unitsRemaining), 0);
@@ -257,11 +374,85 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
   for (const a of usedArtists) gained += a.reputation - (firstSeen.get(a.id as string) ?? a.reputation);
   const artistReputationGained = usedArtists.length > 0 ? gained / usedArtists.length : 0;
 
+  // Regions. `exportShare` is read off the products rather than the ledger:
+  // sales are booked to the publisher, not to a market, so the region a unit
+  // went to is only recoverable from the product it came off.
+  const home = 'reg_us' as RegionId;
+  const openRegions = pub.unlocks.regions.map(id => s.regions[id]).filter(Boolean);
+  const regionUnlockSpend = pub.ledger
+    .filter(e => e.category === 'unlock' && e.refId !== undefined
+      && String(e.refId).startsWith('reg_'))
+    .reduce((n, e) => n - e.amount, 0) / 100;
+  const regionKnowledge = openRegions.length
+    ? openRegions.reduce((n, r) => n + r!.knowledge, 0) / openRegions.length : 0;
+  const exportUnits = products
+    .filter(p => p.regionId !== home)
+    .reduce((n, p) => n + (p.unitsPrinted - p.unitsRemaining), 0);
+  const exportShare = soldTotal > 0 ? exportUnits / soldTotal : 0;
+
+  // Scored the same way the reveal signal is: what the reading said when the
+  // bet was placed, against what the set turned out to be worth there.
+  const readingPairs: Array<[number, number]> = [];
+  for (const set of Object.values(s.sets)) {
+    if (!set.regionReadings) continue;
+    for (const [rid, predicted] of Object.entries(set.regionReadings)) {
+      const region = s.regions[rid as RegionId];
+      const product = set.productIds
+        .map(pid => s.products[pid])
+        .find(p => p && p.regionId === (rid as RegionId));
+      if (!region || !product) continue;
+      readingPairs.push([predicted, setFit(s, region, set, product)]);
+    }
+  }
+  const regionReadingCorrelation = correlation(
+    readingPairs.map(p => p[0]), readingPairs.map(p => p[1]),
+  );
+
+  // The secondary-market actors. The speculator swing is the one that says
+  // whether the population is a population or a constant: read at the end of
+  // the run it can only ever say where it stopped.
+  const specSeries = s.events
+    .filter(e => e.kind === 'speculatorSwing')
+    .map(e => Number(e.data.speculators ?? 0))
+    .filter(n => n > 0);
+  const speculatorSwing = specSeries.length >= 2
+    ? Math.max(...specSeries) / Math.max(1, Math.min(...specSeries)) : 1;
+  const releasedWithPerf = Object.values(s.sets).filter(set => set.performance);
+  const aftermarket = releasedWithPerf.length
+    ? releasedWithPerf.reduce((n, set) => n + set.performance!.aftermarketIndex, 0)
+      / releasedWithPerf.length : 0;
+
+  const collabOffers = s.events.filter(e => e.kind === 'collabOffered').length;
+  const collabsSigned = s.events.filter(e => e.kind === 'collabSigned').length;
+  const collabSpend = pub.ledger
+    .filter(e => e.category === 'licensing').reduce((n, e) => n - e.amount, 0) / 100;
+  const allIps = Object.values(s.ips);
+  const meanIpAffection = allIps.length
+    ? allIps.reduce((n, ip) => n + ip.affection, 0) / allIps.length : 0;
+
+  const coverage = s.events.filter(e => e.kind === 'creatorOpened');
+  const ownCoverage = coverage.filter(e => {
+    const card = e.refs.cardId ? s.cards[e.refs.cardId as never] : undefined;
+    return card?.publisherId === pub.id;
+  }).length;
+  const creatorRels = Object.values(s.creators).map(c => c.relationship);
+
+  const chains = Object.values(s.chains);
+  const printedMembers = chains.map(
+    c => c.cardIds.filter(cid => !!s.printingByCard[cid]).length);
+
   return {
     bot,
     seed: s.seed,
     survived: pub.deadTick === null,
     deathYear: pub.deadTick !== null ? (pub.deadTick as number) / 52 : null,
+    deathCause: pub.deathCause ?? '',
+    netWorth: liquidNetWorth + inventoryValue,
+    liquidNetWorth,
+    peakDebt: dollars(pub.peakDebt),
+    unsoldUnits,
+    inventoryValue,
+    meanPrintRun,
     surpriseGrail,
     topMultiple,
     top1PctShare,
@@ -306,6 +497,29 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
     artistReputationGained,
     artistsRetained: Object.keys(pub.retainers).length,
     rosterSize: Object.values(s.artists).filter(a => a.available).length,
+    regionsOpen: openRegions.length,
+    regionUnlockSpend,
+    regionKnowledge,
+    exportShare,
+    regionReadingCorrelation,
+    collectors: s.audience.actors.collectors,
+    collectorHeldShare: collectorHeldShare(s),
+    resellers: s.audience.actors.resellers,
+    speculators: s.audience.actors.speculators,
+    speculatorSwing,
+    aftermarketIndex: aftermarket,
+    collabOffers,
+    collabsSigned,
+    collabSpend,
+    meanIpAffection,
+    creatorCoverage: coverage.length,
+    creatorOwnShare: coverage.length > 0 ? ownCoverage / coverage.length : 0,
+    bestCreatorRelationship: creatorRels.length ? Math.max(...creatorRels) : 0,
+    chains: chains.length,
+    chainsSpanningSets: chains.length
+      ? chains.filter(c => c.spansSets).length / chains.length : 0,
+    meanChainLength: printedMembers.length
+      ? printedMembers.reduce((a, b) => a + b, 0) / printedMembers.length : 0,
   };
 }
 

@@ -7,11 +7,13 @@
  */
 import type {
   SimState, IpId, ArtistId, Rarity, PrintQualityTier, ProductKind, SetType, ProductId, IpKind,
-  ChannelId, Channel, Tick, SetId, Cents, Artist, ArtistTerms,
+  ChannelId, Channel, Tick, SetId, Cents, Artist, ArtistTerms, RegionId,
+  CollabId, AudienceSegment, ChainId,
 } from '../src/sim/types.ts';
 import { api } from '../src/sim/engine.ts';
 import { rand, pick, chance } from '../src/sim/rng.ts';
 import { REGION_US, IP_KINDS } from '../src/sim/world.ts';
+import { readRegion } from '../src/sim/regions.ts';
 import { CHANNEL_IDS, effectiveCapacity, unlockCost } from '../src/sim/channels.ts';
 
 export interface Bot {
@@ -65,6 +67,23 @@ export interface SetBotOptions {
   setType: SetType;
   quality: PrintQualityTier;
   units: number;
+  /**
+   * How big a bet the bot places on each set.
+   *
+   * - `fixed` prints `units` regardless of anything, which is what every bot
+   *   in the original roster did.
+   * - `bankroll` commits `bankrollFraction` of the cash on hand to the print
+   *   run and prints whatever that buys.
+   *
+   * The size of the print run is the wager the whole game is about, so a
+   * roster where nothing varies it cannot measure difficulty. `bankroll` is
+   * also the only policy that can lose everything, because it scales the
+   * downside with the bankroll rather than holding it at a constant the
+   * starting cash always covers.
+   */
+  unitsPolicy?: 'fixed' | 'bankroll';
+  /** Share of cash committed per print run under `bankroll`. Ignored by `fixed`. */
+  bankrollFraction?: number;
   packsPerUnit: number;
   msrp: number;
   productKind: ProductKind;
@@ -96,6 +115,17 @@ export interface SetBotOptions {
   /** Prerelease scale hosted per set. */
   prereleaseScale?: number;
   /**
+   * How much larger a print run gets when the bot is running a reveal campaign.
+   *
+   * The same arithmetic that governs a collab governs this. A campaign can only
+   * ever sell the part of a print run that would otherwise have sat unsold, so
+   * against a run that already clears 91% it is worth at most nine points
+   * however much it costs — and every campaign priced above that loses by
+   * construction. A campaign is worth running when it lets you print a bigger
+   * run, and that is also how it becomes a way to lose.
+   */
+  campaignRunMultiple?: number;
+  /**
    * How the bot picks an illustrator. `random` is the historical behaviour and
    * the default; `cheapest` scouts unproven newcomers, betting on the hidden
    * `growth` roll; `established` pays for reputation it can already see.
@@ -111,6 +141,48 @@ export interface SetBotOptions {
    * no weekly bill and no claim on them.
    */
   artistTerms?: ArtistTerms;
+  /**
+   * Whether the bot sells abroad.
+   *
+   * - `home` never leaves the US, which is what every bot in the original
+   *   roster did and what keeps that path covered.
+   * - `expand` opens one region at a time, picking the one its own reading
+   *   rates highest, then buys that region's channels and defines a SKU per
+   *   open region on every set.
+   *
+   * `expand` is the only strategy that reads `readRegion`, which is the point:
+   * a reading nothing consults is dead code however carefully it is built.
+   */
+  regionPolicy?: 'home' | 'expand';
+  /**
+   * Whether the bot licenses. `sign` takes the open offer with the best
+   * weighted reach per dollar that it can afford and that its brand clears.
+   *
+   * The offer has to be signed between `createSet` and `commitPrintRun`: a
+   * collab attaches to a set that has not printed yet, and both decisions land
+   * in the same tick, so this is a matter of submitting in the right order.
+   */
+  collabPolicy?: 'never' | 'sign';
+  /**
+   * How much larger a print run gets when the bot has signed a collab for it.
+   *
+   * This is the whole point of a collab and the whole risk of one. Extra demand
+   * is worth nothing to a publisher who printed for the demand it already had,
+   * so a licence fee only pays back if the run is sized up to meet it — and
+   * sizing up is exactly how a collab that under-delivers becomes an overprint.
+   */
+  collabRunMultiple?: number;
+  /**
+   * Cards per progression chain, and whether the chains run across sets.
+   *
+   * `inSet` builds a chain inside one set — a straightforward evolution line.
+   * `acrossSets` carries each chain forward into the next set, which is
+   * CONCEPT.md's "hedge that can carry a set with a weak subject" and pays more
+   * for exactly that reason. Unset builds no chains, which is what every bot in
+   * the original roster did.
+   */
+  chainPolicy?: 'inSet' | 'acrossSets';
+  chainLength?: number;
 }
 
 /**
@@ -121,6 +193,57 @@ export interface SetBotOptions {
 const UNLOCK_ORDER: ChannelId[] = [
   CHANNEL_IDS.online, CHANNEL_IDS.distributor, CHANNEL_IDS.bigbox, CHANNEL_IDS.direct,
 ];
+
+/**
+ * The channel gates, in order, across every region the bot has opened. The home
+ * market comes first: a second region's LGS is worth less than the US big box,
+ * and buying reach abroad before you have it at home is a way to lose money in
+ * two markets at once.
+ */
+function gateOrder(s: SimState, opts: SetBotOptions): ChannelId[] {
+  const base = opts.unlockOrder ?? UNLOCK_ORDER;
+  if (opts.regionPolicy !== 'expand') return base;
+  const pub = s.publishers[s.playerId]!;
+  const abroad = Object.values(s.channels)
+    .filter(ch => ch.regionId !== REGION_US && pub.unlocks.regions.includes(ch.regionId))
+    .sort((a, b) => a.requiredBrandStanding - b.requiredBrandStanding)
+    .map(ch => ch.id);
+  return [...base, ...abroad];
+}
+
+/**
+ * Opens the region this bot's own reading rates highest, one at a time.
+ *
+ * The reading is noisy in inverse proportion to `knowledge`, and an unopened
+ * region has `knowledge` 0 — so this is a genuine bet, and it is meant to be
+ * wrong sometimes. The reserve is two full print runs rather than one: a
+ * region pays back over years, and spending down to the bone to open one is
+ * how a publisher dies of a good idea.
+ */
+function maybeExpand(s: SimState, opts: SetBotOptions, reserve: number): void {
+  if (opts.regionPolicy !== 'expand') return;
+  const pub = s.publishers[s.playerId]!;
+  const candidates = Object.values(s.regions).filter(
+    r => r.unlockedTick === null && pub.cash - r.unlockCost > reserve * 2,
+  );
+  if (candidates.length === 0) return;
+
+  let best: RegionId | null = null;
+  let bestScore = -Infinity;
+  for (const r of candidates) {
+    const reading = readRegion(s, r.id);
+    if (!reading) continue;
+    // Size and spending power are public; taste is not. The reading is what
+    // carries the error, so it is what makes this a bet rather than a sort.
+    const taste = Object.values(reading.tasteBias).reduce((a, b) => a + b, 0)
+      / Math.max(1, Object.keys(reading.tasteBias).length);
+    const appetite = Object.values(reading.rarityAppetite).reduce((a, b) => a + b, 0)
+      / Math.max(1, Object.keys(reading.rarityAppetite).length);
+    const score = r.marketSize * r.wealth * (0.5 + taste) * appetite * reading.priceTolerance;
+    if (score > bestScore) { bestScore = score; best = r.id; }
+  }
+  if (best) api.unlockRegion(s, best);
+}
 
 function maybeUnlock(s: SimState, reserve: number, runUnits: number, order = UNLOCK_ORDER): void {
   const pub = s.publishers[s.playerId]!;
@@ -138,9 +261,30 @@ function maybeUnlock(s: SimState, reserve: number, runUnits: number, order = UNL
   }
 }
 
+/** What one unit costs to print, using the engine's own COGS formula. */
+function unitCost(s: SimState, opts: SetBotOptions): number {
+  return s.config.printing.unitCost[opts.quality] * opts.packsPerUnit * 0.55;
+}
+
+/**
+ * How many units this bot prints next.
+ *
+ * Under `bankroll` the run is sized off cash rather than off a constant, so
+ * the bet grows with the bankroll and a bad set costs a share of everything
+ * rather than a fixed sum the starting cash always covered. The floor of 1
+ * keeps a broke publisher submitting a run it cannot pay for, which is a death
+ * route rather than a bug: `tickFinance` is what decides whether it survives it.
+ */
+function printRunUnits(s: SimState, opts: SetBotOptions): number {
+  if (opts.unitsPolicy !== 'bankroll') return opts.units;
+  const pub = s.publishers[s.playerId]!;
+  const budget = Math.max(0, pub.cash) * (opts.bankrollFraction ?? 0.25);
+  return Math.max(1, Math.floor(budget / unitCost(s, opts)));
+}
+
 /** What this bot's next print run will cost, using the engine's own COGS formula. */
 function printRunCost(s: SimState, opts: SetBotOptions): number {
-  return s.config.printing.unitCost[opts.quality] * opts.packsPerUnit * 0.55 * opts.units;
+  return unitCost(s, opts) * printRunUnits(s, opts);
 }
 
 function openChannels(s: SimState): Channel[] {
@@ -152,7 +296,11 @@ function openChannels(s: SimState): Channel[] {
 
 function submitAllocation(s: SimState, productId: ProductId, units: number, opts: SetBotOptions): void {
   if (opts.allocationPolicy === 'auto') return;
-  const open = openChannels(s);
+  // A product only ships through channels in its own region — `allocate`
+  // refuses the rest anyway, and offering them here would silently drop that
+  // share of the run into the warehouse.
+  const product = s.products[productId];
+  const open = openChannels(s).filter(ch => !product || ch.regionId === product.regionId);
   if (open.length === 0) return;
 
   const plan: Record<ChannelId, number> = {};
@@ -216,6 +364,10 @@ function submitCampaign(s: SimState, setId: SetId, opts: SetBotOptions): void {
 export function makeSetBot(opts: SetBotOptions): Bot {
   let nextRelease = 8; // small startup delay so world init settles first
   const campaigned = new Set<SetId>();
+  const marketingSpent = new Map<SetId, number>();
+  // Chains this bot is still filling. An `acrossSets` chain keeps its slot open
+  // into the next set, which is the only way `spansSets` ever becomes true.
+  const openChains: Array<{ id: ChainId; filled: number; thisSet: number }> = [];
   return {
     step(s: SimState) {
       const pub = s.publishers[s.playerId]!;
@@ -231,14 +383,23 @@ export function makeSetBot(opts: SetBotOptions): Bot {
       // Buying channel access is a between-releases decision, so it is checked
       // every step rather than only on a release week. The reserve is one full
       // print run, so a bot never unlocks its way out of being able to print.
-      if (s.tick % 13 === 0) maybeUnlock(s, printRunCost(s, opts), opts.units, opts.unlockOrder);
+      if (s.tick % 13 === 0) {
+        maybeUnlock(s, printRunCost(s, opts), printRunUnits(s, opts), gateOrder(s, opts));
+        maybeExpand(s, opts, printRunCost(s, opts));
+      }
       submitDrops(s, opts);
-      submitMarketing(s, opts);
+      submitMarketing(s, opts, marketingSpent);
       if (s.tick < nextRelease) return;
       nextRelease = s.tick + opts.cadenceWeeks;
 
+      // Sized once, before the set exists, and used for both the commit and the
+      // allocation. Sizing it twice would let cash spent on art between the two
+      // calls shrink the allocation below the run that was actually printed.
+      const runUnits = printRunUnits(s, opts);
+
       const ipId = ensureIp(s, opts.label);
       const setId = api.createSet(s, `${opts.label} Set W${s.tick}`, opts.setType, opts.cardsPerSet);
+      const signedCollab = maybeSignCollab(s, opts, setId);
 
       // Art is commissioned in the same batch as the design, which is the only
       // way it can land before the release 18 weeks later. A slow or unreliable
@@ -247,23 +408,62 @@ export function makeSetBot(opts: SetBotOptions): Bot {
         const rarity = pickRarity(s);
         const artistId = chooseArtist(s, opts);
         if (!artistId) break;
-        const cardId = api.designCard(s, setId, ipId, [], rarity, artistId);
+        const cardId = api.designCard(s, setId, ipId, [], rarity, artistId,
+          chainLinkFor(s, opts, i, openChains));
         const artist = s.artists[artistId]!;
         const budget = Math.round(artist.rate * (opts.artBudgetMultiple ?? 1)) as Cents;
         api.commissionArt(s, cardId, artistId, { budget });
         maybeSign(s, opts, artistId);
       }
 
-      const productId = api.defineProduct(s, setId, opts.productKind, REGION_US, opts.packsPerUnit, opts.msrp);
-      api.commitPrintRun(
-        s,
-        setId,
-        { [productId]: opts.units } as Record<ProductId, number>,
-        opts.quality,
-      );
+      // One SKU per open region. A region with no product gets no release date
+      // and sells nothing, so this is what turns an unlock into volume — and
+      // the print run is split across them, not multiplied by them.
+      const shipTo = opts.regionPolicy === 'expand'
+        ? pub.unlocks.regions.filter(id => !!s.regions[id])
+        : [REGION_US];
+      // Split by the reach the bot actually has in each region, not evenly. A
+      // second region opens with one small LGS against four US channels, so an
+      // even split ships most of the run into a market that cannot move it —
+      // which measures a careless allocator rather than measuring regions.
+      const campaigning = opts.revealLeadWeeks !== undefined
+        || (opts.marketingPerSet ?? 0) > 0
+        || (opts.prereleaseScale ?? 0) > 0;
+      const committedUnits = Math.round(runUnits
+        * (signedCollab ? (opts.collabRunMultiple ?? 1.5) : 1)
+        * (campaigning ? (opts.campaignRunMultiple ?? 1) : 1));
+
+      const reachByRegion = shipTo.map(regionId => {
+        const caps = openChannels(s)
+          .filter(ch => ch.regionId === regionId)
+          .map(effectiveCapacity);
+        return caps.reduce((a, b) => a + b, 0);
+      });
+      const totalReach = reachByRegion.reduce((a, b) => a + b, 0);
+
+      const quantities = {} as Record<ProductId, number>;
+      const productIds: ProductId[] = [];
+      const unitsByProduct = new Map<ProductId, number>();
+      for (let i = 0; i < shipTo.length; i++) {
+        const regionId = shipTo[i]!;
+        const share = totalReach > 0 ? reachByRegion[i]! / totalReach : 1 / shipTo.length;
+        const perRegion = Math.max(1, Math.floor(committedUnits * share));
+        // A region's price is its own. Selling a US-priced box into a market
+        // that tolerates 0.6 of US prices is a mistake the bot should be able
+        // to avoid, and `priceTolerance` is public where taste is not.
+        const region = s.regions[regionId]!;
+        const msrp = Math.round(opts.msrp * region.truth.priceTolerance);
+        const pid = api.defineProduct(s, setId, opts.productKind, regionId, opts.packsPerUnit, msrp);
+        quantities[pid] = perRegion;
+        unitsByProduct.set(pid, perRegion);
+        productIds.push(pid);
+      }
+      api.commitPrintRun(s, setId, quantities, opts.quality);
       // Allocation locks with the print run, in the same batch. This is the
       // blind bet — it lands before reveal and never changes after.
-      submitAllocation(s, productId, opts.units, opts);
+      for (const pid of productIds) {
+        submitAllocation(s, pid, unitsByProduct.get(pid)!, opts);
+      }
     },
   };
 }
@@ -289,6 +489,44 @@ function chooseArtist(s: SimState, opts: SetBotOptions): ArtistId | undefined {
   }
 }
 
+/**
+ * Which chain, if any, the next card joins.
+ *
+ * `inSet` closes a chain as soon as it is full and opens the next one, so every
+ * chain lives inside one set. `acrossSets` leaves the chain open across the
+ * release boundary, so the second half of it is designed into the following
+ * set — which is what makes it a hedge rather than a bonus.
+ */
+function chainLinkFor(
+  s: SimState, opts: SetBotOptions, index: number,
+  open: Array<{ id: ChainId; filled: number; thisSet: number }>,
+): { chainId: ChainId; position: number } | undefined {
+  if (!opts.chainPolicy) return undefined;
+  const length = Math.max(2, opts.chainLength ?? 3);
+  // Under `acrossSets` no chain takes more than half its members from one set.
+  // Without that cap a 70-card set finishes every chain it starts and only the
+  // last part-filled one ever crosses a boundary — measured, 6% of them, which
+  // is not a cross-set strategy, it is a rounding error.
+  const perSetCap = opts.chainPolicy === 'acrossSets' ? Math.ceil(length / 2) : length;
+
+  if (index === 0) for (const c of open) c.thisSet = 0;
+
+  let slot = open.find(c => c.filled < length && c.thisSet < perSetCap);
+  if (!slot) {
+    slot = { id: `chain_${s.tick}_${index}` as ChainId, filled: 0, thisSet: 0 };
+    open.push(slot);
+  }
+  const position = slot.filled++;
+  slot.thisSet++;
+  if (slot.filled >= length) {
+    const i = open.indexOf(slot);
+    if (i >= 0) open.splice(i, 1);
+  }
+  // Under `inSet` the bot never carries a part-filled chain into the next set.
+  if (opts.chainPolicy === 'inSet' && index === opts.cardsPerSet - 1) open.length = 0;
+  return { chainId: slot.id, position };
+}
+
 /** Signs the bot's standing arrangement once, the first time it uses an artist. */
 function maybeSign(s: SimState, opts: SetBotOptions, artistId: ArtistId): void {
   if (!opts.artistTerms || opts.artistTerms === 'perCard') return;
@@ -297,19 +535,125 @@ function maybeSign(s: SimState, opts: SetBotOptions, artistId: ArtistId): void {
   api.hireArtist(s, artistId, opts.artistTerms);
 }
 
-/** Drips marketing into every set still inside its reveal window. */
-function submitMarketing(s: SimState, opts: SetBotOptions): void {
+/**
+ * Signs the best open collab offer for the set just created.
+ *
+ * "Best" is weighted reach per dollar, not the largest headline bonus: an offer
+ * that reaches the smallest segment hard is worth less than one that reaches
+ * the largest segment gently, and a bot that sorts on the headline number would
+ * never find that out. The reserve is one print run — a licence fee that eats
+ * the money the set needs to print is not a collab, it is a mistake.
+ */
+function maybeSignCollab(s: SimState, opts: SetBotOptions, setId: SetId): boolean {
+  if (opts.collabPolicy !== 'sign') return false;
+  const pub = s.publishers[s.playerId]!;
+  const reserve = printRunCost(s, opts);
+  const total = Object.values(s.audience.segments).reduce((n, g) => n + g.size, 0);
+  if (total <= 0) return false;
+
+  let best: { id: CollabId; score: number } | null = null;
+  for (const c of Object.values(s.collabs)) {
+    if (c.signedTick !== null) continue;
+    if (pub.brandStanding < c.requiredBrandStanding) continue;
+    if (pub.cash - c.licenseFee < reserve) continue;
+    let weighted = 0;
+    for (const [seg, bonus] of Object.entries(c.reachBonus)) {
+      weighted += bonus * (s.audience.segments[seg as AudienceSegment]?.size ?? 0) / total;
+    }
+    const score = weighted / Math.max(1, c.licenseFee);
+    if (!best || score > best.score) best = { id: c.id, score };
+  }
+  if (!best) return false;
+  api.signCollab(s, best.id, setId);
+  return true;
+}
+
+/**
+ * Drips marketing into every set still inside its reveal window.
+ *
+ * Split across the window rather than dumped in one tick: the spend curve is
+ * logarithmic in the cumulative total, so the timing is free but the player
+ * still has to survive the outlay.
+ *
+ * The budget is a budget. Submitting a fixed slice every tick without tracking
+ * what has already gone out spends it once per tick of the window instead of
+ * once per set — an 18-week window turned a stated $50,000 into $150,000, and
+ * every measurement of whether marketing pays was made against a bill three
+ * times the one being tested.
+ */
+function submitMarketing(s: SimState, opts: SetBotOptions, spent: Map<SetId, number>): void {
   if (!opts.marketingPerSet) return;
+  const slice = Math.round(opts.marketingPerSet / 6);
   for (const set of Object.values(s.sets)) {
     if (set.status !== 'committed' && set.status !== 'revealing') continue;
-    // Split across the window rather than dumped in one tick: the spend curve
-    // is logarithmic in the cumulative total, so the timing is free but the
-    // player still has to survive the outlay.
-    api.marketingSpend(s, set.id, Math.round(opts.marketingPerSet / 6) as Cents);
+    const already = spent.get(set.id) ?? 0;
+    const left = opts.marketingPerSet - already;
+    if (left <= 0) continue;
+    const amount = Math.min(slice, left);
+    spent.set(set.id, already + amount);
+    api.marketingSpend(s, set.id, amount as Cents);
   }
 }
 
+/**
+ * The three bet sizes. All three are `conservative` in every other respect, so
+ * the only thing that separates their rows is how much of the bankroll goes
+ * onto each set. Under `fixed` sizing the wager is a constant the starting cash
+ * always covers, which is why the original roster could not produce a survival
+ * gradient at all.
+ */
+function betSizeBot(label: string, fraction: number): () => Bot {
+  return () => makeSetBot({
+    label, cadenceWeeks: 52, cardsPerSet: 70, setType: 'main',
+    quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000,
+    productKind: 'boosterBox', allocationPolicy: 'spread',
+    unitsPolicy: 'bankroll', bankrollFraction: fraction,
+  });
+}
+
 export const BOTS: Record<string, () => Bot> = {
+  // The size-of-the-bet ladder. See `betSizeBot`.
+  smallBets: betSizeBot('SmallBets', 0.10),
+  bigBets: betSizeBot('BigBets', 0.50),
+  allIn: betSizeBot('AllIn', 0.95),
+
+  // `conservative` in every respect except that it sells abroad. Holding the
+  // rest identical is the point: any difference in the two rows is regions and
+  // nothing else. It is the only bot that consults `readRegion`.
+  globalist: () => makeSetBot({
+    label: 'Globalist', cadenceWeeks: 52, cardsPerSet: 70, setType: 'main',
+    quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000,
+    productKind: 'boosterBox', allocationPolicy: 'spread',
+    regionPolicy: 'expand',
+  }),
+
+  // `conservative` in every respect except that it licenses. Any difference in
+  // the two rows is the collab loop and nothing else: reach bought with cash,
+  // paid for in the IP equity the sets no longer build.
+  licensor: () => makeSetBot({
+    label: 'Licensor', cadenceWeeks: 52, cardsPerSet: 70, setType: 'main',
+    quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000,
+    productKind: 'boosterBox', allocationPolicy: 'spread',
+    collabPolicy: 'sign', collabRunMultiple: 1.5,
+  }),
+
+  // The two shapes of collectible chain, both `conservative` in every other
+  // respect. `chainRunner` builds evolution lines inside a set; `chainWeaver`
+  // carries each one into the following set, which is the only way a chain ever
+  // becomes the cross-set hedge CONCEPT.md describes.
+  chainRunner: () => makeSetBot({
+    label: 'ChainRunner', cadenceWeeks: 52, cardsPerSet: 70, setType: 'main',
+    quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000,
+    productKind: 'boosterBox', allocationPolicy: 'spread',
+    chainPolicy: 'inSet', chainLength: 3,
+  }),
+  chainWeaver: () => makeSetBot({
+    label: 'ChainWeaver', cadenceWeeks: 52, cardsPerSet: 70, setType: 'main',
+    quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000,
+    productKind: 'boosterBox', allocationPolicy: 'spread',
+    chainPolicy: 'acrossSets', chainLength: 6,
+  }),
+
   // Few, well-supported sets. The steady baseline.
   conservative: () => makeSetBot({
     label: 'Conservative', cadenceWeeks: 52, cardsPerSet: 70, setType: 'main',
@@ -334,6 +678,17 @@ export const BOTS: Record<string, () => Bot> = {
     allocationPolicy: 'auto',
   }),
 
+  // Floods the calendar with runs small enough to pay for. `flooder` dies of
+  // cash in year one and so never reaches the fatigue its cadence is building,
+  // which is why attention death stayed unreachable however hard anybody
+  // flooded. This one prints a sixth as much on the same cadence: it survives
+  // the printing bill and finds out what the audience does about it.
+  attentionBurner: () => makeSetBot({
+    label: 'Burner', cadenceWeeks: 6, cardsPerSet: 40, setType: 'main',
+    quality: 'standard', units: 2500, packsPerUnit: 24, msrp: 14000,
+    productKind: 'boosterBox', allocationPolicy: 'spread',
+  }),
+
   // Small, expensive, high-margin specialty sets only.
   specialtyOnly: () => makeSetBot({
     label: 'Specialty', cadenceWeeks: 20, cardsPerSet: 20, setType: 'specialty',
@@ -350,7 +705,20 @@ export const BOTS: Record<string, () => Bot> = {
     quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000, productKind: 'boosterBox',
     allocationPolicy: 'spread',
     revealLeadWeeks: 16, revealCadenceWeeks: 1,
-    marketingPerSet: 300_000_00, prereleaseScale: 4,
+    marketingPerSet: 50_000_00, prereleaseScale: 2, campaignRunMultiple: 1.6,
+  }),
+
+  // The same campaign, sized for greed. It prints 2.2x rather than 1.6x, and
+  // over 20 seeds x 30 years it makes more money than `hypeBuilder` and dies in
+  // six seeds out of twenty doing it. It is in the roster to hold that edge:
+  // if the greedy campaign ever stops dying, the reveal window has stopped
+  // being a bet.
+  hypeGambler: () => makeSetBot({
+    label: 'HypeGambler', cadenceWeeks: 52, cardsPerSet: 70, setType: 'main',
+    quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000, productKind: 'boosterBox',
+    allocationPolicy: 'spread',
+    revealLeadWeeks: 16, revealCadenceWeeks: 1,
+    marketingPerSet: 50_000_00, prereleaseScale: 2, campaignRunMultiple: 2.2,
   }),
 
   // `conservative` in every respect except that it saves for the direct store

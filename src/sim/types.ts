@@ -84,6 +84,19 @@ export interface SimState {
    * attributable to the art multiplier rather than to reshuffled noise.
    */
   artRng: RngState;
+  /**
+   * A fourth stream, for region readings. A reading is an observation of
+   * `Region.truth`, so like grading it must not renumber the value engine's
+   * draws — otherwise scoring a reading changes the prices it was read against.
+   */
+  regionRng: RngState;
+  /**
+   * A fifth stream, for the secondary-market actors. These populations move
+   * prices, so unlike grading they are not observers and the value targets do
+   * move — the stream is separate so the movement is attributable to the
+   * mechanism rather than to renumbered noise.
+   */
+  actorRng: RngState;
   tick: Tick;
 
   /** Monotonic counter for deterministic id generation. */
@@ -133,6 +146,12 @@ export interface Publisher {
 
   cash: Cents;
   debt: Cents;
+  /**
+   * The widest the debt ever got, not where it ended. A publisher that borrows
+   * to the ceiling and climbs back out looks identical to one that never
+   * borrowed if you only read `debt` at the end of the run.
+   */
+  peakDebt: Cents;
   /** 0..1. Raises borrowing ceiling and lowers rate. */
   credit: Unit;
   /** 0..1. Gates channels, collabs, artist interest, grader attention. */
@@ -188,7 +207,12 @@ export interface LedgerEntry {
   amount: Cents;
   category:
     | 'print_run' | 'art_commission' | 'staff' | 'marketing' | 'event'
-    | 'licensing' | 'sales' | 'interest' | 'principal' | 'unlock' | 'misc';
+    | 'licensing' | 'sales' | 'interest' | 'principal' | 'unlock'
+    /** The studio exists. Payable whether or not it releases anything. */
+    | 'overhead'
+    /** Warehousing unsold stock. The bill an overprint keeps paying. */
+    | 'storage'
+    | 'misc';
   note: string;
   refId?: string;
 }
@@ -317,6 +341,12 @@ export interface Chain {
   kind: ChainKind;
   name: string;
   cardIds: CardId[];
+  /**
+   * The sets its members were designed into. `Card` carries no `setId`, so
+   * recording it here is what lets `spansSets` be maintained without scanning
+   * every set on every link.
+   */
+  setIds: SetId[];
   spansSets: boolean;
 }
 
@@ -342,6 +372,17 @@ export interface CardSet {
 
   /** Staggered release. Region order is the preview mechanism. */
   regionSchedule: Array<{ regionId: RegionId; releaseTick: Tick }>;
+
+  /**
+   * What a reading of each region said this set was worth, taken at the moment
+   * the print run was committed — the moment the bet is placed and stops being
+   * guessable. Null until commit.
+   *
+   * This is the region twin of `SetPerformance.chaseIndex`: the harness scores
+   * the reading against the truth, and a reading nobody can score is a reading
+   * nobody can tune. Nothing in the value engine reads it.
+   */
+  regionReadings: Record<RegionId, number> | null;
 
   designStartTick: Tick;
   /** Print runs lock here — before reveal, before any real signal. */
@@ -572,6 +613,8 @@ export interface Region {
 
   /** 0..1. Grows with research spend and with release history in-region. */
   knowledge: Unit;
+  /** Null until the player opens it. `reg_us` is open from tick 0. */
+  unlockedTick: Tick | null;
 }
 
 export type ChannelKind = 'lgs' | 'distributor' | 'bigbox' | 'online' | 'direct';
@@ -706,7 +749,11 @@ export interface Collab {
   /** Segments this collab reaches that your brand otherwise doesn't. */
   reachBonus: Record<AudienceSegment, number>;
   requiredBrandStanding: Unit;
+  /** An unsigned offer lapses here. Null once signed — a signed deal does not expire. */
   expiresTick: Tick | null;
+  /** The set this collab was signed for. Null while it is still an offer. */
+  signedForSetId: SetId | null;
+  signedTick: Tick | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -849,6 +896,11 @@ export type Decision =
         /** Optional. The engine derives each of these when not supplied. */
         name?: string; treatment?: Treatment; serialized?: { runSize: number } | null;
         artBrief?: Partial<ArtBrief>; flavorText?: string;
+        /**
+         * Puts this card in a collectible chain. The engine mints the chain the
+         * first time one is named, so a caller does not have to create it first.
+         */
+        progressionLink?: { chainId: ChainId; position: number };
       };
     }
   | { type: 'commissionArt'; tick: Tick; payload: { cardId: CardId; artistId: ArtistId; brief: ArtBrief } }
@@ -865,7 +917,13 @@ export type Decision =
   | { type: 'reprint'; tick: Tick; payload: { cardId: CardId; intoSetId: SetId; quantity: number } }
   | { type: 'hireArtist'; tick: Tick; payload: { artistId: ArtistId; terms: 'perCard' | 'retainer' | 'exclusive' } }
   | { type: 'purchaseUnlock'; tick: Tick; payload: { unlock: keyof UnlockState; detail?: string } }
-  | { type: 'signCollab'; tick: Tick; payload: { collabId: CollabId } }
+  | {
+      type: 'signCollab'; tick: Tick; payload: {
+        collabId: CollabId;
+        /** Which set it is for. Defaults to the newest set still in design. */
+        setId?: SetId;
+      };
+    }
   | { type: 'unlockRegion'; tick: Tick; payload: { regionId: RegionId } }
   | { type: 'borrow'; tick: Tick; payload: { amount: Cents } }
   | { type: 'repay'; tick: Tick; payload: { amount: Cents } }
@@ -896,7 +954,9 @@ export type SimEventKind =
   | 'fatigueWarning' | 'graderEnteredMarket'
   | 'dropScheduled' | 'dropSoldOut' | 'dropUndersold' | 'scalperCrash'
   | 'artCommissioned' | 'artDelivered' | 'artMissedRelease'
-  | 'artistSigned' | 'artistRetired' | 'artistArrived';
+  | 'artistSigned' | 'artistRetired' | 'artistArrived'
+  | 'regionUnlocked' | 'collabOffered' | 'collabSigned' | 'collabExpired'
+  | 'speculatorSwing';
 
 export interface SimEvent {
   id: EventId;
@@ -905,7 +965,8 @@ export interface SimEvent {
   /** True if this should interrupt a multi-week skip. */
   interrupts: boolean;
   refs: Partial<Record<
-    'publisherId' | 'setId' | 'printingId' | 'cardId' | 'ipId' | 'artistId' | 'channelId' | 'creatorId',
+    'publisherId' | 'setId' | 'printingId' | 'cardId' | 'ipId' | 'artistId' | 'channelId'
+    | 'creatorId' | 'regionId' | 'collabId',
     string
   >>;
   /** Raw data. Prose is generated at presentation time, never stored here. */
@@ -933,6 +994,8 @@ export interface SimConfig {
     /** Combined multiplier above which growth tapers logarithmically instead of compounding freely. */
     priceCeilingMultiple: number;
     /** Upper bound on the short-term speculative heat multiplier. */
+    /** Lowest heat a printing can be pushed to. Heat multiplies price. */
+    heatFloor: number;
     heatCeiling: number;
     /** Upper bound on the slow-compounding vintage nostalgia multiplier. */
     nostalgiaCeiling: number;
@@ -964,6 +1027,14 @@ export interface SimConfig {
   };
 
   attention: {
+    /** The print run one region's demand is measured against. */
+    referenceRunUnits: number;
+    /** The audience that reference run was calibrated at. */
+    referenceAudience: number;
+    /** Fatigue at or above this at death makes it attention death. */
+    deathFatigueThreshold: number;
+    /** Attention at or below this at death makes it attention death. */
+    deathAttentionThreshold: number;
     perReleaseCost: number;
     regenPerTick: number;
     fatigueGain: number;
@@ -1037,6 +1108,12 @@ export interface SimConfig {
     borrowCeilingMultiple: number;
     /** How fast brandStanding converges toward its affection/goodwill-driven target each tick. */
     brandConvergenceRate: number;
+    /** Weekly cost of the studio existing at all. */
+    weeklyOverheadBase: Cents;
+    weeklyOverheadPerChannel: Cents;
+    weeklyOverheadPerRegion: Cents;
+    /** Warehousing, per unsold unit per week. */
+    storagePerUnitPerTick: Cents;
   };
 
   sealed: {
@@ -1218,6 +1295,92 @@ export interface SimConfig {
     knowledgeGainPerResearch: number;
     /** Sales penalty for a SKU mismatched to regional taste. */
     mismatchPenalty: number;
+    /** Spread on a region reading at `knowledge` 0. See `readRegion`. */
+    readingNoiseSigma: number;
+    /** Weeks between one region's release wave and the next. */
+    entryLeadWeeks: number;
+  };
+
+  /**
+   * The secondary-market actors of CONCEPT.md §6.8, excluding scalpers, whose
+   * numbers live in `drops` with the mechanism that uses them.
+   *
+   * First-guess values. The shape that matters: collectors are stable and
+   * permanent, resellers follow a trade that closes itself, and speculators
+   * have a sign that flips.
+   */
+  actors: {
+    /** Share of the audience that collects, at full goodwill and no fatigue. */
+    collectorShareOfAudience: number;
+    collectorConvergence: number;
+    minCollectors: number;
+    /** Collectors per head of audience at which holding reaches its ceiling. */
+    collectorDensityReference: number;
+    /** Share of opened copies held out of the market at the extremes. */
+    collectorHoldFloor: number;
+    collectorHoldCeiling: number;
+
+    /** Reseller population at which ripping is exactly break-even. */
+    resellerReference: number;
+    resellerConvergence: number;
+    minResellers: number;
+    maxResellers: number;
+    /** Singles-to-sealed value ratio at which ripping stops paying. */
+    ripBreakEven: number;
+    /** Extra rip rate per reseller, against `resellerReference`. */
+    ripPerReseller: number;
+
+    speculatorReference: number;
+    speculatorConvergence: number;
+    minSpeculators: number;
+    maxSpeculators: number;
+    /** Heat above the pack per speculator at which the population holds still. */
+    speculatorHeatPerCapita: number;
+    /** How hard the population chases its own per-capita return. */
+    speculatorMomentumGain: number;
+    /** Heat added to a printing already above the pack, and taken off one below. */
+    speculatorHeatGain: number;
+    speculatorSensitivity: number;
+    speculatorNoise: number;
+  };
+
+  creators: {
+    rosterSize: number;
+    coverChancePerStride: number;
+    freshnessWeeks: number;
+    affinityTries: number;
+    audienceReference: number;
+    heatPerCoverage: number;
+    maxCoverageHeat: number;
+    /** Fresh printings on the market at which a creator is fully engaged. */
+    freshPrintingsReference: number;
+    relationshipConvergence: number;
+  };
+
+  chains: {
+    /** Extra desire per other card already printed in the same chain. */
+    desirePerLink: number;
+    /** How many links still count. Past this a chain stops paying more. */
+    maxCountedLinks: number;
+    /**
+     * Multiplier on the chain bonus when the chain spans sets. CONCEPT.md calls
+     * a cross-set chain "the hedge that can carry a set with a weak subject",
+     * which only means anything if it pays more than a chain inside one set.
+     */
+    spansSetsBonus: number;
+  };
+
+  collabs: {
+    offerChancePerQuarter: number;
+    offerWindowWeeks: number;
+    maxOpenOffers: number;
+    feeMin: Cents;
+    feeMax: Cents;
+    /** Demand multiplier per point of weighted reach bonus. */
+    reachToDemand: number;
+    goodwillPerReach: number;
+    /** Share of the usual IP exposure a collab set returns to your own IPs. */
+    exposureShare: number;
   };
 
   history: {

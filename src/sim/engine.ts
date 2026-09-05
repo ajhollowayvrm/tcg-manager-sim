@@ -3,12 +3,21 @@ import type {
   ProductLineId, RegionId, ChannelId, ArtistId, IpEntity, Card, CardSet, Product,
   Printing, SimEvent, EventId, SetType, Rarity, ProductKind, PrintQualityTier,
   Treatment, ArtBrief, UnlockState, ChannelAllocation, Channel, SetPerformance,
-  Drop, DropId, Grader, GradeTier, GradingSubmission,
+  Drop, DropId, Grader, GradeTier, GradingSubmission, CollabId, AudienceSegment, ChainId,
   Artist, Publisher, Commission, CommissionId, ArtistTerms,
 } from './types.ts';
 import { rand, randRange, randInt, pick, chance, gauss } from './rng.ts';
 import { emptySeries, writePoint, compact } from './series.ts';
-import { nextId, SEGMENTS, RARITIES, ARTIST_PERSONALITIES, ARTIST_SPECIALTIES } from './world.ts';
+import {
+  nextId, SEGMENTS, RARITIES, ARTIST_PERSONALITIES, ARTIST_SPECIALTIES, REGION_US,
+} from './world.ts';
+import {
+  regionDemandFactor, tickRegionKnowledge, creditRelease, readRegion, readingFit,
+} from './regions.ts';
+import {
+  tickActors, tickCreators, tradeablePopulation, speculatorHeatDelta, ripMultiplier,
+  aftermarketIndex,
+} from './actors.ts';
 import {
   traitsFor, effectiveCapacity, allocatedUnits, autoAllocate, unlockCost, CHANNEL_IDS,
 } from './channels.ts';
@@ -81,7 +90,8 @@ function createSet(s: SimState, id: SetId, name: string, type: SetType, size: nu
   s.sets[id] = {
     id, publisherId: s.playerId, name, type, status: 'design',
     cardIds: [], productIds: [], collabId: null,
-    regionSchedule: [], designStartTick: s.tick, commitTick: null, revealStartTick: null,
+    regionSchedule: [], regionReadings: null,
+    designStartTick: s.tick, commitTick: null, revealStartTick: null,
     budget: C(0), actualCost: C(0), printQuality: 'standard', attentionCost: 0,
     performance: null, hype: null,
   };
@@ -94,6 +104,7 @@ interface CardOverrides {
   serialized?: { runSize: number } | null;
   artBrief?: Partial<ArtBrief>;
   flavorText?: string;
+  progressionLink?: { chainId: ChainId; position: number };
 }
 
 function designCard(
@@ -114,9 +125,51 @@ function designCard(
     // rather than an upgrade: skipping it ships filler.
     artQuality: U(s.config.art.houseQuality),
     artSource: 'pending',
-    progressionLink: null, illustrationLink: null, flavorText: overrides.flavorText ?? '',
+    progressionLink: overrides.progressionLink ?? null,
+    illustrationLink: null, flavorText: overrides.flavorText ?? '',
   };
   s.sets[setId]!.cardIds.push(id);
+
+  // The chain is minted on first reference, so a caller names one rather than
+  // creating one first. `spansSets` is recomputed each time a member joins: a
+  // chain only becomes the cross-set hedge once it actually crosses.
+  const link = overrides.progressionLink;
+  if (link) {
+    const chain = s.chains[link.chainId] ?? (s.chains[link.chainId] = {
+      id: link.chainId, kind: 'progression',
+      name: `Chain ${link.chainId}`, cardIds: [], setIds: [], spansSets: false,
+    });
+    if (!chain.cardIds.includes(id)) chain.cardIds.push(id);
+    if (!chain.setIds.includes(setId)) chain.setIds.push(setId);
+    chain.spansSets = chain.setIds.length > 1;
+  }
+}
+
+/**
+ * What a card's chain adds to its desire.
+ *
+ * An incomplete set of anything is worth more than the same cards unrelated,
+ * and the pull grows with how much of the chain is already out there. It is
+ * capped, because a fiftieth link is not news, and it pays more when the chain
+ * spans sets — CONCEPT.md calls a cross-set chain "the hedge that can carry a
+ * set with a weak subject", which is only true if it beats a chain that sits
+ * inside one set.
+ */
+function chainDesire(s: SimState, card: Card): number {
+  const link = card.progressionLink;
+  if (!link) return 0;
+  const chain = s.chains[link.chainId];
+  if (!chain) return 0;
+  const cfg = s.config.chains;
+
+  // Only cards that have actually been printed count. A chain announced and
+  // never finished is exactly the pull demand this models, not a free bonus.
+  let printed = 0;
+  for (const cid of chain.cardIds) {
+    if (cid !== card.id && s.printingByCard[cid]) printed++;
+  }
+  const links = Math.min(cfg.maxCountedLinks, printed);
+  return links * cfg.desirePerLink * (chain.spansSets ? cfg.spansSetsBonus : 1);
 }
 
 function defineProduct(
@@ -161,7 +214,38 @@ function commitPrintRun(s: SimState, setId: SetId, quantities: Record<ProductId,
   // `scheduleReveal` can move the reveal start inside this window afterwards.
   // The release date and the print run cannot move at all — that is the bet.
   set.revealStartTick = T(s.tick + 12);
-  set.regionSchedule = [{ regionId: 'reg_us' as RegionId, releaseTick: T(s.tick + 18) }];
+  // Every region this set has a product in gets a release date, staggered by
+  // `entryLeadWeeks`. The home market ships first and the rest follow, which is
+  // CONCEPT.md §6.6's "region order is the preview mechanism": a publisher who
+  // has opened a second region sees the first one's numbers before the second
+  // one lands, and still cannot change the print run.
+  const shipTo = new Set<RegionId>();
+  for (const pid of set.productIds) {
+    const p = s.products[pid];
+    if (p) shipTo.add(p.regionId);
+  }
+  if (shipTo.size === 0) shipTo.add(REGION_US);
+  const ordered = [...shipTo].sort(
+    (a, b) => (a === REGION_US ? -1 : b === REGION_US ? 1 : String(a).localeCompare(String(b))),
+  );
+  set.regionSchedule = ordered.map((regionId, i) => ({
+    regionId,
+    releaseTick: T(s.tick + 18 + i * s.config.region.entryLeadWeeks),
+  }));
+  // The reading is taken here and frozen, for the same reason the reveal
+  // signal's truth is frozen at release: this is the last moment before the
+  // answer is knowable, so it is the only moment at which scoring the reading
+  // means anything.
+  set.regionReadings = {} as Record<RegionId, number>;
+  for (const { regionId } of set.regionSchedule) {
+    const region = s.regions[regionId];
+    const reading = readRegion(s, regionId);
+    const product = set.productIds
+      .map(pid => s.products[pid])
+      .find(pr => pr && pr.regionId === regionId);
+    if (!region || !reading || !product) continue;
+    set.regionReadings[regionId] = readingFit(s, reading, set, product, region);
+  }
   set.hype = {
     cadence: s.config.hype.defaultCadenceWeeks,
     cardsRevealed: 0, lastRevealTick: null,
@@ -293,6 +377,144 @@ function purchaseUnlock(s: SimState, unlock: keyof UnlockState, detail?: string)
 }
 
 /**
+ * Signs a collab offer for a set (CONCEPT.md §6.7).
+ *
+ * The trade is reach for equity. A collab reaches segments your own brand does
+ * not, and it does it immediately — no exposure to build, no affection to wait
+ * for. What you do not get is the affection: the licensor's audience came for
+ * the licensor, so a collab set returns only `collabs.exposureShare` of the
+ * usual exposure to your own IPs. A studio that lives on collabs sells a great
+ * deal of product and owns nothing at the end of it, which is the asymmetry
+ * that stops this being a straight upgrade over your own IP.
+ */
+function signCollab(s: SimState, collabId: CollabId, setId?: SetId): void {
+  const pub = s.publishers[s.playerId];
+  const collab = s.collabs[collabId];
+  if (!pub || !collab || collab.signedTick !== null) return;
+  if (collab.expiresTick !== null && s.tick > collab.expiresTick) return;
+  if (pub.brandStanding < collab.requiredBrandStanding) return;
+  if (pub.cash < collab.licenseFee) return;
+
+  // A collab attaches to a set that has not printed yet. After the commit the
+  // print run is locked and the reveal is running, so there is nothing left for
+  // the reach to change — signing then would be paying for a finished bet.
+  const target = setId
+    ? s.sets[setId]
+    : Object.values(s.sets)
+      .filter(set => set.publisherId === pub.id && set.status === 'design' && !set.collabId)
+      .sort((a, b) => (b.designStartTick as number) - (a.designStartTick as number))[0];
+  if (!target || target.status !== 'design' || target.collabId) return;
+
+  pub.cash = C(pub.cash - collab.licenseFee);
+  pub.ledger.push({
+    t: s.tick, amount: C(-collab.licenseFee), category: 'licensing',
+    note: collab.name, refId: collab.id,
+  });
+  collab.signedForSetId = target.id;
+  collab.signedTick = s.tick;
+  collab.expiresTick = null;
+  target.collabId = collab.id;
+  target.type = 'collab';
+  emit(s, 'collabSigned', true, { publisherId: pub.id, setId: target.id, collabId: collab.id },
+    { fee: collab.licenseFee, kind: collab.kind });
+}
+
+/**
+ * Collab offers arrive, and they lapse.
+ *
+ * Gated on brand standing per CONCEPT.md §9: nobody licenses their franchise to
+ * a studio nobody has heard of. The offer carries an expiry, so a good one that
+ * arrives while you are broke is a real loss rather than a queue entry — which
+ * is what makes cash on hand worth something between print runs.
+ */
+function tickCollabOffers(s: SimState): void {
+  const cfg = s.config.collabs;
+  const pub = s.publishers[s.playerId]!;
+  if (pub.deadTick !== null) return;
+
+  for (const c of Object.values(s.collabs)) {
+    if (c.signedTick !== null || c.expiresTick === null) continue;
+    if (s.tick <= c.expiresTick) continue;
+    delete s.collabs[c.id];
+    emit(s, 'collabExpired', false, { publisherId: pub.id, collabId: c.id }, { name: c.name });
+  }
+
+  if (s.tick % 13 !== 0) return;
+  const open = Object.values(s.collabs).filter(c => c.signedTick === null).length;
+  if (open >= cfg.maxOpenOffers) return;
+  if (!chance(s.rng, cfg.offerChancePerQuarter * pub.brandStanding)) return;
+
+  // The reach bonus lands on the segments this licensor brings, not on all of
+  // them. A collab that reached everybody equally would be a flat demand
+  // multiplier, and choosing between two offers would stop being a decision.
+  const reachBonus = Object.fromEntries(SEGMENTS.map(g => [g, 0])) as Record<AudienceSegment, number>;
+  const reached = 1 + randInt(s.rng, 0, 2);
+  for (let i = 0; i < reached; i++) {
+    reachBonus[pick(s.rng, SEGMENTS)] += randRange(s.rng, 0.15, 0.6);
+  }
+
+  const id = nextId(s, 'collab') as CollabId;
+  const kind = pick(s.rng, ['externalIp', 'event', 'retailExclusive'] as const);
+  s.collabs[id] = {
+    id, kind,
+    name: `${kind === 'externalIp' ? 'Licensed IP' : kind === 'event' ? 'Event' : 'Retail'} Collab ${id}`,
+    licenseFee: C(randRange(s.rng, cfg.feeMin, cfg.feeMax)),
+    reachBonus,
+    requiredBrandStanding: U(randRange(s.rng, 0.1, 0.6)),
+    expiresTick: T(s.tick + cfg.offerWindowWeeks),
+    signedForSetId: null, signedTick: null,
+  };
+  emit(s, 'collabOffered', true, { publisherId: pub.id, collabId: id },
+    { fee: s.collabs[id]!.licenseFee, kind, requiredBrandStanding: s.collabs[id]!.requiredBrandStanding });
+}
+
+/**
+ * What a set's collab adds to its demand. 1 for a set without one.
+ *
+ * Weighted by segment size, so reaching the largest segment is worth more than
+ * reaching the smallest — the offer with the bigger headline number is not
+ * automatically the better offer.
+ */
+function collabDemandFactor(s: SimState, set: CardSet): number {
+  if (!set.collabId) return 1;
+  const collab = s.collabs[set.collabId];
+  if (!collab) return 1;
+  const total = SEGMENTS.reduce((n, g) => n + s.audience.segments[g].size, 0);
+  if (total <= 0) return 1;
+  let weighted = 0;
+  for (const g of SEGMENTS) {
+    weighted += collab.reachBonus[g] * s.audience.segments[g].size / total;
+  }
+  return 1 + s.config.collabs.reachToDemand * weighted;
+}
+
+/**
+ * Opens a second market (CONCEPT.md §6.6, §9).
+ *
+ * The fee is only the door. The region's channels are all locked behind their
+ * own brand gates and their own prices, so an early unlock buys the right to
+ * start building reach rather than the reach itself — which is what stops
+ * "open everything in year one" from being the obvious play.
+ */
+function unlockRegion(s: SimState, regionId: RegionId): void {
+  const pub = s.publishers[s.playerId];
+  const region = s.regions[regionId];
+  if (!pub || !region || region.unlockedTick !== null) return;
+  if (pub.unlocks.regions.includes(regionId)) return;
+  if (pub.cash < region.unlockCost) return;
+
+  pub.cash = C(pub.cash - region.unlockCost);
+  pub.ledger.push({
+    t: s.tick, amount: C(-region.unlockCost), category: 'unlock',
+    note: region.name, refId: region.id,
+  });
+  region.unlockedTick = s.tick;
+  pub.unlocks.regions.push(regionId);
+  emit(s, 'regionUnlocked', true, { publisherId: pub.id, regionId },
+    { cost: region.unlockCost, marketSize: region.marketSize });
+}
+
+/**
  * Puts a fixed quantity of one product up for a drop at a chosen tick. Only the
  * direct store runs drops: every other channel sells continuously off a shelf,
  * and that is the whole difference between them (CONCEPT.md §6.5).
@@ -335,6 +557,7 @@ function applyDecision(s: SimState, d: Decision): void {
         d.payload.rarity, d.payload.artistId, {
           name: d.payload.name, treatment: d.payload.treatment, serialized: d.payload.serialized,
           artBrief: d.payload.artBrief, flavorText: d.payload.flavorText,
+          progressionLink: d.payload.progressionLink,
         });
       break;
     case 'defineProduct':
@@ -346,6 +569,14 @@ function applyDecision(s: SimState, d: Decision): void {
       break;
     case 'allocate': allocate(s, d.payload.productId, d.payload.allocations); break;
     case 'purchaseUnlock': purchaseUnlock(s, d.payload.unlock, d.payload.detail); break;
+    case 'unlockRegion': unlockRegion(s, d.payload.regionId); break;
+    case 'signCollab': signCollab(s, d.payload.collabId, d.payload.setId); break;
+    // `advance` is not a reducer decision. It runs ticks, and a tick runs the
+    // reducer, so applying it here would re-enter the loop it was submitted
+    // into. The engine exports `advance()` for callers that want to skip weeks,
+    // and that is where this belongs — it is in the union so a decision log can
+    // record a skip, not so the reducer can perform one.
+    case 'advance': break;
     case 'reprint': reprint(s, d.payload.cardId, d.payload.intoSetId, d.payload.quantity); break;
     case 'scheduleReveal':
       scheduleReveal(s, d.payload.setId, d.payload.startTick, d.payload.cadence);
@@ -402,9 +633,15 @@ export const api = {
     submit(s, { type: 'createSet', tick: s.tick, payload: { id, name, setType, targetSize } });
     return id;
   },
-  designCard(s: SimState, setId: SetId, subjectIp: IpId, cameos: IpId[], rarity: Rarity, artistId: ArtistId): CardId {
+  designCard(
+    s: SimState, setId: SetId, subjectIp: IpId, cameos: IpId[], rarity: Rarity, artistId: ArtistId,
+    progressionLink?: { chainId: ChainId; position: number },
+  ): CardId {
     const id = nextId(s, 'card') as CardId;
-    submit(s, { type: 'designCard', tick: s.tick, payload: { id, setId, subjectIp, cameos, rarity, artistId } });
+    submit(s, {
+      type: 'designCard', tick: s.tick,
+      payload: { id, setId, subjectIp, cameos, rarity, artistId, progressionLink },
+    });
     return id;
   },
   defineProduct(s: SimState, setId: SetId, kind: ProductKind, regionId: RegionId, packs: number, msrp: number): ProductId {
@@ -423,6 +660,12 @@ export const api = {
   },
   purchaseUnlock(s: SimState, unlock: keyof UnlockState, detail?: string): void {
     submit(s, { type: 'purchaseUnlock', tick: s.tick, payload: { unlock, detail } });
+  },
+  unlockRegion(s: SimState, regionId: RegionId): void {
+    submit(s, { type: 'unlockRegion', tick: s.tick, payload: { regionId } });
+  },
+  signCollab(s: SimState, collabId: CollabId, setId?: SetId): void {
+    submit(s, { type: 'signCollab', tick: s.tick, payload: { collabId, setId } });
   },
   reprint(s: SimState, cardId: CardId, intoSetId: SetId, quantity: number): void {
     submit(s, { type: 'reprint', tick: s.tick, payload: { cardId, intoSetId, quantity } });
@@ -537,6 +780,19 @@ function releaseSet(s: SimState, setId: SetId, regionId: RegionId): void {
     for (const cid of card.cameos) s.ips[cid]!.cameoCount++;
   }
 
+  // A collab pays its goodwill in the segments it reaches, and only there. It
+  // arrives at release rather than at signing: the audience meets the licensor
+  // when the cards ship, not when the contract does.
+  const collab = set.collabId ? s.collabs[set.collabId] : undefined;
+  if (collab) {
+    for (const seg of SEGMENTS) {
+      const bonus = collab.reachBonus[seg];
+      if (bonus <= 0) continue;
+      const st = s.audience.segments[seg];
+      st.goodwill = Math.min(1, st.goodwill + s.config.collabs.goodwillPerReach * bonus);
+    }
+  }
+
   // Attention is consumed on release. This is the flood penalty. Goodwill
   // burns harder the less attention has recovered since the last release —
   // releasing into an already-exhausted audience is what a flood looks like.
@@ -564,7 +820,9 @@ function releaseSet(s: SimState, setId: SetId, regionId: RegionId): void {
     chaseIndex: setChase(s, set), aftermarketIndex: 0,
     goodwillDelta: goodwillBurn / SEGMENTS.length,
   };
-  emit(s, 'setReleased', true, { setId, publisherId: set.publisherId }, { cards: set.cardIds.length });
+  creditRelease(s, regionId);
+  emit(s, 'setReleased', true, { setId, publisherId: set.publisherId },
+    { cards: set.cardIds.length, regionId: regionId as string, wave: 0 });
 }
 
 // ---------------------------------------------------------------------------
@@ -613,6 +871,7 @@ function castDesire(s: SimState, card: Card): number {
   const subj = s.ips[card.subjectIp]!;
   let d = subj.affection + subj.resurgence * cfg.affection.resurgenceToModernDemand * 100;
   for (const cid of card.cameos) d += s.ips[cid]!.affection * cfg.value.cameoWeight;
+  d += chainDesire(s, card);
   return Math.max(1, d);
 }
 
@@ -642,7 +901,11 @@ function tickPrices(s: SimState, printings: Printing[]): void {
     const artist = s.artists[card.artistId]!;
 
     const desire = castDesire(s, card);
-    const surviving = Math.max(1, pr.population.sealed + pr.population.opened - pr.population.destroyed);
+    // Not every copy is for sale. A slabbed copy has left the raw market for
+    // the graded one and a collected copy is not coming back, so scarcity is
+    // computed over what is left rather than over everything ever printed.
+    // This is the grading feedback loop and the collector floor in one term.
+    const surviving = tradeablePopulation(s, pr, gradedTotal(pr));
     // Rarity's price effect flows only through scarcity (print quantity is
     // already rarity-scaled via RARITY_PULL at release) — see CONCEPT.md §5.
     // RARITY_WEIGHT stays out of price; it's a demand-side signal in tickSales.
@@ -650,6 +913,10 @@ function tickPrices(s: SimState, printings: Printing[]): void {
     const art = 1 + card.artQuality * artist.reputation * v.artMultiplierWeight;
 
     pr.market.heat = Math.min(v.heatCeiling, 1 + (pr.market.heat - 1) * heatKeep);
+    // Speculators amplify what is already moving, in whichever direction it is
+    // already moving. They cannot start a run on a printing sitting at 1.
+    pr.market.heat = Math.max(v.heatFloor,
+      Math.min(v.heatCeiling, pr.market.heat + speculatorHeatDelta(s, pr)));
 
     // Nostalgia compounds only on a printing the market still wants, and only
     // as fast as it already stands above the pack. A printing nobody wants
@@ -747,7 +1014,11 @@ function tickSealed(s: SimState, products: Product[]): void {
 
     // Ripping destroys sealed supply and adds singles supply. Rising price slows it.
     const priceRatio = p.market.price / Math.max(1, p.msrp);
-    h.ripRate = cfg.baseRipRatePerTick / Math.pow(Math.max(0.3, priceRatio), cfg.ripPriceElasticity);
+    // The base rate is the shelf ripping itself open; the multiplier is the
+    // rip-and-ship population on top of it. Rising sealed price still slows
+    // both — a box worth more unopened stays unopened.
+    h.ripRate = Math.min(1, cfg.baseRipRatePerTick * ripMultiplier(s)
+      / Math.pow(Math.max(0.3, priceRatio), cfg.ripPriceElasticity));
     const opened = Math.min(h.sealedRemaining, h.sealedRemaining * h.ripRate);
     h.sealedRemaining -= opened;
 
@@ -949,12 +1220,30 @@ function setChase(s: SimState, set: CardSet): number {
   return total / Math.max(1, set.cardIds.length);
 }
 
+/**
+ * One product's share of the demand its region has for its set.
+ *
+ * Two SKUs of the same set in the same region compete for one audience, so
+ * they split it by print run. Two SKUs in different regions do not — each
+ * region brings its own buyers, and that is what makes opening one worth the
+ * fee. Returns 1 for the only product in its region.
+ */
+function productShareOfRegion(s: SimState, set: CardSet, p: Product): number {
+  let inRegion = 0;
+  for (const pid of set.productIds) {
+    const other = s.products[pid];
+    if (other && other.regionId === p.regionId) inRegion += other.unitsPrinted;
+  }
+  return inRegion > 0 ? p.unitsPrinted / inRegion : 1;
+}
+
 function tickSales(s: SimState, products: Product[]): void {
   const cfg = s.config;
   // Audience state does not move inside this pass, and `setChase` walks every
   // card in a set — so both are computed once per tick rather than once per
   // product. Two products off one set used to pay for the same walk twice.
   const { attention, fatigue, goodwill } = audienceAverages(s);
+  const totalAudience = SEGMENTS.reduce((n, g) => n + s.audience.segments[g].size, 0);
   const fatigueTerm = fatigueResponse(s, fatigue);
   const goodwillTerm = 0.2 + 0.8 * goodwill;
   const chaseBySet = new Map<SetId, number>();
@@ -962,6 +1251,11 @@ function tickSales(s: SimState, products: Product[]): void {
     if (p.unitsRemaining <= 0) continue;
     const set = s.sets[p.setId]!;
     if (set.status !== 'released') continue;
+    // A set ships region by region. A product cannot sell before its own
+    // region's date, which is what makes a staggered release a preview rather
+    // than a formality.
+    const sched = set.regionSchedule.find(r => r.regionId === p.regionId);
+    if (!sched || s.tick < sched.releaseTick) continue;
     const pub = s.publishers[set.publisherId]!;
 
     const allocs = Object.entries(p.allocations) as Array<[ChannelId, ChannelAllocation]>;
@@ -979,16 +1273,38 @@ function tickSales(s: SimState, products: Product[]): void {
     const share = s.audience.shareByPublisher[pub.id] ?? 0;
     const shareFactor = share / cfg.attention.referenceShare;
 
-    const weeksOut = (s.tick - set.regionSchedule[0]!.releaseTick) / 52;
+    // Decay runs from this region's own release, not from the set's first one:
+    // a market that opened two years later has not had two years to go cold.
+    const weeksOut = (s.tick - sched.releaseTick) / 52;
     const decay = Math.exp(-weeksOut * 1.4);
+    // What this region is worth, and how much of it this set forfeits by not
+    // suiting it. A region with no opinion and average wealth lands on 1.
+    const region = s.regions[p.regionId];
+    const regionFactor = region ? regionDemandFactor(s, region, set, p) : 1;
     // The demand pool is what the audience wants this week, independent of who
     // is selling it. The channels then compete for it.
     // Hype multiplies the demand the set would have had. It cannot conjure
     // demand for a set nobody wants: a zero-chase set times any campaign is
     // still nearly zero.
-    const pool = p.unitsPrinted * 0.06 * attention * shareFactor * fatigueTerm
+    // Demand is a property of the audience and the set. It used to be
+    // `p.unitsPrinted * 0.06`, which made it a property of the print run —
+    // print more and more buyers appeared. That single term is why sell-through
+    // sat at 0.97 for every strategy, why the blind bet had no downside, and
+    // why every demand-side lever in the game bought nothing measurable: there
+    // was never any unmet demand for hype, a collab or a region to reach.
+    //
+    // The reference run and the reference audience are set so that a
+    // reference-sized run into the starting audience behaves exactly as it did
+    // before, and anything larger no longer conjures its own buyers.
+    const audienceScale = totalAudience / cfg.attention.referenceAudience;
+    // Several products in one region split that region's demand rather than
+    // each collecting all of it. Across regions they do not: a second market is
+    // its own audience, which is the entire reason to open one.
+    const regionShare = productShareOfRegion(s, set, p);
+    const pool = cfg.attention.referenceRunUnits * regionShare * audienceScale
+      * 0.06 * attention * shareFactor * fatigueTerm
       * goodwillTerm * (0.3 + pub.brandStanding) * (0.5 + chase) * decay
-      * (1 + (set.hype?.level ?? 0));
+      * (1 + (set.hype?.level ?? 0)) * regionFactor * collabDemandFactor(s, set);
     // Below half a unit every channel's share rounds to zero, so the rest of
     // this pass cannot sell anything. Old sets sit here for decades: `decay` is
     // e^(-1.4 * years), so a five-year-old set is already three zeroes down.
@@ -1043,10 +1359,20 @@ function tickSales(s: SimState, products: Product[]): void {
     pub.ledger.push({ t: s.tick, amount: C(revenue), category: 'sales', note: p.kind, refId: p.id });
     if (set.performance) set.performance.revenue = C(set.performance.revenue + revenue);
 
-    // Selling builds exposure, which is what lets affection converge.
+    // `aftermarketIndex` is the set-health number CONCEPT.md §8 asks for, and
+    // it was written as 0 and read by nothing. It is refreshed here rather than
+    // in `tickPrices` because it is a per-set summary of prices, not a price.
+    if (set.performance) set.performance.aftermarketIndex = aftermarketIndex(s, set);
+
+    // Selling builds exposure, which is what lets affection converge. A collab
+    // set returns only a share of it: the licensor's audience came for the
+    // licensor, so the reach is rented rather than bought. This is the whole
+    // cost of a collab beyond its fee, and it is the reason a studio cannot
+    // simply license its way to a brand.
+    const exposureShare = set.collabId ? s.config.collabs.exposureShare : 1;
     for (const cid of set.cardIds) {
       const ip = s.ips[s.cards[cid]!.subjectIp];
-      if (ip) ip.exposure += soldTotal / 20000;
+      if (ip) ip.exposure += soldTotal * exposureShare / 20000;
     }
   }
 }
@@ -1465,6 +1791,27 @@ function tickFinance(s: SimState): void {
   const pub = s.publishers[s.playerId]!;
   if (pub.deadTick !== null) return;
 
+  // The standing bill. Overhead is what the studio costs to exist, and it grows
+  // with the reach it has bought: every channel is a relationship somebody
+  // manages, and every region past the home market is an office. Storage is
+  // what unsold stock costs to keep, which is the line that turns an overprint
+  // from capital locked up into capital bleeding.
+  const pubChannels = pub.unlocks.channels.length;
+  const abroad = Math.max(0, pub.unlocks.regions.length - 1);
+  const overhead = cfg.weeklyOverheadBase
+    + cfg.weeklyOverheadPerChannel * pubChannels
+    + cfg.weeklyOverheadPerRegion * abroad;
+  pub.cash = C(pub.cash - overhead);
+  pub.ledger.push({ t: s.tick, amount: C(-overhead), category: 'overhead', note: 'studio' });
+
+  let unsold = 0;
+  for (const p of Object.values(s.products)) unsold += p.unitsRemaining;
+  const storage = unsold * cfg.storagePerUnitPerTick;
+  if (storage > 0) {
+    pub.cash = C(pub.cash - storage);
+    pub.ledger.push({ t: s.tick, amount: C(-storage), category: 'storage', note: `${Math.round(unsold)} units` });
+  }
+
   if (s.tick % 4 === 0) {
     const rate = (cfg.interestBase - pub.credit * cfg.creditToRate) / 13;
     const interest = pub.debt * rate;
@@ -1480,19 +1827,33 @@ function tickFinance(s: SimState): void {
       emit(s, 'debtWarning', true, { publisherId: pub.id }, { debt: pub.debt });
     } else {
       pub.deadTick = s.tick;
-      const unsold = Object.values(s.products).reduce((n, p) => n + p.unitsRemaining, 0);
       // Dying on unsold stock is overprint death by default. It is only
       // `channel_collapse` if the channels actually went away — a publisher that
       // never had the reach in the first place simply printed too much.
       const lostAChannel = s.events.some(
         e => e.kind === 'channelLost' && (e.refs.publisherId ?? pub.id) === pub.id,
       );
-      pub.deathCause = unsold > 20000
-        ? (lostAChannel ? 'channel_collapse' : 'overprint')
-        : 'debt_spiral';
+      // Attention death is its own thing and was never classified, so it could
+      // not be reported however often it happened. It is the publisher whose
+      // stock did not sell because the audience had stopped caring rather than
+      // because there was too much of it: fatigue saturated and attention
+      // spent. Checked before the stock test, because a flooded audience also
+      // leaves a warehouse behind and the warehouse is the symptom.
+      const fatigueAvg = SEGMENTS.reduce((n, g) => n + s.audience.segments[g].fatigue, 0)
+        / SEGMENTS.length;
+      const attentionAvg = SEGMENTS.reduce((n, g) => n + s.audience.segments[g].attention, 0)
+        / SEGMENTS.length;
+      const cfgA = s.config.attention;
+      pub.deathCause =
+        (fatigueAvg >= cfgA.deathFatigueThreshold && attentionAvg <= cfgA.deathAttentionThreshold)
+          ? 'attention_collapse'
+        : unsold > 20000
+          ? (lostAChannel ? 'channel_collapse' : 'overprint')
+          : 'debt_spiral';
       emit(s, 'studioDead', true, { publisherId: pub.id }, { cause: pub.deathCause, tick: s.tick });
     }
   }
+  if (pub.debt > pub.peakDebt) pub.peakDebt = pub.debt;
   pub.credit = U(pub.credit + (pub.cash > 0 ? 0.0006 : -0.002));
 
   // brandStanding mean-reverts toward a target driven by average affection and
@@ -2043,6 +2404,19 @@ export function tick(s: SimState): void {
       if (sched && s.tick >= sched.releaseTick) releaseSet(s, set.id, sched.regionId);
       else tickReveal(s, set);
     }
+    // A released set still has later regions to reach. Those are not another
+    // `releaseSet` — printings mint once, and the attention is burned once —
+    // they are the week that region's stock becomes sellable. `tickSales`
+    // enforces the date; this is what records it and what pays the knowledge.
+    if (set.status === 'released') {
+      for (let i = 1; i < set.regionSchedule.length; i++) {
+        const later = set.regionSchedule[i]!;
+        if (s.tick !== later.releaseTick) continue;
+        creditRelease(s, later.regionId);
+        emit(s, 'setReleased', true, { setId: set.id, publisherId: set.publisherId },
+          { regionId: later.regionId as string, wave: i });
+      }
+    }
     // Hype burns off after launch. What is left of it is what still lifts demand.
     if (set.status === 'released' && set.hype && set.hype.level > 0) {
       set.hype.level = Math.max(0, set.hype.level * (1 - s.config.hype.decayPerTickAfterRelease));
@@ -2060,10 +2434,14 @@ export function tick(s: SimState): void {
   tickPrices(s, printings);
   tickGrading(s, printings);
   tickAudience(s);
+  tickActors(s, products, printings);
+  tickCreators(s, printings);
   tickArtists(s);
   tickArt(s);
   tickRoster(s);
   tickFinance(s);
+  tickRegionKnowledge(s);
+  tickCollabOffers(s);
   tickCompaction(s);
 }
 

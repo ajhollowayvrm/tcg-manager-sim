@@ -12,15 +12,21 @@ src/sim/rng.ts         seeded PRNG, serializable
 src/sim/series.ts      sparse time series + compaction
 src/sim/channels.ts    channel traits, capacity, default allocation split
 src/sim/config.ts      every tunable constant, with dotted overrides
+src/sim/regions.ts     regional taste, market entry, noisy region readings
+src/sim/actors.ts      collectors, resellers, speculators, named creators
 src/sim/world.ts       initial state bootstrap (incl. the grader roster)
-src/sim/engine.ts      tick loop + STUB value math
+src/sim/engine.ts      tick loop and the value engine
 src/sim/invariants.ts  dev assertions
-harness/bots.ts        nine strategy bots
+harness/bots.ts        the strategy bots
 harness/metrics.ts     per-run balance metrics + CSV
 harness/runOne.ts      one run, shared by the runner and the workers
-harness/worker.ts      batch worker thread
+harness/worker.mjs     worker entry point (installs the TypeScript loader)
+harness/worker.ts      batch worker body
 harness/run.ts         CLI runner + thread pool
 ```
+
+`npm run typecheck` runs `tsc --noEmit` over `src` and `harness`, and passes
+clean. It is the only static check; `checkInvariants` is the only runtime one.
 
 Run it:
 
@@ -45,10 +51,15 @@ Runs through `tsx`, no build step. Node 22.6+ can also strip the types itself
 (`node --experimental-strip-types harness/run.ts`) if you would rather not have
 the dependency in the loop.
 
+A worker thread does not inherit the parent's module loader, so the pool starts
+on `harness/worker.mjs`, which installs the TypeScript loader and then imports
+`worker.ts`. Starting a thread on the `.ts` file directly fails with
+`ERR_UNKNOWN_FILE_EXTENSION` even though the parent is running under `tsx`.
+
 ## Verified working
 
 - Runs 50-year simulations headless, deterministic from seed
-- Invariant checks pass clean across all seven bots
+- Invariant checks pass clean across all bots
 - Starting cash is $500,000 (`500_000_00` cents). Everything in the model is
   cents; a literal without the `_00` suffix is off by a hundred
 - Channel allocation: explicit `allocate` decisions, a release-time default split,
@@ -67,6 +78,13 @@ the dependency in the loop.
 
   Under-releasing is a gentle loss; over-releasing is a cliff. That asymmetry is
   what CONCEPT.md §6.2 asks for.
+
+  **The net-worth row above predates the difficulty pass** and is not comparable
+  to anything the harness prints today: weekly overhead, storage and the lower
+  reference demand all landed after it was measured. The shape — an optimum with
+  a cliff on the fast side — is what this row is kept for. Re-measuring the
+  levels is a scratch-script job, because cadence is a bot constant rather than
+  a config path.
 - The price distribution is a power law, not flat mush. `Printing.truth.chase`
   is a hidden lognormal roll made once per printing, so two commons in the same
   set do not settle at the same price; `market.nostalgia` now compounds only on
@@ -75,15 +93,20 @@ the dependency in the loop.
 
   | Metric | Target | Measured |
   |---|---|---|
-  | `surpriseGrail` | 15–40% of runs | 33% |
-  | `top1PctShare` | 0.4–0.7 | 0.59 |
-  | `medianCardPrice` | a few dollars | $3.82 |
-  | `yearsToFirst100Dollar` | 3–8 | 7.6 |
+  | `surpriseGrail` | 15–40% of runs | 30% |
+  | `top1PctShare` | 0.4–0.7 | 0.584 |
+  | `medianCardPrice` | a few dollars | $4 |
+  | `yearsToFirst100Dollar` | 3–8 | 5.2 |
 
-  The decile ladder (`--dist`) steps 1.2-1.3x through the middle deciles and
-  1.8x, 2.7x, 9.8x across p90, p99 and the top. Widening steps are the shape;
-  equal steps are the mush this replaced. `surpriseGrail` now uses CONCEPT.md
-  §10's 100x bar, not the 20x one it used to.
+  The decile ladder (`--dist`) steps 1.33-1.41x through the middle deciles and
+  1.73x, 19x, 12.5x across p90, p99 and the top. Widening steps are the shape;
+  equal steps are the mush this replaced. `surpriseGrail` uses CONCEPT.md §10's
+  100x bar, not the 20x one it used to.
+
+  **The top tail has steepened** across the region, actor and difficulty passes:
+  the p99 step was 2.7x when this section was first written and is 19x now.
+  `top1PctShare` is still inside its band, so nothing here is out of tolerance,
+  but it is the row to watch next.
 - Direct-store drops and the scalper population that camps them. A drop is a
   discrete event, not a shelf: a fixed quantity goes up at MSRP on a scheduled
   tick, a queue forms, and it is served in one pass. `queueCapacity` bounds what
@@ -291,85 +314,202 @@ the dependency in the loop.
   | art spend | $18.4k | $45.1k |
   | median top card | $6,124 | $6,900 |
 
-  **`scout` beats `safeHands` on top card in exactly 10 of 20 seeds**, while
-  gaining more reputation in 20 of 20. That is the shape the gamble needs:
-  buying low reliably leaves more room to climb, and just as reliably fails to
-  guarantee the outcome. If scouting had won every seed, `growth` would not be
-  hidden enough to be a bet.
-- CSV output + console summary table, plus separate drops, reveal-window and
-  grading tables that print only for runs that produced any
+  **The table above predates the art repricing** — an illustration cost between
+  fifty cents and three dollars when it was measured. Re-measured at the shipped
+  rates over 20 seeds x 50 years, `scout` beats `safeHands` on top card in 12 of
+  20 seeds, and the gamble gained a second dimension: `scout` survives 20/20
+  where `safeHands` survives 15/20, because buying visible reputation costs
+  26.9% of revenue against `scout`'s 1.6%. Buying low reliably leaves more room
+  to climb and just as reliably fails to guarantee the outcome. If scouting ever
+  won every seed, `growth` would not be hidden enough to be a bet.
+- CSV output + console summary table, plus separate finance, region, secondary
+  market, creator/chain, collab, drops, reveal-window, grading and art tables
+  that print only for runs that produced any
 - Config overrides from CLI without touching code
 - Sparse price history with quarterly compaction of anything older than 10 years
+- **Regions.** `src/sim/regions.ts`. Four markets; only the US is open at tick 0.
+  A region is a decision rather than a bigger number for three reasons: the fee
+  is only the door and its channels are still bought one at a time behind their
+  own brand gates, its taste is hidden ground truth that `mismatchPenalty`
+  discounts a badly-matched set against, and what you can see of it improves
+  with `knowledge`.
+
+  `readRegion` is the region twin of the reveal window's signal — built the same
+  way, for the same reason. `CardSet.regionReadings` freezes what a reading said
+  at the moment the print run locked, which is the only moment at which scoring
+  it means anything, and the harness scores it: **r = 0.43** over 10 seeds x 30
+  years. Informative, and wrong often enough to be a bet.
+
+  A set ships region by region on `entryLeadWeeks`, and `tickSales` refuses a
+  product before its own region's date. Several SKUs in one region split that
+  region's demand; SKUs in different regions do not, which is what makes opening
+  one worth the fee.
+- **The other three secondary-market actors.** `src/sim/actors.ts`. Collectors
+  take copies off the market permanently, resellers open sealed product on
+  stream, speculators buy heat and sell it back — and only the speculators have
+  a sign that flips. Over 10 seeds x 30 years the three separate by strategy
+  rather than sitting on a rail: `specialtyOnly` draws the fewest resellers and
+  `flooder` the most, and the speculator population swings 5.5x to 10x.
+
+  All three pinned to a rail on the first wiring, which is the same failure
+  `unitsPerScalperReference` had, and all three causes are worth remembering.
+  `collectorDensityReference` put a healthy run exactly on the ceiling.
+  Speculator return read per-unit, which is positive feedback with no brake —
+  it is per-capita now, the shape the scalper loop proved. And the rip return
+  averaged over every product ever printed, where one appreciated vintage case
+  drowns the new boxes a streamer actually opens.
+- **The grading feedback loop**, which used to be listed under Known problems.
+  A slabbed copy has left the raw pool and a collected copy is not coming back,
+  so `tickPrices` computes scarcity over what is tradeable rather than over
+  everything ever printed. It is the same term as the collector mechanic, so the
+  two were measured once rather than twice.
+- **Collabs.** Offers arrive on a brand-standing gate and lapse if you cannot
+  afford them, which is what makes cash between print runs worth holding. The
+  trade is reach for equity: a collab reaches segments your brand does not and
+  returns only `collabs.exposureShare` of the usual exposure to your own IPs,
+  because the licensor's audience came for the licensor. Over 12 seeds x 30
+  years `licensor` ends on mean IP affection 44.0 against `conservative`'s 53.5
+  — it sells, and it does not own.
+- **Creators.** A creator is not the reseller population in miniature: the
+  population says how much product gets opened, a creator says which card the
+  market is talking about this week. Coverage lands on fresh printings and on
+  their affinity IPs and moves heat by reach times influence, so a big channel
+  with no credibility and a small one with a lot of it land in the same place.
+
+  The relationship converges on how much fresh product there is to cover, and
+  must not be paid out of coverage: coverage odds already rise with the
+  relationship, so paying it that way is a feedback loop with no stable middle.
+  It pinned at 0.99 in every seed on one setting and collapsed to 0.04 on the
+  next. Measured now: 0.43 for `specialtyOnly`, 0.58 for `conservative`, 0.72
+  for `attentionBurner`.
+- **Chains.** `designCard` takes an optional `progressionLink` and the engine
+  mints the chain on first reference. Only printed members count, and a chain
+  spanning sets pays `spansSetsBonus` more — CONCEPT.md's "hedge that can carry
+  a set with a weak subject" is only true if it beats a chain inside one set.
+  `chainRunner` and `chainWeaver` both beat `conservative` ($6.9M and $7.5M
+  against $5.7M) and the weaver carries the least unsold stock of the three.
+- **The studio can die of four different things.** See "Difficulty" below.
+- **`SetPerformance.aftermarketIndex`** is written for the first time: 3.3x for
+  `conservative`, 0.7x for `flooder`. It is the one way to tell a set that sold
+  badly but became valuable from a set that did neither.
+- **No decision type falls through to `default`.** `advance` is an explicit
+  no-op in the reducer, with the reason written down: it runs ticks, and a tick
+  runs the reducer, so applying it there would re-enter the loop it was
+  submitted into. `advance()` is exported for callers that want to skip weeks.
+
+## Difficulty
+
+The banked finding was that six of seven bots survived 100% of runs and the only
+death was `flooder` in year one. Three structural causes, all fixed:
+
+- **Demand was a property of the print run.** `tickSales` computed the pool as
+  `p.unitsPrinted * 0.06`, so printing more conjured more buyers. That one term
+  is why sell-through sat at 0.97 for every strategy, why the blind bet had no
+  downside, and why *no demand-side lever in the game could be swept* — hype, a
+  collab and a region all reached demand that was already being met. Demand now
+  comes off the audience, against `attention.referenceRunUnits`.
+- **Time was free.** Every outflow was discretionary, so a publisher that
+  released nothing paid almost nothing. `finance` carries a weekly overhead now
+  — a base, a per-channel line and a per-region line — so reach costs money to
+  run and doing nothing runs the $500,000 out in about five years.
+- **Inventory was free to hold.** `storagePerUnitPerTick` is a cent a unit a
+  week: about $10k a year on a normal 20,000-unit tail and about $624k a year
+  against $442k of revenue on 1.2 million units. Overprint death is unreachable
+  without it.
+
+20 seeds x 30 years, 18 bots. Nine survive 100%, `bigBets` and `allIn` 75%,
+`hypeGambler` 55%, and `smallBets`, `globalist` and `flooder` die. Deaths land
+in years 6-20 rather than year one, except `flooder`, which is the flood-death
+regression and is meant to. `hypeGambler` ends on the largest net worth in the
+roster and dies in nearly half its seeds, which is the risk-reward frontier the
+target asked for.
+
+Four of CONCEPT.md §7's five death routes now fire: `overprint`, `debt_spiral`,
+`channel_collapse` and `attention_collapse`. The last of those was never
+classified at all, so it could not be reported however often it happened;
+`attentionBurner` floods on `flooder`'s cadence with runs a sixth the size,
+survives the printing bill, and dies of the audience at year 2.2 with fatigue
+0.91 and attention 0.11 in every seed. The fifth route, `irrelevance`, needs
+rivals.
+
+The reveal window is a real decision space now, and two of the reasons it was
+not were defects rather than balance. `submitMarketing` re-submitted its slice
+every tick of an 18-week window without tracking what had gone out, so a stated
+$50,000 budget spent $150,000 — every measurement of whether marketing pays was
+made against three times the bill under test. And hype decayed in a couple of
+months while the print run it was built for sells over years. Measured over 20
+seeds x 30 years:
+
+| strategy | lived | net worth |
+|---|---|---|
+| no campaign | 20/20 | $7.1M |
+| previews + 1.6x run | 17/20 | $11.7M |
+| previews + prerelease + 1.6x run | 20/20 | $11.9M |
+| previews + marketing + 1.6x run | 20/20 | $11.1M |
+| everything + 2.2x run | 14/20 | $14.6M |
+
+A campaign is worth running when it lets you print a bigger run, and that is
+also how it becomes a way to lose. Over-buying demand for the run size you
+committed to is simply waste.
 
 ## Known problems — these are the next tasks
 
-**1. Performance — the batch is affordable now, the single run is not much faster.**
-Batches shard across cores, and that is where the 3x came from. What is left is
-the engine itself, where `tickPrices` is still about 20% of a run and the only
-remaining ideas change behaviour: backing a cold printing off to a longer stride
-changes RNG draw counts, so it cannot be validated by hashing the CSV — it has
-to be re-measured against the five value targets and the decile ladder as one
-unit. Typed arrays for the hot price loop are the other candidate and are
-behaviour-neutral, but they mean giving up the object model in `tickPrices`.
-
-**2. Large parts of the model are declared but not simulated.**
-Regions beyond `reg_us`, collabs, creators, rival publisher behavior, chains and
-preorders all exist in `types.ts` and are untouched by `engine.ts`.
-`applyDecision` now handles fifteen decision types; `signCollab`,
-`unlockRegion` and `advance` still fall through to `default`.
-
-**Rivals are the load-bearing gap.** They are not merely unimplemented, they
-are *decorative*: `world.ts` seeds five of them with a full `policy` block
+**1. Rivals.** Deliberately out of scope for this pass at the user's
+instruction, and still the load-bearing gap. They are not merely unimplemented,
+they are *decorative*: `world.ts` seeds five with a full `policy` block
 (aggression, `setsPerYearTarget`, chaseHeaviness, qualityBias,
 reprintWillingness) and an audience share, and the engine reads none of it. The
-player's `shareByPublisher` is assigned once at `world.ts:228` and only ever
-read — at `engine.ts` in the shelf-demand pool and again in the drop queue — so
-attention share is a constant for the whole run and nothing the player does
-moves it. Two consequences worth writing down: CONCEPT.md §7's "irrelevance"
-death is unreachable, and CONCEPT.md §11 says plainly that *"any tuning done in
-a world without competitors is tuning against the wrong numbers"* — which is a
-standing caveat on every balance figure in this document.
+player's `shareByPublisher` is assigned once and only ever read, so attention
+share is a constant for the whole run and nothing the player does moves it.
 
-Drops, scalpers, the reveal window, grading and now the art pipeline came off
-this list — see "Verified working". Of the secondary market actors in CONCEPT.md §6.8, scalpers
-now behave; `resellers`, `collectors` and `speculators` are still plain numbers.
-`collectors` is read as a demand pool by `resolveDrop` and nothing else.
-`SetPerformance.aftermarketIndex` is still written as 0 and read by nothing.
+Two consequences worth writing down. CONCEPT.md §7's "irrelevance" death is
+unreachable, and it is the one route that never fires. And CONCEPT.md §11 says
+plainly that *"any tuning done in a world without competitors is tuning against
+the wrong numbers"* — which is a standing caveat on every balance figure in this
+document, including all of the difficulty work above.
 
-Grading is deliberately one-way: it observes the raw price and never feeds back
-into it. The obvious next step is the one that does — a slabbed copy has left
-the raw pool, so `tickPrices` should arguably compute scarcity over
-`opened - graded` rather than `opened`. That is a change to the value engine,
-not to grading, and it has to be re-measured against all five value targets and
-the decile ladder as one unit.
+A visible symptom to watch: creator coverage lands on the player's own cards
+100% of the time, because nobody else prints anything.
 
-**3. What is still unswept.**
-Both knobs this section used to name are done — see "Verified working". What has
-never been swept: the `hype` block beyond the signal sigma (`marketingHypeGain`,
-`prereleaseHypeGain` and `heatFromHype` are all first guesses), and
-`drops.breakEvenPremium` / `populationGrowth`, which set how sharply the scalper
-population reacts rather than where it settles, and the whole `grading` block
-past the four numbers that were moved to get the pop report into a believable
-range (`tierMultiplier`, `popScarcityReference`, `popScarcityCeiling`,
-`sideGraderBrandGate` — the last swept, the others fitted by eye against the
-measured pop distribution). `submitRatePerTick` and `feeWorthMultiple` between
-them decide how much of the population ends up in slabs, and neither has been
-swept against anything. The whole `art` block is unswept — it was
-wired for shape, not balance, and the balance pass owns it. Two numbers there
-are known to be wrong rather than merely unmeasured:
+**2. What is still declared and not simulated.** The list is short now.
+`preorders` and the `illustrationLink` half of the chain system are untouched.
+`UnlockState.marketResearch`, `communityTeam` and `analytics` are read only by
+`tickRegionKnowledge`, so two of the three buy nothing. `Region.segmentMix` is
+seeded and unread — regional demand draws on the global audience rather than on
+a per-region one, which is a real simplification and the obvious next thing to
+do to regions.
 
-- `world.ts` seeds artist `rate` at $0.50-$3.00 (`randRange(rng, 50, 300)`
-  cents). A 25-year `conservative` run therefore spends about **$7.8k** on art
-  against a **$22M** net worth — art is currently a rounding error, not a
-  budget line. Whatever the right number is, it is not this one.
-- `art.maxLateWeeks` was set so the late tail *can* cross the 18 weeks between
-  commit and release. That it must be crossable is a shape requirement; that it
-  currently happens to 2.7% of commissions is not a target anybody chose.
+**3. Performance.** `tickPrices` is still about 20% of a run, and the remaining
+ideas change behaviour: backing a cold printing off to a longer stride changes
+RNG draw counts, so it cannot be validated by hashing the CSV — it has to be
+re-measured against the value targets and the decile ladder as one unit. Typed
+arrays for the hot price loop are behaviour-neutral but mean giving up the
+object model in `tickPrices`.
 
-`heatFromHype` is the one with a
-measured consequence already: it is what moved `yearsToFirst100Dollar` from 7.6
-to 4.9, because every set now opens at `1.6 + hype * heatFromHype` instead of a
-flat 1.6.
+**4. What is still unswept.** Much less than before. The `art` and `hype` blocks
+are swept, and so are the two grading knobs this section used to name — they do
+different jobs (`feeWorthMultiple` decides which printings clear the hurdle at
+all, 19.8% of them at 2 and 2.8% at 25; `submitRatePerTick` decides how many
+copies of those get sent, 13% to 31%) and at the shipped values they give 6.0%
+of printings and 18.6% of copies, which is the range the pop report was fitted
+to.
+
+Still unswept: `drops.breakEvenPremium` and `populationGrowth`, which set how
+sharply the scalper population reacts rather than where it settles; the rest of
+the `grading` block (`tierMultiplier`, `popScarcityReference`,
+`popScarcityCeiling` were fitted by eye); the whole `collabs`, `creators`,
+`chains` and `actors` blocks, all wired for shape rather than balance; and
+`hype.heatFromHype`, which is what puts every set's opening heat at
+`1.6 + hype * heatFromHype` and is the most likely cause of the steepening top
+tail noted under the power-law bullet.
+
+**5. Two probe bots are unviable and it is not clear they should be.**
+`smallBets` dies in 20/20 seeds of `debt_spiral` — under-printing means never
+clearing the `minimumOrder` on the distributor or the big box, so a small
+printer is locked out of reach and cannot cover its overhead. `globalist` dies
+in 20/20, of `channel_collapse` in most: expanding doubles your channel
+obligations and the distributors sour. Both are plausible mechanisms and both
+may simply be too harsh. Neither has been tuned.
 
 
 ## Things not to break
@@ -452,6 +592,45 @@ flat 1.6.
   and the pop report stops meaning anything
 - Grades come off a latent condition normal split by CDF, not a roll per copy. A
   submission of 4,000 copies must never cost 4,000 draws
+- Demand is a property of the audience, never of the print run. `tickSales`
+  sizes its pool off `attention.referenceRunUnits` and the audience, not off
+  `p.unitsPrinted`. Restoring that term makes printing conjure its own buyers,
+  which puts sell-through back at 0.97 for every strategy and quietly makes
+  every demand-side lever in the game worthless again
+- Several SKUs in one region split that region's demand; SKUs in different
+  regions do not. That asymmetry is the whole reason to open a region, and it
+  is what `productShareOfRegion` exists for
+- Region taste draws from `s.regionRng`, and the secondary-market actors and
+  creators from `s.actorRng`. The same rule that keeps grading on its own stream
+  applies: one extra draw on the main stream renumbers every later roll and
+  moves every balance number in this file. The three new regions in `world.ts`
+  are seeded from `regionRng` for exactly this reason
+- A region reading is frozen at `commitPrintRun` and scored against the truth
+  afterwards. It is a measurement, nothing in the value engine reads it, and it
+  has to be able to be wrong — the same contract the reveal signal has
+- A collab returns only `collabs.exposureShare` of the usual IP exposure. Paying
+  full exposure makes licensing a straight upgrade over your own IP and deletes
+  the only cost a collab has beyond its fee
+- A collab attaches to a set still in `design`. After the commit the print run
+  is locked and the reveal is running, so there is nothing left for the reach to
+  change and signing would be paying for a finished bet
+- Speculator return is per-capita, and so is scalper return. Reading either
+  per-unit is positive feedback with no brake, and the population pins at its
+  cap in every seed
+- A creator's relationship converges on how much fresh product there is to
+  cover. It must not be paid out of coverage: coverage odds already rise with
+  the relationship, so that form has no stable middle and lands on one rail or
+  the other
+- Only printed chain members count toward chain desire. Counting designed-but-
+  unprinted ones turns an announced chain into a free bonus, when the thing
+  being modelled is the pull of an incomplete set
+- Overhead and storage are the only non-discretionary outflows in the model.
+  Removing either makes doing nothing free again, and four of the five death
+  routes stop firing
+- Scarcity is computed over the tradeable population, not over everything ever
+  printed. Slabbed and collected copies have left the market. Reverting
+  `tradeablePopulation` to `opened - destroyed` undoes the grading feedback loop
+  and the collector floor together
 - Events store data, not prose
 - The LGS network and the direct store can sour but can never be lost. CONCEPT.md
   §7 makes LGS-only volume the floor that relationship death collapses you *to*
@@ -461,97 +640,44 @@ flat 1.6.
 
 ## Suggested next session
 
-Problem 2, continued: the model that is declared and not simulated. The art
-pipeline came off the list this pass. **Rivals are the next mechanism**, and
-problem 2 says why they are not just the next bullet: they are decorative
-today, the player's attention share is a constant, and CONCEPT.md §11 makes
-every balance figure in this document provisional until they move.
+**Rivals.** They were held back deliberately, and problem 1 says why they are
+not just the next bullet: they are decorative today, the player's attention
+share is a constant, `irrelevance` is the one death route that cannot fire, and
+CONCEPT.md §11 makes every balance figure in this document provisional until
+they move. Every other mechanism CONCEPT.md names is now built.
 
-The standing plan is to build the remaining *mechanisms* first and do the
-balance and difficulty work in one pass at the end. That order is deliberate,
-and the difficulty findings are already banked below so the tuning pass does
-not have to rediscover them.
+Expect the difficulty numbers to move when they land. A rival taking attention
+share is a demand cut applied to every strategy at once, and the overhead and
+storage lines were sized against a world where the player has the audience to
+themselves.
 
-Then, roughly in order of how self-contained each slice is: regions, the
-remaining secondary-market actors (`resellers`, `collectors` and `speculators`
-are still plain numbers), then the grading feedback loop described under problem
-2 — graded copies leave the raw pool, so `tickPrices` arguably owes them a
-scarcity term. That last one is a value-engine change and gets measured like one.
-
-### Banked for the difficulty pass
-
-Measured, not guessed, over 280 runs x 50 years: **six of the seven bots then in
-the roster survived 100% of runs**, and the only death was `flooder`, at median
-year 1.1 in every seed. There is no middle ground between faceplanting in year
-one and immortality, and four of the five CONCEPT.md §7 death routes are
-unreachable. `tickFinance` already classifies three of them (`overprint`,
-`channel_collapse`, `debt_spiral`) and nothing ever triggers them.
-
-Two structural causes, both worth fixing in that pass rather than piecemeal:
-
-- **Time is free.** Every ledger outflow is discretionary — `print_run`,
-  `marketing`, `unlock`, `event`, `art_commission`, `staff`, `interest`. There
-  is no overhead and no per-tick burn, so a publisher that releases nothing pays
-  almost nothing and cannot die. (The art pipeline added the first two
-  non-discretionary-ish lines, but at current rates they are a rounding error.)
-- **The blind bet has no downside.** `avgSellThrough` runs 0.97-0.98: the market
-  absorbs essentially everything printed. COGS is `unitCost * packsPerUnit *
-  0.55` = **$18.48 a box against a $140 MSRP**, so being wrong is cheap. The
-  reveal signal is honestly noisy now and it barely matters.
-
-Missing instrument, needed before any of that is tunable: **there is no
-net-worth metric**, and `deathCause` is stored on the publisher but never
-reported by the harness. The cadence sweep already has to compute net worth in a
-scratch script. Add `netWorth`, `peakDebt` and `deathCause` to `RunMetrics`
-first, plus probe bots that actually vary the size of the bet — all nine current
-bots print a fixed 8000 units regardless of anything, so none of them ever makes
-the wager the game is about.
-
-Target agreed for that pass: most strategies survivable — a sound strategy
-lives, a sloppy one dies somewhere in the middle years rather than in year one.
-Failure should be a slope, not a cliff.
-
-Performance is no longer the thing in the way. A batch shards across cores, and
-the remaining engine cost is concentrated in `tickPrices`, where every idea left
-either changes behaviour (see problem 1) or means giving up the object model.
+After that, in order of how self-contained each slice is: give regions their own
+audience (`Region.segmentMix` is seeded and unread, so regional demand currently
+draws on the global pool), make `communityTeam` and `analytics` buy something,
+and tune the two unviable probe bots in problem 5.
 
 Re-run these before you touch the value engine again:
 
 ```
-npm run sim -- --seeds=30 --years=25 --bot=conservative   # the five value targets
-npm run sim -- --seeds=1 --years=25 --bot=conservative --dist   # the decile ladder
+npm run typecheck
+npm run sim -- --seeds=30 --years=25 --bot=conservative   # the value targets
+npm run sim -- --seeds=1 --years=25 --bot=conservative --dist   # the ladder
+npm run sim -- --seeds=10 --years=50 --bot=all --check=13       # invariants
 ```
 
-The value targets, 30 seeds x 25 years, `conservative`. Grading moved none of
-them, and not approximately: every pre-existing column of `runs.csv` is
-byte-identical across all 30 seeds before and after the pass. That is the whole
-acceptance test for a subsystem that is supposed to observe the value engine
-without touching it, and it is only available because grading draws from its own
-RNG stream.
+The four value targets, 30 seeds x 25 years, `conservative`. Every column moved
+across this pass, because regions, the actors and the difficulty work all touch
+the value engine and none of them is an observer. All four are inside their
+bands and the ladder still widens at every step.
 
-| Metric | Band | Before | After drops | After reveal window | After balance pass | After grading |
-|---|---|---|---|---|---|---|
-| `surpriseGrail` | 15–40% | 33% | 33% | 23% | 23% | 23% |
-| `top1PctShare` | 0.4–0.7 | 0.59 | 0.594 | 0.575 | 0.575 | 0.575 |
-| `medianCardPrice` | a few dollars | $3.82 | $4 | $4 | $4 | $4 |
-| `yearsToFirst100Dollar` | 3–8 | 7.6 | 7.6 | 4.9 | 4.9 | 4.9 |
+| Metric | Band | Before this pass | After |
+|---|---|---|---|
+| `surpriseGrail` | 15–40% | 33% | 30% |
+| `top1PctShare` | 0.4–0.7 | 0.517 | 0.584 |
+| `medianCardPrice` | a few dollars | $4 | $4 |
+| `yearsToFirst100Dollar` | 3–8 | 6.0 | 5.2 |
 
-Grading costs about 9% of run time (30 seeds x 25 years: 4.70s -> 5.20s on four
-cores) and about 20% more history points.
-
-`yearsToFirst100Dollar` at 4.9 is still the row to watch. The cause is not
-subtle — every set opens at `1.6 + hype * heatFromHype` instead of a flat 1.6,
-so even the small default campaign starts the whole population hotter. If that
-is too fast, `hype.heatFromHype` is the knob, and the five targets get
-re-measured as one unit afterwards.
-
-The release-cadence sweep is the other regression, and cadence is a bot
-constant rather than a config path, so it needs a scratch script that calls
-`makeSetBot` with the cadence under test. It still puts the profit optimum at 18
-weeks, and over-releasing is still a cliff where under-releasing is a slope:
-
-| cadence | 6wk | 10wk | 14wk | **18wk** | 26wk | 34wk | 52wk | 78wk |
-|---|---|---|---|---|---|---|---|---|
-| survived | 0/10 | 0/10 | 10/10 | **10/10** | 10/10 | 10/10 | 10/10 | 10/10 |
-| net worth | — | — | $6.2M | **$21.9M** | $17.9M | $12.6M | $8.9M | $6.1M |
-| fatigue | 0.86 | 0.96 | 0.76 | **0.61** | 0.37 | 0.35 | 0.22 | 0.18 |
+The threaded and `--jobs=1` paths must keep producing a byte-identical
+`out/runs.csv`. That identity is the acceptance test for any change that is
+supposed to be free, and it is only available because a run is a pure function
+of (bot, seed, years, config).

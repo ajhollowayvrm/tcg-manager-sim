@@ -62,18 +62,21 @@ const jobs = showDist ? 1 : Math.min(requestedJobs, tasks.length);
 
 const started = Date.now();
 const results: (RunResult | undefined)[] = new Array(tasks.length);
-let lastState: SimState | null = null;
+// Held in a box rather than a bare `let`: the only writer is the `keep`
+// callback below, and TypeScript cannot see through that, so a bare binding
+// narrows to `null` for the rest of the file and `--dist` stops compiling.
+const kept: { state: SimState | null } = { state: null };
 
 if (jobs === 1) {
   for (let i = 0; i < tasks.length; i++) {
-    const { metrics, violations } = runOne(tasks[i]!, st => { lastState = st; });
+    const { metrics, violations } = runOne(tasks[i]!, st => { kept.state = st; });
     results[i] = { order: i, metrics, violations };
   }
 } else {
   await new Promise<void>((resolve, reject) => {
     let next = 0;
     let live = jobs;
-    const workerUrl = new URL('./worker.ts', import.meta.url);
+    const workerUrl = new URL('./worker.mjs', import.meta.url);
     for (let w = 0; w < jobs; w++) {
       const worker = new Worker(workerUrl);
       const feed = () => {
@@ -137,6 +140,114 @@ const table = botNames.map(b => {
   };
 });
 console.table(table);
+
+// Finance and survival. The main table says whether a bot lived; this one says
+// how, and it is where the difficulty pass reads its numbers. `netWorth` counts
+// unsold stock at cost, so read it against `unsold` — a large net worth held
+// entirely as a warehouse is an overprint that has not been called yet.
+const money = (m: number) =>
+  Math.abs(m) >= 1e6 ? (m / 1e6).toFixed(1) + 'M'
+  : Math.abs(m) >= 1e3 ? (m / 1e3).toFixed(0) + 'k'
+  : m.toFixed(0);
+console.log('finance and survival:');
+console.table(botNames.map(b => {
+  const r = rows.filter(x => x.bot === b);
+  const causes = new Map<string, number>();
+  for (const x of r) if (x.deathCause) causes.set(x.deathCause, (causes.get(x.deathCause) ?? 0) + 1);
+  const deaths = [...causes.entries()].sort((a, c) => c[1] - a[1])
+    .map(([c, n]) => `${c} ${n}`).join(' ');
+  return {
+    bot: b,
+    survived: pct(r.map(x => x.survived)),
+    deaths: deaths || '-',
+    netWorth: '$' + money(median(r.map(x => x.netWorth))),
+    liquid: '$' + money(median(r.map(x => x.liquidNetWorth))),
+    peakDebt: '$' + money(median(r.map(x => x.peakDebt))),
+    unsold: money(mean(r.map(x => x.unsoldUnits))),
+    invValue: '$' + money(median(r.map(x => x.inventoryValue))),
+    printRun: money(mean(r.map(x => x.meanPrintRun))),
+  };
+}));
+
+// Regions, printed only for runs that opened one past the home market.
+const regionRows = botNames
+  .map(b => {
+    const r = rows.filter(x => x.bot === b);
+    const ran = r.filter(x => x.regionsOpen > 1);
+    if (ran.length === 0) return null;
+    return {
+      bot: b,
+      runsAbroad: `${ran.length}/${r.length}`,
+      regions: mean(ran.map(x => x.regionsOpen)).toFixed(1),
+      entrySpend: '$' + money(median(ran.map(x => x.regionUnlockSpend))),
+      knowledge: mean(ran.map(x => x.regionKnowledge)).toFixed(2),
+      exportShare: (100 * mean(ran.map(x => x.exportShare))).toFixed(0) + '%',
+      readingR: mean(ran.map(x => x.regionReadingCorrelation)).toFixed(2),
+    };
+  })
+  .filter(Boolean);
+if (regionRows.length) {
+  console.log('regions:');
+  console.table(regionRows);
+}
+
+// The secondary-market actors. Scalpers are in the drops table with the
+// mechanism they belong to; these three act on singles.
+console.log('secondary market:');
+console.table(botNames.map(b => {
+  const r = rows.filter(x => x.bot === b);
+  return {
+    bot: b,
+    collectors: money(mean(r.map(x => x.collectors))),
+    heldOffMarket: (100 * mean(r.map(x => x.collectorHeldShare))).toFixed(0) + '%',
+    resellers: money(mean(r.map(x => x.resellers))),
+    speculators: money(mean(r.map(x => x.speculators))),
+    specSwing: mean(r.map(x => x.speculatorSwing)).toFixed(1) + 'x',
+    aftermarket: mean(r.map(x => x.aftermarketIndex)).toFixed(1) + 'x',
+  };
+}));
+
+// Collabs, printed only for runs where an offer arrived at all.
+const collabRows = botNames
+  .map(b => {
+    const r = rows.filter(x => x.bot === b);
+    const ran = r.filter(x => x.collabOffers > 0);
+    if (ran.length === 0) return null;
+    return {
+      bot: b,
+      offers: mean(ran.map(x => x.collabOffers)).toFixed(1),
+      signed: mean(ran.map(x => x.collabsSigned)).toFixed(1),
+      licenceSpend: '$' + money(median(ran.map(x => x.collabSpend))),
+      ipAffection: mean(ran.map(x => x.meanIpAffection)).toFixed(1),
+    };
+  })
+  .filter(Boolean);
+if (collabRows.length) {
+  console.log('collabs:');
+  console.table(collabRows);
+}
+
+// Creators and chains, printed only where either happened.
+const cultureRows = botNames
+  .map(b => {
+    const r = rows.filter(x => x.bot === b);
+    const ran = r.filter(x => x.creatorCoverage > 0 || x.chains > 0);
+    if (ran.length === 0) return null;
+    return {
+      bot: b,
+      coverage: mean(ran.map(x => x.creatorCoverage)).toFixed(0),
+      onOwnCards: (100 * mean(ran.map(x => x.creatorOwnShare))).toFixed(0) + '%',
+      bestRelation: mean(ran.map(x => x.bestCreatorRelationship)).toFixed(2),
+      chains: mean(ran.map(x => x.chains)).toFixed(0),
+      spanning: (100 * mean(ran.map(x => x.chainsSpanningSets))).toFixed(0) + '%',
+      chainLen: mean(ran.map(x => x.meanChainLength)).toFixed(1),
+    };
+  })
+  .filter(Boolean);
+if (cultureRows.length) {
+  console.log('creators and chains:');
+  console.table(cultureRows);
+}
 
 // Drops get their own table. The main one is already too wide to read, and a
 // run that never opened a direct store has nothing to say here.
@@ -238,8 +349,8 @@ if (artRows.length) {
 
 // A decile ladder for the last run. Median and max alone cannot tell a power
 // law from flat mush; the step between deciles can. Each step should widen.
-if (showDist && lastState) {
-  const prices = Object.values(lastState.printings)
+if (showDist && kept.state) {
+  const prices = Object.values(kept.state.printings)
     .map(pr => pr.market.rawPrice / 100)
     .sort((a, b) => a - b);
   console.log(`\nprice deciles, last run (${prices.length} printings):`);

@@ -29,6 +29,10 @@ export const defaultConfig: SimConfig = {
     // population onto one price and calls it a distribution.
     priceFloorCents: C(20),
     priceCeilingMultiple: 5000,
+    // Speculators can push heat below 1, and a crash has to be able to
+    // overshoot for the amplify-and-crash shape to mean anything. It cannot go
+    // to zero: heat multiplies the price, so a floor of 0 is a floor of $0.
+    heatFloor: 0.4,
     heatCeiling: 6,
     nostalgiaCeiling: 20,
     chaseSigma: 0.65,
@@ -53,6 +57,28 @@ export const defaultConfig: SimConfig = {
   },
 
   attention: {
+    /**
+     * The print run one region's demand is measured against, and the audience
+     * it is measured at. Together they replace the old `p.unitsPrinted` term:
+     * a reference-sized run into the starting audience sells exactly as it did
+     * before, and a larger one no longer brings its own buyers with it.
+     */
+    // Swept over 20 seeds x 25 years on `conservative`. At 8000 a
+    // reference-sized run cleared 96% of its stock and flopped 2% of the time,
+    // so the blind bet had no variance and no demand-side lever could buy
+    // anything — there was never unmet demand to reach. At 5000 the same run
+    // sells 87% and flops 11% of the time, which makes how much to print a
+    // decision with a wrong answer.
+    referenceRunUnits: 5000,
+    /**
+     * What attention death looks like at the moment of failure: the audience
+     * saturated with fatigue and out of attention to give. CONCEPT.md §7 lists
+     * it as a death route and nothing ever classified it, so it could not be
+     * reported however often it happened.
+     */
+    deathFatigueThreshold: 0.75,
+    deathAttentionThreshold: 0.25,
+    referenceAudience: 600_000,
     perReleaseCost: 0.22,
     regenPerTick: 0.02,
     fatigueGain: 0.18,
@@ -106,7 +132,12 @@ export const defaultConfig: SimConfig = {
      * house-art path never fires and the schedule is decorative. How often it
      * should cross is unswept.
      */
-    maxLateWeeks: 8,
+    // Swept over 15 seeds x 30 years. It must be crossable — a deadline that
+    // cannot be missed is not a deadline — and at 8 weeks only 2% of cards
+    // shipped as house filler, which is a freak event rather than a schedule.
+    // At 14 about 9% do, so a 70-card set typically ships five or six cards
+    // with in-house art: visible, expensive, and survivable.
+    maxLateWeeks: 14,
     /** Relationship: earned by commissioning, decays when you stop. */
     relationshipPerCommission: 0.05,
     relationshipDecayPerTick: 0.0015,
@@ -136,6 +167,38 @@ export const defaultConfig: SimConfig = {
     creditToRate: 0.08,
     borrowCeilingMultiple: 2.5,
     brandConvergenceRate: 0.01,
+
+    // Time is not free. Every outflow in the model used to be discretionary —
+    // print runs, marketing, unlocks, art — so a publisher that released
+    // nothing paid almost nothing and could not die, and four of the five death
+    // routes in CONCEPT.md §7 were unreachable. These three lines are the
+    // standing bill.
+    //
+    // Sized against measured revenue: `conservative` earns about $442k a year
+    // and spends about $148k of it printing, so a four-channel studio paying
+    // about $156k a year in overhead is under real pressure and still ahead.
+    // A studio that releases nothing runs out of its $500,000 in about five
+    // years, which is what makes doing nothing a way to lose.
+    // Swept over 20 seeds x 30 years. At $2,000 a week the base alone is
+    // $104k a year and it kills every small studio outright — `specialtyOnly`
+    // went from 100% survival to 0%. At $1,000 the base is survivable on its
+    // own and the per-channel line is what makes a large studio expensive,
+    // which is the right way round: reach is what costs money to run.
+    weeklyOverheadBase: C(1_000_00),
+    weeklyOverheadPerChannel: C(250_00),
+    /** Per region past the home market. An office abroad is a standing cost. */
+    weeklyOverheadPerRegion: C(600_00),
+    /**
+     * Warehousing, per unsold unit per week. Deliberately small: it is nothing
+     * to a publisher holding a normal tail of stock and ruinous to one holding
+     * a million units, which is the difference between capital locked up and
+     * capital bleeding. Overprint death is unreachable without it.
+     */
+    // One cent per unit per week. A publisher holding a normal 20,000-unit
+    // tail pays about $10k a year and never notices; one holding 1.2 million
+    // units pays about $624k a year against revenue of $442k and does not
+    // survive it. That gap is the whole design of this line.
+    storagePerUnitPerTick: C(1),
   },
 
   sealed: {
@@ -213,13 +276,24 @@ export const defaultConfig: SimConfig = {
     revealHalfLife: 0.8,
     revealAttentionCost: 0.004,
     marketingReference: C(100_000_00),
-    marketingHypeGain: 0.35,
+    // Swept over 20 seeds x 30 years at equal spend against a prerelease. At
+    // 0.35 marketing was strictly dominated — the same hype cost twice what
+    // the LGS route charged for it, so there was never a reason to buy it. At
+    // 1.2 it is competitive and still the more expensive way to the same
+    // number, which is the right relationship: attention bought with cash
+    // should cost more than attention earned through the stores.
+    marketingHypeGain: 1.2,
     prereleaseCostPerScale: C(25_000_00),
     prereleaseHypeGain: 0.12,
     prereleaseGoodwillGain: 0.02,
     prereleaseRelationshipGain: 0.04,
     ceiling: 3,
-    decayPerTickAfterRelease: 0.06,
+    // Swept over 20 seeds x 30 years. At 0.06 launch hype is gone inside a
+    // couple of months while the print run it was built for sells over years,
+    // so a campaign could not reach the sales it paid for and every lever in
+    // the reveal window lost money at every price. At 0.02 hype lasts about a
+    // year, which is the horizon a print run actually sells over.
+    decayPerTickAfterRelease: 0.02,
     // Wide on purpose. The read has to be genuinely poor without a campaign,
     // or the reveal window is a solved problem and its levers buy nothing: at
     // 0.55 a publisher who spent nothing already scored r = 0.93. Error shrinks
@@ -265,10 +339,116 @@ export const defaultConfig: SimConfig = {
     sideGraderBrandGate: 0.55,
   },
 
+  // First-guess numbers. The shape that matters: a region has to be able to be
+  // the wrong region, or opening one is a pure size multiplier and the decision
+  // is "yes, all of them, as soon as you can afford it".
   region: {
     knowledgeGainPerRelease: 0.02,
     knowledgeGainPerResearch: 0.05,
     mismatchPenalty: 0.25,
+    /**
+     * Spread on a region reading at `knowledge` 0. Wide on purpose, for the
+     * same reason `hype.signalNoiseSigma` is: a reading that is nearly right
+     * from the first week makes knowledge worthless and the entry bet solved.
+     */
+    readingNoiseSigma: 0.8,
+    /** Weeks between a region unlock and the first release the player can ship there. */
+    entryLeadWeeks: 26,
+  },
+
+  // First-guess numbers, wired for behaviour rather than swept. Each population
+  // has to be able to move and to come back: one that only grows is a price
+  // multiplier with extra steps.
+  actors: {
+    collectorShareOfAudience: 0.02,
+    collectorConvergence: 0.08,
+    minCollectors: 500,
+    // Collectors per head of audience at which holding reaches its ceiling.
+    // At 0.03 a healthy run sits exactly on it and every seed reports the
+    // ceiling, which is a constant wearing a population's clothes.
+    collectorDensityReference: 0.09,
+    // A third of opened copies off the market at the floor is not a guess about
+    // this game — it is roughly what any collectible market looks like, and it
+    // is the term that makes a loyal audience worth money.
+    collectorHoldFloor: 0.2,
+    collectorHoldCeiling: 0.5,
+
+    resellerReference: 300,
+    resellerConvergence: 0.12,
+    minResellers: 20,
+    maxResellers: 20_000,
+    // Singles-to-sealed value ratio at which ripping stops paying. Measured,
+    // the weighted ratio runs 0.7-1.0, so a break-even of exactly 1 sits at the
+    // top of the range and holds the population on its floor for every strategy
+    // except a flooder. Below 1 is also the honest number: a streamer earns on
+    // the stream and on the retail spread, not only on the pull.
+    ripBreakEven: 0.5,
+    ripPerReseller: 0.5,
+
+    speculatorReference: 800,
+    speculatorConvergence: 0.1,
+    minSpeculators: 50,
+    maxSpeculators: 30_000,
+    /** Heat above the pack per speculator at which the population holds still. */
+    // At 0.02 the population settles near 25,000 against a 30,000 cap, which
+    // is the runaway this per-capita form exists to prevent. The pool scales
+    // with the size of the catalogue, so this is the number that decides how
+    // many speculators a market of a given size supports.
+    speculatorHeatPerCapita: 0.3,
+    speculatorMomentumGain: 0.35,
+    speculatorHeatGain: 0.05,
+    speculatorSensitivity: 1.5,
+    speculatorNoise: 0.004,
+  },
+
+  // First-guess numbers. The shape that matters: a collab buys reach you do
+  // not have and cannot buy affection you have not earned — the licensor keeps
+  // the IP equity, so a studio that lives on collabs owns nothing at the end.
+  collabs: {
+    /** Chance per quarter that an offer arrives, at full brand standing. */
+    offerChancePerQuarter: 0.35,
+    offerWindowWeeks: 26,
+    maxOpenOffers: 3,
+    /** Licence fee, as a share of a typical print run's cost. */
+    feeMin: C(120_000_00),
+    feeMax: C(900_000_00),
+    /** Demand multiplier per point of weighted reach bonus. */
+    reachToDemand: 1.2,
+    /** Goodwill a collab set earns in the segments it reaches. */
+    goodwillPerReach: 0.05,
+    /**
+     * Share of the usual IP exposure a collab set returns to your own IPs. The
+     * licensor's audience came for the licensor: the reach is rented, and this
+     * is the rent.
+     */
+    exposureShare: 0.3,
+  },
+
+  // First-guess numbers. The shape that matters: a creator has to be somebody
+  // in particular. Coverage lands on their affinities and on new cards, and
+  // the relationship that raises their odds decays if you stop giving them
+  // things to cover.
+  // A chain is pull demand: an incomplete set of anything is worth more than
+  // the same cards unrelated. First-guess numbers.
+  chains: {
+    desirePerLink: 6,
+    maxCountedLinks: 5,
+    spansSetsBonus: 1.6,
+  },
+
+  creators: {
+    rosterSize: 8,
+    coverChancePerStride: 0.25,
+    /** Weeks a printing counts as new enough to be worth covering. */
+    freshnessWeeks: 60,
+    /** Redraws allowed to land on a creator's affinity IP before settling. */
+    affinityTries: 4,
+    audienceReference: 250_000,
+    heatPerCoverage: 0.35,
+    maxCoverageHeat: 2.5,
+    /** Fresh printings on the market at which a creator is fully engaged. */
+    freshPrintingsReference: 140,
+    relationshipConvergence: 0.05,
   },
 
   history: {
