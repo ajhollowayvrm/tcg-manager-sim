@@ -196,7 +196,7 @@ export const defaultConfig: SimConfig = {
     /** Roster drift: newcomers arrive, the established retire or price up. */
     newcomerChancePerTick: 0.012,
     retireChancePerTick: 0.0009,
-    maxRosterSize: 24,
+    maxRosterSize: 170,
     /** A rising reputation drags the rate up behind it. */
     rateGrowthPerReputation: 2.5,
     rateAdjustRate: 0.02,
@@ -230,7 +230,7 @@ export const defaultConfig: SimConfig = {
     reputationGrowthRange: 0.8,
     retireReputationThreshold: 0.85,
     retireAtPeakChance: 0.002,
-    openingRosterSize: 6,
+    openingRosterSize: 42,
     openingRelationship: 0.5,
   },
 
@@ -641,12 +641,12 @@ export const defaultConfig: SimConfig = {
   },
 
   creators: {
-    rosterSize: 8,
+    rosterSize: 24,
     // A couple of large channels and a lot of small ones, which is what a
     // creator ecosystem looks like and what makes picking one worth doing.
     audienceBase: 20_000,
     audienceGrowth: 1.6,
-    audienceExponentMax: 6,
+    audienceExponentMax: 11,
     influenceMin: 0.2,
     influenceMax: 0.9,
     openingRelationshipMin: 0.05,
@@ -683,6 +683,14 @@ export const defaultConfig: SimConfig = {
       illustrationRare: 0.035, specialIllustrationRare: 0.008, hyperRare: 0.004, promo: 0.05,
     },
     pullDivisor: 10,
+    // The `pull` table is copies of one card per pack at this set size. Summed
+    // over the roster's rarity mix it is about 17.5 cards a pack, and a pack
+    // holds the same number of cards whatever the set size — so a 280-card set
+    // makes every individual card four times rarer rather than putting four
+    // times the cardboard in the box. Without this, `printQuantity` and
+    // `expectedSinglesValue` both scale with the set size and a bigger set
+    // quietly reprices every sealed product in the game.
+    referenceSetSize: 70,
     weightDivisor: 10,
     chaseWeightDivisor: 100,
   },

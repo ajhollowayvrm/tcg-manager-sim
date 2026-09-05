@@ -639,7 +639,7 @@ function submitMarketing(s: SimState, opts: SetBotOptions, spent: Map<SetId, num
  */
 function betSizeBot(label: string, fraction: number): () => Bot {
   return () => makeSetBot({
-    label, cadenceWeeks: 52, cardsPerSet: 70, setType: 'main',
+    label, cadenceWeeks: 52, cardsPerSet: 280, setType: 'main',
     quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000,
     productKind: 'boosterBox', allocationPolicy: 'spread',
     unitsPolicy: 'bankroll', bankrollFraction: fraction,
@@ -669,7 +669,7 @@ export const BOTS: Record<string, () => Bot> = {
   // rest identical is the point: any difference in the two rows is regions and
   // nothing else. It is the only bot that consults `readRegion`.
   globalist: () => makeSetBot({
-    label: 'Globalist', cadenceWeeks: 52, cardsPerSet: 70, setType: 'main',
+    label: 'Globalist', cadenceWeeks: 52, cardsPerSet: 280, setType: 'main',
     quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000,
     productKind: 'boosterBox', allocationPolicy: 'spread',
     regionPolicy: 'expand',
@@ -685,7 +685,7 @@ export const BOTS: Record<string, () => Bot> = {
   // the two rows is the collab loop and nothing else: reach bought with cash,
   // paid for in the IP equity the sets no longer build.
   licensor: () => makeSetBot({
-    label: 'Licensor', cadenceWeeks: 52, cardsPerSet: 70, setType: 'main',
+    label: 'Licensor', cadenceWeeks: 52, cardsPerSet: 280, setType: 'main',
     quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000,
     productKind: 'boosterBox', allocationPolicy: 'spread',
     collabPolicy: 'sign', collabRunMultiple: 1.5,
@@ -702,7 +702,7 @@ export const BOTS: Record<string, () => Bot> = {
   // carries each one into the following set, which is the only way a chain ever
   // becomes the cross-set hedge CONCEPT.md describes.
   chainRunner: () => makeSetBot({
-    label: 'ChainRunner', cadenceWeeks: 52, cardsPerSet: 70, setType: 'main',
+    label: 'ChainRunner', cadenceWeeks: 52, cardsPerSet: 280, setType: 'main',
     quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000,
     productKind: 'boosterBox', allocationPolicy: 'spread',
     chainPolicy: 'inSet', chainLength: 3,
@@ -714,7 +714,7 @@ export const BOTS: Record<string, () => Bot> = {
     unitsPolicy: 'market', bankrollFraction: 0.6,
   }),
   chainWeaver: () => makeSetBot({
-    label: 'ChainWeaver', cadenceWeeks: 52, cardsPerSet: 70, setType: 'main',
+    label: 'ChainWeaver', cadenceWeeks: 52, cardsPerSet: 280, setType: 'main',
     quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000,
     productKind: 'boosterBox', allocationPolicy: 'spread',
     chainPolicy: 'acrossSets', chainLength: 6,
@@ -728,7 +728,7 @@ export const BOTS: Record<string, () => Bot> = {
 
   // Few, well-supported sets. The steady baseline.
   conservative: () => makeSetBot({
-    label: 'Conservative', cadenceWeeks: 52, cardsPerSet: 70, setType: 'main',
+    label: 'Conservative', cadenceWeeks: 52, cardsPerSet: 280, setType: 'main',
     quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000, productKind: 'boosterBox',
     allocationPolicy: 'spread',
     // The market sizes the run; the bankroll only caps it. 0.30 exactly covered
@@ -741,7 +741,7 @@ export const BOTS: Record<string, () => Bot> = {
 
   // Fewer, smaller cards-per-set skewed toward chase rarities, premium quality.
   chaseMaxxer: () => makeSetBot({
-    label: 'ChaseMaxxer', cadenceWeeks: 34, cardsPerSet: 45, setType: 'main',
+    label: 'ChaseMaxxer', cadenceWeeks: 34, cardsPerSet: 180, setType: 'main',
     quality: 'premium', units: 5000, packsPerUnit: 24, msrp: 15500, productKind: 'boosterBox',
     allocationPolicy: 'spread',
   }),
@@ -750,7 +750,7 @@ export const BOTS: Record<string, () => Bot> = {
   // must lose, and since the fatigue curve landed it does: it dies in year two
   // in every seed. It stays in the roster as the flood-death regression.
   flooder: () => makeSetBot({
-    label: 'Flooder', cadenceWeeks: 6, cardsPerSet: 40, setType: 'main',
+    label: 'Flooder', cadenceWeeks: 6, cardsPerSet: 160, setType: 'main',
     quality: 'budget', units: 15000, packsPerUnit: 24, msrp: 11000, productKind: 'boosterBox',
     // Leaves allocation to the engine's default split, keeping that path covered.
     allocationPolicy: 'auto',
@@ -762,14 +762,14 @@ export const BOTS: Record<string, () => Bot> = {
   // flooded. This one prints a sixth as much on the same cadence: it survives
   // the printing bill and finds out what the audience does about it.
   attentionBurner: () => makeSetBot({
-    label: 'Burner', cadenceWeeks: 6, cardsPerSet: 40, setType: 'main',
+    label: 'Burner', cadenceWeeks: 6, cardsPerSet: 160, setType: 'main',
     quality: 'standard', units: 2500, packsPerUnit: 24, msrp: 14000,
     productKind: 'boosterBox', allocationPolicy: 'spread',
   }),
 
   // Small, expensive, high-margin specialty sets only.
   specialtyOnly: () => makeSetBot({
-    label: 'Specialty', cadenceWeeks: 20, cardsPerSet: 20, setType: 'specialty',
+    label: 'Specialty', cadenceWeeks: 20, cardsPerSet: 80, setType: 'specialty',
     quality: 'premium', units: 1200, packsPerUnit: 10, msrp: 6000, productKind: 'premiumCollection',
     allocationPolicy: 'spread',
   }),
@@ -779,7 +779,7 @@ export const BOTS: Record<string, () => Bot> = {
   // Holding the other parameters identical is the point — any difference in the
   // two rows is the hype loop and nothing else.
   hypeBuilder: () => makeSetBot({
-    label: 'HypeBuilder', cadenceWeeks: 52, cardsPerSet: 70, setType: 'main',
+    label: 'HypeBuilder', cadenceWeeks: 52, cardsPerSet: 280, setType: 'main',
     quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000, productKind: 'boosterBox',
     allocationPolicy: 'spread',
     revealLeadWeeks: 16, revealCadenceWeeks: 1,
@@ -798,7 +798,7 @@ export const BOTS: Record<string, () => Bot> = {
   // if the greedy campaign ever stops dying, the reveal window has stopped
   // being a bet.
   hypeGambler: () => makeSetBot({
-    label: 'HypeGambler', cadenceWeeks: 52, cardsPerSet: 70, setType: 'main',
+    label: 'HypeGambler', cadenceWeeks: 52, cardsPerSet: 280, setType: 'main',
     quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000, productKind: 'boosterBox',
     allocationPolicy: 'spread',
     revealLeadWeeks: 16, revealCadenceWeeks: 1,
@@ -815,7 +815,7 @@ export const BOTS: Record<string, () => Bot> = {
   // first and sells through drops. Holding the other parameters identical is the
   // point: any difference in the two rows is the drop channel and nothing else.
   dropRunner: () => makeSetBot({
-    label: 'DropRunner', cadenceWeeks: 52, cardsPerSet: 70, setType: 'main',
+    label: 'DropRunner', cadenceWeeks: 52, cardsPerSet: 280, setType: 'main',
     quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000, productKind: 'boosterBox',
     allocationPolicy: 'spread',
     unlockOrder: [CHANNEL_IDS.direct, CHANNEL_IDS.online, CHANNEL_IDS.distributor, CHANNEL_IDS.bigbox],
@@ -838,7 +838,7 @@ export const BOTS: Record<string, () => Bot> = {
   // pays only years later through `Artist.reputation`, which the value engine
   // reads live.
   scout: () => makeSetBot({
-    label: 'Scout', cadenceWeeks: 52, cardsPerSet: 70, setType: 'main',
+    label: 'Scout', cadenceWeeks: 52, cardsPerSet: 280, setType: 'main',
     quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000, productKind: 'boosterBox',
     allocationPolicy: 'spread',
     artistPolicy: 'cheapest', artistTerms: 'exclusive',
@@ -853,7 +853,7 @@ export const BOTS: Record<string, () => Bot> = {
   // `safeHands` buys the reputation it can already see, pays over the rate for
   // it, and keeps the artist on a retainer so the briefs get taken.
   safeHands: () => makeSetBot({
-    label: 'SafeHands', cadenceWeeks: 52, cardsPerSet: 70, setType: 'main',
+    label: 'SafeHands', cadenceWeeks: 52, cardsPerSet: 280, setType: 'main',
     quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000, productKind: 'boosterBox',
     allocationPolicy: 'spread',
     artistPolicy: 'established', artBudgetMultiple: 2.5, artistTerms: 'retainer',
@@ -871,7 +871,7 @@ export const BOTS: Record<string, () => Bot> = {
   // policy and nothing else. Per CONCEPT.md §6.5 a distributor sours when you
   // over-allocate, so this should lose the channel and fall back to LGS volume.
   channelHog: () => makeSetBot({
-    label: 'ChannelHog', cadenceWeeks: 52, cardsPerSet: 70, setType: 'main',
+    label: 'ChannelHog', cadenceWeeks: 52, cardsPerSet: 280, setType: 'main',
     quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000, productKind: 'boosterBox',
     allocationPolicy: 'hog', hogChannel: CHANNEL_IDS.distributor,
     // The market sizes the run; the bankroll only caps it. 0.30 exactly covered

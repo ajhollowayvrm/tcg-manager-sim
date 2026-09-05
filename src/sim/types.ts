@@ -1622,6 +1622,12 @@ export interface SimConfig {
     pull: Record<Rarity, number>;
     /** Divisor applied to `pull` to get a per-card pull rate. */
     pullDivisor: number;
+    /**
+     * Set size the `pull` table is written for. A booster pack holds a fixed
+     * number of cards, so a card's pull rate must fall as the set grows: the
+     * engine scales `pull` by `referenceSetSize / cards in the set`.
+     */
+    referenceSetSize: number;
     /** Divisor applied to `weight` in the reveal-window term. */
     weightDivisor: number;
     /** Divisor applied to `weight` in the set-chase term. */

@@ -596,6 +596,87 @@ All three are plausible mechanisms and all three may simply be too harsh. None
 has been tuned.
 
 
+## The counts (tuning Round 3, 2026-09-05)
+
+Every count moved to its real value in one step, because `cardsPerSet`, the
+artist roster and the creator roster all change RNG draw counts and doing them
+separately pays the re-measurement cost several times over. `cardsPerSet` is
+280 on the nine baseline bots and four times its old value on each variant,
+`art.maxRosterSize` is 170 with an opening roster of 42, `creators.rosterSize`
+is 24 and `creators.audienceExponentMax` is 11.
+
+**After this round, no round may change a draw count.** If one must, it goes to
+the end of the run and takes a full re-measurement with it.
+
+The suite ends at **27 PASS, 0 FAIL, 19 KNOWN, 0 DRIFT**, rebanked under
+`docs/tuning/bank/round-3/`. Every gate carries a new banked value, so the
+Round 1 and Round 2 banks are no longer comparable — that is what a renumbering
+round costs and why there is only one of them.
+
+### The pull rate was an absolute count, and the plan missed it
+
+`printQuantity = totalPacks * pullRate`, and `pullRate` came straight out of
+`rarity.pull` with no reference to how many cards were in the set. Summed over
+the roster's rarity mix a 70-card set put about 17.5 cards in a pack; a 280-card
+set put 70 cards in a pack. A booster holds the same number of cards whatever
+the set size, so this was the same trap Round 2 swept for: an absolute count
+that breaks the moment the thing it counts changes scale.
+
+`rarity.referenceSetSize` is 70 and `rarityPull` scales `pull` by
+`referenceSetSize / cards in the set`. A card in a 280-card set is now four
+times rarer per pack, which is what a real premier set does, and
+`expectedSinglesValue` — which sums the pull rate over every card in the set —
+holds steady instead of quadrupling every sealed price in the game.
+
+It costs price: the age-2 median went $3.23 to $4.49 on the card count alone,
+and to **$8.47** once each card was properly four times rarer. That is Round 4's
+to fix; it is now 28x its $0.30 target rather than 11x.
+
+### Three gates this round broke, deferred with an owner
+
+- **`diff.botsAlwaysSurvive` 7 to 1**, and only `scout` still survives every
+  seed. A 280-card set commissions four times the illustrations. On a
+  `conservative` seed that dies at year 9.3 the ledger reads $1.24M of art
+  against $1.62M of print runs — art is 43% of the print bill. The set size is
+  correct and the artist rates are not: finding 3 in `05-real-world.md` already
+  says a real illustration is a flat $400-$2,500 and ours is $75-$450 rising
+  with reputation, and inconsistency 1 in `02-hardcoded.md` says newcomers are
+  still minted at $0.50-$3.00. That is why `scout`, which buys the cheapest
+  artist on the roster, is the only bot left standing. Round 7 owns art and
+  Round 10 owns difficulty; whichever lands first should report `FIXED`.
+- **`sub.scalperCycles` 16 to 0.** Probed on one `dropRunner` seed,
+  `scalperProfitability` crosses `breakEvenPremium` at year 8 and never comes
+  back under it, so the boom latch never releases and no crash event fires. The
+  population climbs to the cap instead of cycling. Nothing in the model pushes
+  an old sealed product back down — `shape.ageCurveDirection` is still negative
+  and `shape.ageCurveLate` is still 0 — so this is downstream of the decay to
+  bulk that Round 4 owns. Read `sub.scalperShare`, which went `FIXED` at 0.242
+  in the same round, beside it: the share is right because the population is
+  pinned high, not because the trade found its level.
+- **`shape.yearsTo100` 5.2 to 1.4.** Four times the chase draws per set, on a
+  price body that is already far too high. Round 4.
+
+Two gates went the other way and are now `pass`: `sub.scalperShare` (0.242) and
+`sub.channelHogLosesReach` (6, which is the top of its band on purpose — the
+next round that loses one more channel gets a `FAIL` rather than a silent drift).
+
+### The performance work the plan asked for is not worth doing
+
+The plan and the Round 2 handoff both named `strides.price` as the lever, on the
+grounds that `tickPrices` is the hot loop, and warned that `value.priceLerp` is
+not stride-invariant so it would need re-fitting in Round 4. **Measured, the
+stride buys nothing.** A 30-seed 50-year `conservative` sweep runs 50.3s at
+`strides.price` 4 and 51.6s at 8 with `priceLerp` compensated to 0.6156.
+`strides.sealed`, `strides.grading`, `strides.scalper` and `strides.channel` at
+8 are all within a second of the baseline too.
+
+So `strides.price` stays at 4, `value.priceLerp` stays at 0.38, and **Round 4
+inherits no re-fit obligation.** The cost is somewhere that is not on a stride
+at all — per-tick work, or simply 14,000 printings' worth of allocation — and
+nobody has found it yet. The suite went 52.3s to **185.4s**, which is roughly
+the three minutes Round 2 predicted. Per AJ's standing call, correctness comes
+first and this is not yet unusable.
+
 ## The audience system (tuning Round 2, 2026-09-04)
 
 The audience model existed and was dead: six segments each carried a `size`
@@ -874,6 +955,15 @@ horizon fixed.
   printed. Slabbed and collected copies have left the market. Reverting
   `tradeablePopulation` to `opened - destroyed` undoes the grading feedback loop
   and the collector floor together
+- A pull rate is copies of one card per pack, and a pack holds a fixed number of
+  cards. `rarityPull` therefore scales `rarity.pull` by
+  `referenceSetSize / cards in the set`. Dropping that scaling makes a bigger
+  set put proportionally more cardboard in every box, which quadruples
+  `expectedSinglesValue` and reprices every sealed product in the game
+- No round may change a draw count after Round 3. `cardsPerSet`, the roster
+  sizes and the strides all decide how many RNG draws a run makes, so moving one
+  renumbers every later roll and invalidates every banked gate. If one must
+  move, it goes last and takes a full re-measurement with it
 - Events store data, not prose
 - The LGS network and the direct store can sour but can never be lost. CONCEPT.md
   §7 makes LGS-only volume the floor that relationship death collapses you *to*

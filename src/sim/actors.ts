@@ -213,10 +213,12 @@ function expectedSinglesValue(s: SimState, p: Product): number {
   let sum = 0;
   for (const cardId of set.cardIds) {
     const pr = s.printings[s.printingByCard[cardId]!];
-    // `pullRate` is already copies per pack (RARITY_PULL / 10), so the packs
-    // per unit is the only other factor. Dividing by ten a second time here
-    // put every box's contents an order of magnitude under its own price, and
-    // ripping could never pay for anybody.
+    // `pullRate` is already copies of this card per pack — the rarity table
+    // over `pullDivisor`, scaled by the set size — so the packs per unit is the
+    // only other factor. Dividing by ten a second time here put every box's
+    // contents an order of magnitude under its own price, and ripping could
+    // never pay for anybody. Because the pull rate carries the set size, this
+    // sum holds steady as the set grows, which is what a fixed pack holds.
     if (pr) sum += pr.market.rawPrice * pr.pullRate * p.packsPerUnit;
   }
   return sum;

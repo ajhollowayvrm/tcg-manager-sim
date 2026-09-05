@@ -38,8 +38,10 @@ const U = (n: number) => Math.max(0, Math.min(1, n)) as Unit;
  * `x * (pull / d)` disagree in the last bits about a third of the time, and the
  * price engine amplifies that into a different run.
  */
-function rarityPull(s: SimState, r: Rarity): number {
-  return s.config.rarity.pull[r] / s.config.rarity.pullDivisor;
+function rarityPull(s: SimState, r: Rarity, setSize: number): number {
+  const cfg = s.config.rarity;
+  const size = Math.max(1, setSize);
+  return (cfg.pull[r] / cfg.pullDivisor) * (cfg.referenceSetSize / size);
 }
 
 /**
@@ -290,7 +292,7 @@ function reprint(s: SimState, cardId: CardId, intoSetId: SetId, quantity: number
   bumpRoster(s);
   s.printings[id] = {
     id, cardId, setId: intoSetId, regionId: 'reg_us' as RegionId, releaseTick: s.tick,
-    printQuantity: Math.max(1, quantity), pullRate: rarityPull(s, card.rarity),
+    printQuantity: Math.max(1, quantity), pullRate: rarityPull(s, card.rarity, set.cardIds.length),
     printQuality: set.printQuality,
     isReprintOf: originalId, error: err,
     // A reprint rolls its own chase. It is a different collectible, and the
@@ -768,7 +770,7 @@ function releaseSet(s: SimState, setId: SetId, regionId: RegionId): void {
       const p = s.products[pid]!;
       return n + p.unitsPrinted * p.packsPerUnit;
     }, 0);
-    const pullRate = rarityPull(s, card.rarity);
+    const pullRate = rarityPull(s, card.rarity, set.cardIds.length);
     const err = chance(s.rng, cfg.printing.errorRate[set.printQuality])
       ? { kind: pick(s.rng, ['miscut', 'inkError', 'missingFoil', 'wrongBack', 'textError', 'crimp'] as const), incidence: randRange(s.rng, s.config.printing.errorIncidenceMin, s.config.printing.errorIncidenceMax), discoveredTick: null }
       : null;

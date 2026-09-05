@@ -73,6 +73,11 @@ Two honest caveats before you retune to it. Our sets are 70 cards against a real
 `medianCardPrice` is taken over printings, not over a set's card list. Fix the
 set size first, or compare like with like.
 
+**[Round 3, 2026-09-05] Both caveats are closed.** Round 0 replaced the
+whole-catalogue price vector with a per-set age-2 snapshot, and Round 3 took
+sets to 280 cards. The measured age-2 median is $8.47, so the retune is Round
+4's and the comparison is now like with like.
+
 ### The shape is not lognormal — this is a real finding
 
 A lognormal was fitted by maximum likelihood and tested with Kolmogorov-Smirnov
@@ -285,9 +290,9 @@ together, not to raise the runs alone.
 
 | Measure | Real | Ours |
 |---|---|---|
-| Card names per premier set | ~280 | `cardsPerSet: 70` |
+| Card names per premier set | ~280 | `cardsPerSet: 280` (Round 3; was 70) |
 | Unique illustrations per set | ~380 | 70 |
-| Distinct artists per set | ~170 | `art.maxRosterSize: 24` |
+| Distinct artists per set | ~170 | `art.maxRosterSize: 170` (Round 3; was 24) |
 
 Counted directly from the Scryfall API across Bloomburrow, Duskmourn, Karlov
 Manor and Tarkir; and from pokemontcg.io, where a Pokemon set runs ~207 cards
@@ -297,6 +302,13 @@ across ~102 artists. ([Scryfall](https://scryfall.com/docs/api), [pokemontcg.io]
 roster is a seventh of a real one. This is a defensible simplification — it
 keeps the sim fast — but it means `chains.maxCountedLinks`, `creators.affinityTries`
 and anything else counted per set is being tuned against a small set.
+
+**[Round 3, 2026-09-05] Done: 280 cards and a 170-artist ceiling.** The cost
+landed on the art budget rather than on the clock. A 280-card set commissions
+four times the illustrations, and at 17,000 boxes a year-1 studio cannot carry
+it — art reaches 43% of the print bill on a `conservative` seed that dies at
+year 9. `diff.botsAlwaysSurvive` fell from 7 to 1 because of it. The set size is
+right; the artist rates are the thing that is wrong (see finding 3 below).
 
 ---
 
@@ -559,13 +571,14 @@ withdrew a Pikachu promo after opening-day crowd trouble. Our
 | Measure | Real | Ours |
 |---|---|---|
 | Largest channels | PokeRev 3.3M, UnlistedLeaf 2.5M, Tolarian 1.2M | `audienceBase` 20,000 × 1.6^U(0,6) → max ~335,000 |
-| The tail | 60–100 notable channels, most under 100,000 | `rosterSize: 8` |
+| The tail | 60–100 notable channels, most under 100,000 | `rosterSize: 24` (Round 3; was 8) |
 
 ([Kotaku](https://kotaku.com/pokemon-tcg-151-youtube-pokerev-unlistedleaf-pokichloe-1850924313)) [reported]
 
 Our long-tail *shape* is right; the ceiling is about 10x short. Raising
 `creators.audienceExponentMax` from 6 to about 11 would put the top channel near
-3.3 million while keeping the shape.
+3.3 million while keeping the shape. **[Round 3, 2026-09-05] Raised to 11, and
+`creators.rosterSize` from 8 to 24.**
 
 **How creators are actually paid:** preview access and free product, not fees.
 Large creators mostly buy their own product on camera — Logan Paul spent about
@@ -633,7 +646,7 @@ Ordered by how far our value sits from the measured one.
 3. **A card illustration pays $400–$2,500 flat, no royalty, and the fee does not rise with fame.** Ours is $75–$450, rising up to 250% with reputation — the opposite direction. [documented]
 4. **Warehousing is $20.17/pallet/month ≈ 4.7c/unit/week, with a surcharge cliff at 90–180 days.** Ours is 1c/unit/week and flat in time. [reported]
 5. **Crossovers outsell in-house sets by an order of magnitude, at 5–15% of net sales in royalties.** Our `licensor` bot loses money against `conservative`. The sign is inverted. [documented]
-6. **A premier set is ~280 cards, ~380 illustrations, ~170 artists.** Ours is 70 cards and a 24-artist roster. [measured]
+6. **A premier set is ~280 cards, ~380 illustrations, ~170 artists.** Ours is 280 cards and a 170-artist ceiling since Round 3. [measured]
 7. **Preview window is 3 weeks; measured media is under $750k/year company-wide against $1.7bn revenue.** Ours is 12–16 weeks and $50k per set. [documented]
 8. **A mid-size print run is 16,700–248,000 booster boxes.** Ours is 8,000 — below the real industry floor. [reported]
 9. **Publisher receives 35–40% of MSRP.** Our distributor `marginShare 0.38` already matches. Keep it. [reported]

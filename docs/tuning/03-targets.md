@@ -31,47 +31,47 @@ line to flip — flipping it is what stops the next round undoing the work.
 | `static.parallelIdentity` | static | 1 – 1 | 1 | pass |
 | `static.bandsInSync` | static | 1 – 1 | 1 | pass |
 | `struct.deathRoutes` | structural | 4 – 4 | 4 | pass |
-| `struct.overprintDeaths` | structural | 15 – 95 | 49 | pass |
-| `struct.debtSpiralDeaths` | structural | 15 – 90 | 62 | pass |
-| `struct.channelCollapseDeaths` | structural | 8 – 70 | 27 | pass |
+| `struct.overprintDeaths` | structural | 15 – 95 | 79 | pass |
+| `struct.debtSpiralDeaths` | structural | 15 – 90 | 79 | pass |
+| `struct.channelCollapseDeaths` | structural | 8 – 70 | 12 | pass |
 | `struct.attentionCollapseDeaths` | structural | 8 – 60 | 20 | pass |
-| `struct.speculatorMoves` | structural | 1.2 – 500 | 5.944 | pass |
-| `struct.collectorNotPinned` | structural | 5 – 1000000000 | 18 | pass |
-| `struct.printRunVaries` | structural | 4 – 100 | 12 | pass |
-| `diff.botsAlwaysSurvive` | difficulty | 3 – 11 | 7 | pass |
-| `diff.botsNeverSurvive` | difficulty | 2 – 8 | 6 | pass |
-| `diff.conservativeSurvives` | difficulty | 0.95 – 1 | 0.9 | known-fail |
-| `diff.hypeGamblerSurvival` | difficulty | 0.4 – 0.85 | 0.65 | pass |
+| `struct.speculatorMoves` | structural | 1.2 – 500 | 2.132 | pass |
+| `struct.collectorNotPinned` | structural | 5 – 1000000000 | 20 | pass |
+| `struct.printRunVaries` | structural | 4 – 100 | 19 | pass |
+| `diff.botsAlwaysSurvive` | difficulty | 3 – 11 | 1 | known-fail |
+| `diff.botsNeverSurvive` | difficulty | 2 – 8 | 5 | pass |
+| `diff.conservativeSurvives` | difficulty | 0.95 – 1 | 0.7 | known-fail |
+| `diff.hypeGamblerSurvival` | difficulty | 0.4 – 0.85 | 0.7 | pass |
 | `diff.hypeGamblerTopEarner` | difficulty | 1 – 3 | 1 | pass |
-| `diff.allInSurvival` | difficulty | 0.1 – 0.6 | 0.8 | known-fail |
-| `diff.flooderDiesEarly` | difficulty | 0.4 – 2.5 | 0.9 | pass |
+| `diff.allInSurvival` | difficulty | 0.1 – 0.6 | 0.05 | known-fail |
+| `diff.flooderDiesEarly` | difficulty | 0.4 – 2.5 | 0.75 | pass |
 | `diff.attentionBurnerDies` | difficulty | 0.85 – 1 | 1 | pass |
-| `diff.idleDies` | difficulty | 2.5 – 9 | 12.02 | known-fail |
-| `diff.deathsLandMidRun` | difficulty | 3 – 25 | 15.27 | pass |
-| `diff.sellThrough` | difficulty | 0.75 – 0.95 | 0.88 | pass |
-| `diff.flopRate` | difficulty | 0.01 – 0.25 | 0.034 | pass |
-| `shape.median` | shape | 0.2 – 0.5 | 3.23 | known-fail |
-| `shape.under1` | shape | 0.64 – 0.92 | 0.071 | known-fail |
+| `diff.idleDies` | difficulty | 2.5 – 9 | 12.019 | known-fail |
+| `diff.deathsLandMidRun` | difficulty | 3 – 25 | 8.173 | pass |
+| `diff.sellThrough` | difficulty | 0.75 – 0.95 | 0.882 | pass |
+| `diff.flopRate` | difficulty | 0.01 – 0.25 | 0.015 | pass |
+| `shape.median` | shape | 0.2 – 0.5 | 8.47 | known-fail |
+| `shape.under1` | shape | 0.64 – 0.92 | 0.004 | known-fail |
 | `shape.under25c` | shape | 0.25 – 0.8 | 0 | known-fail |
-| `shape.top1` | shape | 0.21 – 0.62 | 0.139 | known-fail |
-| `shape.top10` | shape | 0.66 – 0.95 | 0.447 | known-fail |
-| `shape.gini` | shape | 0.72 – 0.98 | 0.547 | known-fail |
-| `shape.chaseOverMedian` | shape | 130 – 3100 | 17.9 | known-fail |
-| `shape.tailAlpha` | shape | 1.6 – 2.7 | 2.5 | pass |
-| `shape.ageCurveDirection` | shape | 0.02 – 0.45 | -0.06 | known-fail |
-| `shape.ageCurveLate` | shape | 0.55 – 0.92 | 0.014 | known-fail |
+| `shape.top1` | shape | 0.21 – 0.62 | 0.156 | known-fail |
+| `shape.top10` | shape | 0.66 – 0.95 | 0.493 | known-fail |
+| `shape.gini` | shape | 0.72 – 0.98 | 0.579 | known-fail |
+| `shape.chaseOverMedian` | shape | 130 – 3100 | 38.47 | known-fail |
+| `shape.tailAlpha` | shape | 1.6 – 2.7 | 2.388 | pass |
+| `shape.ageCurveDirection` | shape | 0.02 – 0.45 | -0.004 | known-fail |
+| `shape.ageCurveLate` | shape | 0.55 – 0.92 | 0 | known-fail |
 | `shape.surpriseGrail` | shape | 0.1 – 0.6 | 1 | known-fail |
-| `shape.yearsTo100` | shape | 2 – 9 | 5.2 | pass |
-| `sub.signalLow` | subsystem | 0.3 – 0.72 | 0.505 | pass |
-| `sub.signalHigh` | subsystem | 0.65 – 0.97 | 0.827 | pass |
-| `sub.signalRises` | subsystem | 0.08 – 0.55 | 0.322 | pass |
-| `sub.gem10Premium` | subsystem | 2 – 5.5 | 7.8 | known-fail |
-| `sub.gradedPrintingShare` | subsystem | 0.02 – 0.09 | 0.121 | known-fail |
-| `sub.gemRate` | subsystem | 0.3 – 0.6 | 0.096 | known-fail |
-| `sub.scalperCycles` | subsystem | 3 – 35 | 16 | pass |
-| `sub.scalperShare` | subsystem | 0.1 – 0.5 | 0.038 | known-fail |
-| `sub.houseArtShare` | subsystem | 0.02 – 0.2 | 0.089 | pass |
-| `sub.channelHogLosesReach` | subsystem | 0.5 – 6 | 7 | known-fail |
+| `shape.yearsTo100` | shape | 2 – 9 | 1.442 | known-fail |
+| `sub.signalLow` | subsystem | 0.3 – 0.72 | 0.52 | pass |
+| `sub.signalHigh` | subsystem | 0.65 – 0.97 | 0.853 | pass |
+| `sub.signalRises` | subsystem | 0.08 – 0.55 | 0.333 | pass |
+| `sub.gem10Premium` | subsystem | 2 – 5.5 | 8.53 | known-fail |
+| `sub.gradedPrintingShare` | subsystem | 0.02 – 0.09 | 0.232 | known-fail |
+| `sub.gemRate` | subsystem | 0.3 – 0.6 | 0.105 | known-fail |
+| `sub.scalperCycles` | subsystem | 3 – 35 | 0 | known-fail |
+| `sub.scalperShare` | subsystem | 0.1 – 0.5 | 0.242 | pass |
+| `sub.houseArtShare` | subsystem | 0.02 – 0.2 | 0.097 | pass |
+| `sub.channelHogLosesReach` | subsystem | 0.5 – 6 | 6 | pass |
 <!-- BANDS:END -->
 
 See [06-regression.md](06-regression.md) for how to run the suite and read a
@@ -107,10 +107,13 @@ see [05-real-world.md](05-real-world.md) §2.
 The chase-to-median ratio, which nothing was targeting, is almost exactly right.
 Add it as a target.
 
-**Before retuning the median, fix the unit mismatch.** Our sets are 70 cards
-against a real 280, so we carry proportionally fewer bulk commons by
-construction; and `medianCardPrice` is taken over printings rather than over a
-set's card list.
+**Before retuning the median, fix the unit mismatch.** [Round 0 fixed the second
+half of this: the age-2 snapshot measures one set's card list. Round 3 fixed the
+first half: sets are 280 cards.] The text below is kept for the record.
+
+Our sets are 70 cards against a real 280, so we carry proportionally fewer bulk
+commons by construction; and `medianCardPrice` is taken over printings rather
+than over a set's card list.
 
 **Do not read the median and max columns for shape.** Use `--dist`. Only the
 step between deciles tells a power law from flat mush. The shipped ladder steps
@@ -291,7 +294,7 @@ high and raw prices stop meaning anything. It has **no measured band yet** — t
 
 | Target | Last measured |
 |---|---|
-| House filler is visible but survivable | ~9% of cards, so a 70-card set ships 5-6 |
+| House filler is visible but survivable | ~9% of cards, so a 280-card set ships 26-27 |
 | Art is a budget line, not a rounding error | 4.6% of revenue on `conservative` |
 | Buying visible reputation must hurt | 26.9% of revenue on `safeHands`, 4 deaths in 15 seeds |
 | Scouting must be cheap now and pay later | 1.6% of revenue on `scout` |

@@ -28,7 +28,8 @@ The largest of the new ones, worth knowing by name:
 |---|---|---|
 | `attention.demandCoefficient` | 0.06 | The master demand coefficient. Every unit of demand passes through it. |
 | `attention.demandDecayPerYear` | 1.4 | How long a set keeps selling. A 5-year-old set is three zeroes down. |
-| `rarity.pull.*` | 4 to 0.004 | Copies printed per card. How rarity reaches price. |
+| `rarity.pull.*` | 4 to 0.004 | Copies of one card per pack, at `rarity.referenceSetSize`. How rarity reaches price. |
+| `rarity.referenceSetSize` | 70 | Set size the `pull` table is written for. A pack holds a fixed number of cards, so `rarityPull` scales `pull` by `referenceSetSize / cards in the set`. Added in Round 3. |
 | `rarity.weight.*` | 1 to 90 | Demand-side rarity signal. Never touches price. |
 | `channels.traits.*` | 30 values | The whole shape of the retail layer. |
 | `grading.gradeCuts.*` | 9.75 to 6.5 | Sets `gemRate` jointly with `conditionSigma`. |
@@ -171,7 +172,7 @@ Swept over 15 seeds x 30 years against three art strategies (`scout`,
 | `art.exclusiveFeeDiscount` | 0.35 | The same, under exclusivity. | swept |
 | `art.newcomerChancePerTick` | 0.012 | Roster drift in. Applied every 13 ticks as `rate * 13`. | first-guess |
 | `art.retireChancePerTick` | 0.0009 | Roster drift out. | first-guess |
-| `art.maxRosterSize` | 24 | Cap on available artists. | first-guess |
+| `art.maxRosterSize` | 170 | Cap on available artists. Round 3 raised it from 24: a 280-card set cannot be staffed from 24 illustrators, and the measured real figure is about 170 per premier set. | first-guess |
 | `art.rateGrowthPerReputation` | 2.5 | How far a rising reputation drags the rate up. This is what makes scouting pay and what makes it expensive later. | swept |
 | `art.rateAdjustRate` | 0.02 | How fast the rate follows. | swept |
 
@@ -404,7 +405,7 @@ demand, and sizing up is exactly how it becomes an overprint. `licensor` uses
 
 | Path | Value | What it moves | Status |
 |---|---|---|---|
-| `creators.rosterSize` | 8 | Creators in the world. Read by `world.ts` at bootstrap. | first-guess |
+| `creators.rosterSize` | 24 | Creators in the world. Read by `world.ts` at bootstrap. Round 3 raised it from 8. | first-guess |
 | `creators.coverChancePerStride` | 0.25 | Chance a creator covers something. | first-guess |
 | `creators.freshnessWeeks` | 60 | How long a printing is new enough to cover. | first-guess |
 | `creators.affinityTries` | 4 | Redraws allowed to land on a creator's affinity IP. | first-guess |

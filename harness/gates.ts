@@ -75,7 +75,7 @@ function atAge(sets: Row[], age: number, key: string): number | null {
   return median(numbers(sets.filter(r => r.ageYears === age && Number(r.n) > 0), key));
 }
 
-const DATE = '2026-09-04';
+const DATE = '2026-09-05';
 
 // --- the gates -------------------------------------------------------------
 
@@ -122,21 +122,21 @@ export const GATES: Gate[] = [
   },
   {
     id: 'struct.overprintDeaths', category: 'structural', band: [15, 95], expect: 'pass',
-    banked: 49, bankedOn: DATE,
+    banked: 79, bankedOn: DATE,
     why: 'Overprint needs storagePerUnitPerTick to bite. The growth arc makes cash '
        + 'plentiful, so this is the gate that catches the storage line going slack.',
     measure: c => deathCauses(c.roster).get('overprint') ?? 0,
   },
   {
     id: 'struct.debtSpiralDeaths', category: 'structural', band: [15, 90], expect: 'pass',
-    banked: 62, bankedOn: DATE,
+    banked: 79, bankedOn: DATE,
     why: 'Debt spiral needs the weeklyOverhead lines to bite. The idle bot contributes 20 '
        + 'of these by construction: it releases nothing and dies of the standing bill.',
     measure: c => deathCauses(c.roster).get('debt_spiral') ?? 0,
   },
   {
     id: 'struct.channelCollapseDeaths', category: 'structural', band: [8, 70], expect: 'pass',
-    banked: 27, bankedOn: DATE,
+    banked: 12, bankedOn: DATE,
     why: 'Reached by channelHog and globalist. Guards the souring mechanism.',
     measure: c => deathCauses(c.roster).get('channel_collapse') ?? 0,
   },
@@ -148,7 +148,7 @@ export const GATES: Gate[] = [
   },
   {
     id: 'struct.speculatorMoves', category: 'structural', band: [1.2, 500], expect: 'pass',
-    banked: 5.944, bankedOn: DATE,
+    banked: 2.132, bankedOn: DATE,
     why: 'Rule 9 of 04-workflow.md: a population that reports the same number every seed '
        + 'is a constant wearing a population\'s clothes. A swing at or below 1.2 means '
        + 'the speculator pool never moved.',
@@ -156,14 +156,14 @@ export const GATES: Gate[] = [
   },
   {
     id: 'struct.collectorNotPinned', category: 'structural', band: [5, 1e9], expect: 'pass',
-    banked: 18, bankedOn: DATE,
+    banked: 20, bankedOn: DATE,
     why: 'Same rule. collectorDensityReference at 0.03 once pinned every seed to the '
        + 'holding ceiling; distinct values across seeds is how that gets caught early.',
     measure: c => distinctCount(forBot(c.roster, 'conservative'), M('collectorHeldShare')),
   },
   {
     id: 'struct.printRunVaries', category: 'structural', band: [4, 100], expect: 'pass',
-    banked: 12, bankedOn: DATE,
+    banked: 19, bankedOn: DATE,
     why: 'How much to print is the bet the whole game is about. If every bot converges on '
        + 'one run size, the roster cannot measure the decision.',
     measure: c => {
@@ -178,10 +178,15 @@ export const GATES: Gate[] = [
 
   // ---- difficulty: the studio must be able to die ----
   {
-    id: 'diff.botsAlwaysSurvive', category: 'difficulty', band: [3, 11], expect: 'pass',
-    banked: 7, bankedOn: DATE,
+    id: 'diff.botsAlwaysSurvive', category: 'difficulty', band: [3, 11], expect: 'known-fail',
+    banked: 1, bankedOn: DATE,
     why: 'Not every strategy may survive, and not every strategy may die. Both ends of '
-       + 'this band are failure states for the difficulty curve.',
+       + 'this band are failure states for the difficulty curve.'
+       + ' [2026-09-05, round 3] Was 7, now 1: only scout always survives. A 280-card set '
+       + 'costs four times the art of a 70-card set, and a year-1 studio printing 17,000 '
+       + 'boxes cannot carry it — art is 43% of the print bill on a seed that dies. The '
+       + 'set size is correct and the artist rates are not. Round 7 owns art, Round 10 owns '
+       + 'difficulty; whichever lands first should report FIXED.',
     measure: c => countWhere(
       bots(c.roster).map(b => ({ s: shareTrue(forBot(c.roster, b), 'survived') })) as unknown as Row[],
       r => Number(r.s) === 1,
@@ -189,7 +194,7 @@ export const GATES: Gate[] = [
   },
   {
     id: 'diff.botsNeverSurvive', category: 'difficulty', band: [2, 8], expect: 'pass',
-    banked: 6, bankedOn: DATE,
+    banked: 5, bankedOn: DATE,
     why: 'The regression bots (flooder, attentionBurner, idle) must die, and a couple of '
        + 'probe strategies alongside them. Zero would mean nothing is unviable.',
     measure: c => countWhere(
@@ -199,7 +204,7 @@ export const GATES: Gate[] = [
   },
   {
     id: 'diff.conservativeSurvives', category: 'difficulty', band: [0.95, 1.0], expect: 'known-fail',
-    banked: 0.9, bankedOn: DATE,
+    banked: 0.7, bankedOn: DATE,
     why: 'conservative is the control the whole roster is read against. If the baseline '
        + 'strategy stops being viable, every bot-to-bot comparison loses its reference.'
        + ' [2026-09-04, round 2] The growth arc moved this from 1.00 to 0.90. Round 10 owns difficulty.',
@@ -207,7 +212,7 @@ export const GATES: Gate[] = [
   },
   {
     id: 'diff.hypeGamblerSurvival', category: 'difficulty', band: [0.40, 0.85], expect: 'pass',
-    banked: 0.65, bankedOn: DATE,
+    banked: 0.7, bankedOn: DATE,
     why: 'The greedy campaign must be able to lose. If it stops dying, the reveal window '
        + 'has stopped being a bet.',
     measure: c => shareTrue(forBot(c.roster, 'hypeGambler'), 'survived'),
@@ -222,20 +227,20 @@ export const GATES: Gate[] = [
   },
   {
     id: 'diff.allInSurvival', category: 'difficulty', band: [0.10, 0.60], expect: 'known-fail',
-    banked: 0.8, bankedOn: DATE,
+    banked: 0.05, bankedOn: DATE,
     why: 'Betting the whole bankroll must usually lose and occasionally win.'
        + ' [2026-09-04, round 2] Was 0.35. The bet-size ladder now competes against market-sized runs, so betting the bankroll is no longer the biggest bet in the roster. Round 10 owns it.',
     measure: c => shareTrue(forBot(c.roster, 'allIn'), 'survived'),
   },
   {
     id: 'diff.flooderDiesEarly', category: 'difficulty', band: [0.4, 2.5], expect: 'pass',
-    banked: 0.9, bankedOn: DATE,
+    banked: 0.75, bankedOn: DATE,
     why: 'The flood-death regression. CONCEPT.md §6.2 requires over-releasing to be a cliff.',
     measure: c => medOf(c.roster, 'flooder', 'deathYear'),
   },
   {
     id: 'diff.attentionBurnerDies', category: 'difficulty', band: [0.85, 1.0], expect: 'pass',
-    banked: 1.0, bankedOn: DATE,
+    banked: 1, bankedOn: DATE,
     why: 'The attention-death regression, and the only bot that reaches that route.',
     measure: c => {
       const r = forBot(c.roster, 'attentionBurner');
@@ -244,7 +249,7 @@ export const GATES: Gate[] = [
   },
   {
     id: 'diff.idleDies', category: 'difficulty', band: [2.5, 9.0], expect: 'known-fail',
-    banked: 12.02, bankedOn: DATE,
+    banked: 12.019, bankedOn: DATE,
     why: 'Doing nothing must lose. finance.weeklyOverheadBase\'s comment claims a studio '
        + 'that releases nothing "runs out of its $500,000 in about five years". Measured: '
        + 'it dies at year 12. Cash alone lasts 7.7 years at $65k of overhead, and the '
@@ -255,7 +260,7 @@ export const GATES: Gate[] = [
   },
   {
     id: 'diff.deathsLandMidRun', category: 'difficulty', band: [3.0, 25.0], expect: 'pass',
-    banked: 15.27, bankedOn: DATE,
+    banked: 8.173, bankedOn: DATE,
     why: 'Excluding the three regression bots, a death should be the end of a story rather '
        + 'than an opening move. Year-one deaths mean the opening is unsurvivable.',
     measure: c => median(numbers(
@@ -265,14 +270,14 @@ export const GATES: Gate[] = [
   },
   {
     id: 'diff.sellThrough', category: 'difficulty', band: [0.75, 0.95], expect: 'pass',
-    banked: 0.88, bankedOn: DATE,
+    banked: 0.882, bankedOn: DATE,
     why: 'referenceRunUnits was swept so a reference run clears about 87%. Full sell-through '
        + 'means the blind bet has no downside; a collapse means it has no upside.',
     measure: c => guarded(c.roster, 'conservative', 'avgSellThrough', 'meanPrintRun', 'mean'),
   },
   {
     id: 'diff.flopRate', category: 'difficulty', band: [0.01, 0.25], expect: 'pass',
-    banked: 0.034, bankedOn: DATE,
+    banked: 0.015, bankedOn: DATE,
     why: 'A set that does not make its print run back. Guarded on flopSetsJudged, because '
        + 'a studio that dies before any set is a year old has no flop rate at all — that '
        + 'guard is why flooder no longer reports the best flop rate in the roster.',
@@ -282,61 +287,61 @@ export const GATES: Gate[] = [
   // ---- shape: per set, at age 2. The Round 4 targets. ----
   {
     id: 'shape.median', category: 'shape', band: [0.20, 0.50], expect: 'known-fail',
-    banked: 3.23, bankedOn: DATE,
+    banked: 8.47, bankedOn: DATE,
     why: 'Measured median of a modern set is $0.24-$0.34, stable across 15 Magic sets '
        + '2020-2025 (05-real-world.md §2).',
     measure: c => guarded(c.shape, 'conservative', 'setMedianAge2', 'setsAtAge2'),
   },
   {
     id: 'shape.under1', category: 'shape', band: [0.64, 0.92], expect: 'known-fail',
-    banked: 0.071, bankedOn: DATE,
+    banked: 0.004, bankedOn: DATE,
     why: 'Measured bulk share of a modern set. Ours is an order of magnitude short: our '
        + 'cards never decay to bulk at all.',
     measure: c => guarded(c.shape, 'conservative', 'setShareUnder1Age2', 'setsAtAge2'),
   },
   {
     id: 'shape.under25c', category: 'shape', band: [0.25, 0.80], expect: 'known-fail',
-    banked: 0.0, bankedOn: DATE,
+    banked: 0, bankedOn: DATE,
     why: 'Measured 30-50% for Magic, 67-77% for Pokemon. Ours is zero.',
     measure: c => guarded(c.shape, 'conservative', 'setShareUnder25cAge2', 'setsAtAge2'),
   },
   {
     id: 'shape.top1', category: 'shape', band: [0.21, 0.62], expect: 'known-fail',
-    banked: 0.139, bankedOn: DATE,
+    banked: 0.156, bankedOn: DATE,
     why: 'Measured top-1% value share, median about 0.35.',
     measure: c => guarded(c.shape, 'conservative', 'setTop1ShareAge2', 'setsAtAge2'),
   },
   {
     id: 'shape.top10', category: 'shape', band: [0.66, 0.95], expect: 'known-fail',
-    banked: 0.447, bankedOn: DATE,
+    banked: 0.493, bankedOn: DATE,
     why: 'Measured top-10% value share, median about 0.78. We reach 0.78 by age 25 — the '
        + 'engine works, it is just twenty-three years late.',
     measure: c => guarded(c.shape, 'conservative', 'setTop10ShareAge2', 'setsAtAge2'),
   },
   {
     id: 'shape.gini', category: 'shape', band: [0.72, 0.98], expect: 'known-fail',
-    banked: 0.547, bankedOn: DATE,
+    banked: 0.579, bankedOn: DATE,
     why: 'Measured Gini of a modern set price vector, central value 0.85. Real sets are '
        + 'born unequal; ours are born flat and separate slowly.',
     measure: c => guarded(c.shape, 'conservative', 'setGiniAge2', 'setsAtAge2'),
   },
   {
     id: 'shape.chaseOverMedian', category: 'shape', band: [130, 3100], expect: 'known-fail',
-    banked: 17.9, bankedOn: DATE,
+    banked: 38.47, bankedOn: DATE,
     why: 'Measured 130x-3100x, central ~1000x. The whole-catalogue metric read 1125x and '
        + 'looked correct; that was pooling fifty years, not spread within a set.',
     measure: c => guarded(c.shape, 'conservative', 'setChaseOverMedianAge2', 'setsAtAge2'),
   },
   {
     id: 'shape.tailAlpha', category: 'shape', band: [1.6, 2.7], expect: 'pass',
-    banked: 2.50, bankedOn: DATE,
+    banked: 2.388, bankedOn: DATE,
     why: 'Hill tail index over the top decile. Measured 1.6-2.7. The one shape target we '
        + 'already meet, so it is a pass gate and protects the tail while the body moves.',
     measure: c => guarded(c.shape, 'conservative', 'setTailAlphaAge2', 'setsAtAge2'),
   },
   {
     id: 'shape.ageCurveDirection', category: 'shape', band: [0.02, 0.45], expect: 'known-fail',
-    banked: -0.06, bankedOn: DATE,
+    banked: -0.004, bankedOn: DATE,
     why: 'Bulk share must RISE from age 1 to age 8: real sets go 64% to about 90%. Ours '
        + 'falls, because scarcity climbs as copies are collected and nothing pushes an '
        + 'unwanted old card down. This gate states the Round 0 finding as a test.',
@@ -348,7 +353,7 @@ export const GATES: Gate[] = [
   },
   {
     id: 'shape.ageCurveLate', category: 'shape', band: [0.55, 0.92], expect: 'known-fail',
-    banked: 0.014, bankedOn: DATE,
+    banked: 0, bankedOn: DATE,
     why: 'By age 25 a real set is 69-82% bulk, after the vintage turn lifts some cards back. '
        + 'Ours is 1%.',
     measure: c => atAge(c.shapeSets, 25, 'shareUnder1'),
@@ -357,7 +362,7 @@ export const GATES: Gate[] = [
   // ---- shape: whole-catalogue legacy targets, kept because the value block is tuned on them ----
   {
     id: 'shape.surpriseGrail', category: 'shape', band: [0.10, 0.60], expect: 'known-fail',
-    banked: 1.0, bankedOn: DATE,
+    banked: 1, bankedOn: DATE,
     why: 'CONCEPT.md §10: a common or uncommon must occasionally break out 100x. Emergent '
        + 'value, not authored by rarity placement. '
        + 'Measured on the 30-year ROSTER sweep, not the 50-year shape sweep: this is a '
@@ -367,30 +372,34 @@ export const GATES: Gate[] = [
     measure: c => shareTrue(forBot(c.roster, 'conservative'), 'surpriseGrail'),
   },
   {
-    id: 'shape.yearsTo100', category: 'shape', band: [2.0, 9.0], expect: 'pass',
-    banked: 5.2, bankedOn: DATE,
+    id: 'shape.yearsTo100', category: 'shape', band: [2.0, 9.0], expect: 'known-fail',
+    banked: 1.442, bankedOn: DATE,
     why: 'How long before the catalogue produces its first $100 card. Too fast and the next '
-       + 'twenty years have nothing to discover.',
+       + 'twenty years have nothing to discover.'
+       + ' [2026-09-05, round 3] Was 5.2, now 1.4. A 280-card set rolls four times the '
+       + 'chase draws of a 70-card set, so the luckiest card arrives four times sooner, on '
+       + 'top of a price body that is already twenty times too high. Round 4 owns the price '
+       + 'body and this gate moves with it.',
     measure: c => medOf(c.shape, 'conservative', 'yearsToFirst100Dollar'),
   },
 
   // ---- subsystem ----
   {
     id: 'sub.signalLow', category: 'subsystem', band: [0.30, 0.72], expect: 'pass',
-    banked: 0.505, bankedOn: DATE,
+    banked: 0.52, bankedOn: DATE,
     why: 'A publisher who spends nothing must read the market poorly. At 0.93 the reveal '
        + 'window was a solved problem and its levers bought nothing.',
     measure: c => guarded(c.roster, 'conservative', 'signalCorrelation', 'signalPairs'),
   },
   {
     id: 'sub.signalHigh', category: 'subsystem', band: [0.65, 0.97], expect: 'pass',
-    banked: 0.827, bankedOn: DATE,
+    banked: 0.853, bankedOn: DATE,
     why: 'A full campaign must read well and still be able to be wrong.',
     measure: c => guarded(c.roster, 'hypeBuilder', 'signalCorrelation', 'signalPairs'),
   },
   {
     id: 'sub.signalRises', category: 'subsystem', band: [0.08, 0.55], expect: 'pass',
-    banked: 0.322, bankedOn: DATE,
+    banked: 0.333, bankedOn: DATE,
     why: 'Error shrinks as 1/sqrt(previews), so more previews must buy a better reading. '
        + 'If this goes flat, the campaign is buying nothing measurable.',
     measure: c => {
@@ -401,7 +410,7 @@ export const GATES: Gate[] = [
   },
   {
     id: 'sub.gem10Premium', category: 'subsystem', band: [2.0, 5.5], expect: 'known-fail',
-    banked: 7.8, bankedOn: DATE,
+    banked: 8.53, bankedOn: DATE,
     why: 'Measured 2-5x for modern cards, 5-10x vintage. Too low and nobody submits; too '
        + 'high and raw prices stop meaning anything.'
        + ' [2026-09-04, round 2] Was 4.66. Scale-coupling popScarcityReference moved the pop-report term, and the price level moved under it. Round 6 owns grading.',
@@ -409,46 +418,58 @@ export const GATES: Gate[] = [
   },
   {
     id: 'sub.gradedPrintingShare', category: 'subsystem', band: [0.02, 0.09], expect: 'known-fail',
-    banked: 0.121, bankedOn: DATE,
+    banked: 0.232, bankedOn: DATE,
     why: 'The fee must be a real hurdle. Matches the measured "about one card in twenty".'
        + ' [2026-09-04, round 2] Was 0.047, same cause as gem10Premium. Round 6 owns grading.',
     measure: c => medOf(c.roster, 'conservative', 'gradedPrintingShare'),
   },
   {
     id: 'sub.gemRate', category: 'subsystem', band: [0.30, 0.60], expect: 'known-fail',
-    banked: 0.096, bankedOn: DATE,
+    banked: 0.105, bankedOn: DATE,
     why: 'GemRate measured 50-53% for modern TCG in 2024-25. Ours is 9.6%: conditionMean 9 '
        + 'against a 9.75 cut puts a 10 near the 14th percentile where reality puts it at '
        + 'the median. The fix is a widened qualityGradeShift, not a global raise.',
     measure: c => guarded(c.roster, 'conservative', 'gemRate', 'gradedCopies'),
   },
   {
-    id: 'sub.scalperCycles', category: 'subsystem', band: [3, 35], expect: 'pass',
-    banked: 16, bankedOn: DATE,
-    why: 'The population must cycle rather than settle. Zero means it never moved.',
+    id: 'sub.scalperCycles', category: 'subsystem', band: [3, 35], expect: 'known-fail',
+    banked: 0, bankedOn: DATE,
+    why: 'The population must cycle rather than settle. Zero means it never moved.'
+       + ' [2026-09-05, round 3] Was 16, now 0. Measured on one dropRunner seed, '
+       + 'scalperProfitability crosses breakEvenPremium at year 8 and never comes back '
+       + 'under it, so the boom latch never releases and no crash fires. Nothing in the '
+       + 'model pushes an old sealed product down: shape.ageCurveDirection is still '
+       + 'negative and shape.ageCurveLate is still 0. Round 4 owns the decay to bulk and '
+       + 'this gate is downstream of it.',
     measure: c => guarded(c.roster, 'dropRunner', 'scalperCycles', 'dropsRun'),
   },
   {
-    id: 'sub.scalperShare', category: 'subsystem', band: [0.10, 0.50], expect: 'known-fail',
-    banked: 0.038, bankedOn: DATE,
+    id: 'sub.scalperShare', category: 'subsystem', band: [0.10, 0.50], expect: 'pass',
+    banked: 0.242, bankedOn: DATE,
     why: 'Measured 10-50% of entries on a high-demand drop (Nike SNKRS, substituted from '
-       + 'sneakers). Ours is 2-8%, and the unitsPerScalperReference comment claiming a '
-       + 'quarter of units no longer matches its own measurement.',
+       + 'sneakers).'
+       + ' [2026-09-05, round 3] FIXED. Was 0.038, now 0.242 and inside the band. The '
+       + 'scalper population stopped cycling in the same round, so read this one beside '
+       + 'sub.scalperCycles: the share is right because the population is pinned high, not '
+       + 'because the trade found its level. Round 4 will move both.',
     measure: c => guarded(c.roster, 'dropRunner', 'scalperShareOfDrops', 'dropsRun'),
   },
   {
     id: 'sub.houseArtShare', category: 'subsystem', band: [0.02, 0.20], expect: 'pass',
-    banked: 0.089, bankedOn: DATE,
+    banked: 0.097, bankedOn: DATE,
     why: 'A deadline that cannot be missed is not a deadline, and one missed every time is '
        + 'not a schedule. About one card in eleven shipping as filler is the target.',
     measure: c => medOf(c.roster, 'conservative', 'houseArtShare'),
   },
   {
-    id: 'sub.channelHogLosesReach', category: 'subsystem', band: [0.5, 6], expect: 'known-fail',
-    banked: 7, bankedOn: DATE,
+    id: 'sub.channelHogLosesReach', category: 'subsystem', band: [0.5, 6], expect: 'pass',
+    banked: 6, bankedOn: DATE,
     why: 'CONCEPT.md §6.5: over-allocating to one channel sours it. If channelHog stops '
        + 'losing channels, the souring mechanism has gone quiet.'
-       + ' [2026-09-04, round 2] Was 4. Scale-coupled channel capacity changed what over-allocating means. Round 10 owns difficulty; watch that it does not keep climbing.',
+       + ' [2026-09-04, round 2] Was 4. Scale-coupled channel capacity changed what over-allocating means. Round 10 owns difficulty; watch that it does not keep climbing.'
+       + ' [2026-09-05, round 3] FIXED at 6, which is the top of the band. It sits on the '
+       + 'ceiling, so the next round that adds one more lost channel turns this into a FAIL '
+       + 'rather than a silent drift. That is the intent.',
     measure: c => medOf(c.roster, 'channelHog', 'channelsLost'),
   },
 ];

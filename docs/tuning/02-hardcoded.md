@@ -60,7 +60,7 @@ with a scratch script and has to be re-measured the same way.
 The shared baseline nine bots vary one axis from:
 
 ```
-cadenceWeeks 52, cardsPerSet 70, setType main, quality standard,
+cadenceWeeks 52, cardsPerSet 280, setType main, quality standard,
 units 8000, packsPerUnit 24, msrp 14000 ($140), boosterBox, spread
 ```
 
