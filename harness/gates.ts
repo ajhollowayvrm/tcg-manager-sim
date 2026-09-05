@@ -478,7 +478,7 @@ export const GATES: Gate[] = [
   },
   {
     id: 'sub.gemRateByQuality', category: 'subsystem', band: [1.3, 2.0], expect: 'pass',
-    banked: 1.79, bankedOn: DATE,
+    banked: 1.704, bankedOn: DATE,
     why: 'Premium gem rate over standard, formed ACROSS bots because no bot prints two '
        + 'print qualities: `chaseMaxxer` prints premium and `conservative` prints standard. '
        + 'Print quality has to be worth choosing and one pooled gem rate cannot say whether '
@@ -486,23 +486,30 @@ export const GATES: Gate[] = [
        + 'target: with standard near 0.50 the ratio cannot pass 2.0, and past '
        + 'printing.qualityGradeShift.premium 0.5 the premium rate pins at 1.000 and stops '
        + 'saying anything. The budget end of the same table is unreachable - `flooder` is '
-       + 'the only bot that prints budget and it dies in year two.',
+       + 'the only bot that prints budget and it dies before its first year is out. Both '
+       + 'rates are counted at grading rather than off the pop reports, so this ratio is '
+       + 'not confounded by the two bots\' different release cadences.',
     measure: c => {
-      const premium = medOf(c.roster, 'chaseMaxxer', 'gemRatePremium');
-      const standard = medOf(c.roster, 'conservative', 'gemRateStandard');
+      // Guarded on both sides, like every other ratio gate here: `numbers()`
+      // drops null rows silently, so without this a single seed that happened
+      // to grade a premium printing would report as a twenty-seed median.
+      const premium = guarded(c.roster, 'chaseMaxxer', 'gemRatePremium', 'gemRatePremiumCopies');
+      const standard = guarded(c.roster, 'conservative', 'gemRateStandard', 'gemRateStandardCopies');
       return premium !== null && standard !== null && standard > 0 ? premium / standard : null;
     },
   },
   {
     id: 'sub.gemRateVintage', category: 'subsystem', band: [0.15, 0.45], expect: 'pass',
-    banked: 0.376, bankedOn: DATE,
+    banked: 0.397, bankedOn: DATE,
     why: 'Gem rate for copies graded when the printing was already over 20 years old, '
        + 'counted AT grading rather than off the pop report. It must sit materially under '
        + 'the modern rate, because `grading.agePenaltyPerYear` is what makes an old copy in '
        + 'a slab worth something - and materially above zero, or vintage grading stops '
        + 'happening at all. Read it beside `gemRateModern`, which is 0.51. The same two '
        + 'figures taken off the cumulative pop reports differ by 5% rather than by a third, '
-       + 'because a pop report averages a printing\'s whole submission history.',
+       + 'because a pop report averages a printing\'s whole submission history. Banked from '
+       + 'the suite\'s own roster sweep at 20 seeds x 30 years, which is not the sweep the '
+       + 'round fitted on - a scratch probe over 50 years reads 0.376.',
     measure: c => guarded(c.roster, 'conservative', 'gemRateVintage', 'gemRateVintageCopies'),
   },
   {

@@ -2304,9 +2304,6 @@ function tickRoster(s: SimState): void {
  */
 
 /** Grade boundaries on the latent 1-10 condition score, best first. */
-/** Age at grading that counts a submission as vintage, in years. */
-export const GRADING_VINTAGE_YEARS = 20;
-
 function gradeCuts(s: SimState): Array<{ tier: GradeTier; min: number }> {
   const g = s.config.grading.gradeCuts;
   return [
@@ -2318,6 +2315,13 @@ function gradeCuts(s: SimState): Array<{ tier: GradeTier; min: number }> {
     { tier: 'below7', min: -Infinity },
   ];
 }
+
+/**
+ * Age at grading that counts a submission as vintage, in years. A measurement
+ * threshold rather than a tunable: it is what `gemRateVintage` means, so moving
+ * it silently redefines the gate rather than changing the world.
+ */
+const GRADING_VINTAGE_YEARS = 20;
 
 /** Abramowitz-Stegun 7.1.26. Good to ~1e-7, which is far past what this needs. */
 function normalCdf(x: number, mean: number, sigma: number): number {
@@ -2419,13 +2423,17 @@ function resolveGradingReturns(s: SimState): void {
       // Counted here rather than off the pop report, because the pop report is
       // cumulative and cannot say what a copy submitted today grades.
       const tally = s.market.gradingTally;
+      const isGem = cut.tier === '10';
       if (ageYears >= GRADING_VINTAGE_YEARS) {
         tally.vintageCopies += n;
-        if (cut.tier === '10') tally.vintageGems += n;
+        if (isGem) tally.vintageGems += n;
       } else {
         tally.modernCopies += n;
-        if (cut.tier === '10') tally.modernGems += n;
+        if (isGem) tally.modernGems += n;
       }
+      const q = tally.byQuality[pr.printQuality];
+      q.copies += n;
+      if (isGem) q.gems += n;
     }
   }
   s.market.gradingQueue = kept;

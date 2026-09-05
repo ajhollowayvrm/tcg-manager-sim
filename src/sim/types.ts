@@ -890,15 +890,24 @@ export interface MarketState {
    *
    * A pop report is cumulative, so reading a gem rate off the pop reports of
    * old printings measures their whole submission history and not what a copy
-   * submitted today grades. Those two differed by 5% where the age penalty
-   * should have made them differ by a factor of two, which is what this tally
-   * exists to say.
+   * submitted today grades. Measured, the pop-report split reads 0.464 against
+   * 0.487 - a gap of 0.023 - where counting at grading reads 0.376 against
+   * 0.510, a gap of 0.134. Nearly six times the effect, and that is what this
+   * tally exists to say.
    */
   gradingTally: {
     modernCopies: number;
     modernGems: number;
     vintageCopies: number;
     vintageGems: number;
+    /**
+     * The same count split by print quality. It is here rather than read off
+     * the pop reports for exactly the reason above: a gem rate taken from a
+     * cumulative pop report carries the printing's whole age mix, so comparing
+     * two bots' pop reports compares their release cadences as much as their
+     * print quality.
+     */
+    byQuality: Record<PrintQualityTier, { copies: number; gems: number }>;
   };
   /** Art that has been paid for and not yet come back. */
   commissionQueue: Commission[];

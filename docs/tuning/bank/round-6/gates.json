@@ -581,7 +581,7 @@
     ],
     "expect": "pass",
     "verdict": "PASS",
-    "banked": 1.79,
+    "banked": 1.704,
     "drift": null
   },
   {
@@ -594,7 +594,7 @@
     ],
     "expect": "pass",
     "verdict": "PASS",
-    "banked": 0.376,
+    "banked": 0.397,
     "drift": null
   },
   {

@@ -122,11 +122,14 @@ export interface RunMetrics {
    * premium over standard across bots instead. It is premium over STANDARD
    * rather than over budget, which is what the round plan asked for, because
    * budget is unreachable: `flooder` is the only bot that prints it and it dies
-   * in year two, so no budget printing survives to be graded in any seed.
+   * at a median year 0.75, so no budget printing survives to be graded.
    */
   gemRateBudget: number | null;
   gemRateStandard: number | null;
   gemRatePremium: number | null;
+  /** Denominators, so the ratio gate can refuse to read a one-seed median. */
+  gemRateStandardCopies: number;
+  gemRatePremiumCopies: number;
   /**
    * Gem rate for copies graded while the printing was under 20 years old, and
    * for those graded after. This is what `grading.agePenaltyPerYear` buys, and
@@ -563,10 +566,12 @@ export function computeMetrics(
   // a pop report is cumulative state that nothing prunes.
   let gradedCopies = 0, gems = 0, openedGraded = 0, printingsGraded = 0;
   const gemPremiums: number[] = [];
-  // Split two ways, because one gem rate cannot say whether print quality or
-  // age is doing the work. `byQuality` is what the print-quality decision buys;
-  // `vintage` is what wear takes back.
-  const byQuality: Record<string, { graded: number; gems: number }> = {};
+  // Both splits — by print quality and by age — are read off
+  // `market.gradingTally`, which counts at the moment of grading. Reading
+  // either off the cumulative pop reports carries the printing's whole age mix,
+  // which is the distortion this round found on the age split and which applies
+  // to the quality split just as hard: comparing two bots' pop reports would
+  // compare their release cadences as much as their print quality.
   for (const pr of printings) {
     let onThis = 0;
     let gemsOnThis = 0;
@@ -583,14 +588,12 @@ export function computeMetrics(
     if (onThis > 0) {
       printingsGraded += 1;
       openedGraded += pr.population.opened;
-      const q = (byQuality[pr.printQuality] ??= { graded: 0, gems: 0 });
-      q.graded += onThis;
-      q.gems += gemsOnThis;
     }
   }
-  const gemRateOf = (q: string): number | null => {
-    const row = byQuality[q];
-    return row && row.graded > 0 ? row.gems / row.graded : null;
+  const tally = s.market.gradingTally;
+  const gemRateOf = (q: 'budget' | 'standard' | 'premium'): number | null => {
+    const row = tally.byQuality[q];
+    return row.copies > 0 ? row.gems / row.copies : null;
   };
   const budgetGem = gemRateOf('budget');
   const standardGem = gemRateOf('standard');
@@ -771,11 +774,11 @@ export function computeMetrics(
     gemRateBudget: budgetGem,
     gemRateStandard: standardGem,
     gemRatePremium: premiumGem,
-    gemRateModern: s.market.gradingTally.modernCopies > 0
-      ? s.market.gradingTally.modernGems / s.market.gradingTally.modernCopies : null,
-    gemRateVintage: s.market.gradingTally.vintageCopies > 0
-      ? s.market.gradingTally.vintageGems / s.market.gradingTally.vintageCopies : null,
-    gemRateVintageCopies: s.market.gradingTally.vintageCopies,
+    gemRateStandardCopies: tally.byQuality.standard.copies,
+    gemRatePremiumCopies: tally.byQuality.premium.copies,
+    gemRateModern: tally.modernCopies > 0 ? tally.modernGems / tally.modernCopies : null,
+    gemRateVintage: tally.vintageCopies > 0 ? tally.vintageGems / tally.vintageCopies : null,
+    gemRateVintageCopies: tally.vintageCopies,
     gem10Premium,
     printingsGraded,
     gradersActive,

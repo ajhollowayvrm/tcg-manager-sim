@@ -203,8 +203,9 @@ export const defaultConfig: SimConfig = {
     // anything.
     //
     // `budget` is arithmetic, not measurement: `flooder` is the only bot that
-    // prints it and it dies in year two, so no budget printing is ever graded
-    // in any seed. Nothing in the roster can check this number.
+    // prints it and it dies at a median year 0.75, so no budget printing ever
+    // survives to be graded in any seed. `archival` is worse - no bot prints it
+    // at all. Nothing in the roster can check either number.
     qualityGradeShift: { budget: -0.56, standard: 0, premium: 0.3, archival: 0.4 },
     errorRate: { budget: 0.02, standard: 0.008, premium: 0.002, archival: 0.0005 },
     unitCost: { budget: C(80), standard: C(140), premium: C(240), archival: C(400) },

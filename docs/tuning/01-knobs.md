@@ -146,10 +146,10 @@ The sharpest penalty in the model. `fatigueResponse` is
 | `printing.unitCost.standard` | 140 | $1.40 per pack. | first-guess |
 | `printing.unitCost.premium` | 240 | $2.40 per pack. | first-guess |
 | `printing.unitCost.archival` | 400 | $4.00 per pack. | first-guess |
-| `printing.qualityGradeShift.budget` | -0.56 | Shift on the latent condition mean, times `grading.gradeShiftWeight`. The span of this table is the whole reason print quality is worth choosing. **Arithmetic, not measurement:** `flooder` is the only bot that prints budget and it dies in year two, so no budget printing is ever graded in any seed and nothing in the roster can check this number. | fitted, unreachable |
+| `printing.qualityGradeShift.budget` | -0.56 | Shift on the latent condition mean, times `grading.gradeShiftWeight`. The span of this table is the whole reason print quality is worth choosing. **Arithmetic, not measurement:** `flooder` is the only bot that prints budget and it dies at a median year 0.75, so no budget printing ever survives to be graded and nothing in the roster can check this number. | fitted, unreachable |
 | `printing.qualityGradeShift.standard` | 0 | The reference tier. | structural |
 | `printing.qualityGradeShift.premium` | 0.3 | Gives a premium printing an 87% gem rate against a standard one at 51%. Past 0.5 it pins at 1.000 and stops saying anything. | swept, round 6 |
-| `printing.qualityGradeShift.archival` | 0.4 | Above premium, by the same arithmetic and equally unreachable — no bot prints archival either. | fitted, unreachable |
+| `printing.qualityGradeShift.archival` | 0.4 | Above premium, by the same arithmetic and unreachable for a simpler reason: no bot prints archival at all. | fitted, unreachable |
 | `printing.errorRate.budget` | 0.02 | Chance a printing carries an error. | first-guess |
 | `printing.errorRate.standard` | 0.008 | | first-guess |
 | `printing.errorRate.premium` | 0.002 | | first-guess |
@@ -387,7 +387,7 @@ is a price multiplier with extra steps.
 | `actors.ripBreakEven` | 0.5 | Singles-to-sealed ratio at which ripping stops paying. Measured after Round 4 the weighted ratio runs 0.53-1.30 and differs by strategy, near 1.0 for `conservative` and 0.6 for `hypeGambler`. A break-even of 1 pins the population on its floor for every strategy except a flooder. **The reseller population's whole range sits on this knob:** 3x moves the population 432%, and nothing downstream. | fitted, screened round 5c |
 | `actors.ripPerReseller` | 0.5 | Coefficient on the rip-rate multiplier, against `resellerReference`. A ratio, so it says nothing about the population's level. | first-guess, screened round 5c |
 | `actors.ripUnitsPerReseller` | 0.1 | Units of sealed product one reseller opens per stride, scaled to the market. **The only place the reseller population's absolute level is load-bearing** — `ripMultiplier` reads the pool as a ratio to its own reference, so before this the level was decoration. At 0.5 the throughput never bound; at 0.1 it rations 34% of strides for `conservative` and 92% for `hypeGambler`. Read it through the `sealedRipRation` column. | swept, round 5b |
-| `actors.speculatorsPerPrinting` | 1 | Speculators per printing at which their heat push runs at full strength. Replaces the absolute `speculatorReference`, which gave the heat loop no brake: heat feeds the pool, the pool feeds the population, the population feeds the heat. It held to year 40 and then detonated - 82% of a 14,000-printing catalogue pinned at `value.heatCeiling` by year 50, in every bot and every seed. | fitted, round 5 |
+| `actors.speculatorsPerPrinting` | 1 | Speculators per printing at which their heat push runs at full strength. Replaces the absolute `speculatorReference`, which gave the heat loop no brake: heat feeds the pool, the pool feeds the population, the population feeds the heat. It held to year 40 and then detonated - 82% of a 14,000-printing catalogue pinned at `value.heatCeiling` by year 50, on the three bots at seed 0 that the probe ran. | fitted, round 5 |
 | `actors.speculatorConvergence` | 0.1 | | first-guess, screened round 5c |
 | `actors.minSpeculators` | 50 | Floor. | structural |
 | `actors.maxSpeculators` | 30000 | Cap. Pinned in 65% of 50-year seeds before the round-5 heat fix; the population now ends near 2,500. | structural |

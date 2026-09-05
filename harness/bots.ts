@@ -747,7 +747,9 @@ export const BOTS: Record<string, () => Bot> = {
   }),
 
   // Releases constantly, cheap quality, large runs. Per CONCEPT.md §6.2 this
-  // must lose, and since the fatigue curve landed it does: it dies in year two
+  // must lose, and since the fatigue curve landed it does: it dies at a median
+  // year 0.75 - measured, and worth keeping accurate, because it is the reason
+  // `printing.qualityGradeShift.budget` is unreachable by the whole roster
   // in every seed. It stays in the roster as the flood-death regression.
   flooder: () => makeSetBot({
     label: 'Flooder', cadenceWeeks: 6, cardsPerSet: 160, setType: 'main',

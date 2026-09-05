@@ -70,8 +70,8 @@ line to flip — flipping it is what stops the next round undoing the work.
 | `sub.gem10Premium` | subsystem | 2 – 5.5 | 3.929 | pass |
 | `sub.gradedPrintingShare` | subsystem | 0.02 – 0.09 | 0.0482 | pass |
 | `sub.gemRate` | subsystem | 0.3 – 0.6 | 0.521 | pass |
-| `sub.gemRateByQuality` | subsystem | 1.3 – 2 | 1.79 | pass |
-| `sub.gemRateVintage` | subsystem | 0.15 – 0.45 | 0.376 | pass |
+| `sub.gemRateByQuality` | subsystem | 1.3 – 2 | 1.704 | pass |
+| `sub.gemRateVintage` | subsystem | 0.15 – 0.45 | 0.397 | pass |
 | `sub.scalperCycles` | subsystem | 3 – 35 | 4 | pass |
 | `sub.scalperShare` | subsystem | 0.1 – 0.5 | 0.131 | pass |
 | `sub.houseArtShare` | subsystem | 0.02 – 0.2 | 0.097 | pass |
@@ -271,7 +271,7 @@ untuned, and possibly too harsh.
 |---|---|---|
 | A minority of printings clear the fee | 4.7% | ~5% ("one card in twenty") ✅ |
 | A gem must be common on a modern card | `gemRate` 52.1% | 50-53% for modern TCG ✅ |
-| and rare on an old one | `gemRateVintage` 39.7% | 1% for true vintage ⚠ |
+| and rare on an old one | `gemRateVintage` 39.7% (0.376 on the 50-year probe) | 1% for true vintage ⚠ |
 | Print quality must be worth choosing | `gemRateByQuality` 1.70x | premium 87% against standard 51% |
 | Gem premium over raw | `gem10Premium` 3.9x | 2-5x modern, 5-10x vintage ✅ |
 | The third grader arrives mid-run | years 4-13 | — |
@@ -288,8 +288,8 @@ It says a factory-fresh modern copy clears the top bar about half the time.
 take 0.4 off the mean over 20 years. Closing that gap means a far harsher wear
 curve, and it would want its own measured band first. And the budget end of the
 quality span is arithmetic rather than measurement: `flooder` is the only bot
-that prints budget and it dies in year two, so no budget printing is ever graded
-in any seed.
+that prints budget and it dies at a median year 0.75, so no budget printing ever
+survives to be graded. No bot prints archival at all.
 
 **Knobs:** `grading.conditionMean` and `printing.qualityGradeShift` set the gem
 rate together — tune either alone and you are tuning half the problem.

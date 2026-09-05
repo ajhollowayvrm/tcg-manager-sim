@@ -171,7 +171,7 @@ on `harness/worker.mjs`, which installs the TypeScript loader and then imports
   (bot, seed, years, config), so the batch was always embarrassingly parallel
   and simply wasn't taking it. `runOne` is the shared unit, `worker.ts` pulls
   one task at a time (a static split leaves three threads waiting on
-  `chaseMaxxer` while `flooder` dies in year two), and results reassemble in
+  `chaseMaxxer` while `flooder` dies at a median year 0.75), and results reassemble in
   task order so the CSV never depends on which thread finished first.
 
   The engine got cheaper first, and byte-identically: the tick cache used to
@@ -671,7 +671,7 @@ tuning one.
 ### Two things the roster cannot check
 
 **The budget end of the quality table is arithmetic.** `flooder` is the only bot
-that prints budget and it dies in year two, so no budget printing is ever graded
+that prints budget and it dies at a median year 0.75, so no budget printing is ever graded
 in any seed. `gemRateBudget` reads null in all twenty. The same is true of
 archival: nothing prints it. So `sub.gemRateByQuality` is premium over
 STANDARD, formed across bots — `chaseMaxxer` prints premium, `conservative`
@@ -701,6 +701,57 @@ where the plan expected.
 Swept anyway against the moved price body: the multiple now barely touches the
 gem rate (0.52 at 2, 0.46 at 12) and `sub.gradedPrintingShare` stays in band. It
 stays at 5.
+
+### What the review of this round found
+
+Six findings, all real. Recorded because two of them are about how this document
+gets written, not about the code.
+
+**The band table went out of sync and the suite caught it.** Correcting two
+banked values in `gates.ts` without regenerating the table in `03-targets.md`
+put `static.bandsInSync` into FAIL. That gate exists for exactly this and it
+worked.
+
+**The banked values were wrong in the first place.** `sub.gemRateByQuality` was
+banked at 1.79 and `sub.gemRateVintage` at 0.376, both taken from the scratch
+probe the round fitted on — 20 seeds x 50 years over three bots — rather than
+from the suite's own roster sweep at 20 x 30, which reads 1.704 and 0.397. Under
+the 25% drift threshold, so nothing flagged, but it silently spends 5% of the
+next round's drift budget. **Bank what the suite measures, not what the probe
+measured.**
+
+**The quality split had the same defect as the age split, and the round shipped
+it anyway.** `gemRateBudget`, `gemRateStandard` and `gemRatePremium` were read
+off the cumulative pop reports — the very distortion this round diagnosed for
+age, one screen further down the same file. Since the ratio divides two
+different bots, their different release cadences carry different age mixes, so
+the confound is structural rather than incidental. `market.gradingTally` now
+splits by print quality too.
+
+**State the size of it honestly: correcting it moved the ratio from 1.704 to
+1.703.** The defect was real, the fix is right, and the number did not care.
+Both bots' age mixes happened to be similar. That is worth knowing before the
+next round spends a day on a confound it has not sized.
+
+Two smaller ones: `sub.gemRateByQuality` had no denominator guard where every
+neighbouring ratio gate has one, so a single seed that happened to grade a
+premium printing would have reported as a twenty-seed median. And a stale
+`flooder` lifetime survived in `HANDOFF.md` after being corrected in five other
+files — the one uncorrected copy being, as the review put it, the one a reader
+is most likely to trust. `flooder` dies at a median year 0.75, not "in year two".
+
+### The whole grade distribution, which no gate measures
+
+Five seeds of `conservative` over 50 years, every graded copy:
+
+| 10 | 9.5 | 9 | 8 | 7 | below 7 |
+|---|---|---|---|---|---|
+| 48.1% | 24.9% | 21.5% | 5.2% | 0.1% | 0.1% |
+
+That is the right shape — tens about half, nines carrying most of the rest, a
+thin tail — and it is what says `conditionMean` 10.0 did not simply push the
+whole catalogue through the top cut. Only `gemRate` is gated, so nothing else
+would have noticed if it had.
 
 ### `strides.grading` at 8: measured and declined
 
@@ -1021,10 +1072,14 @@ with no term anywhere dividing by the size of the market. The loop gain crosses
 | 40 | 1,448 | 3,140 | 0% |
 | 50 | **57,198** | **30,000 (the cap)** | **82%** |
 
-Every bot, every seed. By year 50 the speculators had driven 82% of a
-14,000-printing catalogue to the heat ceiling and pinned themselves at
-`maxSpeculators`. Round 4 fitted the value block with the late years of every
-50-year run inside that.
+Measured on three bots at seed 0, which is what the probe ran. **The first
+write-up of this said "every bot, every seed", and that was not measured** - it
+is the same overstatement this document made about collector holding one round
+earlier. By year 50 the speculators had driven 82% of a 14,000-printing
+catalogue to the heat ceiling and pinned themselves at `maxSpeculators`. Round 4
+fitted the value block with the late years of every 50-year run inside that.
+`struct.heatNotPinned` now reads the same quantity over 30 seeds, so the claim
+is checked at the suite's sample from here on.
 
 The fix is workflow rule 9 applied to a push rather than to a population:
 `speculatorCrowd` now divides by the catalogue the pressure is spread across,

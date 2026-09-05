@@ -194,7 +194,7 @@ export function speculatorCrowd(s: SimState, catalogue: number): number {
   // no brake at all: heat feeds the pool, the pool feeds the population, and
   // the population feeds the heat. It held until year 40 and then detonated —
   // 82% of a 14,000-printing catalogue pinned at `value.heatCeiling` by year
-  // 50, in every bot and every seed.
+  // 50, on the three bots at seed 0 that the probe ran.
   return s.audience.actors.speculators
     / Math.max(1, cfg.speculatorsPerPrinting * Math.max(1, catalogue));
 }

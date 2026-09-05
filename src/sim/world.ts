@@ -149,7 +149,15 @@ export function createWorld(seed: string, config: SimConfig): SimState {
         bySet: {},
       },
       gradingQueue: [],
-      gradingTally: { modernCopies: 0, modernGems: 0, vintageCopies: 0, vintageGems: 0 },
+      gradingTally: {
+        modernCopies: 0, modernGems: 0, vintageCopies: 0, vintageGems: 0,
+        byQuality: {
+          budget: { copies: 0, gems: 0 },
+          standard: { copies: 0, gems: 0 },
+          premium: { copies: 0, gems: 0 },
+          archival: { copies: 0, gems: 0 },
+        },
+      },
       commissionQueue: [],
     },
 

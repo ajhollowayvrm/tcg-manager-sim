@@ -1,7 +1,7 @@
 /**
  * Batch worker. Pulls one task at a time from the parent rather than taking a
  * fixed slice up front: bots differ by an order of magnitude in cost (a
- * `flooder` that dies in year two against a `chaseMaxxer` that runs the full
+ * `flooder` that dies inside its first year against a `chaseMaxxer` that runs the full
  * fifty), so a static split leaves three threads idle waiting for one.
  */
 import { parentPort } from 'node:worker_threads';

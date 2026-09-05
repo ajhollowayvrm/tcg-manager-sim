@@ -140,7 +140,7 @@ PUSHES, not only to what it earns.** The scalper loop divides its return by the
 population. The speculator loop divided its return but not its heat push, so
 heat fed the pool, the pool fed the population, and the population fed the heat.
 The loop held for forty years and then pinned 82% of a 14,000-printing catalogue
-at `value.heatCeiling` in every bot and every seed. A push term with no
+at `value.heatCeiling` on every bot the probe ran. A push term with no
 denominator is the same defect as a pinned constant, and it hides for longer:
 the population looks healthy right up to the year it detonates. Measure the
 long horizon, not only the gated one.
