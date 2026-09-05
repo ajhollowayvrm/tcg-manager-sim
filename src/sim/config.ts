@@ -35,6 +35,12 @@ export const defaultConfig: SimConfig = {
     heatFloor: 0.4,
     heatCeiling: 6,
     nostalgiaCeiling: 20,
+    // A forgotten card has to be able to fall, not merely stop rising. With a
+    // floor of 1 nothing in the price stack ever pushed an old card under its
+    // release price, so a set's bulk share fell with age where a real set's
+    // rises. The gate that decides who falls is already there: it reads desire
+    // and price standing, so the cheap half decays and the top keeps climbing.
+    nostalgiaFloor: 0.2,
     chaseSigma: 0.65,
     referencePopulation: 60_000,
     // The gate is tight on purpose. Nostalgia is the engine that separates the

@@ -596,6 +596,67 @@ All three are plausible mechanisms and all three may simply be too harsh. None
 has been tuned.
 
 
+## The population bug and the nostalgia floor (tuning Round 4a, 2026-09-05)
+
+Round 4 started as a pure tuning round and found two defects first. Both are
+corrections, not fits. This section records them before the value sweep moves
+every number again.
+
+**`tickSealed` minted copies.** Opening a pack moved copies from `sealed` to
+`opened` at `rarity.pull[rarity] / rarity.pullDivisor`. That table is copies per
+pack at `rarity.referenceSetSize`, which is 70. The printing's own `pr.pullRate`
+is the rate that carries the set size, and `releaseSet` prints against
+`pr.pullRate`. At 280 cards a set the two disagree by a factor of four, so a set
+opened four copies for every one it printed. `population.sealed` clamped at zero
+while `population.opened` grew without bound, so a printing's population
+inflated with age. Every old card got cheaper supply that nobody ever printed.
+`tickSealed` now reads `pr.pullRate`.
+
+Round 3 introduced this and nothing caught it for a whole round. So
+`checkInvariants` now asserts the rule the bug broke: `sealed + opened` must not
+pass `printQuantity`. The population is fixed at release and opening a pack
+moves a copy, so the two halves must always sum to the print run. The 1%
+tolerance is float drift and nothing else.
+
+**Nothing could fall.** `value.nostalgia` was clamped to a floor of 1, so no
+term in the price stack could push an old card under its release price. A set's
+bulk share fell with age, where a real set's bulk share rises. The new knob
+`value.nostalgiaFloor`, at 0.2, lets a forgotten printing decay. The gate that
+decides who falls already existed: it reads desire and price standing, so the
+cheap half decays and the top keeps climbing.
+
+**What the two fixes bought.** Measured on `npm run check`, 46 gates, 27 PASS,
+0 FAIL, 19 KNOWN.
+
+| Gate | Round 3 bank | Round 4a | Band |
+|---|---|---|---|
+| `shape.median` | 8.47 | 7.73 | 0.20–0.50 |
+| `shape.gini` | 0.579 | 0.590 | 0.72–0.98 |
+| `shape.top10` | 0.493 | 0.501 | 0.66–0.95 |
+| `shape.ageCurveDirection` | −0.004 | 0.000 | 0.02–0.45 |
+| `shape.ageCurveLate` | 0 | 0.018 | 0.55–0.92 |
+
+The age curve stopped running backwards and now runs flat. It did not start to
+rise, because a floor at 0.2 cannot bite while no card is near it. The body must
+fall first, and Round 4 owns the body.
+
+**Two grading gates drifted, and Round 6 inherits the reason.**
+`sub.gem10Premium` went 8.53 to 11.11, and `sub.gradedPrintingShare` went 0.232
+to 0.160. Both follow from the population fix: fewer opened copies make a
+smaller raw pool, so the graded share falls and the slab premium rises.
+`gradedPrintingShare` moved toward its band and `gem10Premium` moved away from
+it. Round 6 owns both, and this is the cause.
+
+**Neither fix draws RNG, so no stream renumbers.** Both move every price number,
+so the Round 3 bank stops being numerically comparable at this commit. Round 4's
+bank is the next comparable one.
+
+**A third defect, in the harness.** `--set path=value` with a space reads as a
+bare `--set` flag plus a stray positional, so `run.ts` dropped every override
+and measured the defaults while it claimed to measure the point. That
+invalidated the first Round 3 stride measurement. `run.ts` now throws on a
+spaced `--set`. Only `--set=path=value` is valid.
+
 ## The counts (tuning Round 3, 2026-09-05)
 
 Every count moved to its real value in one step, because `cardsPerSet`, the
@@ -665,10 +726,10 @@ next round that loses one more channel gets a `FAIL` rather than a silent drift)
 The plan and the Round 2 handoff both named `strides.price` as the lever, on the
 grounds that `tickPrices` is the hot loop, and warned that `value.priceLerp` is
 not stride-invariant so it would need re-fitting in Round 4. **Measured, the
-stride buys nothing.** A 30-seed 50-year `conservative` sweep runs 50.3s at
-`strides.price` 4 and 51.6s at 8 with `priceLerp` compensated to 0.6156.
-`strides.sealed`, `strides.grading`, `strides.scalper` and `strides.channel` at
-8 are all within a second of the baseline too.
+stride buys nothing.** A 30-seed 50-year `conservative` sweep runs 50.5s at
+`strides.price` 4 and 49.9s at 8 with `priceLerp` compensated to 0.6156 —
+inside the noise. `strides.sealed` at 8 is 49.2s. Only `strides.grading` at 8
+does anything, at 42.9s, and grading is an observer whose stride Round 6 owns.
 
 So `strides.price` stays at 4, `value.priceLerp` stays at 0.38, and **Round 4
 inherits no re-fit obligation.** The cost is somewhere that is not on a stride
@@ -676,6 +737,13 @@ at all — per-tick work, or simply 14,000 printings' worth of allocation — an
 nobody has found it yet. The suite went 52.3s to **185.4s**, which is roughly
 the three minutes Round 2 predicted. Per AJ's standing call, correctness comes
 first and this is not yet unusable.
+
+**Correction, found in Round 4.** The first run of this measurement was invalid.
+It was written `--set strides.price=8` with a space, which reads as a bare
+`--set` flag plus a stray positional, so `run.ts` dropped every override and
+timed the defaults five times over. The numbers above are the re-run with
+`--set=`. The conclusion did not change, but it was not evidence when it was
+first written. `run.ts` now throws on a spaced `--set` rather than dropping it.
 
 ## The audience system (tuning Round 2, 2026-09-04)
 

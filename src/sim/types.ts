@@ -1027,6 +1027,12 @@ export interface SimConfig {
     heatCeiling: number;
     /** Upper bound on the slow-compounding vintage nostalgia multiplier. */
     nostalgiaCeiling: number;
+    /**
+     * How far nostalgia may fall for a printing the market has forgotten.
+     * Below 1 it is the only term in the price stack that can push an old card
+     * under its release price, which is what turns a set into bulk with age.
+     */
+    nostalgiaFloor: number;
     /** Sigma of the lognormal `Printing.truth.chase` roll. The tail lives here. */
     chaseSigma: number;
     /** Population a printing is measured against in the scarcity term. */

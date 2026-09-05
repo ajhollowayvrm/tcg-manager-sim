@@ -34,6 +34,13 @@ const botNames = botArg === 'all' ? Object.keys(BOTS) : botArg.split(',');
 
 const overrides: Record<string, number> = {};
 for (const a of process.argv.slice(2)) {
+  // `--set path=value` with a space reads as a bare `--set` flag and a stray
+  // positional, so every override is silently dropped and the sweep measures
+  // the defaults while claiming to measure the point. That cost a whole
+  // afternoon of Round 3's performance work. Only `--set=path=value` is valid.
+  if (a === '--set' || a.startsWith('--set ')) {
+    throw new Error('--set takes --set=path=value. A space drops the override silently.');
+  }
   if (!a.startsWith('--set=')) continue;
   const [path, v] = a.slice(6).split('=');
   const n = Number(v);

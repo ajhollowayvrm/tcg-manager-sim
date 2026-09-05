@@ -29,6 +29,15 @@ export function checkInvariants(s: SimState): string[] {
     if (!Number.isFinite(pr.truth.chase) || pr.truth.chase <= 0) {
       bad.push(`printing ${pr.id} bad chase: ${pr.truth.chase}`);
     }
+    // Opening a pack moves a copy from sealed to opened; it cannot mint one.
+    // The population is fixed at release, so the two halves must always sum to
+    // the print quantity. Round 3 broke this by opening packs at the unscaled
+    // rarity rate while printing at the set-size-scaled one, and nothing caught
+    // it for a whole round. The 1% tolerance is float drift, nothing else.
+    const alive = pr.population.sealed + pr.population.opened;
+    if (alive > pr.printQuantity * 1.01 + 1) {
+      bad.push(`printing ${pr.id} population past its print run: ${Math.round(alive)}/${pr.printQuantity}`);
+    }
 
     // Graded copies are a subset of the opened population, not an extra one:
     // grading moves a copy from the raw pool into a slab.

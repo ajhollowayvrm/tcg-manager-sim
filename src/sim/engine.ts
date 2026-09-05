@@ -954,7 +954,7 @@ function tickPrices(s: SimState, printings: Printing[]): void {
     const brand = v.nostalgiaBrandFloor + s.publishers[card.publisherId]!.brandStanding;
     const nostalgiaRate = v.nostalgiaRatePerYear * gate * brand
       - v.nostalgiaDecayPerYear * (1 - gate);
-    pr.market.nostalgia = Math.max(1, Math.min(v.nostalgiaCeiling,
+    pr.market.nostalgia = Math.max(v.nostalgiaFloor, Math.min(v.nostalgiaCeiling,
       pr.market.nostalgia * (1 + nostalgiaRate * yearFrac)));
 
     // A visible speculation event. The hidden chase roll weights it, so the
@@ -1056,11 +1056,15 @@ function tickSealed(s: SimState, products: Product[]): void {
     h.sealedRemaining -= opened;
 
     for (const cardId of set.cardIds) {
-      const card = s.cards[cardId]!;
       const pr = s.printings[s.printingByCard[cardId]!];
       if (!pr) continue;
-      const pulled = opened * p.packsPerUnit
-        * s.config.rarity.pull[card.rarity] / s.config.rarity.pullDivisor;
+      // `pr.pullRate`, not the raw rarity table. The table is copies per pack at
+      // `rarity.referenceSetSize`, and the printing's own rate is the one that
+      // carries the set size. Reading the table here opened four copies for
+      // every one a 280-card set printed: `sealed` clamped at zero while
+      // `opened` grew without bound, so a printing's population inflated with
+      // age and every old card got cheaper supply it never had.
+      const pulled = opened * p.packsPerUnit * pr.pullRate;
       pr.population.sealed = Math.max(0, pr.population.sealed - pulled);
       pr.population.opened += pulled;
     }
