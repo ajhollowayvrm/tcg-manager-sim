@@ -596,6 +596,149 @@ All three are plausible mechanisms and all three may simply be too harsh. None
 has been tuned.
 
 
+## The value block (tuning Round 4, 2026-09-05)
+
+**The suite goes from 27 PASS to 37 PASS, 0 FAIL, 9 KNOWN, 0 DRIFT.** Eleven
+gates that had never passed now pass. An age-2 set matches the 19 Magic and 8
+Pokemon price vectors measured in `05-real-world.md`.
+
+| Gate | Round 3 | Round 4 | Measured centre |
+|---|---|---|---|
+| `shape.median` | 8.47 | 0.260 | $0.24-$0.34 |
+| `shape.under1` | 0.004 | 0.793 | 70-81% (Magic) |
+| `shape.under25c` | 0 | 0.504 | 30-50% (Magic) |
+| `shape.top1` | 0.156 | 0.337 | 0.35 |
+| `shape.top10` | 0.493 | 0.765 | 0.78 |
+| `shape.gini` | 0.579 | 0.827 | 0.85 |
+| `shape.chaseOverMedian` | 38.5 | 330.7 | ~1000 |
+| `shape.tailAlpha` | 2.388 | 1.992 | 2.0 |
+| `shape.ageCurveDirection` | -0.004 | 0.082 | rising |
+| `shape.ageCurveLate` | 0 | 0.804 | 69-82% |
+| `shape.yearsTo100` | 1.442 | 2.442 | — |
+
+The five knobs that moved:
+
+```
+value.baseCardPrice             150  -> 6
+value.chaseSigma               0.65  -> 1.5
+value.nostalgiaDecayPerYear    0.05  -> 0.20
+value.priceFloorCents            20  -> 5
+value.reprintNostalgiaPenalty  0.85  -> 0.73
+affection.resurgenceMinAgeYears   5  -> 18
+```
+
+### The block splits into a level knob and a shape knob
+
+This is the finding that made the round tractable, and it is exact rather than
+approximate. `baseCardPrice` scales the age-2 median linearly at 0.052 cents
+per cent and moves the Gini, the top-1% share, the top-10% share, the
+chase/median ratio and the tail index **by nothing at all to three decimals**,
+across five points spanning 30 to 150. The nostalgia gate normalises against
+`baseCardPrice * nostalgiaStandingReference`, which is why.
+
+`chaseSigma` carries the shape. `rollChase` is `exp(gauss(0, chaseSigma))`,
+whose median is 1 at any sigma, so widening it pushes the bottom of a set down
+and the top up while leaving the level alone.
+
+**So: set the shape first, land the level last.** Anyone tuning this block
+again should use that order.
+
+### Round 4b was not needed, stated carefully
+
+The plan said that if no single point satisfied the median, the bulk share and
+the Gini together, a single lognormal could not make this shape and
+`truth.chase` would have to become a three-part mixture. One does: at
+`chaseSigma` 1.5, eleven of twelve gates land together.
+
+State that carefully. A single lognormal reaches every target **summary
+statistic**. It is not a distributional result — the research rejected
+lognormality by KS test in 13 of 13 sets, and no gate here tests a
+distribution. A later round that wants the measured shape rather than its
+moments may still have to build the mixture. If it does, `gauss` consumes
+exactly two `rand` draws, so keeping one `gauss(s.rng, 0, 1)` call and mapping
+it through the normal CDF into the mixture's inverse CDF stays draw-count
+neutral.
+
+### Two things the plan got wrong
+
+**`scarcityExponent` is not inert.** The plan said to sweep 0.30/0.45/0.60 and
+"expect no move and confirm that". It moves a lot: the Gini goes 0.695 to
+0.820 and the top-10% share 0.634 to 0.768. It is a second shape knob nearly as
+strong as `chaseSigma`. It still stays at 0.45, but on the measured per-rarity
+medians — a common and an uncommon sit at almost the same price, and
+`printQuantity` is already rarity-scaled — and no longer on a claim of
+non-responsiveness that turned out to be false.
+
+**`priceFloorCents` had to move, and the plan said to leave it.** A 20-cent
+floor never binds against the old $8.47 median. Against the fitted $0.26 median
+it pinned 40% of every set within a cent of itself. The plan's instruction was
+correct when written and its premise did not survive its own round.
+
+### The gates could not see the floor spike. The ladder could
+
+`under25c` read 0.486 and passed while describing a distribution the research
+rejects: it counts cards below $0.25 and cannot tell a spread from a stack.
+What caught it was rule 2 of `04-workflow.md`, the decile ladder:
+
+```
+before (priceFloorCents 20)        after (priceFloorCents 5)
+  p 10  $ 0.19   step —              p 10  $ 0.06   step —
+  p 20  $ 0.19   step 1.00x          p 20  $ 0.08   step 1.33x
+  p 30  $ 0.21   step 1.11x          p 30  $ 0.12   step 1.50x
+  p 40  $ 0.21   step 1.00x          p 40  $ 0.21   step 1.75x
+  p 50  $ 0.30   step 1.43x          p 50  $ 0.30   step 1.43x
+```
+
+Two 1.00x steps are the flat mush rule 2 exists to detect. **This round fitted
+the whole block from the gate table and did not run `--dist` until the numbers
+were already in `config.ts`.** Run the ladder during a value sweep, not after
+it. No gate measures concentration at the floor, so the suite cannot replace
+it — which is worth knowing about the suite, not only about this round.
+
+### `shape.surpriseGrail` cannot be cleared by any tuning round
+
+`metrics.ts` tests `rawPrice / value.baseCardPrice >= 100`. That is a
+scale-invariant ratio, so lowering the price body cannot move it, and it did
+not: 1.000 at fifteen measured points spanning a 30x range of `baseCardPrice`.
+The gate's own note said Round 4 "should restore it". That note was wrong by
+construction.
+
+The real cause is Round 3. This is a per-run boolean over the whole catalogue,
+so at 280 cards a set it asks whether any one of about 8,400 printings ever
+broke out over 30 years, and the answer is certain. Its neighbour
+`shape.yearsTo100` carries the same diagnosis in its own note and nobody
+applied it here.
+
+**Fixing it needs the metric redefined per set, and that needs a band nobody
+has.** `05-real-world.md` calls its own 0.5-1%-per-year figure weak. What the
+gate uniquely tests — that the breakout card is a *common or uncommon*, value
+emergent rather than authored by rarity placement, CONCEPT.md §10 — is worth
+keeping, so this is a design decision and not a tuning one. It is left
+`known-fail` with the cause recorded.
+
+### `sub.scalperShare` regressed on paper and improved in substance
+
+It went 0.242 to 0.000 and is now `known-fail`, owned by Round 5. **The 0.242
+was never a real pass.** `peakScalpers` was 0 and `scalperCycles` was 0, so the
+population never moved once in thirty years — the gate's own note said as much
+and predicted Round 4 would move both.
+
+Isolated on `dropRunner` over 20 seeds x 30 years, varying only
+`baseCardPrice`: the share reads 0.475 at 150, 0.062 at 30 and 0.004 at 6.
+Round 4c then took it to 0.000, and took the reseller population off its floor
+of 20 up to 266.
+
+**Round 5 must not fix this by re-pinning the population.** The `drops` and
+`actors` constants are calibrated to a price body that no longer exists, and
+they are what needs refitting. Read the gate beside `sub.scalperCycles`.
+
+### The sample-size warning
+
+`shape.yearsTo100` passes at 2.442 over 30 seeds and reads 1.981 over 20,
+against a band floor of 2.0. It is a median across seeds of a strongly skewed
+quantity. It is a real pass at the suite's own sample size, and it is the gate
+most likely to flip on an unrelated change.
+
 ## The population bug and the nostalgia floor (tuning Round 4a, 2026-09-05)
 
 Round 4 started as a pure tuning round and found two defects first. Both are
@@ -1041,37 +1184,50 @@ horizon fixed.
 
 ## Suggested next session
 
-**The tuning and balancing run.** Every mechanism CONCEPT.md names is now
-built, rivals are cut, and no balance figure carries a caveat any more. The
-reference documents in `docs/tuning/` say what is measured, what was fitted by
-eye, and what has never been measured at all — `channels`, `region`, `collabs`,
-`creators`, `sealed`, `affection` and `chains` are the untouched blocks.
+**Round 5 of the tuning run: populations — `actors` and `drops`.** The round
+plan lives outside the repo, at
+`~/.claude/plans/let-s-start-the-tuning-zesty-magpie.md`, and it holds the
+ordering and the reasoning for all twelve rounds. Read it first, then the Round
+4 section above, then run `npm run check` to see where the gates stand.
 
-Alongside it, in order of how self-contained each slice is: give regions their own
-audience (`Region.segmentMix` is seeded and unread, so regional demand currently
-draws on the global pool), make `communityTeam` and `analytics` buy something,
-and tune the two unviable probe bots in problem 4.
+Rounds 0 to 4 are done and banked. The suite stands at **37 PASS, 0 FAIL,
+9 KNOWN, 0 DRIFT**.
 
-Re-run these before you touch the value engine again:
+Round 5 owns 40 config paths that have never been swept, and Round 4 handed it
+two gates and a warning:
+
+- `sub.scalperShare` is 0.000 and `sub.scalperCycles` is 0. Read them together.
+  **Do not fix either by re-pinning the population.** Round 4 cut the price body
+  25x, so the `drops` constants — `breakEvenPremium`, `unitsPerScalperReference`,
+  `ripBreakEven`, `resellerReference` — are calibrated to prices that no longer
+  exist. Refit them.
+- The reseller population came off its floor of 20 and now sits near 266, so it
+  is finally something a sweep can move.
+- Workflow rule 9 is the thing to watch. `minResellers` was holding the
+  population at exactly 20 in every seed, which is what a pinned constant looks
+  like.
+
+The four still-open `diff.*` gates — `botsAlwaysSurvive`, `conservativeSurvives`,
+`allInSurvival`, `idleDies` — belong to Round 10, not Round 5.
+
+**Two known defects nobody owns yet.**
+
+- `shape.surpriseGrail` cannot be cleared by tuning. It needs the metric
+  redefined per set, and that needs a band the research cannot supply. See the
+  Round 4 section; it is a design decision.
+- `shape.yearsTo100` passes on a thin, sample-dependent margin: 2.442 over 30
+  seeds, 1.981 over 20, against a floor of 2.0.
+
+Before you touch the value engine again:
 
 ```
-npm run typecheck
-npm run sim -- --seeds=30 --years=25 --bot=conservative   # the value targets
+npm run check                                                   # all 46 gates
 npm run sim -- --seeds=1 --years=25 --bot=conservative --dist   # the ladder
-npm run sim -- --seeds=10 --years=50 --bot=all --check=13       # invariants
 ```
 
-The four value targets, 30 seeds x 25 years, `conservative`. Every column moved
-across this pass, because regions, the actors and the difficulty work all touch
-the value engine and none of them is an observer. All four are inside their
-bands and the ladder still widens at every step.
-
-| Metric | Band | Before this pass | After |
-|---|---|---|---|
-| `surpriseGrail` | 15–40% | 33% | 30% |
-| `top1PctShare` | 0.4–0.7 | 0.517 | 0.584 |
-| `medianCardPrice` | a few dollars | $4 | $4 |
-| `yearsToFirst100Dollar` | 3–8 | 6.0 | 5.2 |
+Run the ladder **during** a value sweep and not after it. Round 4 fitted the
+whole block off the gate table, and the gates could not see that 40% of every
+set was pinned against the price floor. Only the step between deciles could.
 
 The threaded and `--jobs=1` paths must keep producing a byte-identical
 `out/runs.csv`. That identity is the acceptance test for any change that is

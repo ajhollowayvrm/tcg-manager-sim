@@ -11,7 +11,7 @@ nested paths work to any depth:
 --set=graders.grd_pinnacle.tiers.standard.price=5000
 ```
 
-Values are the shipped defaults on 2026-09-04.
+Values are the shipped defaults on 2026-09-05, after tuning Round 4.
 
 This page documents the knobs that were already here before the config move,
 with what each one does and whether it was measured. The blocks added by the
@@ -39,11 +39,20 @@ The largest of the new ones, worth knowing by name:
 
 ---
 
-## `value` — the price engine (20 paths)
+## `value` — the price engine (21 paths)
 
-This block was swept as one unit over 30 seeds x 25 years. The knobs are not
+This block was swept as one unit over 30 seeds x 25 years, and again in Round 4
+over 30 seeds x 50 years against the per-set age-2 targets. The knobs are not
 independent. Move one and re-measure all five targets in
 [03-targets.md](03-targets.md).
+
+**Round 4 found the block splits cleanly in two.** `baseCardPrice` is a pure
+level knob: it scales the age-2 median exactly linearly and moves no shape
+statistic to three decimals, because the nostalgia gate normalises against it.
+`chaseSigma` is the shape knob: `rollChase` is `exp(gauss(0, chaseSigma))`,
+whose median is 1 at any sigma, so widening it pushes the bottom of a set down
+and the top up without moving the level. Set the shape first and land the level
+last.
 
 The formula in `tickPrices`:
 
@@ -57,23 +66,24 @@ rawPrice  := rawPrice * 0.62 + max(priceFloorCents, target) * 0.38
 
 | Path | Value | What it moves | Status |
 |---|---|---|---|
-| `value.baseCardPrice` | 150 | $1.50. The price of a card with every multiplier at 1. Scales the whole ladder. | structural |
+| `value.baseCardPrice` | 6 | $0.06. The price of a card with every multiplier at 1. The level knob, and it carries no shape at all. Was 150. | swept |
 | `value.cameoWeight` | 0.15 | How much a cameo IP's affection adds to a card's desire. | first-guess |
-| `value.scarcityExponent` | 0.45 | Steepness of the day-one rarity ladder. Deliberately shallow: a steep ladder spends the next 20 years of discovery in year 2. | swept |
+| `value.scarcityExponent` | 0.45 | Steepness of the day-one rarity ladder. Deliberately shallow. **Not inert:** Round 4 measured 0.30 to 0.60 moving the Gini 0.695 to 0.820. It stays shallow on the measured per-rarity medians, which put a common and an uncommon at almost the same price. | swept |
 | `value.artMultiplierWeight` | 0.6 | How much art quality times artist reputation multiplies price. The payoff on the whole art pipeline. | swept |
 | `value.nostalgiaRatePerYear` | 0.16 | Growth per year on a printing that passes the nostalgia gate. The engine that separates the top 1%. | swept |
 | `value.heatDecayPerTick` | 0.08 | How fast heat returns to 1. Sets how long a spike lasts. | swept |
 | `value.noiseSigma` | 0.12 | Width of the per-update lognormal price noise. | swept |
-| `value.priceFloorCents` | 20 | $0.20. Bulk commons are worth cents. A floor at $1 piles half the population on one price. | swept |
+| `value.priceFloorCents` | 5 | $0.05. Bulk commons are worth cents. Was 20, which never binds against an $8.47 median but pinned 40% of a set against a $0.26 one. Measured minima of a real set run $0.02-$0.07. | swept |
 | `value.priceCeilingMultiple` | 5000 | Soft cap on the multiplier stack, in multiples of `baseCardPrice`. | structural |
 | `value.heatFloor` | 0.4 | Heat cannot reach 0, because heat multiplies price. A crash must overshoot below 1. | swept |
 | `value.heatCeiling` | 6 | Cap on heat. | swept |
 | `value.nostalgiaCeiling` | 20 | Cap on compounded nostalgia. Bounds the top tail. | swept |
-| `value.chaseSigma` | 0.65 | Width of the hidden per-printing lognormal `truth.chase` roll. This is what makes two commons in one set settle at different prices. | swept |
+| `value.nostalgiaFloor` | 0.2 | Floor on compounded nostalgia. The only term in the price stack that can push an old card under its release price. At 1 nothing could ever fall. Added in Round 4a. | swept |
+| `value.chaseSigma` | 1.5 | Width of the hidden per-printing lognormal `truth.chase` roll. The shape knob. Was 0.65, which made a set born flat; 1.5 sits inside the researched body log-SD of 1.2-1.9. | swept |
 | `value.referencePopulation` | 60000 | Surviving copies at which scarcity equals 1. A unit, not a strength. | structural |
 | `value.nostalgiaDesireReference` | 90 | Desire at which the nostalgia gate opens fully. Tight on purpose: open it wider and nostalgia lifts the whole population together. | swept |
 | `value.nostalgiaStandingReference` | 80 | Price, in multiples of `baseCardPrice`, at which a printing counts as standing above the pack. | swept |
-| `value.nostalgiaDecayPerYear` | 0.05 | Decay back toward 1 on a printing the market does not want. | swept |
+| `value.nostalgiaDecayPerYear` | 0.20 | Decay on a printing the market does not want. What turns a set into bulk. At 0.05 an ungated printing only fell to 0.72x over seven years, which the climb in scarcity outran, and the age curve ran backwards. | swept |
 | `value.shockChancePerTick` | 0.0015 | Chance of a visible speculation spike, weighted by `truth.chase`. | swept |
 | `value.shockGain` | 1.1 | Heat added by one shock. | swept |
 

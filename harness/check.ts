@@ -125,8 +125,11 @@ function judge(gate: Gate, ctx: GateContext): Result {
 // --- output ----------------------------------------------------------------
 
 const pad = (s: string, n: number) => s.length >= n ? s : s + ' '.repeat(n - s.length);
+// `String(v)` on a large float printed all seventeen digits and ran into the
+// band column: `330.7037037037037[130, 3100]`. Integers still print bare.
 const fmt = (v: number | null) =>
-  v === null ? '—' : Math.abs(v) >= 100 || Number.isInteger(v) ? String(v) : v.toFixed(3);
+  v === null ? '—' : Number.isInteger(v) ? String(v)
+    : Math.abs(v) >= 100 ? v.toFixed(1) : v.toFixed(3);
 
 function render(results: Result[]): string {
   const lines: string[] = [];

@@ -1,0 +1,600 @@
+[
+  {
+    "id": "static.typecheck",
+    "category": "static",
+    "observed": 1,
+    "band": [
+      1,
+      1
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 1,
+    "drift": null
+  },
+  {
+    "id": "static.invariants",
+    "category": "static",
+    "observed": 0,
+    "band": [
+      0,
+      0
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0,
+    "drift": null
+  },
+  {
+    "id": "static.parallelIdentity",
+    "category": "static",
+    "observed": 1,
+    "band": [
+      1,
+      1
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 1,
+    "drift": null
+  },
+  {
+    "id": "static.bandsInSync",
+    "category": "static",
+    "observed": 1,
+    "band": [
+      1,
+      1
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 1,
+    "drift": null
+  },
+  {
+    "id": "struct.deathRoutes",
+    "category": "structural",
+    "observed": 4,
+    "band": [
+      4,
+      4
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 4,
+    "drift": null
+  },
+  {
+    "id": "struct.overprintDeaths",
+    "category": "structural",
+    "observed": 82,
+    "band": [
+      15,
+      95
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 82,
+    "drift": null
+  },
+  {
+    "id": "struct.debtSpiralDeaths",
+    "category": "structural",
+    "observed": 81,
+    "band": [
+      15,
+      90
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 81,
+    "drift": null
+  },
+  {
+    "id": "struct.channelCollapseDeaths",
+    "category": "structural",
+    "observed": 12,
+    "band": [
+      8,
+      70
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 12,
+    "drift": null
+  },
+  {
+    "id": "struct.attentionCollapseDeaths",
+    "category": "structural",
+    "observed": 20,
+    "band": [
+      8,
+      60
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 20,
+    "drift": null
+  },
+  {
+    "id": "struct.speculatorMoves",
+    "category": "structural",
+    "observed": 3.641263365940582,
+    "band": [
+      1.2,
+      500
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 3.6413,
+    "drift": null
+  },
+  {
+    "id": "struct.collectorNotPinned",
+    "category": "structural",
+    "observed": 20,
+    "band": [
+      5,
+      1000000000
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 20,
+    "drift": null
+  },
+  {
+    "id": "struct.printRunVaries",
+    "category": "structural",
+    "observed": 19,
+    "band": [
+      4,
+      100
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 19,
+    "drift": null
+  },
+  {
+    "id": "diff.botsAlwaysSurvive",
+    "category": "difficulty",
+    "observed": 1,
+    "band": [
+      3,
+      11
+    ],
+    "expect": "known-fail",
+    "verdict": "KNOWN",
+    "banked": 1,
+    "drift": null
+  },
+  {
+    "id": "diff.botsNeverSurvive",
+    "category": "difficulty",
+    "observed": 5,
+    "band": [
+      2,
+      8
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 5,
+    "drift": null
+  },
+  {
+    "id": "diff.conservativeSurvives",
+    "category": "difficulty",
+    "observed": 0.7,
+    "band": [
+      0.95,
+      1
+    ],
+    "expect": "known-fail",
+    "verdict": "KNOWN",
+    "banked": 0.7,
+    "drift": null
+  },
+  {
+    "id": "diff.hypeGamblerSurvival",
+    "category": "difficulty",
+    "observed": 0.65,
+    "band": [
+      0.4,
+      0.85
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.65,
+    "drift": null
+  },
+  {
+    "id": "diff.hypeGamblerTopEarner",
+    "category": "difficulty",
+    "observed": 1,
+    "band": [
+      1,
+      3
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 1,
+    "drift": null
+  },
+  {
+    "id": "diff.allInSurvival",
+    "category": "difficulty",
+    "observed": 0.05,
+    "band": [
+      0.1,
+      0.6
+    ],
+    "expect": "known-fail",
+    "verdict": "KNOWN",
+    "banked": 0.05,
+    "drift": null
+  },
+  {
+    "id": "diff.flooderDiesEarly",
+    "category": "difficulty",
+    "observed": 0.75,
+    "band": [
+      0.4,
+      2.5
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.75,
+    "drift": null
+  },
+  {
+    "id": "diff.attentionBurnerDies",
+    "category": "difficulty",
+    "observed": 1,
+    "band": [
+      0.85,
+      1
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 1,
+    "drift": null
+  },
+  {
+    "id": "diff.idleDies",
+    "category": "difficulty",
+    "observed": 12.01923076923077,
+    "band": [
+      2.5,
+      9
+    ],
+    "expect": "known-fail",
+    "verdict": "KNOWN",
+    "banked": 12.0192,
+    "drift": null
+  },
+  {
+    "id": "diff.deathsLandMidRun",
+    "category": "difficulty",
+    "observed": 8.173076923076923,
+    "band": [
+      3,
+      25
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 8.1731,
+    "drift": null
+  },
+  {
+    "id": "diff.sellThrough",
+    "category": "difficulty",
+    "observed": 0.878875401986775,
+    "band": [
+      0.75,
+      0.95
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.8789,
+    "drift": null
+  },
+  {
+    "id": "diff.flopRate",
+    "category": "difficulty",
+    "observed": 0.028611111111111108,
+    "band": [
+      0.01,
+      0.25
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.0286,
+    "drift": null
+  },
+  {
+    "id": "shape.median",
+    "category": "shape",
+    "observed": 0.26,
+    "band": [
+      0.2,
+      0.5
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.26,
+    "drift": null
+  },
+  {
+    "id": "shape.under1",
+    "category": "shape",
+    "observed": 0.7928571428571428,
+    "band": [
+      0.64,
+      0.92
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.7929,
+    "drift": null
+  },
+  {
+    "id": "shape.under25c",
+    "category": "shape",
+    "observed": 0.5035714285714286,
+    "band": [
+      0.25,
+      0.8
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.5036,
+    "drift": null
+  },
+  {
+    "id": "shape.top1",
+    "category": "shape",
+    "observed": 0.33692640605092317,
+    "band": [
+      0.21,
+      0.62
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.3369,
+    "drift": null
+  },
+  {
+    "id": "shape.top10",
+    "category": "shape",
+    "observed": 0.7646818819329336,
+    "band": [
+      0.66,
+      0.95
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.7647,
+    "drift": null
+  },
+  {
+    "id": "shape.gini",
+    "category": "shape",
+    "observed": 0.8267003333272616,
+    "band": [
+      0.72,
+      0.98
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.8267,
+    "drift": null
+  },
+  {
+    "id": "shape.chaseOverMedian",
+    "category": "shape",
+    "observed": 330.7037037037037,
+    "band": [
+      130,
+      3100
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 330.7037,
+    "drift": null
+  },
+  {
+    "id": "shape.tailAlpha",
+    "category": "shape",
+    "observed": 1.991673242435576,
+    "band": [
+      1.6,
+      2.7
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 1.9917,
+    "drift": null
+  },
+  {
+    "id": "shape.ageCurveDirection",
+    "category": "shape",
+    "observed": 0.08214285714285718,
+    "band": [
+      0.02,
+      0.45
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.0821,
+    "drift": null
+  },
+  {
+    "id": "shape.ageCurveLate",
+    "category": "shape",
+    "observed": 0.8035714285714286,
+    "band": [
+      0.55,
+      0.92
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.8036,
+    "drift": null
+  },
+  {
+    "id": "shape.surpriseGrail",
+    "category": "shape",
+    "observed": 1,
+    "band": [
+      0.1,
+      0.6
+    ],
+    "expect": "known-fail",
+    "verdict": "KNOWN",
+    "banked": 1,
+    "drift": null
+  },
+  {
+    "id": "shape.yearsTo100",
+    "category": "shape",
+    "observed": 2.4423076923076925,
+    "band": [
+      2,
+      9
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 2.4423,
+    "drift": null
+  },
+  {
+    "id": "sub.signalLow",
+    "category": "subsystem",
+    "observed": 0.4299039957101081,
+    "band": [
+      0.3,
+      0.72
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.4299,
+    "drift": null
+  },
+  {
+    "id": "sub.signalHigh",
+    "category": "subsystem",
+    "observed": 0.8253690033797809,
+    "band": [
+      0.65,
+      0.97
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.8254,
+    "drift": null
+  },
+  {
+    "id": "sub.signalRises",
+    "category": "subsystem",
+    "observed": 0.3954650076696728,
+    "band": [
+      0.08,
+      0.55
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.3955,
+    "drift": null
+  },
+  {
+    "id": "sub.gem10Premium",
+    "category": "subsystem",
+    "observed": 6.082037790002392,
+    "band": [
+      2,
+      5.5
+    ],
+    "expect": "known-fail",
+    "verdict": "KNOWN",
+    "banked": 6.082,
+    "drift": null
+  },
+  {
+    "id": "sub.gradedPrintingShare",
+    "category": "subsystem",
+    "observed": 0.048214285714285716,
+    "band": [
+      0.02,
+      0.09
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.0482,
+    "drift": null
+  },
+  {
+    "id": "sub.gemRate",
+    "category": "subsystem",
+    "observed": 0.10174079250246629,
+    "band": [
+      0.3,
+      0.6
+    ],
+    "expect": "known-fail",
+    "verdict": "KNOWN",
+    "banked": 0.1017,
+    "drift": null
+  },
+  {
+    "id": "sub.scalperCycles",
+    "category": "subsystem",
+    "observed": 0,
+    "band": [
+      3,
+      35
+    ],
+    "expect": "known-fail",
+    "verdict": "KNOWN",
+    "banked": 0,
+    "drift": null
+  },
+  {
+    "id": "sub.scalperShare",
+    "category": "subsystem",
+    "observed": 0.0002984155099054697,
+    "band": [
+      0.1,
+      0.5
+    ],
+    "expect": "known-fail",
+    "verdict": "KNOWN",
+    "banked": 0.0003,
+    "drift": null
+  },
+  {
+    "id": "sub.houseArtShare",
+    "category": "subsystem",
+    "observed": 0.09702380952380953,
+    "band": [
+      0.02,
+      0.2
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.097,
+    "drift": null
+  },
+  {
+    "id": "sub.channelHogLosesReach",
+    "category": "subsystem",
+    "observed": 6,
+    "band": [
+      0.5,
+      6
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 6,
+    "drift": null
+  }
+]
