@@ -132,7 +132,12 @@ export const defaultConfig: SimConfig = {
      * house-art path never fires and the schedule is decorative. How often it
      * should cross is unswept.
      */
-    maxLateWeeks: 8,
+    // Swept over 15 seeds x 30 years. It must be crossable — a deadline that
+    // cannot be missed is not a deadline — and at 8 weeks only 2% of cards
+    // shipped as house filler, which is a freak event rather than a schedule.
+    // At 14 about 9% do, so a 70-card set typically ships five or six cards
+    // with in-house art: visible, expensive, and survivable.
+    maxLateWeeks: 14,
     /** Relationship: earned by commissioning, decays when you stop. */
     relationshipPerCommission: 0.05,
     relationshipDecayPerTick: 0.0015,

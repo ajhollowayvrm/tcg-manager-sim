@@ -351,7 +351,18 @@ export function createWorld(seed: string, config: SimConfig): SimState {
   const specialties = ARTIST_SPECIALTIES;
   for (let i = 0; i < 6; i++) {
     const id = nextId(s, 'art') as ArtistId;
-    const rate0 = Math.round(randRange(rng, 50, 300)) as Cents;
+    // $75 to $450 for an unproven newcomer, and reputation drags it up from
+    // there. It used to be 50 to 300 *cents* — fifty cents to three dollars a
+    // card — which made a 25-year art budget about $7,800 against a $22M net
+    // worth. Art was a rounding error rather than a budget line, so no art
+    // decision could ever cost anything.
+    //
+    // Swept over 15 seeds x 30 years against three art strategies. At this
+    // range `conservative` spends 4.6% of revenue on art, `scout` 1.6% because
+    // unknowns are cheap, and `safeHands` 26.9% buying reputation it can see —
+    // and that last one now costs it four seeds in fifteen. Three times higher
+    // and `safeHands` stops being viable at all.
+    const rate0 = Math.round(randRange(rng, 7_500, 45_000)) as Cents;
     s.artists[id] = {
       id,
       name: `Artist ${i + 1}`,
