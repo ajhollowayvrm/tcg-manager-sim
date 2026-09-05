@@ -446,11 +446,12 @@ export const GATES: Gate[] = [
     },
   },
   {
-    id: 'sub.gem10Premium', category: 'subsystem', band: [2.0, 5.5], expect: 'known-fail',
-    banked: 6.082, bankedOn: DATE,
+    id: 'sub.gem10Premium', category: 'subsystem', band: [2.0, 5.5], expect: 'pass',
+    banked: 3.929, bankedOn: DATE,
     why: 'Measured 2-5x for modern cards, 5-10x vintage. Too low and nobody submits; too '
        + 'high and raw prices stop meaning anything.'
-       + ' [2026-09-04, round 2] Was 4.66. Scale-coupling popScarcityReference moved the pop-report term, and the price level moved under it. Round 6 owns grading.',
+       + ' [2026-09-04, round 2] Was 4.66. Scale-coupling popScarcityReference moved the pop-report term, and the price level moved under it. Round 6 owns grading.'
+       + ' [2026-09-05, round 6] FIXED, 6.082 -> 3.929, and promoted. It came free with the gem rate: `target = raw * tierMultiplier * reputation * popScarcity`, so more tens on a pop report push the scarcity term down and the premium with it. No tierMultiplier moved. NOTE the premium is scale-invariant by construction - it is a multiple of the raw price, so the measured rule that an expensive card gains more than a cheap one cannot live here. It lives in the submission hurdle instead: `feeWorthMultiple` keeps a card under about $60 raw out of a slab entirely.',
     measure: c => guarded(c.roster, 'conservative', 'gem10Premium', 'gradedCopies'),
   },
   {
@@ -462,12 +463,47 @@ export const GATES: Gate[] = [
     measure: c => medOf(c.roster, 'conservative', 'gradedPrintingShare'),
   },
   {
-    id: 'sub.gemRate', category: 'subsystem', band: [0.30, 0.60], expect: 'known-fail',
-    banked: 0.1017, bankedOn: DATE,
+    id: 'sub.gemRate', category: 'subsystem', band: [0.30, 0.60], expect: 'pass',
+    banked: 0.521, bankedOn: DATE,
     why: 'GemRate measured 50-53% for modern TCG in 2024-25. Ours is 9.6%: conditionMean 9 '
        + 'against a 9.75 cut puts a 10 near the 14th percentile where reality puts it at '
-       + 'the median. The fix is a widened qualityGradeShift, not a global raise.',
+       + 'the median. The fix is a widened qualityGradeShift, not a global raise.'
+       + ' [2026-09-05, round 6] FIXED, 0.102 -> 0.521, and promoted. The fix was BOTH: '
+       + 'conditionMean 9 -> 10.0 sets the level and the widened qualityGradeShift sets the '
+       + 'spread. The latent scale is not the grade scale, so a mean above the 9.75 cut is '
+       + 'not a contradiction - it says a factory-fresh modern copy clears the top bar about '
+       + 'half the time. This is `conservative`, which prints standard, so it IS the '
+       + 'standard-quality gem rate.',
     measure: c => guarded(c.roster, 'conservative', 'gemRate', 'gradedCopies'),
+  },
+  {
+    id: 'sub.gemRateByQuality', category: 'subsystem', band: [1.3, 2.0], expect: 'pass',
+    banked: 1.79, bankedOn: DATE,
+    why: 'Premium gem rate over standard, formed ACROSS bots because no bot prints two '
+       + 'print qualities: `chaseMaxxer` prints premium and `conservative` prints standard. '
+       + 'Print quality has to be worth choosing and one pooled gem rate cannot say whether '
+       + 'it is - before Round 6 the ratio was 1.36. The ceiling is arithmetic rather than a '
+       + 'target: with standard near 0.50 the ratio cannot pass 2.0, and past '
+       + 'printing.qualityGradeShift.premium 0.5 the premium rate pins at 1.000 and stops '
+       + 'saying anything. The budget end of the same table is unreachable - `flooder` is '
+       + 'the only bot that prints budget and it dies in year two.',
+    measure: c => {
+      const premium = medOf(c.roster, 'chaseMaxxer', 'gemRatePremium');
+      const standard = medOf(c.roster, 'conservative', 'gemRateStandard');
+      return premium !== null && standard !== null && standard > 0 ? premium / standard : null;
+    },
+  },
+  {
+    id: 'sub.gemRateVintage', category: 'subsystem', band: [0.15, 0.45], expect: 'pass',
+    banked: 0.376, bankedOn: DATE,
+    why: 'Gem rate for copies graded when the printing was already over 20 years old, '
+       + 'counted AT grading rather than off the pop report. It must sit materially under '
+       + 'the modern rate, because `grading.agePenaltyPerYear` is what makes an old copy in '
+       + 'a slab worth something - and materially above zero, or vintage grading stops '
+       + 'happening at all. Read it beside `gemRateModern`, which is 0.51. The same two '
+       + 'figures taken off the cumulative pop reports differ by 5% rather than by a third, '
+       + 'because a pop report averages a printing\'s whole submission history.',
+    measure: c => guarded(c.roster, 'conservative', 'gemRateVintage', 'gemRateVintageCopies'),
   },
   {
     id: 'sub.scalperCycles', category: 'subsystem', band: [3, 35], expect: 'pass',

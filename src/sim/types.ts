@@ -884,6 +884,22 @@ export interface MarketState {
     bySet: Record<SetId, number>;
   };
   gradingQueue: GradingSubmission[];
+  /**
+   * Grade outcomes counted AT the moment of grading, split by how old the
+   * printing was when the copies came back.
+   *
+   * A pop report is cumulative, so reading a gem rate off the pop reports of
+   * old printings measures their whole submission history and not what a copy
+   * submitted today grades. Those two differed by 5% where the age penalty
+   * should have made them differ by a factor of two, which is what this tally
+   * exists to say.
+   */
+  gradingTally: {
+    modernCopies: number;
+    modernGems: number;
+    vintageCopies: number;
+    vintageGems: number;
+  };
   /** Art that has been paid for and not yet come back. */
   commissionQueue: Commission[];
 }

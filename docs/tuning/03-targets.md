@@ -67,9 +67,11 @@ line to flip — flipping it is what stops the next round undoing the work.
 | `sub.signalLow` | subsystem | 0.3 – 0.72 | 0.4299 | pass |
 | `sub.signalHigh` | subsystem | 0.65 – 0.97 | 0.8254 | pass |
 | `sub.signalRises` | subsystem | 0.08 – 0.55 | 0.3955 | pass |
-| `sub.gem10Premium` | subsystem | 2 – 5.5 | 6.082 | known-fail |
+| `sub.gem10Premium` | subsystem | 2 – 5.5 | 3.929 | pass |
 | `sub.gradedPrintingShare` | subsystem | 0.02 – 0.09 | 0.0482 | pass |
-| `sub.gemRate` | subsystem | 0.3 – 0.6 | 0.1017 | known-fail |
+| `sub.gemRate` | subsystem | 0.3 – 0.6 | 0.521 | pass |
+| `sub.gemRateByQuality` | subsystem | 1.3 – 2 | 1.79 | pass |
+| `sub.gemRateVintage` | subsystem | 0.15 – 0.45 | 0.376 | pass |
 | `sub.scalperCycles` | subsystem | 3 – 35 | 4 | pass |
 | `sub.scalperShare` | subsystem | 0.1 – 0.5 | 0.131 | pass |
 | `sub.houseArtShare` | subsystem | 0.02 – 0.2 | 0.097 | pass |
@@ -265,30 +267,48 @@ untuned, and possibly too harsh.
 
 ## 7. Grading — a fee that must be a real hurdle
 
-| Target | Last measured | Real-world |
+| Target | Last measured (Round 6) | Real-world |
 |---|---|---|
-| A minority of printings clear the fee | 6.0% | ~5% ("one card in twenty") ✅ |
-| A minority of copies get sent | 18.6% | no comparable figure |
-| A gem must stay rare | `gemRate` 9.6% | **50% for modern TCG, 1% for vintage** |
-| Gem premium over raw | `gem10Premium` 4.7x | 2-5x modern, 5-10x vintage ✅ |
+| A minority of printings clear the fee | 4.7% | ~5% ("one card in twenty") ✅ |
+| A gem must be common on a modern card | `gemRate` 52.1% | 50-53% for modern TCG ✅ |
+| and rare on an old one | `gemRateVintage` 39.7% | 1% for true vintage ⚠ |
+| Print quality must be worth choosing | `gemRateByQuality` 1.70x | premium 87% against standard 51% |
+| Gem premium over raw | `gem10Premium` 3.9x | 2-5x modern, 5-10x vintage ✅ |
 | The third grader arrives mid-run | years 4-13 | — |
 
-**`gemRate` is the grading layer's biggest mismatch.** Modern TCG measures 50%;
-ours is 9.6%. But the fix is not a global raise — the measured rate spans **1%
-to 88%** across cards, driven by print quality and era. Our
-`printing.qualityGradeShift` runs -0.15 to +0.2, far too narrow to span that.
-See [05-real-world.md](05-real-world.md) §2b.
+**Round 6 fixed the gem rate with two knobs, not one.** `grading.conditionMean`
+9 -> 10.0 sets the level; the widened `printing.qualityGradeShift`
+(-0.15..+0.2 -> -0.56..+0.4) sets the spread. The latent condition scale is not
+the grade scale — it is an unbounded normal whose only meaning is its distance
+from `gradeCuts` — so a mean above the 9.75 cut for a 10 is not a contradiction.
+It says a factory-fresh modern copy clears the top bar about half the time.
 
-**Knobs:** `grading.feeWorthMultiple` decides **which** printings qualify (19.8%
-at 2, 2.8% at 25). `grading.submitRatePerTick` decides **how many** copies (13%
-to 31%). `grading.sideGraderBrandGate` places the third grader.
+**Two limits worth stating.** The vintage rate lands at 40% against a real-world
+1% for true vintage, because `agePenaltyPerYear` at 0.02 with a 0.8 cap can only
+take 0.4 off the mean over 20 years. Closing that gap means a far harsher wear
+curve, and it would want its own measured band first. And the budget end of the
+quality span is arithmetic rather than measurement: `flooder` is the only bot
+that prints budget and it dies in year two, so no budget printing is ever graded
+in any seed.
 
-**Metrics:** `gradedShare`, `gradedPrintingShare`, `gemRate`, `gem10Premium`,
-`printingsGraded`, `gradersActive`, `gradedCopies`.
+**Knobs:** `grading.conditionMean` and `printing.qualityGradeShift` set the gem
+rate together — tune either alone and you are tuning half the problem.
+`grading.feeWorthMultiple` decides **which** printings qualify; after Round 4
+moved the price body it barely moves the gem rate at all (0.52 at 2, 0.46 at 12)
+and it stays at 5. `grading.submitRatePerTick` decides **how many** copies.
+`grading.sideGraderBrandGate` places the third grader.
 
-`gem10Premium` is the number the layer lives on: too low and nobody submits, too
-high and raw prices stop meaning anything. It has **no measured band yet** — the
-`tierMultiplier` table was fitted by eye.
+**Metrics:** `gradedShare`, `gradedPrintingShare`, `gemRate`, `gemRateStandard`,
+`gemRatePremium`, `gemRateBudget`, `gemRateModern`, `gemRateVintage`,
+`gem10Premium`, `printingsGraded`, `gradersActive`, `gradedCopies`.
+
+`gem10Premium` is the number the layer lives on. It came down to 3.9x for free
+with the gem rate: `target = raw * tierMultiplier * reputation * popScarcity`,
+so more tens on a pop report push the scarcity term down. **It is scale-
+invariant by construction** — a multiple of the raw price — so the measured rule
+that an expensive card gains more from a slab than a cheap one cannot live here.
+It lives in the submission hurdle: `feeWorthMultiple` keeps a card under about
+$60 raw out of a slab entirely.
 
 ---
 

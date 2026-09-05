@@ -13,7 +13,7 @@ nested paths work to any depth:
 --set=graders.grd_pinnacle.tiers.standard.price=5000
 ```
 
-Values are the shipped defaults on 2026-09-05, after tuning Round 5b.
+Values are the shipped defaults on 2026-09-05, after tuning Round 6.
 
 This page documents the knobs that were already here before the config move,
 with what each one does and whether it was measured. The blocks added by the
@@ -34,7 +34,7 @@ The largest of the new ones, worth knowing by name:
 | `rarity.referenceSetSize` | 70 | Set size the `pull` table is written for. A pack holds a fixed number of cards, so `rarityPull` scales `pull` by `referenceSetSize / cards in the set`. Added in Round 3. |
 | `rarity.weight.*` | 1 to 90 | Demand-side rarity signal. Never touches price. |
 | `channels.traits.*` | 30 values | The whole shape of the retail layer. |
-| `grading.gradeCuts.*` | 9.75 to 6.5 | Sets `gemRate` jointly with `conditionSigma`. |
+| `grading.gradeCuts.*` | 9.75 to 6.5 | Sets `gemRate` jointly with `conditionSigma` and `conditionMean`. |
 | `finance.startingCash` | $500,000 | The scale the whole difficulty curve is set against. |
 | `value.desireReference` | 40 | Desire at which the price demand term equals 1. |
 | `strides.*` | 4, 2, 13, 52 | Tick rotations. See `02-hardcoded.md` before touching. |
@@ -146,10 +146,10 @@ The sharpest penalty in the model. `fatigueResponse` is
 | `printing.unitCost.standard` | 140 | $1.40 per pack. | first-guess |
 | `printing.unitCost.premium` | 240 | $2.40 per pack. | first-guess |
 | `printing.unitCost.archival` | 400 | $4.00 per pack. | first-guess |
-| `printing.qualityGradeShift.budget` | -0.15 | Shift on the latent 1-10 condition score. Drives `gemRate`. | fitted |
+| `printing.qualityGradeShift.budget` | -0.56 | Shift on the latent condition mean, times `grading.gradeShiftWeight`. The span of this table is the whole reason print quality is worth choosing. **Arithmetic, not measurement:** `flooder` is the only bot that prints budget and it dies in year two, so no budget printing is ever graded in any seed and nothing in the roster can check this number. | fitted, unreachable |
 | `printing.qualityGradeShift.standard` | 0 | The reference tier. | structural |
-| `printing.qualityGradeShift.premium` | 0.12 | | fitted |
-| `printing.qualityGradeShift.archival` | 0.2 | | fitted |
+| `printing.qualityGradeShift.premium` | 0.3 | Gives a premium printing an 87% gem rate against a standard one at 51%. Past 0.5 it pins at 1.000 and stops saying anything. | swept, round 6 |
+| `printing.qualityGradeShift.archival` | 0.4 | Above premium, by the same arithmetic and equally unreachable — no bot prints archival either. | fitted, unreachable |
 | `printing.errorRate.budget` | 0.02 | Chance a printing carries an error. | first-guess |
 | `printing.errorRate.standard` | 0.008 | | first-guess |
 | `printing.errorRate.premium` | 0.002 | | first-guess |
@@ -321,15 +321,15 @@ graded.
 
 | Path | Value | What it moves | Status |
 |---|---|---|---|
-| `grading.feeWorthMultiple` | 5 | How far a raw price must clear the fee before anybody submits. Decides **which** printings qualify: 19.8% of them at 2, 2.8% at 25. | swept |
+| `grading.feeWorthMultiple` | 5 | How far a raw price must clear the fee before anybody submits. Decides **which** printings qualify: 19.8% of them at 2, 2.8% at 25. Re-read in Round 6 against the price body Round 4 moved 13x: it now barely touches the gem rate at all (0.52 at 2, 0.46 at 12) and stays at 5. It is also where the measured rule that an expensive card gains more from a slab lives — the premium itself is scale-invariant, so the hurdle is what keeps a card under about $60 raw out of a slab. | swept, re-read round 6 |
 | `grading.submitRatePerTick` | 0.004 | Weekly submission rate on a qualifying printing. Decides **how many** copies: 13% to 31% across the swept range. | swept |
 | `grading.appetiteCeiling` | 4 | Cap on submission appetite. | first-guess |
 | `grading.maxGradedShare` | 0.35 | Cap on the share of a printing that can be slabbed. | first-guess |
-| `grading.conditionMean` | 9 | Latent condition mean on the 1-10 scale. A standard copy averages 9, so a 10 is a tail event. | fitted |
+| `grading.conditionMean` | 10.0 | Latent condition mean. **The latent scale is not the grade scale:** it is an unbounded normal whose only meaning is its distance from `gradeCuts`, so a mean above the 9.75 cut for a 10 is not a contradiction — it says a factory-fresh modern copy clears the top bar about half the time. At 9 a 10 sat near the 14th percentile where reality puts it at the median. Sets the gem rate LEVEL; `printing.qualityGradeShift` sets the spread. | swept, round 6 |
 | `grading.conditionSigma` | 0.7 | Width of that distribution. With the grade cuts, this is what sets `gemRate`. | fitted |
 | `grading.gradeShiftWeight` | 3 | How hard print quality moves the condition mean. | fitted |
 | `grading.strictnessWeight` | 0.6 | How hard grader strictness moves it. | fitted |
-| `grading.agePenaltyPerYear` | 0.02 | Condition lost per year in circulation. | first-guess |
+| `grading.agePenaltyPerYear` | 0.02 | Condition lost per year in circulation. Read through `gemRateVintage`: 0.02 gives 0.376 against a modern 0.510, and 0.06 gives 0.275. The real-world vintage rate is nearer 1%, which this curve cannot reach at any value under the 0.8 cap — that gap needs its own measured band. | screened, round 6 |
 | `grading.agePenaltyCap` | 0.8 | Cap on that penalty. | first-guess |
 | `grading.tierMultiplier.10` | 4.5 | Slab price over raw. Drives `gem10Premium`. | **fitted by eye** |
 | `grading.tierMultiplier.9.5` | 2.4 | | **fitted by eye** |

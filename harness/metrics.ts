@@ -113,6 +113,32 @@ export interface RunMetrics {
   /** Share of graded copies that came back a 10. Print quality is what moves this. */
   gemRate: number | null;
   /**
+   * Gem rate per print quality, and the premium-over-standard ratio. The ratio
+   * is what the target is stated against: print quality has to be worth
+   * choosing, and one pooled gem rate cannot say whether it is.
+   *
+   * The ratio is NOT a column, because no bot prints two qualities: each of
+   * these is null unless the run made printings of that quality. The gate forms
+   * premium over standard across bots instead. It is premium over STANDARD
+   * rather than over budget, which is what the round plan asked for, because
+   * budget is unreachable: `flooder` is the only bot that prints it and it dies
+   * in year two, so no budget printing survives to be graded in any seed.
+   */
+  gemRateBudget: number | null;
+  gemRateStandard: number | null;
+  gemRatePremium: number | null;
+  /**
+   * Gem rate for copies graded while the printing was under 20 years old, and
+   * for those graded after. This is what `grading.agePenaltyPerYear` buys, and
+   * it is counted at the moment of grading: the same figures read off the
+   * cumulative pop reports separate by about 5%, because a pop report averages
+   * a printing's whole submission history rather than saying what a copy
+   * submitted today grades.
+   */
+  gemRateModern: number | null;
+  gemRateVintage: number | null;
+  gemRateVintageCopies: number;
+  /**
    * Median premium a 10 carries over the same printing's raw price. This is
    * the number the grading layer lives on: too low and nobody would submit,
    * too high and raw prices stop meaning anything.
@@ -537,19 +563,38 @@ export function computeMetrics(
   // a pop report is cumulative state that nothing prunes.
   let gradedCopies = 0, gems = 0, openedGraded = 0, printingsGraded = 0;
   const gemPremiums: number[] = [];
+  // Split two ways, because one gem rate cannot say whether print quality or
+  // age is doing the work. `byQuality` is what the print-quality decision buys;
+  // `vintage` is what wear takes back.
+  const byQuality: Record<string, { graded: number; gems: number }> = {};
   for (const pr of printings) {
     let onThis = 0;
+    let gemsOnThis = 0;
     for (const [gid, byTier] of Object.entries(pr.population.graded)) {
       for (const [tier, count] of Object.entries(byTier)) {
         onThis += count ?? 0;
-        if (tier === '10') gems += count ?? 0;
+        if (tier === '10') gemsOnThis += count ?? 0;
       }
       const tenPrice = pr.market.gradedPrices[gid as keyof typeof pr.market.gradedPrices]?.['10'];
       if (tenPrice && pr.market.rawPrice > 0) gemPremiums.push(tenPrice / pr.market.rawPrice);
     }
+    gems += gemsOnThis;
     gradedCopies += onThis;
-    if (onThis > 0) { printingsGraded += 1; openedGraded += pr.population.opened; }
+    if (onThis > 0) {
+      printingsGraded += 1;
+      openedGraded += pr.population.opened;
+      const q = (byQuality[pr.printQuality] ??= { graded: 0, gems: 0 });
+      q.graded += onThis;
+      q.gems += gemsOnThis;
+    }
   }
+  const gemRateOf = (q: string): number | null => {
+    const row = byQuality[q];
+    return row && row.graded > 0 ? row.gems / row.graded : null;
+  };
+  const budgetGem = gemRateOf('budget');
+  const standardGem = gemRateOf('standard');
+  const premiumGem = gemRateOf('premium');
   gemPremiums.sort((a, b) => a - b);
   const gem10Premium = gemPremiums.length ? gemPremiums[Math.floor(gemPremiums.length / 2)]! : 0;
   const gradersActive = Object.values(s.graders)
@@ -723,6 +768,14 @@ export function computeMetrics(
     gradedShare: openedGraded > 0 ? gradedCopies / openedGraded : null,
     gradedPrintingShare: printings.length > 0 ? printingsGraded / printings.length : 0,
     gemRate: gradedCopies > 0 ? gems / gradedCopies : null,
+    gemRateBudget: budgetGem,
+    gemRateStandard: standardGem,
+    gemRatePremium: premiumGem,
+    gemRateModern: s.market.gradingTally.modernCopies > 0
+      ? s.market.gradingTally.modernGems / s.market.gradingTally.modernCopies : null,
+    gemRateVintage: s.market.gradingTally.vintageCopies > 0
+      ? s.market.gradingTally.vintageGems / s.market.gradingTally.vintageCopies : null,
+    gemRateVintageCopies: s.market.gradingTally.vintageCopies,
     gem10Premium,
     printingsGraded,
     gradersActive,

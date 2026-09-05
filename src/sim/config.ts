@@ -194,7 +194,18 @@ export const defaultConfig: SimConfig = {
     cogsCoefficient: 0.55,
     errorIncidenceMin: 0.0001,
     errorIncidenceMax: 0.004,
-    qualityGradeShift: { budget: -0.15, standard: 0, premium: 0.12, archival: 0.2 },
+    // Shifts the latent condition mean by `grading.gradeShiftWeight` times this,
+    // so the span here is the whole reason print quality is worth choosing.
+    // Round 6 widened it: at -0.15..+0.2 a premium printing gemmed 1.36 times
+    // as often as a standard one, which is not a decision. Fitted so a standard
+    // printing gems about half the time, a premium one 87%, and a budget one
+    // about 2%. Past +0.5 the premium rate pins at 1.000 and stops saying
+    // anything.
+    //
+    // `budget` is arithmetic, not measurement: `flooder` is the only bot that
+    // prints it and it dies in year two, so no budget printing is ever graded
+    // in any seed. Nothing in the roster can check this number.
+    qualityGradeShift: { budget: -0.56, standard: 0, premium: 0.3, archival: 0.4 },
     errorRate: { budget: 0.02, standard: 0.008, premium: 0.002, archival: 0.0005 },
     unitCost: { budget: C(80), standard: C(140), premium: C(240), archival: C(400) },
     errorDiscoveryChance: 0.01,
@@ -561,9 +572,14 @@ export const defaultConfig: SimConfig = {
     feeWorthMultiple: 5,
     appetiteCeiling: 4,
     maxGradedShare: 0.35,
-    // On the familiar 1-10 scale. A standard-quality copy averages a 9, so a
-    // 10 is a tail event rather than the expected outcome of submitting.
-    conditionMean: 9,
+    // The latent scale is NOT the grade scale: it is an unbounded normal whose
+    // only meaning is its distance from `gradeCuts`. A mean of 10 against a
+    // 9.75 cut for a 10 says a factory-fresh modern copy clears the top bar
+    // about half the time, which is what the measured 50-53% gem rate for
+    // modern TCG in 2024-25 means. At 9 a 10 sat near the 14th percentile,
+    // where reality puts it at the median. Read it with `conditionSigma` and
+    // `gradeCuts`; on their own none of the three says anything.
+    conditionMean: 10.0,
     conditionSigma: 0.7,
     gradeShiftWeight: 3,
     strictnessWeight: 0.6,

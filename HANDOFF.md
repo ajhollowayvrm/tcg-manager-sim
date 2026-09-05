@@ -599,6 +599,126 @@ All three are plausible mechanisms and all three may simply be too harsh. None
 has been tuned.
 
 
+## Grading (tuning Round 6, 2026-09-05)
+
+**The suite goes to 50 gates, 45 PASS, 0 FAIL, 5 KNOWN, 0 DRIFT.** Both gates
+Round 6 owned are fixed and promoted, two new gates are added, and every other
+gate held — the price shape, the scalper pair and the populations did not move.
+
+| Gate | Round 5b | Round 6 | Band |
+|---|---|---|---|
+| `sub.gemRate` | 0.100 | 0.521 | 0.30-0.60 |
+| `sub.gem10Premium` | 6.049 | 3.929 | 2-5.5 |
+| `sub.gemRateByQuality` | — | 1.704 | 1.3-2.0 (new) |
+| `sub.gemRateVintage` | — | 0.397 | 0.15-0.45 (new) |
+
+```
+grading.conditionMean                 9  -> 10.0
+printing.qualityGradeShift.budget  -0.15 -> -0.56
+printing.qualityGradeShift.premium  0.12 -> 0.3
+printing.qualityGradeShift.archival  0.2 -> 0.4
+```
+
+### The latent scale is not the grade scale
+
+`conditionMean` 9 against a `gradeCuts['10']` of 9.75 with `conditionSigma` 0.7
+put a 10 at the 14th percentile. Reality puts it at the median, so the mean has
+to sit ABOVE the cut, and 10.0 is not a contradiction on a "1-10" scale because
+the latent variable is an unbounded normal whose only meaning is its distance
+from the cuts. The config comment said "on the familiar 1-10 scale" and that
+framing is what made the knob look untouchable. It now says what the number
+actually is.
+
+Measured, `conditionMean` alone: 9.0 gives a standard gem rate of 0.087, 9.4
+gives 0.204, 9.75 gives 0.358 and 10.0 gives 0.487. It is a clean level knob.
+
+### The spread needed the other half of the fix
+
+`conditionMean` moves every quality together, so raising it made print quality
+matter LESS: premium over standard fell from 2.06 at mean 9.0 to 1.36 at 10.0,
+because both ends saturate against the same ceiling. Widening
+`printing.qualityGradeShift` is what puts the decision back.
+
+At `premium` 0.3 a premium printing gems 87% of the time against a standard 51%.
+At 0.5 it reads 0.974 and at 0.8 it reads 1.000 — a pinned constant, workflow
+rule 9, so the shipped value stops well short.
+
+**`gem10Premium` came free.** Nothing in `tierMultiplier` moved. The graded
+price is `raw * tierMultiplier * reputation * popScarcity`, so more tens on a
+pop report push the scarcity term down and the premium with it: 6.082 to 3.929.
+
+### The vintage column had to be rewritten before it could say anything
+
+The round plan asks for `gemRateVintage`, and the obvious implementation — the
+gem rate on printings now over 20 years old, read off their pop reports — does
+not measure what it appears to. **A pop report is cumulative.** It averages a
+printing's whole submission history, most of which happened while the printing
+was young. That version read 0.464 against a modern 0.487, a 5% difference,
+where the age penalty should produce a third.
+
+`SimState.market.gradingTally` counts outcomes AT grading, split by the
+printing's age at that moment. The same run then reads 0.510 modern against
+0.376 vintage. Both versions respond to `agePenaltyPerYear`, which is why the
+first one looked plausible: only the split by age at grading separates them.
+
+**The vintage rate is 40% against a real-world 1% for true vintage, and that
+gap is left open.** `agePenaltyPerYear` 0.02 with `agePenaltyCap` 0.8 can only
+take 0.4 off the mean over 20 years, and 0.12 only reaches 0.242. Closing it
+means a far harsher wear curve, and `05-real-world.md` has no band for the
+shape of that curve — only the endpoint. It is a measurement job before it is a
+tuning one.
+
+### Two things the roster cannot check
+
+**The budget end of the quality table is arithmetic.** `flooder` is the only bot
+that prints budget and it dies in year two, so no budget printing is ever graded
+in any seed. `gemRateBudget` reads null in all twenty. The same is true of
+archival: nothing prints it. So `sub.gemRateByQuality` is premium over
+STANDARD, formed across bots — `chaseMaxxer` prints premium, `conservative`
+prints standard — and its ceiling of 2.0 is arithmetic rather than a target,
+because standard sits near 0.50.
+
+This is the third unreachable knob the tuning run has found, after
+`drops.scalperAppealPremium` and the budget shift. **The pattern is the bot
+roster, not the config:** a knob that only applies to a strategy no surviving
+bot plays cannot be measured, however carefully it is fitted.
+
+### `feeWorthMultiple` re-read, and the rule it cannot carry
+
+The plan asks for it to be retargeted on the measured rule: a card above $100
+raw gains 120-300% from a slab, one under $10 gains less than 70% and does not
+cover the fee.
+
+**The premium cannot carry that rule at all.** `target = raw * tierMultiplier *
+reputation * popScarcity` is a multiple of the raw price, so the premium is
+scale-invariant by construction and an expensive card gains exactly the same
+multiple as a cheap one. What carries the rule is the flat fee plus the
+submission hurdle: grader fees run $8 to $30, `feeWorthMultiple` 5 keeps
+anything under about $60 raw out of a slab entirely, and at a 3.9x gross
+multiple a $100 card nets about +240%. The rule holds; it just does not live
+where the plan expected.
+
+Swept anyway against the moved price body: the multiple now barely touches the
+gem rate (0.52 at 2, 0.46 at 12) and `sub.gradedPrintingShare` stays in band. It
+stays at 5.
+
+### `strides.grading` at 8: measured and declined
+
+Round 3 handed this to Round 6 as a runtime win. Measured on a 30 seed x 50 year
+`conservative` sweep it is 32.6s at stride 4 and 28.4s at stride 8 — **13%, not
+the several-fold saving the note implied**, and the suite is about 119s, so it
+buys under ten seconds.
+
+It is not free either. `gem10Premium` moves 3.55 to 3.70 and `gradedShare` 0.319
+to 0.325, because the graded price lerp runs half as often and the submission
+volume is compensated rather than identical. Small, but it is a behaviour change
+bought for 8 seconds. **The stride stays at 4.** Round 3's own conclusion still
+holds: the hot spot is not on a stride.
+
+One thing worth recording for whoever revisits it: because grading draws on its
+own `gradingRng` stream, changing this stride does NOT renumber the main stream.
+That is exactly what the per-subsystem streams were built for.
+
 ## The screen (tuning Round 5c, 2026-09-05)
 
 Round 5 owns 46 config paths and Rounds 5 and 5b fitted twelve of them. This
@@ -1567,57 +1687,59 @@ horizon fixed.
 
 ## Suggested next session
 
-**Round 6 of the tuning run: grading.** The round plan lives outside the repo,
-at `~/.claude/plans/let-s-start-the-tuning-zesty-magpie.md`, and it holds the
-ordering and the reasoning for all twelve rounds. Read it first, then the Round
-5 section above, then run `npm run check` to see where the gates stand.
+**Round 7 of the tuning run: art and storage.** The round plan lives outside the
+repo, at `~/.claude/plans/let-s-start-the-tuning-zesty-magpie.md`. Read it
+first, then the Round 6 section above, then run `npm run check`.
 
-Rounds 0 to 5b are done and banked. The suite stands at **41 PASS, 0 FAIL,
-7 KNOWN, 0 DRIFT** across 48 gates.
+Rounds 0 to 6 are done and banked. The suite stands at **45 PASS, 0 FAIL,
+5 KNOWN, 0 DRIFT** across 50 gates.
 
-Round 6 owns three of the seven remaining known-fails:
+**Round 7 may be worth more than its position suggests.** The plan gives it the
+artist rates and a storage surcharge:
 
-- `sub.gemRate` is 0.100 against a band of 0.30-0.60. `grading.conditionMean` 9
-  against a `gradeCuts['10']` of 9.75 with `conditionSigma` 0.7 puts a 10 near
-  the 14th percentile, where reality puts it at the median.
-- `sub.gem10Premium` is 6.134 against 2-5.5.
-- `grading.feeWorthMultiple` must be re-read after Round 4. The prices under it
-  moved about 13 times, so retarget it on the measured rule: a card above $100
-  raw gains 120-300% from a slab, and one under $10 gains less than 70% and does
-  not cover the fee.
+- `art.openingRateMin/Max` to 40,000/250,000 cents, and
+  `art.newcomerRateMin/Max` 50/300 cents to the same band — the live defect in
+  `02-hardcoded.md` §5.
+- `art.rateGrowthPerReputation` 2.5 to 0.0-0.2: the measured fee did not move in
+  27 years.
+- `finance.storagePerUnitPerTick` 1 to 5 cents, plus a new surcharge cliff, to
+  keep `overprint` a live death route once the growth arc makes cash plentiful.
 
-The plan also asks for two new columns, `gemRateByQuality` and `gemRateVintage`.
-`strides.grading` at 8 is the one stride that moves the suite runtime (185s to
-about 43s on the measurement in the Round 3 section), and Round 6 owns it.
+But read the Round 3 section first: art reaches 43% of the print bill on a
+`conservative` seed that dies, and `diff.botsAlwaysSurvive` fell from 7 to 1 in
+that round — only `scout`, which buys the cheapest artist, survives every seed.
+Three of the four open `diff.*` gates are assigned to Round 10, and Round 7 may
+fix them as a side effect. Check that before Round 10 does the work twice.
 
-**Two things Round 5b hands forward.**
+Exit criteria: `artSpend` 3-9% of revenue for `conservative`, 20-35% for
+`safeHands`, 1-3% for `scout`, and `scout` still beats `safeHands` on top card
+in about half of seeds — the scouting bet must not leak.
 
-- **`actors.speculatorHeatGain` is now priced in the value block, not in
-  stability.** Round 5b made it a pure amplification knob, and
-  `shape.yearsTo100` is what stops it rising: 2.442 at 0.05, 1.981 at 0.08
-  through 0.12, 1.423 at 0.6, against a floor of 2.0. A round that wants
-  CONCEPT.md's "amplify and crash" to be a real force has to pay for it in the
-  price body, and should do that together with whoever owns `value`.
-- **`actors.collectorFatiguePenalty` is inert.** Fatigue measures 0.220 to 0.223
-  in every bot at every decade, so the term is a constant of 0.89. It is a
-  config path now, so whichever round owns fatigue can sweep it — but the knob
-  is not the problem, the pinned fatigue is.
+**The five remaining known-fails.** Four `diff.*` gates —
+`botsAlwaysSurvive`, `conservativeSurvives`, `allInSurvival`, `idleDies` —
+belong to Round 10, subject to the Round 7 note above. `shape.surpriseGrail`
+cannot be cleared by tuning at all: it needs the metric redefined per set, and
+that needs a band the research cannot supply. It is a design decision, not a
+round.
 
-The four still-open `diff.*` gates — `botsAlwaysSurvive`, `conservativeSurvives`,
-`allInSurvival`, `idleDies` — belong to Round 10.
+**Three things the tuning run has learned to watch for, all found by measuring
+rather than by reading the code:**
 
-**Two known defects nobody owns yet.**
-
-- `shape.surpriseGrail` cannot be cleared by tuning. It needs the metric
-  redefined per set, and that needs a band the research cannot supply. See the
-  Round 4 section; it is a design decision.
-- `shape.yearsTo100` passes on a thin, sample-dependent margin: 2.442 over 30
-  seeds, 1.981 over 20, against a floor of 2.0.
+- **A knob the bot roster cannot reach has not been measured**, however
+  carefully it is fitted. Three so far: `drops.scalperAppealPremium` (no bot
+  drops an ETB), `printing.qualityGradeShift.budget` and `.archival` (no
+  surviving bot prints either quality). The fix is a bot, not a value.
+- **A cumulative state cannot answer a question about a moment.** The first
+  `gemRateVintage` read pop reports and understated the age penalty by a factor
+  of six. Count at the event, not off the ledger.
+- **Screen a block before declaring its round done.** Round 5c cost about
+  fifteen minutes and found that the two gates the round had just fixed sat at
+  the bottom of their band with five unswept neighbours able to push them out.
 
 Before you touch the value engine again:
 
 ```
-npm run check                                                   # all 48 gates
+npm run check                                                   # all 50 gates
 npm run sim -- --seeds=1 --years=25 --bot=conservative --dist   # the ladder
 ```
 

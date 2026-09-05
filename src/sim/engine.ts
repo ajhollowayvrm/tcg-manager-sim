@@ -2304,6 +2304,9 @@ function tickRoster(s: SimState): void {
  */
 
 /** Grade boundaries on the latent 1-10 condition score, best first. */
+/** Age at grading that counts a submission as vintage, in years. */
+export const GRADING_VINTAGE_YEARS = 20;
+
 function gradeCuts(s: SimState): Array<{ tier: GradeTier; min: number }> {
   const g = s.config.grading.gradeCuts;
   return [
@@ -2413,6 +2416,16 @@ function resolveGradingReturns(s: SimState): void {
       if (n <= 0) continue;
       byTier[cut.tier] = (byTier[cut.tier] ?? 0) + n;
       assigned += n;
+      // Counted here rather than off the pop report, because the pop report is
+      // cumulative and cannot say what a copy submitted today grades.
+      const tally = s.market.gradingTally;
+      if (ageYears >= GRADING_VINTAGE_YEARS) {
+        tally.vintageCopies += n;
+        if (cut.tier === '10') tally.vintageGems += n;
+      } else {
+        tally.modernCopies += n;
+        if (cut.tier === '10') tally.modernGems += n;
+      }
     }
   }
   s.market.gradingQueue = kept;
