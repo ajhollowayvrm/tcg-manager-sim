@@ -163,6 +163,19 @@ export interface RunMetrics {
    * nothing before this pass.
    */
   aftermarketIndex: number;
+
+  /** Collab offers that arrived across the run. */
+  collabOffers: number;
+  /** Offers signed. */
+  collabsSigned: number;
+  /** Licence fees paid, in dollars. */
+  collabSpend: number;
+  /**
+   * Mean IP affection at the end of the run. The collab trade is reach now
+   * against equity later, and this is the equity half — a studio that lives on
+   * collabs should sell well and own little.
+   */
+  meanIpAffection: number;
 }
 
 /** Pearson r. Returns 0 rather than NaN for a degenerate sample. */
@@ -395,6 +408,14 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
     ? releasedWithPerf.reduce((n, set) => n + set.performance!.aftermarketIndex, 0)
       / releasedWithPerf.length : 0;
 
+  const collabOffers = s.events.filter(e => e.kind === 'collabOffered').length;
+  const collabsSigned = s.events.filter(e => e.kind === 'collabSigned').length;
+  const collabSpend = pub.ledger
+    .filter(e => e.category === 'licensing').reduce((n, e) => n - e.amount, 0) / 100;
+  const allIps = Object.values(s.ips);
+  const meanIpAffection = allIps.length
+    ? allIps.reduce((n, ip) => n + ip.affection, 0) / allIps.length : 0;
+
   return {
     bot,
     seed: s.seed,
@@ -462,6 +483,10 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
     speculators: s.audience.actors.speculators,
     speculatorSwing,
     aftermarketIndex: aftermarket,
+    collabOffers,
+    collabsSigned,
+    collabSpend,
+    meanIpAffection,
   };
 }
 

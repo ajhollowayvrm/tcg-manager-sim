@@ -207,6 +207,26 @@ console.table(botNames.map(b => {
   };
 }));
 
+// Collabs, printed only for runs where an offer arrived at all.
+const collabRows = botNames
+  .map(b => {
+    const r = rows.filter(x => x.bot === b);
+    const ran = r.filter(x => x.collabOffers > 0);
+    if (ran.length === 0) return null;
+    return {
+      bot: b,
+      offers: mean(ran.map(x => x.collabOffers)).toFixed(1),
+      signed: mean(ran.map(x => x.collabsSigned)).toFixed(1),
+      licenceSpend: '$' + money(median(ran.map(x => x.collabSpend))),
+      ipAffection: mean(ran.map(x => x.meanIpAffection)).toFixed(1),
+    };
+  })
+  .filter(Boolean);
+if (collabRows.length) {
+  console.log('collabs:');
+  console.table(collabRows);
+}
+
 // Drops get their own table. The main one is already too wide to read, and a
 // run that never opened a direct store has nothing to say here.
 const dropRows = botNames

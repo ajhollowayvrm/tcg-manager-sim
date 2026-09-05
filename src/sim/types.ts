@@ -738,7 +738,11 @@ export interface Collab {
   /** Segments this collab reaches that your brand otherwise doesn't. */
   reachBonus: Record<AudienceSegment, number>;
   requiredBrandStanding: Unit;
+  /** An unsigned offer lapses here. Null once signed — a signed deal does not expire. */
   expiresTick: Tick | null;
+  /** The set this collab was signed for. Null while it is still an offer. */
+  signedForSetId: SetId | null;
+  signedTick: Tick | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -897,7 +901,13 @@ export type Decision =
   | { type: 'reprint'; tick: Tick; payload: { cardId: CardId; intoSetId: SetId; quantity: number } }
   | { type: 'hireArtist'; tick: Tick; payload: { artistId: ArtistId; terms: 'perCard' | 'retainer' | 'exclusive' } }
   | { type: 'purchaseUnlock'; tick: Tick; payload: { unlock: keyof UnlockState; detail?: string } }
-  | { type: 'signCollab'; tick: Tick; payload: { collabId: CollabId } }
+  | {
+      type: 'signCollab'; tick: Tick; payload: {
+        collabId: CollabId;
+        /** Which set it is for. Defaults to the newest set still in design. */
+        setId?: SetId;
+      };
+    }
   | { type: 'unlockRegion'; tick: Tick; payload: { regionId: RegionId } }
   | { type: 'borrow'; tick: Tick; payload: { amount: Cents } }
   | { type: 'repay'; tick: Tick; payload: { amount: Cents } }
@@ -1001,6 +1011,10 @@ export interface SimConfig {
   };
 
   attention: {
+    /** The print run one region's demand is measured against. */
+    referenceRunUnits: number;
+    /** The audience that reference run was calibrated at. */
+    referenceAudience: number;
     perReleaseCost: number;
     regenPerTick: number;
     fatigueGain: number;
@@ -1302,6 +1316,19 @@ export interface SimConfig {
     speculatorHeatGain: number;
     speculatorSensitivity: number;
     speculatorNoise: number;
+  };
+
+  collabs: {
+    offerChancePerQuarter: number;
+    offerWindowWeeks: number;
+    maxOpenOffers: number;
+    feeMin: Cents;
+    feeMax: Cents;
+    /** Demand multiplier per point of weighted reach bonus. */
+    reachToDemand: number;
+    goodwillPerReach: number;
+    /** Share of the usual IP exposure a collab set returns to your own IPs. */
+    exposureShare: number;
   };
 
   history: {

@@ -3,7 +3,7 @@ import type {
   ProductLineId, RegionId, ChannelId, ArtistId, IpEntity, Card, CardSet, Product,
   Printing, SimEvent, EventId, SetType, Rarity, ProductKind, PrintQualityTier,
   Treatment, ArtBrief, UnlockState, ChannelAllocation, Channel, SetPerformance,
-  Drop, DropId, Grader, GradeTier, GradingSubmission,
+  Drop, DropId, Grader, GradeTier, GradingSubmission, CollabId, AudienceSegment,
   Artist, Publisher, Commission, CommissionId, ArtistTerms,
 } from './types.ts';
 import { rand, randRange, randInt, pick, chance, gauss } from './rng.ts';
@@ -333,6 +333,118 @@ function purchaseUnlock(s: SimState, unlock: keyof UnlockState, detail?: string)
 }
 
 /**
+ * Signs a collab offer for a set (CONCEPT.md §6.7).
+ *
+ * The trade is reach for equity. A collab reaches segments your own brand does
+ * not, and it does it immediately — no exposure to build, no affection to wait
+ * for. What you do not get is the affection: the licensor's audience came for
+ * the licensor, so a collab set returns only `collabs.exposureShare` of the
+ * usual exposure to your own IPs. A studio that lives on collabs sells a great
+ * deal of product and owns nothing at the end of it, which is the asymmetry
+ * that stops this being a straight upgrade over your own IP.
+ */
+function signCollab(s: SimState, collabId: CollabId, setId?: SetId): void {
+  const pub = s.publishers[s.playerId];
+  const collab = s.collabs[collabId];
+  if (!pub || !collab || collab.signedTick !== null) return;
+  if (collab.expiresTick !== null && s.tick > collab.expiresTick) return;
+  if (pub.brandStanding < collab.requiredBrandStanding) return;
+  if (pub.cash < collab.licenseFee) return;
+
+  // A collab attaches to a set that has not printed yet. After the commit the
+  // print run is locked and the reveal is running, so there is nothing left for
+  // the reach to change — signing then would be paying for a finished bet.
+  const target = setId
+    ? s.sets[setId]
+    : Object.values(s.sets)
+      .filter(set => set.publisherId === pub.id && set.status === 'design' && !set.collabId)
+      .sort((a, b) => (b.designStartTick as number) - (a.designStartTick as number))[0];
+  if (!target || target.status !== 'design' || target.collabId) return;
+
+  pub.cash = C(pub.cash - collab.licenseFee);
+  pub.ledger.push({
+    t: s.tick, amount: C(-collab.licenseFee), category: 'licensing',
+    note: collab.name, refId: collab.id,
+  });
+  collab.signedForSetId = target.id;
+  collab.signedTick = s.tick;
+  collab.expiresTick = null;
+  target.collabId = collab.id;
+  target.type = 'collab';
+  emit(s, 'collabSigned', true, { publisherId: pub.id, setId: target.id, collabId: collab.id },
+    { fee: collab.licenseFee, kind: collab.kind });
+}
+
+/**
+ * Collab offers arrive, and they lapse.
+ *
+ * Gated on brand standing per CONCEPT.md §9: nobody licenses their franchise to
+ * a studio nobody has heard of. The offer carries an expiry, so a good one that
+ * arrives while you are broke is a real loss rather than a queue entry — which
+ * is what makes cash on hand worth something between print runs.
+ */
+function tickCollabOffers(s: SimState): void {
+  const cfg = s.config.collabs;
+  const pub = s.publishers[s.playerId]!;
+  if (pub.deadTick !== null) return;
+
+  for (const c of Object.values(s.collabs)) {
+    if (c.signedTick !== null || c.expiresTick === null) continue;
+    if (s.tick <= c.expiresTick) continue;
+    delete s.collabs[c.id];
+    emit(s, 'collabExpired', false, { publisherId: pub.id, collabId: c.id }, { name: c.name });
+  }
+
+  if (s.tick % 13 !== 0) return;
+  const open = Object.values(s.collabs).filter(c => c.signedTick === null).length;
+  if (open >= cfg.maxOpenOffers) return;
+  if (!chance(s.rng, cfg.offerChancePerQuarter * pub.brandStanding)) return;
+
+  // The reach bonus lands on the segments this licensor brings, not on all of
+  // them. A collab that reached everybody equally would be a flat demand
+  // multiplier, and choosing between two offers would stop being a decision.
+  const reachBonus = Object.fromEntries(SEGMENTS.map(g => [g, 0])) as Record<AudienceSegment, number>;
+  const reached = 1 + randInt(s.rng, 0, 2);
+  for (let i = 0; i < reached; i++) {
+    reachBonus[pick(s.rng, SEGMENTS)] += randRange(s.rng, 0.15, 0.6);
+  }
+
+  const id = nextId(s, 'collab') as CollabId;
+  const kind = pick(s.rng, ['externalIp', 'event', 'retailExclusive'] as const);
+  s.collabs[id] = {
+    id, kind,
+    name: `${kind === 'externalIp' ? 'Licensed IP' : kind === 'event' ? 'Event' : 'Retail'} Collab ${id}`,
+    licenseFee: C(randRange(s.rng, cfg.feeMin, cfg.feeMax)),
+    reachBonus,
+    requiredBrandStanding: U(randRange(s.rng, 0.1, 0.6)),
+    expiresTick: T(s.tick + cfg.offerWindowWeeks),
+    signedForSetId: null, signedTick: null,
+  };
+  emit(s, 'collabOffered', true, { publisherId: pub.id, collabId: id },
+    { fee: s.collabs[id]!.licenseFee, kind, requiredBrandStanding: s.collabs[id]!.requiredBrandStanding });
+}
+
+/**
+ * What a set's collab adds to its demand. 1 for a set without one.
+ *
+ * Weighted by segment size, so reaching the largest segment is worth more than
+ * reaching the smallest — the offer with the bigger headline number is not
+ * automatically the better offer.
+ */
+function collabDemandFactor(s: SimState, set: CardSet): number {
+  if (!set.collabId) return 1;
+  const collab = s.collabs[set.collabId];
+  if (!collab) return 1;
+  const total = SEGMENTS.reduce((n, g) => n + s.audience.segments[g].size, 0);
+  if (total <= 0) return 1;
+  let weighted = 0;
+  for (const g of SEGMENTS) {
+    weighted += collab.reachBonus[g] * s.audience.segments[g].size / total;
+  }
+  return 1 + s.config.collabs.reachToDemand * weighted;
+}
+
+/**
  * Opens a second market (CONCEPT.md §6.6, §9).
  *
  * The fee is only the door. The region's channels are all locked behind their
@@ -413,6 +525,13 @@ function applyDecision(s: SimState, d: Decision): void {
     case 'allocate': allocate(s, d.payload.productId, d.payload.allocations); break;
     case 'purchaseUnlock': purchaseUnlock(s, d.payload.unlock, d.payload.detail); break;
     case 'unlockRegion': unlockRegion(s, d.payload.regionId); break;
+    case 'signCollab': signCollab(s, d.payload.collabId, d.payload.setId); break;
+    // `advance` is not a reducer decision. It runs ticks, and a tick runs the
+    // reducer, so applying it here would re-enter the loop it was submitted
+    // into. The engine exports `advance()` for callers that want to skip weeks,
+    // and that is where this belongs — it is in the union so a decision log can
+    // record a skip, not so the reducer can perform one.
+    case 'advance': break;
     case 'reprint': reprint(s, d.payload.cardId, d.payload.intoSetId, d.payload.quantity); break;
     case 'scheduleReveal':
       scheduleReveal(s, d.payload.setId, d.payload.startTick, d.payload.cadence);
@@ -493,6 +612,9 @@ export const api = {
   },
   unlockRegion(s: SimState, regionId: RegionId): void {
     submit(s, { type: 'unlockRegion', tick: s.tick, payload: { regionId } });
+  },
+  signCollab(s: SimState, collabId: CollabId, setId?: SetId): void {
+    submit(s, { type: 'signCollab', tick: s.tick, payload: { collabId, setId } });
   },
   reprint(s: SimState, cardId: CardId, intoSetId: SetId, quantity: number): void {
     submit(s, { type: 'reprint', tick: s.tick, payload: { cardId, intoSetId, quantity } });
@@ -605,6 +727,19 @@ function releaseSet(s: SimState, setId: SetId, regionId: RegionId): void {
     ip.appearanceCount++;
     if (!ip.firstPrintingId) ip.firstPrintingId = id;
     for (const cid of card.cameos) s.ips[cid]!.cameoCount++;
+  }
+
+  // A collab pays its goodwill in the segments it reaches, and only there. It
+  // arrives at release rather than at signing: the audience meets the licensor
+  // when the cards ship, not when the contract does.
+  const collab = set.collabId ? s.collabs[set.collabId] : undefined;
+  if (collab) {
+    for (const seg of SEGMENTS) {
+      const bonus = collab.reachBonus[seg];
+      if (bonus <= 0) continue;
+      const st = s.audience.segments[seg];
+      st.goodwill = Math.min(1, st.goodwill + s.config.collabs.goodwillPerReach * bonus);
+    }
   }
 
   // Attention is consumed on release. This is the flood penalty. Goodwill
@@ -1033,12 +1168,30 @@ function setChase(s: SimState, set: CardSet): number {
   return total / Math.max(1, set.cardIds.length);
 }
 
+/**
+ * One product's share of the demand its region has for its set.
+ *
+ * Two SKUs of the same set in the same region compete for one audience, so
+ * they split it by print run. Two SKUs in different regions do not — each
+ * region brings its own buyers, and that is what makes opening one worth the
+ * fee. Returns 1 for the only product in its region.
+ */
+function productShareOfRegion(s: SimState, set: CardSet, p: Product): number {
+  let inRegion = 0;
+  for (const pid of set.productIds) {
+    const other = s.products[pid];
+    if (other && other.regionId === p.regionId) inRegion += other.unitsPrinted;
+  }
+  return inRegion > 0 ? p.unitsPrinted / inRegion : 1;
+}
+
 function tickSales(s: SimState, products: Product[]): void {
   const cfg = s.config;
   // Audience state does not move inside this pass, and `setChase` walks every
   // card in a set — so both are computed once per tick rather than once per
   // product. Two products off one set used to pay for the same walk twice.
   const { attention, fatigue, goodwill } = audienceAverages(s);
+  const totalAudience = SEGMENTS.reduce((n, g) => n + s.audience.segments[g].size, 0);
   const fatigueTerm = fatigueResponse(s, fatigue);
   const goodwillTerm = 0.2 + 0.8 * goodwill;
   const chaseBySet = new Map<SetId, number>();
@@ -1081,9 +1234,25 @@ function tickSales(s: SimState, products: Product[]): void {
     // Hype multiplies the demand the set would have had. It cannot conjure
     // demand for a set nobody wants: a zero-chase set times any campaign is
     // still nearly zero.
-    const pool = p.unitsPrinted * 0.06 * attention * shareFactor * fatigueTerm
+    // Demand is a property of the audience and the set. It used to be
+    // `p.unitsPrinted * 0.06`, which made it a property of the print run —
+    // print more and more buyers appeared. That single term is why sell-through
+    // sat at 0.97 for every strategy, why the blind bet had no downside, and
+    // why every demand-side lever in the game bought nothing measurable: there
+    // was never any unmet demand for hype, a collab or a region to reach.
+    //
+    // The reference run and the reference audience are set so that a
+    // reference-sized run into the starting audience behaves exactly as it did
+    // before, and anything larger no longer conjures its own buyers.
+    const audienceScale = totalAudience / cfg.attention.referenceAudience;
+    // Several products in one region split that region's demand rather than
+    // each collecting all of it. Across regions they do not: a second market is
+    // its own audience, which is the entire reason to open one.
+    const regionShare = productShareOfRegion(s, set, p);
+    const pool = cfg.attention.referenceRunUnits * regionShare * audienceScale
+      * 0.06 * attention * shareFactor * fatigueTerm
       * goodwillTerm * (0.3 + pub.brandStanding) * (0.5 + chase) * decay
-      * (1 + (set.hype?.level ?? 0)) * regionFactor;
+      * (1 + (set.hype?.level ?? 0)) * regionFactor * collabDemandFactor(s, set);
     // Below half a unit every channel's share rounds to zero, so the rest of
     // this pass cannot sell anything. Old sets sit here for decades: `decay` is
     // e^(-1.4 * years), so a five-year-old set is already three zeroes down.
@@ -1143,10 +1312,15 @@ function tickSales(s: SimState, products: Product[]): void {
     // in `tickPrices` because it is a per-set summary of prices, not a price.
     if (set.performance) set.performance.aftermarketIndex = aftermarketIndex(s, set);
 
-    // Selling builds exposure, which is what lets affection converge.
+    // Selling builds exposure, which is what lets affection converge. A collab
+    // set returns only a share of it: the licensor's audience came for the
+    // licensor, so the reach is rented rather than bought. This is the whole
+    // cost of a collab beyond its fee, and it is the reason a studio cannot
+    // simply license its way to a brand.
+    const exposureShare = set.collabId ? s.config.collabs.exposureShare : 1;
     for (const cid of set.cardIds) {
       const ip = s.ips[s.cards[cid]!.subjectIp];
-      if (ip) ip.exposure += soldTotal / 20000;
+      if (ip) ip.exposure += soldTotal * exposureShare / 20000;
     }
   }
 }
@@ -2180,6 +2354,7 @@ export function tick(s: SimState): void {
   tickRoster(s);
   tickFinance(s);
   tickRegionKnowledge(s);
+  tickCollabOffers(s);
   tickCompaction(s);
 }
 

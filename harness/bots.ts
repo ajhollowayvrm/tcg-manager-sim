@@ -8,6 +8,7 @@
 import type {
   SimState, IpId, ArtistId, Rarity, PrintQualityTier, ProductKind, SetType, ProductId, IpKind,
   ChannelId, Channel, Tick, SetId, Cents, Artist, ArtistTerms, RegionId,
+  CollabId, AudienceSegment,
 } from '../src/sim/types.ts';
 import { api } from '../src/sim/engine.ts';
 import { rand, pick, chance } from '../src/sim/rng.ts';
@@ -142,6 +143,24 @@ export interface SetBotOptions {
    * a reading nothing consults is dead code however carefully it is built.
    */
   regionPolicy?: 'home' | 'expand';
+  /**
+   * Whether the bot licenses. `sign` takes the open offer with the best
+   * weighted reach per dollar that it can afford and that its brand clears.
+   *
+   * The offer has to be signed between `createSet` and `commitPrintRun`: a
+   * collab attaches to a set that has not printed yet, and both decisions land
+   * in the same tick, so this is a matter of submitting in the right order.
+   */
+  collabPolicy?: 'never' | 'sign';
+  /**
+   * How much larger a print run gets when the bot has signed a collab for it.
+   *
+   * This is the whole point of a collab and the whole risk of one. Extra demand
+   * is worth nothing to a publisher who printed for the demand it already had,
+   * so a licence fee only pays back if the run is sized up to meet it — and
+   * sizing up is exactly how a collab that under-delivers becomes an overprint.
+   */
+  collabRunMultiple?: number;
 }
 
 /**
@@ -354,6 +373,7 @@ export function makeSetBot(opts: SetBotOptions): Bot {
 
       const ipId = ensureIp(s, opts.label);
       const setId = api.createSet(s, `${opts.label} Set W${s.tick}`, opts.setType, opts.cardsPerSet);
+      const signedCollab = maybeSignCollab(s, opts, setId);
 
       // Art is commissioned in the same batch as the design, which is the only
       // way it can land before the release 18 weeks later. A slow or unreliable
@@ -379,6 +399,10 @@ export function makeSetBot(opts: SetBotOptions): Bot {
       // second region opens with one small LGS against four US channels, so an
       // even split ships most of the run into a market that cannot move it —
       // which measures a careless allocator rather than measuring regions.
+      const committedUnits = signedCollab
+        ? Math.round(runUnits * (opts.collabRunMultiple ?? 1.5))
+        : runUnits;
+
       const reachByRegion = shipTo.map(regionId => {
         const caps = openChannels(s)
           .filter(ch => ch.regionId === regionId)
@@ -393,7 +417,7 @@ export function makeSetBot(opts: SetBotOptions): Bot {
       for (let i = 0; i < shipTo.length; i++) {
         const regionId = shipTo[i]!;
         const share = totalReach > 0 ? reachByRegion[i]! / totalReach : 1 / shipTo.length;
-        const perRegion = Math.max(1, Math.floor(runUnits * share));
+        const perRegion = Math.max(1, Math.floor(committedUnits * share));
         // A region's price is its own. Selling a US-priced box into a market
         // that tolerates 0.6 of US prices is a mistake the bot should be able
         // to avoid, and `priceTolerance` is public where taste is not.
@@ -443,6 +467,39 @@ function maybeSign(s: SimState, opts: SetBotOptions, artistId: ArtistId): void {
   api.hireArtist(s, artistId, opts.artistTerms);
 }
 
+/**
+ * Signs the best open collab offer for the set just created.
+ *
+ * "Best" is weighted reach per dollar, not the largest headline bonus: an offer
+ * that reaches the smallest segment hard is worth less than one that reaches
+ * the largest segment gently, and a bot that sorts on the headline number would
+ * never find that out. The reserve is one print run — a licence fee that eats
+ * the money the set needs to print is not a collab, it is a mistake.
+ */
+function maybeSignCollab(s: SimState, opts: SetBotOptions, setId: SetId): boolean {
+  if (opts.collabPolicy !== 'sign') return false;
+  const pub = s.publishers[s.playerId]!;
+  const reserve = printRunCost(s, opts);
+  const total = Object.values(s.audience.segments).reduce((n, g) => n + g.size, 0);
+  if (total <= 0) return false;
+
+  let best: { id: CollabId; score: number } | null = null;
+  for (const c of Object.values(s.collabs)) {
+    if (c.signedTick !== null) continue;
+    if (pub.brandStanding < c.requiredBrandStanding) continue;
+    if (pub.cash - c.licenseFee < reserve) continue;
+    let weighted = 0;
+    for (const [seg, bonus] of Object.entries(c.reachBonus)) {
+      weighted += bonus * (s.audience.segments[seg as AudienceSegment]?.size ?? 0) / total;
+    }
+    const score = weighted / Math.max(1, c.licenseFee);
+    if (!best || score > best.score) best = { id: c.id, score };
+  }
+  if (!best) return false;
+  api.signCollab(s, best.id, setId);
+  return true;
+}
+
 /** Drips marketing into every set still inside its reveal window. */
 function submitMarketing(s: SimState, opts: SetBotOptions): void {
   if (!opts.marketingPerSet) return;
@@ -485,6 +542,16 @@ export const BOTS: Record<string, () => Bot> = {
     quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000,
     productKind: 'boosterBox', allocationPolicy: 'spread',
     regionPolicy: 'expand',
+  }),
+
+  // `conservative` in every respect except that it licenses. Any difference in
+  // the two rows is the collab loop and nothing else: reach bought with cash,
+  // paid for in the IP equity the sets no longer build.
+  licensor: () => makeSetBot({
+    label: 'Licensor', cadenceWeeks: 52, cardsPerSet: 70, setType: 'main',
+    quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000,
+    productKind: 'boosterBox', allocationPolicy: 'spread',
+    collabPolicy: 'sign', collabRunMultiple: 1.5,
   }),
 
   // Few, well-supported sets. The steady baseline.

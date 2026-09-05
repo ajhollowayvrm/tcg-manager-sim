@@ -57,6 +57,14 @@ export const defaultConfig: SimConfig = {
   },
 
   attention: {
+    /**
+     * The print run one region's demand is measured against, and the audience
+     * it is measured at. Together they replace the old `p.unitsPrinted` term:
+     * a reference-sized run into the starting audience sells exactly as it did
+     * before, and a larger one no longer brings its own buyers with it.
+     */
+    referenceRunUnits: 8000,
+    referenceAudience: 600_000,
     perReleaseCost: 0.22,
     regenPerTick: 0.02,
     fatigueGain: 0.18,
@@ -329,6 +337,29 @@ export const defaultConfig: SimConfig = {
     speculatorHeatGain: 0.05,
     speculatorSensitivity: 1.5,
     speculatorNoise: 0.004,
+  },
+
+  // First-guess numbers. The shape that matters: a collab buys reach you do
+  // not have and cannot buy affection you have not earned — the licensor keeps
+  // the IP equity, so a studio that lives on collabs owns nothing at the end.
+  collabs: {
+    /** Chance per quarter that an offer arrives, at full brand standing. */
+    offerChancePerQuarter: 0.35,
+    offerWindowWeeks: 26,
+    maxOpenOffers: 3,
+    /** Licence fee, as a share of a typical print run's cost. */
+    feeMin: C(120_000_00),
+    feeMax: C(900_000_00),
+    /** Demand multiplier per point of weighted reach bonus. */
+    reachToDemand: 1.2,
+    /** Goodwill a collab set earns in the segments it reaches. */
+    goodwillPerReach: 0.05,
+    /**
+     * Share of the usual IP exposure a collab set returns to your own IPs. The
+     * licensor's audience came for the licensor: the reach is rented, and this
+     * is the rent.
+     */
+    exposureShare: 0.3,
   },
 
   history: {
