@@ -1,6 +1,8 @@
 # The config knobs
 
-Every path in `src/sim/config.ts`. There are **511**. Each one is reachable with
+Every path in `src/sim/config.ts`. There are **539** numeric ones, counted by
+walking the shipped `defaultConfig`. (The page said 511 from Round 2 to Round 4;
+that figure was stale, not a different counting rule.) Each one is reachable with
 `--set=<path>=<number>`; `withOverrides` throws on a path it does not know, and
 nested paths work to any depth:
 
@@ -11,7 +13,7 @@ nested paths work to any depth:
 --set=graders.grd_pinnacle.tiers.standard.price=5000
 ```
 
-Values are the shipped defaults on 2026-09-05, after tuning Round 4.
+Values are the shipped defaults on 2026-09-05, after tuning Round 5.
 
 This page documents the knobs that were already here before the config move,
 with what each one does and whether it was measured. The blocks added by the
@@ -227,23 +229,25 @@ A four-channel studio pays ~$156k/year of overhead.
 
 ---
 
-## `drops` — the direct store and scalpers (18 paths)
+## `drops` — the direct store and scalpers (20 paths)
 
 The loop this block must produce: scalpers arrive when resale pays, buy the drop
 out, and leave once they have closed the premium. It cycles about every 6 years.
 
 | Path | Value | What it moves | Status |
 |---|---|---|---|
-| `drops.unitsPerScalperReference` | 0.3 | Units per stride a scalper must flip to count as employed. **The knob that held the whole population on its floor.** At 1 no cadence could supply that, so crowding was zero, the trade never cleared its hurdle, and scalpers took 11% of a drop. At 0.3 the population settles near 900 and takes about a quarter of the units. Below ~0.1 it runs away to `maxScalpers` and stops cycling. | swept |
+| `drops.unitsPerScalperReference` | 0.03 | Units per stride a scalper must flip to count as employed. **The knob that sets the population's level.** The equilibrium sits where realized premium times crowding meets `breakEvenPremium`, so the population lands near the drop flow divided by this number. At 0.3 the drop flow could never supply it, crowding read 0.02-0.05, and the population sat on its floor. Measured on `dropRunner`, 20 seeds x 50 years: 0.02 takes 47% of drop units, 0.03 takes 39%, 0.05 takes 22%. | swept, round 5 |
 | `drops.cadenceWeeks` | 6 | Automatic drop cadence when a bot schedules none. | first-guess |
 | `drops.collectorReach` | 0.06 | Share of collectors who reach a queue. | first-guess |
-| `drops.scalperReach` | 0.5 | Share of scalpers who reach a queue. Scalpers camp; collectors do not. | first-guess |
-| `drops.scalperSpeed` | 3 | Queue weight per scalper. Why they take a share larger than their numbers. | first-guess |
-| `drops.breakEvenPremium` | 0.15 | Resale premium at which flipping starts to pay. Sets how sharply the population reacts. | **unswept, named in HANDOFF** |
+| `drops.scalperReach` | 0.9 | Share of scalpers who reach a queue. Scalpers camp; collectors do not. | swept, round 5 |
+| `drops.scalperSpeed` | 8 | Queue weight per scalper. Why they take a share larger than their numbers. With `scalperReach` it decides whether the population can ever win a share its own numbers do not already win. | swept, round 5 |
+| `drops.breakEvenPremium` | 0.15 | Resale premium at which flipping starts to pay. Sets how sharply the population reacts. Swept 0.0-0.15 in round 5 and left where it was: about 13% of a resale goes to fees, so this is a measured number and not a free knob. | swept, round 5 |
+| `drops.shortagePremiumWeight` | 0.2 | What a scalper reads off the queue itself, per unit of oversubscription. Without it appetite reads only the CURRENT sealed premium, and a fresh product opens at MSRP by construction, so a release-day drop could never be worth camping - and a release-day drop is the only kind anybody camps. | swept, round 5 |
+| `drops.shortagePremiumCap` | 4 | How far up the queue that reading is allowed to go. | first-guess |
 | `drops.baseResaleRate` | 0.04 | Weekly share of held stock a scalper resells. | first-guess |
 | `drops.holdLimitWeeks` | 26 | How long a scalper holds before dumping. | first-guess |
 | `drops.resaleUrgency` | 0.5 | How hard the premium drives resale speed. | first-guess |
-| `drops.populationGrowth` | 0.06 | Weekly population response to profitability. Sets reaction sharpness, not the level. | **unswept, named in HANDOFF** |
+| `drops.populationGrowth` | 0.25 | Per-stride population response to profitability. The cycle clock, not the level: at 0.06 one boom took longer than the run. | swept, round 5 |
 | `drops.minScalpers` | 50 | Floor. | structural |
 | `drops.maxScalpers` | 40000 | Cap. Reached only if `unitsPerScalperReference` is too low. | structural |
 | `drops.profitabilitySmoothing` | 0.1 | Smoothing on the profitability signal the population follows. | first-guess |
@@ -377,13 +381,13 @@ is a price multiplier with extra steps.
 | `actors.maxResellers` | 20000 | Cap. | structural |
 | `actors.ripBreakEven` | 0.5 | Singles-to-sealed ratio at which ripping stops paying. The measured weighted ratio runs 0.7-1.0, so a break-even of 1 pins the population on its floor for every strategy except a flooder. Below 1 is also honest: a streamer earns on the stream and the retail spread, not only the pull. | fitted |
 | `actors.ripPerReseller` | 0.5 | Units ripped per reseller per stride. | first-guess |
-| `actors.speculatorReference` | 800 | Reference speculator population. | first-guess |
+| `actors.speculatorsPerPrinting` | 1 | Speculators per printing at which their heat push runs at full strength. Replaces the absolute `speculatorReference`, which gave the heat loop no brake: heat feeds the pool, the pool feeds the population, the population feeds the heat. It held to year 40 and then detonated - 82% of a 14,000-printing catalogue pinned at `value.heatCeiling` by year 50, in every bot and every seed. | fitted, round 5 |
 | `actors.speculatorConvergence` | 0.1 | | first-guess |
 | `actors.minSpeculators` | 50 | Floor. | structural |
-| `actors.maxSpeculators` | 30000 | Cap. | structural |
+| `actors.maxSpeculators` | 30000 | Cap. Pinned in 65% of 50-year seeds before the round-5 heat fix; the population now ends near 2,500. | structural |
 | `actors.speculatorHeatPerCapita` | 0.3 | Heat above the pack per speculator at which the population holds still. At 0.02 it settled near 25,000 against a 30,000 cap — the runaway this per-capita form exists to prevent. This decides how many speculators a market of a given size supports. | fitted |
 | `actors.speculatorMomentumGain` | 0.35 | How hard speculators chase what is already moving. | first-guess |
-| `actors.speculatorHeatGain` | 0.05 | Heat they add. Amplify-and-crash lives here. | first-guess |
+| `actors.speculatorHeatGain` | 0.05 | Heat they add. Amplify-and-crash lives here. **This is the loop gain.** At `speculatorsPerPrinting` 1 the loop is stable at 0.2 and detonates by 0.5, so the shipped value keeps about a four times margin. Speculators now supply about 5% of the heat pool. | swept, round 5 |
 | `actors.speculatorSensitivity` | 1.5 | Population response to the signal. | first-guess |
 | `actors.speculatorNoise` | 0.004 | | first-guess |
 

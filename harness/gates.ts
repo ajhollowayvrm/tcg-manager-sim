@@ -444,8 +444,8 @@ export const GATES: Gate[] = [
     measure: c => guarded(c.roster, 'conservative', 'gemRate', 'gradedCopies'),
   },
   {
-    id: 'sub.scalperCycles', category: 'subsystem', band: [3, 35], expect: 'known-fail',
-    banked: 0, bankedOn: DATE,
+    id: 'sub.scalperCycles', category: 'subsystem', band: [3, 35], expect: 'pass',
+    banked: 4, bankedOn: DATE,
     why: 'The population must cycle rather than settle. Zero means it never moved.'
        + ' [2026-09-05, round 3] Was 16, now 0. Measured on one dropRunner seed, '
        + 'scalperProfitability crosses breakEvenPremium at year 8 and never comes back '
@@ -453,19 +453,21 @@ export const GATES: Gate[] = [
        + 'model pushes an old sealed product down: shape.ageCurveDirection is still '
        + 'negative and shape.ageCurveLate is still 0. Round 4 owns the decay to bulk and '
        + 'this gate is downstream of it.'
-       + ' [2026-09-05, round 4] Still 0. Round 4 briefly un-pinned this to 1 cycle, then the sealed contents fix took it back to 0. Round 5 owns it together with sub.scalperShare.',
+       + ' [2026-09-05, round 4] Still 0. Round 4 briefly un-pinned this to 1 cycle, then the sealed contents fix took it back to 0. Round 5 owns it together with sub.scalperShare.'
+       + ' [2026-09-05, round 5] FIXED, and promoted to pass. Now 4 over 30 years and 14 over 50, on a population that runs from its floor to 70,000 and back to 20,000. `drops.populationGrowth` 0.06 -> 0.25 is the cycle clock: at 0.06 one boom took longer than the run. Read the count against the horizon - it is about one cycle every seven years, so a 30-year sweep sits near the band floor by arithmetic and not by health.',
     measure: c => guarded(c.roster, 'dropRunner', 'scalperCycles', 'dropsRun'),
   },
   {
-    id: 'sub.scalperShare', category: 'subsystem', band: [0.10, 0.50], expect: 'known-fail',
-    banked: 0.0003, bankedOn: DATE,
+    id: 'sub.scalperShare', category: 'subsystem', band: [0.10, 0.50], expect: 'pass',
+    banked: 0.131, bankedOn: DATE,
     why: 'Measured 10-50% of entries on a high-demand drop (Nike SNKRS, substituted from '
        + 'sneakers).'
        + ' [2026-09-05, round 3] FIXED. Was 0.038, now 0.242 and inside the band. The '
        + 'scalper population stopped cycling in the same round, so read this one beside '
        + 'sub.scalperCycles: the share is right because the population is pinned high, not '
        + 'because the trade found its level. Round 4 will move both.'
-       + ' [2026-09-05, round 4] REGRESSED ON PAPER, IMPROVED IN SUBSTANCE. Now 0.000 and demoted to known-fail; Round 5 owns it. The 0.242 above was never a real pass: `peakScalpers` was 0 and `scalperCycles` 0, so the population never moved once in thirty years. Round 4 cut the price body 25x and fixed the sealed contents term, which un-pinned the reseller population from its floor of 20 to 266 and left the scalper trade with nothing to flip. DO NOT fix this by re-pinning the population - read it beside sub.scalperCycles, and fit the `drops` constants, which are calibrated to a price body that no longer exists.',
+       + ' [2026-09-05, round 4] REGRESSED ON PAPER, IMPROVED IN SUBSTANCE. Now 0.000 and demoted to known-fail; Round 5 owns it. The 0.242 above was never a real pass: `peakScalpers` was 0 and `scalperCycles` 0, so the population never moved once in thirty years. Round 4 cut the price body 25x and fixed the sealed contents term, which un-pinned the reseller population from its floor of 20 to 266 and left the scalper trade with nothing to flip. DO NOT fix this by re-pinning the population - read it beside sub.scalperCycles, and fit the `drops` constants, which are calibrated to a price body that no longer exists.'
+       + ' [2026-09-05, round 5] FIXED, and promoted to pass. 0.131 over 30 years and 0.389 over 50, with the population 30x off its floor and cycling. The blocker was not a money constant: `resolveDrop` read appetite off the CURRENT sealed premium, and a fresh product opens at MSRP by construction, so a release-day drop could never be worth camping and a release-day drop is the only kind anybody camps. `drops.shortagePremiumWeight` lets a scalper read the queue in front of them. The share RISES with the horizon, because the drop flow grows with the print runs while the collector base saturates - read this gate beside the run length that produced it.',
     measure: c => guarded(c.roster, 'dropRunner', 'scalperShareOfDrops', 'dropsRun'),
   },
   {

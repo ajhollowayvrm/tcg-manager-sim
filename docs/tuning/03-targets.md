@@ -68,8 +68,8 @@ line to flip — flipping it is what stops the next round undoing the work.
 | `sub.gem10Premium` | subsystem | 2 – 5.5 | 6.082 | known-fail |
 | `sub.gradedPrintingShare` | subsystem | 0.02 – 0.09 | 0.0482 | pass |
 | `sub.gemRate` | subsystem | 0.3 – 0.6 | 0.1017 | known-fail |
-| `sub.scalperCycles` | subsystem | 3 – 35 | 0 | known-fail |
-| `sub.scalperShare` | subsystem | 0.1 – 0.5 | 0.0003 | known-fail |
+| `sub.scalperCycles` | subsystem | 3 – 35 | 4 | pass |
+| `sub.scalperShare` | subsystem | 0.1 – 0.5 | 0.131 | pass |
 | `sub.houseArtShare` | subsystem | 0.02 – 0.2 | 0.097 | pass |
 | `sub.channelHogLosesReach` | subsystem | 0.5 – 6 | 6 | pass |
 <!-- BANDS:END -->
@@ -315,20 +315,29 @@ at $0.50-$3.00 a card, so long runs get cheaper art than these figures show.
 
 ## 9. Drops and scalpers — a population that cycles
 
-| Target | Last measured |
+| Target | Last measured (Round 5, `dropRunner`) |
 |---|---|
-| The population must cycle, not settle | about every 6 years |
-| It must settle well below its cap | near 900 against 40,000 |
-| Scalpers take a real share, collectors still take most | about a quarter of units |
+| The population must cycle, not settle | 4 cycles in 30 years, 14 in 50 |
+| It must settle well below its cap | ends near 4,400 against `maxScalpers * audienceScale` |
+| Scalpers take a real share, collectors still take most | 13% of drop units over 30 years, 39% over 50 |
 
-**Knob:** `drops.unitsPerScalperReference`. Below ~0.1 the population runs away
-to `maxScalpers` and stops cycling.
+**Knobs.** `drops.unitsPerScalperReference` sets the LEVEL: the equilibrium sits
+where realized premium times crowding meets `breakEvenPremium`, so the
+population lands near the drop flow divided by this number.
+`drops.populationGrowth` sets the CLOCK — at 0.06 one boom took longer than the
+run. `drops.scalperReach` and `drops.scalperSpeed` decide whether the population
+can win a share of a queue that its own numbers do not already win.
 
 **Metrics:** `dropsRun`, `dropSellOutRate`, `scalperShareOfDrops`,
 `peakDropPremium`, `scalperPopulation`, `scalperCycles`, `peakScalpers`.
 
 `scalperCycles` of 0 means the population never moved. That is the failure this
 whole block exists to avoid.
+
+**Read both gates beside the run length that produced them.** The share rises
+with the horizon, because the drop flow grows with the print runs while the
+collector base saturates. The cycle count is about one every seven years, so a
+30-year sweep sits near the band floor by arithmetic and not by ill health.
 
 ---
 

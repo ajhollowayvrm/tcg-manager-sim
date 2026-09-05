@@ -1307,6 +1307,8 @@ export interface SimConfig {
     scalperSpeed: number;
     /** Resale premium a scalper needs before a drop is worth camping. */
     breakEvenPremium: number;
+    shortagePremiumWeight: number;
+    shortagePremiumCap: number;
     /** Share of held stock a scalper resells per tick at zero premium. */
     baseResaleRate: number;
     /** Weeks after which a position is dumped whatever it is worth. A flip has a clock. */
@@ -1540,7 +1542,7 @@ export interface SimConfig {
     /** Extra rip rate per reseller, against `resellerReference`. */
     ripPerReseller: number;
 
-    speculatorReference: number;
+    speculatorsPerPrinting: number;
     speculatorConvergence: number;
     minSpeculators: number;
     maxSpeculators: number;

@@ -372,22 +372,36 @@ export const defaultConfig: SimConfig = {
     scalperAppealDefault: 0.4,
     cadenceWeeks: 6,
     collectorReach: 0.06,
-    scalperReach: 0.5,
-    scalperSpeed: 3,
+    // Nearly everybody turns up for a drop they think will flip, and camping is
+    // a speed advantage rather than a bigger wallet: a scalper at the queue
+    // beats a collector to the stock several times over. Both were first
+    // guesses, and both are what decide whether the population can ever take a
+    // share of a drop that its own numbers do not already win.
+    scalperReach: 0.9,
+    scalperSpeed: 8,
     breakEvenPremium: 0.15,
+    // What a scalper reads off the queue itself. A drop oversubscribed 5x is a
+    // shortage anybody standing in it can see, and it is the only forward-
+    // looking number they have on release day.
+    shortagePremiumWeight: 0.2,
+    shortagePremiumCap: 4,
     baseResaleRate: 0.04,
     holdLimitWeeks: 26,
-    // Units a scalper has to be flipping per stride to count as fully
-    // employed. At 1 no realistic drop cadence could ever supply that, so
-    // crowding was near zero for everybody, the trade never cleared its
-    // hurdle, and the population sat on its floor taking 11% of a drop. At
-    // 0.3 it settles near 900, cycles about every six years, and scalpers
-    // take about a quarter of the units — a real force at the queue with
-    // collectors still taking the majority. Below ~0.1 it runs away toward
-    // `maxScalpers` and stops cycling at all.
-    unitsPerScalperReference: 0.3,
+    // Units a scalper has to be flipping per stride to count as fully employed.
+    // This is the knob that sets the population's LEVEL: the equilibrium sits
+    // where realized premium times crowding meets `breakEvenPremium`, so the
+    // population lands near the drop flow divided by this number. At 0.3 the
+    // direct store opens too late and drops too rarely to supply it, crowding
+    // read 0.02-0.05 for everybody, and the population sat on its floor of
+    // `minScalpers * audienceScale` taking 0.03% of a drop. Measured on
+    // `dropRunner`, 20 seeds: 0.02 takes 47% of drop units over 50 years and
+    // 0.05 takes 22%.
+    unitsPerScalperReference: 0.03,
     resaleUrgency: 0.5,
-    populationGrowth: 0.06,
+    // Per stride, against the profitability edge. It sets how fast the
+    // population answers the trade, so it is the cycle clock rather than the
+    // level: at 0.06 a boom took longer than the run.
+    populationGrowth: 0.25,
     minScalpers: 50,
     maxScalpers: 40_000,
     profitabilitySmoothing: 0.1,
@@ -616,6 +630,16 @@ export const defaultConfig: SimConfig = {
     // Collectors per head of audience at which holding reaches its ceiling.
     // At 0.03 a healthy run sits exactly on it and every seed reports the
     // ceiling, which is a constant wearing a population's clothes.
+    //
+    // Round 5 measured what this ramp can actually reach, and the answer is
+    // not much. Density is `collectorShareOfAudience` times a goodwill and
+    // fatigue term, so it is bounded by 0.006 to 0.034 by construction, and
+    // every bot converges on 0.0283 by year 40 - `conservative`, `dropRunner`
+    // and `hypeGambler` all within 2% of each other. So the reference decides
+    // where on the ramp every run sits, and no reference makes holding respond
+    // to play. Fixing that needs the goodwill and fatigue coefficients in
+    // `collectorTarget`, which are literals rather than config paths, and it
+    // belongs to whichever round owns goodwill.
     collectorDensityReference: 0.09,
     // A third of opened copies off the market at the floor is not a guess about
     // this game — it is roughly what any collectible market looks like, and it
@@ -627,15 +651,21 @@ export const defaultConfig: SimConfig = {
     resellerConvergence: 0.12,
     minResellers: 20,
     maxResellers: 20_000,
-    // Singles-to-sealed value ratio at which ripping stops paying. Measured,
-    // the weighted ratio runs 0.7-1.0, so a break-even of exactly 1 sits at the
-    // top of the range and holds the population on its floor for every strategy
-    // except a flooder. Below 1 is also the honest number: a streamer earns on
-    // the stream and on the retail spread, not only on the pull.
+    // Singles-to-sealed value ratio at which ripping stops paying. Measured
+    // after Round 4, the weighted ratio runs 0.53-1.30 and differs by strategy:
+    // `conservative` sits near 1.0 and `hypeGambler` near 0.6, which is what
+    // makes the reseller population read the strategy rather than the clock. A
+    // break-even of exactly 1 would hold the population on its floor for every
+    // strategy except a flooder. Below 1 is also the honest number: a streamer
+    // earns on the stream and on the retail spread, not only on the pull.
     ripBreakEven: 0.5,
     ripPerReseller: 0.5,
 
-    speculatorReference: 800,
+    // Speculators per printing at which their push runs at full strength. Not
+    // an absolute population: see `speculatorCrowd`. The loop is stable at
+    // `speculatorHeatGain` 0.2 and detonates by 0.5, so 1 leaves about a four
+    // times margin on the knob that sets the gain.
+    speculatorsPerPrinting: 1,
     speculatorConvergence: 0.1,
     minSpeculators: 50,
     maxSpeculators: 30_000,

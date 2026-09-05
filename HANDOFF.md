@@ -567,11 +567,14 @@ copies of those get sent, 13% to 31%) and at the shipped values they give 6.0%
 of printings and 18.6% of copies, which is the range the pop report was fitted
 to.
 
-Still unswept: `drops.breakEvenPremium` and `populationGrowth`, which set how
-sharply the scalper population reacts rather than where it settles; the rest of
-the `grading` block (`tierMultiplier`, `popScarcityReference`,
-`popScarcityCeiling` were fitted by eye); the whole `collabs`, `creators`,
-`chains` and `actors` blocks, all wired for shape rather than balance; and
+Still unswept: the rest of the `grading` block (`tierMultiplier`,
+`popScarcityReference`, `popScarcityCeiling` were fitted by eye); the whole
+`collabs`, `creators` and `chains` blocks, all wired for shape rather than
+balance; the `actors` paths Round 5 did not need to move, which is most of them
+— it swept the speculator heat loop and measured the collector and reseller
+terms, and left `collectorConvergence`, `resellerConvergence`,
+`speculatorConvergence`, `speculatorMomentumGain` and `speculatorSensitivity`
+untouched; and
 `hype.heatFromHype`, which is what puts every set's opening heat at
 `1.6 + hype * heatFromHype` and is the most likely cause of the steepening top
 tail noted under the power-law bullet.
@@ -594,6 +597,159 @@ is not necessarily wrong; the claim attached to it is.
 
 All three are plausible mechanisms and all three may simply be too harsh. None
 has been tuned.
+
+
+## The populations (tuning Round 5, 2026-09-05)
+
+**The suite goes from 37 PASS to 39 PASS, 0 FAIL, 7 KNOWN, 0 DRIFT.** Both
+gates Round 4 handed to this round are fixed and promoted to `pass`, and every
+Round 4 value target still passes.
+
+| Gate | Round 4 | Round 5 | Band |
+|---|---|---|---|
+| `sub.scalperShare` | 0.000 | 0.131 | 0.10-0.50 |
+| `sub.scalperCycles` | 0 | 4 | 3-35 |
+| `struct.speculatorMoves` | 3.641 | 2.894 | 1.2-500 |
+| `shape.median` | 0.260 | 0.220 | 0.20-0.50 |
+| `shape.gini` | 0.827 | 0.833 | 0.72-0.98 |
+| `shape.ageCurveLate` | 0.804 | 0.854 | 0.55-0.92 |
+
+The knobs that moved:
+
+```
+drops.scalperReach              0.5  -> 0.9
+drops.scalperSpeed                3  -> 8
+drops.unitsPerScalperReference  0.3  -> 0.03
+drops.populationGrowth         0.06  -> 0.25
+drops.shortagePremiumWeight       -  -> 0.2   (new)
+drops.shortagePremiumCap          -  -> 4     (new)
+actors.speculatorReference      800  -> removed
+actors.speculatorsPerPrinting     -  -> 1     (new, replaces it)
+```
+
+### A scalper could not see release day, and release day is the only day
+
+`resolveDrop` read appetite off the CURRENT sealed premium:
+`p.market.price / p.msrp - 1`. A product's market price is initialised at its
+MSRP, so on the day of its first drop that premium is zero by construction. It
+only climbs later, as `tickSealed` walks the price toward its target and
+scarcity bites. Measured on one `dropRunner` seed, the first drop of each
+product read a premium of -0.05 to +0.08, and the second drop six weeks later
+read 0.08 to 0.28.
+
+So no `drops` money constant could have fixed this gate. Sweeping
+`breakEvenPremium` from 0.15 down to 0.0 moved the share from 0.000 to 0.002.
+Scalpers camp a drop because they expect a shortage, and the shortage was
+already in the same function - `collectorDemand / offered` is computed three
+lines above. `drops.shortagePremiumWeight` lets them read it.
+
+**This is a mechanism change in a tuning round.** It is the same class as Round
+4a: a term that could not do its job, found while fitting the constants around
+it. It draws no RNG, so it renumbers nothing.
+
+### The level knob and the clock knob
+
+The `drops` block splits the way the `value` block did.
+
+`unitsPerScalperReference` sets the LEVEL. The equilibrium sits where realized
+premium times crowding meets `breakEvenPremium`, so the population lands near
+the drop flow divided by this number. At 0.3 the direct store opens too late
+and drops too rarely to supply it: crowding measured 0.02 to 0.05 for every
+seed, the trade never cleared its hurdle, and the population sat exactly on
+`minScalpers * audienceScale`. Measured on `dropRunner`, 20 seeds x 50 years,
+the share reads 0.47 at 0.02, 0.39 at 0.03 and 0.22 at 0.05.
+
+`populationGrowth` sets the CLOCK. At 0.06 a single boom took longer than the
+run, which is why `scalperCycles` was zero rather than low.
+
+`scalperReach` and `scalperSpeed` decide whether the population can win a share
+its own numbers do not already win. The queue splits on
+`3 * scalperDemand / (3 * scalperDemand + collectorDemand)`, and against 26,000
+collectors at a 5,000-unit drop, 940 scalpers cannot reach 10% of the units at
+any appetite. Both were first guesses. Nearly everybody turns up for a drop
+they think will flip, and camping beats standing in line by more than three to
+one.
+
+### The share rises with the horizon. Read the gate beside its run length
+
+`scalperShareOfDrops` reads 0.131 over 30 years and 0.389 over 50, at the same
+config. The drop flow grows with the print runs while the collector base
+saturates, so the scalper share of a queue climbs across a run. `scalperCycles`
+does the same for the opposite reason: it is about one cycle every seven years,
+so a 30-year sweep sits near the band floor by arithmetic and not by ill
+health. Both bands hold at both horizons, but a future round that changes the
+sweep length will move these two numbers without touching a drops constant.
+
+### The speculator heat loop detonated at year 40
+
+This is the defect the round found, and it is not a scalper problem.
+
+`speculatorHeatDelta` scaled the push by
+`speculators / actors.speculatorReference`, an absolute count of 800. Heat feeds
+the heat pool, the pool feeds the population, and the population feeds the heat,
+with no term anywhere dividing by the size of the market. The loop gain crosses
+1 between year 40 and year 50, and then it detonates. Measured on
+`conservative`, one seed:
+
+| Year | heat pool | speculators | printings at `value.heatCeiling` |
+|---|---|---|---|
+| 20 | 317 | 690 | 0% |
+| 30 | 681 | 1,530 | 0% |
+| 40 | 1,448 | 3,140 | 0% |
+| 50 | **57,198** | **30,000 (the cap)** | **82%** |
+
+Every bot, every seed. By year 50 the speculators had driven 82% of a
+14,000-printing catalogue to the heat ceiling and pinned themselves at
+`maxSpeculators`. Round 4 fitted the value block with the late years of every
+50-year run inside that.
+
+The fix is workflow rule 9 applied to a push rather than to a population:
+`speculatorCrowd` now divides by the catalogue the pressure is spread across,
+`actors.speculatorsPerPrinting * printings`. A catalogue twice the size gets
+half the push per card from the same population. The heat pool then grows
+smoothly to 915 by year 50, the population ends near 2,500 against a 30,000
+cap, and nothing pins at the ceiling.
+
+**`speculatorHeatGain` is the loop gain and it sits near a cliff.** At
+`speculatorsPerPrinting` 1 the loop is stable at 0.2 and detonates by 0.5. It
+stays at 0.05, which keeps about a four times margin. The cost is that
+speculators now supply about 5% of the heat pool, so "amplify and crash"
+(CONCEPT.md) is a small effect. Buying more of it means moving the gain toward
+a bifurcation, and that trade should be made deliberately.
+
+### Two populations that cannot answer a question
+
+**Collector holding cannot respond to play, and no reference value fixes it.**
+`collectorHeldShare` ramps on density against `collectorDensityReference`, but
+density is `collectorShareOfAudience` times a goodwill and fatigue term, so it
+is bounded by 0.006 to 0.034 by construction. Measured, every bot converges on
+0.0283 by year 40 - `conservative`, `dropRunner` and `hypeGambler` all within 2%
+of each other. The reference only decides where on the ramp every run sits
+together. `struct.collectorNotPinned` passes and `collectorHeldShare` does vary
+across seeds, 0.261 to 0.295, so the exit criterion is met; the mechanism is
+still asleep. Waking it needs the goodwill and fatigue coefficients in
+`collectorTarget`, which are literals rather than config paths, and it belongs
+to whichever round owns goodwill.
+
+**The reseller population's level is unobservable.** `actors.resellers` is read
+by exactly one thing, `ripMultiplier`, and only as `resellers / resellerReference`.
+Scaling both leaves the rip rate identical, so `resellerReference` cannot be
+fitted against anything and the reported population is cosmetic. What the
+population does read is the strategy: the weighted singles-to-sealed ratio
+measures 0.53 to 1.30, near 1.0 for `conservative` and near 0.6 for
+`hypeGambler`. That is the part worth keeping.
+
+### The ladder
+
+Run during the round, per workflow rule 2. One `conservative` seed, 25 years,
+the age-2 set vector: steps of 1.33x, 1.63x, 1.62x, 1.43x, 1.77x, 1.85x, 2.03x,
+4.45x. No flat step and nothing stacked on the price floor.
+
+The whole-catalogue ladder does show three 1.00x steps at its bottom, at $0.06.
+That is fifty years of decayed bulk sitting on `value.priceFloorCents`, which is
+what Round 4 asked the age curve to produce. The per-set vector is the
+measurement of record; the world ladder is kept only so old readings stay
+readable.
 
 
 ## The value block (tuning Round 4, 2026-09-05)
@@ -1086,6 +1242,18 @@ horizon fixed.
 - A scalper position keeps its basis and its age, and profitability is
   per-capita. Drop either and the population saturates at `maxScalpers` in every
   seed, and stays there. Both are explained under "Verified working"
+- A scalper's appetite reads the queue as well as the sealed premium. A fresh
+  product's market price opens at its MSRP by construction, so on the premium
+  alone a release-day drop can never be worth camping — and a release-day drop
+  is the only kind anybody camps. `drops.shortagePremiumWeight` is what makes
+  the whole subsystem more than an ornament
+- **Per-capita applies to what a population PUSHES, not only to what it earns.**
+  The scalper loop divides its return by the population; the speculator loop did
+  not divide its heat push by anything, so heat fed the pool, the pool fed the
+  population, and the population fed the heat. It held for forty years and then
+  pinned 82% of the catalogue at `value.heatCeiling`. `speculatorCrowd` now
+  divides by the catalogue the pressure is spread across. `actors.speculatorHeatGain`
+  is the gain of that loop: stable at 0.2, detonating by 0.5, shipped at 0.05
 - The engine keeps at most one pending drop per (product, channel). A caller
   that submits `scheduleDrop` every tick relies on that guard to not stack a
   dozen drops onto one tick
@@ -1184,31 +1352,43 @@ horizon fixed.
 
 ## Suggested next session
 
-**Round 5 of the tuning run: populations — `actors` and `drops`.** The round
-plan lives outside the repo, at
-`~/.claude/plans/let-s-start-the-tuning-zesty-magpie.md`, and it holds the
+**Round 6 of the tuning run: grading.** The round plan lives outside the repo,
+at `~/.claude/plans/let-s-start-the-tuning-zesty-magpie.md`, and it holds the
 ordering and the reasoning for all twelve rounds. Read it first, then the Round
-4 section above, then run `npm run check` to see where the gates stand.
+5 section above, then run `npm run check` to see where the gates stand.
 
-Rounds 0 to 4 are done and banked. The suite stands at **37 PASS, 0 FAIL,
-9 KNOWN, 0 DRIFT**.
+Rounds 0 to 5 are done and banked. The suite stands at **39 PASS, 0 FAIL,
+7 KNOWN, 0 DRIFT**.
 
-Round 5 owns 40 config paths that have never been swept, and Round 4 handed it
-two gates and a warning:
+Round 6 owns three of the seven remaining known-fails:
 
-- `sub.scalperShare` is 0.000 and `sub.scalperCycles` is 0. Read them together.
-  **Do not fix either by re-pinning the population.** Round 4 cut the price body
-  25x, so the `drops` constants — `breakEvenPremium`, `unitsPerScalperReference`,
-  `ripBreakEven`, `resellerReference` — are calibrated to prices that no longer
-  exist. Refit them.
-- The reseller population came off its floor of 20 and now sits near 266, so it
-  is finally something a sweep can move.
-- Workflow rule 9 is the thing to watch. `minResellers` was holding the
-  population at exactly 20 in every seed, which is what a pinned constant looks
-  like.
+- `sub.gemRate` is 0.100 against a band of 0.30-0.60. `grading.conditionMean` 9
+  against a `gradeCuts['10']` of 9.75 with `conditionSigma` 0.7 puts a 10 near
+  the 14th percentile, where reality puts it at the median.
+- `sub.gem10Premium` is 6.134 against 2-5.5.
+- `grading.feeWorthMultiple` must be re-read after Round 4. The prices under it
+  moved about 13 times, so retarget it on the measured rule: a card above $100
+  raw gains 120-300% from a slab, and one under $10 gains less than 70% and does
+  not cover the fee.
+
+The plan also asks for two new columns, `gemRateByQuality` and `gemRateVintage`.
+`strides.grading` at 8 is the one stride that moves the suite runtime (185s to
+about 43s on the measurement in the Round 3 section), and Round 6 owns it.
+
+**Two things Round 5 hands forward.**
+
+- **`actors.speculatorHeatGain` is a loop gain sitting near a cliff.** It is
+  stable at 0.2 and detonates by 0.5. Speculators now supply about 5% of the
+  heat pool, so CONCEPT.md's "amplify and crash" is a small effect. Buying more
+  of it means moving toward the bifurcation deliberately, with the heat pool and
+  the share of printings at `value.heatCeiling` measured on a 50-year run.
+- **Collector holding cannot respond to play.** Density is bounded by 0.006 to
+  0.034 by construction and every bot converges on 0.0283. The fix is the
+  goodwill and fatigue coefficients in `collectorTarget`, which are literals
+  rather than config paths. It belongs to whichever round owns goodwill.
 
 The four still-open `diff.*` gates — `botsAlwaysSurvive`, `conservativeSurvives`,
-`allInSurvival`, `idleDies` — belong to Round 10, not Round 5.
+`allInSurvival`, `idleDies` — belong to Round 10.
 
 **Two known defects nobody owns yet.**
 
@@ -1228,8 +1408,3 @@ npm run sim -- --seeds=1 --years=25 --bot=conservative --dist   # the ladder
 Run the ladder **during** a value sweep and not after it. Round 4 fitted the
 whole block off the gate table, and the gates could not see that 40% of every
 set was pinned against the price floor. Only the step between deciles could.
-
-The threaded and `--jobs=1` paths must keep producing a byte-identical
-`out/runs.csv`. That identity is the acceptance test for any change that is
-supposed to be free, and it is only available because a run is a pure function
-of (bot, seed, years, config).

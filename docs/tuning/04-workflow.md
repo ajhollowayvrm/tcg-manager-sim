@@ -122,7 +122,7 @@ identity check above is what caught it.
 
 ### 8. Almost everything is a `--set` path now
 
-511 of them. What is left outside config is the bot strategy constants in
+539 of them. What is left outside config is the bot strategy constants in
 `harness/bots.ts`, which describe how a scripted player plays rather than how
 the world works. Release cadence is one of those, so the `HANDOFF.md` cadence
 table still needs a scratch script to re-measure. See `02-hardcoded.md`.
@@ -134,6 +134,16 @@ probably pinned to a floor or a ceiling and is not saying anything. It has
 happened with `collectorDensityReference`, `ripBreakEven`,
 `unitsPerScalperReference`, `speculatorHeatPerCapita` and
 `popScarcityReference`. Check the spread across seeds before believing a mean.
+
+**The rule has a second half, found in Round 5: apply it to what a population
+PUSHES, not only to what it earns.** The scalper loop divides its return by the
+population. The speculator loop divided its return but not its heat push, so
+heat fed the pool, the pool fed the population, and the population fed the heat.
+The loop held for forty years and then pinned 82% of a 14,000-printing catalogue
+at `value.heatCeiling` in every bot and every seed. A push term with no
+denominator is the same defect as a pinned constant, and it hides for longer:
+the population looks healthy right up to the year it detonates. Measure the
+long horizon, not only the gated one.
 
 ---
 

@@ -176,9 +176,21 @@ function emit(s: SimState, kind: 'speculatorSwing', data: Record<string, number>
  * population that only ever adds heat is a price multiplier with extra steps,
  * and CONCEPT.md asks them to "amplify **and crash**".
  */
-export function speculatorHeatDelta(s: SimState, pr: Printing): number {
+export function speculatorCrowd(s: SimState, catalogue: number): number {
   const cfg = s.config.actors;
-  const crowd = s.audience.actors.speculators / Math.max(1, cfg.speculatorReference);
+  // Per printing, not absolute. Their pressure spreads across every printing
+  // they could trade, so a catalogue twice the size gets half the push per
+  // card from the same population. Against an absolute reference the loop had
+  // no brake at all: heat feeds the pool, the pool feeds the population, and
+  // the population feeds the heat. It held until year 40 and then detonated —
+  // 82% of a 14,000-printing catalogue pinned at `value.heatCeiling` by year
+  // 50, in every bot and every seed.
+  return s.audience.actors.speculators
+    / Math.max(1, cfg.speculatorsPerPrinting * Math.max(1, catalogue));
+}
+
+export function speculatorHeatDelta(s: SimState, pr: Printing, crowd: number): number {
+  const cfg = s.config.actors;
   const above = pr.market.heat - 1;
   const push = cfg.speculatorHeatGain * crowd * Math.tanh(above * cfg.speculatorSensitivity);
   return push + gauss(s.actorRng, 0, cfg.speculatorNoise);

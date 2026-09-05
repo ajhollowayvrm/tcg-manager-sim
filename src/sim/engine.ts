@@ -19,7 +19,7 @@ import {
   regionDemandFactor, tickRegionKnowledge, creditRelease, readRegion, readingFit,
 } from './regions.ts';
 import {
-  tickActors, tickCreators, tradeablePopulation, speculatorHeatDelta, ripMultiplier,
+  tickActors, tickCreators, tradeablePopulation, speculatorHeatDelta, speculatorCrowd, ripMultiplier,
   aftermarketIndex,
 } from './actors.ts';
 import {
@@ -917,6 +917,7 @@ function tickPrices(s: SimState, printings: Printing[]): void {
   const errorDiscoveryChance = cfg.printing.errorDiscoveryChance;
   const writeThreshold = cfg.history.writeThreshold;
   const climate = s.market.climate;
+  const crowd = speculatorCrowd(s, printings.length);
   for (let i = phase; i < printings.length; i += s.config.strides.price) {
     const pr = printings[i]!;
     const card = s.cards[pr.cardId]!;
@@ -943,7 +944,7 @@ function tickPrices(s: SimState, printings: Printing[]): void {
     // Speculators amplify what is already moving, in whichever direction it is
     // already moving. They cannot start a run on a printing sitting at 1.
     pr.market.heat = Math.max(v.heatFloor,
-      Math.min(v.heatCeiling, pr.market.heat + speculatorHeatDelta(s, pr)));
+      Math.min(v.heatCeiling, pr.market.heat + speculatorHeatDelta(s, pr, crowd)));
 
     // Nostalgia compounds only on a printing the market still wants, and only
     // as fast as it already stands above the pack. A printing nobody wants
@@ -1500,11 +1501,17 @@ function resolveDrop(s: SimState, drop: Drop): void {
     * (s.config.attention.chaseDemandFloor + setChase(s, set))
     * decay * traits.reach * (1 + (set.hype?.level ?? 0));
 
-  // Scalpers price off the sealed market, which is the only public number they
-  // have. No premium, no queue: the population regulates itself on this line.
+  // Scalpers price off the sealed market, which is one public number, and off
+  // the queue in front of them, which is the other. A fresh product's market
+  // price opens at MSRP by construction, so the premium alone can never make a
+  // release-day drop worth camping - and a release-day drop is the only kind
+  // anybody camps. The shortage is what they can see on the day.
   const premium = p.market.price / Math.max(1, p.msrp) - 1;
+  const expectedShortage = Math.max(0, collectorDemand / offered - 1);
+  const expected = premium
+    + cfg.shortagePremiumWeight * Math.min(cfg.shortagePremiumCap, expectedShortage);
   const appetite = Math.max(0, Math.min(1,
-    (premium - cfg.breakEvenPremium) / Math.max(0.05, cfg.breakEvenPremium)));
+    (expected - cfg.breakEvenPremium) / Math.max(0.05, cfg.breakEvenPremium)));
   const scalperDemand = s.audience.actors.scalpers * cfg.scalperReach * p.scalperAppeal * appetite;
 
   const demand = collectorDemand + scalperDemand;
