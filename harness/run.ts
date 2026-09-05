@@ -227,6 +227,28 @@ if (collabRows.length) {
   console.table(collabRows);
 }
 
+// Creators and chains, printed only where either happened.
+const cultureRows = botNames
+  .map(b => {
+    const r = rows.filter(x => x.bot === b);
+    const ran = r.filter(x => x.creatorCoverage > 0 || x.chains > 0);
+    if (ran.length === 0) return null;
+    return {
+      bot: b,
+      coverage: mean(ran.map(x => x.creatorCoverage)).toFixed(0),
+      onOwnCards: (100 * mean(ran.map(x => x.creatorOwnShare))).toFixed(0) + '%',
+      bestRelation: mean(ran.map(x => x.bestCreatorRelationship)).toFixed(2),
+      chains: mean(ran.map(x => x.chains)).toFixed(0),
+      spanning: (100 * mean(ran.map(x => x.chainsSpanningSets))).toFixed(0) + '%',
+      chainLen: mean(ran.map(x => x.meanChainLength)).toFixed(1),
+    };
+  })
+  .filter(Boolean);
+if (cultureRows.length) {
+  console.log('creators and chains:');
+  console.table(cultureRows);
+}
+
 // Drops get their own table. The main one is already too wide to read, and a
 // run that never opened a direct store has nothing to say here.
 const dropRows = botNames

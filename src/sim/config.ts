@@ -424,6 +424,33 @@ export const defaultConfig: SimConfig = {
     exposureShare: 0.3,
   },
 
+  // First-guess numbers. The shape that matters: a creator has to be somebody
+  // in particular. Coverage lands on their affinities and on new cards, and
+  // the relationship that raises their odds decays if you stop giving them
+  // things to cover.
+  // A chain is pull demand: an incomplete set of anything is worth more than
+  // the same cards unrelated. First-guess numbers.
+  chains: {
+    desirePerLink: 6,
+    maxCountedLinks: 5,
+    spansSetsBonus: 1.6,
+  },
+
+  creators: {
+    rosterSize: 8,
+    coverChancePerStride: 0.25,
+    /** Weeks a printing counts as new enough to be worth covering. */
+    freshnessWeeks: 60,
+    /** Redraws allowed to land on a creator's affinity IP before settling. */
+    affinityTries: 4,
+    audienceReference: 250_000,
+    heatPerCoverage: 0.35,
+    maxCoverageHeat: 2.5,
+    /** Fresh printings on the market at which a creator is fully engaged. */
+    freshPrintingsReference: 140,
+    relationshipConvergence: 0.05,
+  },
+
   history: {
     weeklyRetentionTicks: 520,
     writeThreshold: 0.03,

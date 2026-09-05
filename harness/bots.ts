@@ -8,7 +8,7 @@
 import type {
   SimState, IpId, ArtistId, Rarity, PrintQualityTier, ProductKind, SetType, ProductId, IpKind,
   ChannelId, Channel, Tick, SetId, Cents, Artist, ArtistTerms, RegionId,
-  CollabId, AudienceSegment,
+  CollabId, AudienceSegment, ChainId,
 } from '../src/sim/types.ts';
 import { api } from '../src/sim/engine.ts';
 import { rand, pick, chance } from '../src/sim/rng.ts';
@@ -172,6 +172,17 @@ export interface SetBotOptions {
    * sizing up is exactly how a collab that under-delivers becomes an overprint.
    */
   collabRunMultiple?: number;
+  /**
+   * Cards per progression chain, and whether the chains run across sets.
+   *
+   * `inSet` builds a chain inside one set — a straightforward evolution line.
+   * `acrossSets` carries each chain forward into the next set, which is
+   * CONCEPT.md's "hedge that can carry a set with a weak subject" and pays more
+   * for exactly that reason. Unset builds no chains, which is what every bot in
+   * the original roster did.
+   */
+  chainPolicy?: 'inSet' | 'acrossSets';
+  chainLength?: number;
 }
 
 /**
@@ -354,6 +365,9 @@ export function makeSetBot(opts: SetBotOptions): Bot {
   let nextRelease = 8; // small startup delay so world init settles first
   const campaigned = new Set<SetId>();
   const marketingSpent = new Map<SetId, number>();
+  // Chains this bot is still filling. An `acrossSets` chain keeps its slot open
+  // into the next set, which is the only way `spansSets` ever becomes true.
+  const openChains: Array<{ id: ChainId; filled: number; thisSet: number }> = [];
   return {
     step(s: SimState) {
       const pub = s.publishers[s.playerId]!;
@@ -394,7 +408,8 @@ export function makeSetBot(opts: SetBotOptions): Bot {
         const rarity = pickRarity(s);
         const artistId = chooseArtist(s, opts);
         if (!artistId) break;
-        const cardId = api.designCard(s, setId, ipId, [], rarity, artistId);
+        const cardId = api.designCard(s, setId, ipId, [], rarity, artistId,
+          chainLinkFor(s, opts, i, openChains));
         const artist = s.artists[artistId]!;
         const budget = Math.round(artist.rate * (opts.artBudgetMultiple ?? 1)) as Cents;
         api.commissionArt(s, cardId, artistId, { budget });
@@ -472,6 +487,44 @@ function chooseArtist(s: SimState, opts: SetBotOptions): ArtistId | undefined {
     default:
       return pick(s.rng, open.map(a => a.id));
   }
+}
+
+/**
+ * Which chain, if any, the next card joins.
+ *
+ * `inSet` closes a chain as soon as it is full and opens the next one, so every
+ * chain lives inside one set. `acrossSets` leaves the chain open across the
+ * release boundary, so the second half of it is designed into the following
+ * set — which is what makes it a hedge rather than a bonus.
+ */
+function chainLinkFor(
+  s: SimState, opts: SetBotOptions, index: number,
+  open: Array<{ id: ChainId; filled: number; thisSet: number }>,
+): { chainId: ChainId; position: number } | undefined {
+  if (!opts.chainPolicy) return undefined;
+  const length = Math.max(2, opts.chainLength ?? 3);
+  // Under `acrossSets` no chain takes more than half its members from one set.
+  // Without that cap a 70-card set finishes every chain it starts and only the
+  // last part-filled one ever crosses a boundary — measured, 6% of them, which
+  // is not a cross-set strategy, it is a rounding error.
+  const perSetCap = opts.chainPolicy === 'acrossSets' ? Math.ceil(length / 2) : length;
+
+  if (index === 0) for (const c of open) c.thisSet = 0;
+
+  let slot = open.find(c => c.filled < length && c.thisSet < perSetCap);
+  if (!slot) {
+    slot = { id: `chain_${s.tick}_${index}` as ChainId, filled: 0, thisSet: 0 };
+    open.push(slot);
+  }
+  const position = slot.filled++;
+  slot.thisSet++;
+  if (slot.filled >= length) {
+    const i = open.indexOf(slot);
+    if (i >= 0) open.splice(i, 1);
+  }
+  // Under `inSet` the bot never carries a part-filled chain into the next set.
+  if (opts.chainPolicy === 'inSet' && index === opts.cardsPerSet - 1) open.length = 0;
+  return { chainId: slot.id, position };
 }
 
 /** Signs the bot's standing arrangement once, the first time it uses an artist. */
@@ -582,6 +635,23 @@ export const BOTS: Record<string, () => Bot> = {
     quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000,
     productKind: 'boosterBox', allocationPolicy: 'spread',
     collabPolicy: 'sign', collabRunMultiple: 1.5,
+  }),
+
+  // The two shapes of collectible chain, both `conservative` in every other
+  // respect. `chainRunner` builds evolution lines inside a set; `chainWeaver`
+  // carries each one into the following set, which is the only way a chain ever
+  // becomes the cross-set hedge CONCEPT.md describes.
+  chainRunner: () => makeSetBot({
+    label: 'ChainRunner', cadenceWeeks: 52, cardsPerSet: 70, setType: 'main',
+    quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000,
+    productKind: 'boosterBox', allocationPolicy: 'spread',
+    chainPolicy: 'inSet', chainLength: 3,
+  }),
+  chainWeaver: () => makeSetBot({
+    label: 'ChainWeaver', cadenceWeeks: 52, cardsPerSet: 70, setType: 'main',
+    quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000,
+    productKind: 'boosterBox', allocationPolicy: 'spread',
+    chainPolicy: 'acrossSets', chainLength: 6,
   }),
 
   // Few, well-supported sets. The steady baseline.

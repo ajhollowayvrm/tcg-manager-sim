@@ -3,7 +3,7 @@ import type {
   ProductLineId, RegionId, ChannelId, ArtistId, IpEntity, Card, CardSet, Product,
   Printing, SimEvent, EventId, SetType, Rarity, ProductKind, PrintQualityTier,
   Treatment, ArtBrief, UnlockState, ChannelAllocation, Channel, SetPerformance,
-  Drop, DropId, Grader, GradeTier, GradingSubmission, CollabId, AudienceSegment,
+  Drop, DropId, Grader, GradeTier, GradingSubmission, CollabId, AudienceSegment, ChainId,
   Artist, Publisher, Commission, CommissionId, ArtistTerms,
 } from './types.ts';
 import { rand, randRange, randInt, pick, chance, gauss } from './rng.ts';
@@ -15,7 +15,8 @@ import {
   regionDemandFactor, tickRegionKnowledge, creditRelease, readRegion, readingFit,
 } from './regions.ts';
 import {
-  tickActors, tradeablePopulation, speculatorHeatDelta, ripMultiplier, aftermarketIndex,
+  tickActors, tickCreators, tradeablePopulation, speculatorHeatDelta, ripMultiplier,
+  aftermarketIndex,
 } from './actors.ts';
 import {
   traitsFor, effectiveCapacity, allocatedUnits, autoAllocate, unlockCost, CHANNEL_IDS,
@@ -103,6 +104,7 @@ interface CardOverrides {
   serialized?: { runSize: number } | null;
   artBrief?: Partial<ArtBrief>;
   flavorText?: string;
+  progressionLink?: { chainId: ChainId; position: number };
 }
 
 function designCard(
@@ -123,9 +125,51 @@ function designCard(
     // rather than an upgrade: skipping it ships filler.
     artQuality: U(s.config.art.houseQuality),
     artSource: 'pending',
-    progressionLink: null, illustrationLink: null, flavorText: overrides.flavorText ?? '',
+    progressionLink: overrides.progressionLink ?? null,
+    illustrationLink: null, flavorText: overrides.flavorText ?? '',
   };
   s.sets[setId]!.cardIds.push(id);
+
+  // The chain is minted on first reference, so a caller names one rather than
+  // creating one first. `spansSets` is recomputed each time a member joins: a
+  // chain only becomes the cross-set hedge once it actually crosses.
+  const link = overrides.progressionLink;
+  if (link) {
+    const chain = s.chains[link.chainId] ?? (s.chains[link.chainId] = {
+      id: link.chainId, kind: 'progression',
+      name: `Chain ${link.chainId}`, cardIds: [], setIds: [], spansSets: false,
+    });
+    if (!chain.cardIds.includes(id)) chain.cardIds.push(id);
+    if (!chain.setIds.includes(setId)) chain.setIds.push(setId);
+    chain.spansSets = chain.setIds.length > 1;
+  }
+}
+
+/**
+ * What a card's chain adds to its desire.
+ *
+ * An incomplete set of anything is worth more than the same cards unrelated,
+ * and the pull grows with how much of the chain is already out there. It is
+ * capped, because a fiftieth link is not news, and it pays more when the chain
+ * spans sets — CONCEPT.md calls a cross-set chain "the hedge that can carry a
+ * set with a weak subject", which is only true if it beats a chain that sits
+ * inside one set.
+ */
+function chainDesire(s: SimState, card: Card): number {
+  const link = card.progressionLink;
+  if (!link) return 0;
+  const chain = s.chains[link.chainId];
+  if (!chain) return 0;
+  const cfg = s.config.chains;
+
+  // Only cards that have actually been printed count. A chain announced and
+  // never finished is exactly the pull demand this models, not a free bonus.
+  let printed = 0;
+  for (const cid of chain.cardIds) {
+    if (cid !== card.id && s.printingByCard[cid]) printed++;
+  }
+  const links = Math.min(cfg.maxCountedLinks, printed);
+  return links * cfg.desirePerLink * (chain.spansSets ? cfg.spansSetsBonus : 1);
 }
 
 function defineProduct(
@@ -513,6 +557,7 @@ function applyDecision(s: SimState, d: Decision): void {
         d.payload.rarity, d.payload.artistId, {
           name: d.payload.name, treatment: d.payload.treatment, serialized: d.payload.serialized,
           artBrief: d.payload.artBrief, flavorText: d.payload.flavorText,
+          progressionLink: d.payload.progressionLink,
         });
       break;
     case 'defineProduct':
@@ -588,9 +633,15 @@ export const api = {
     submit(s, { type: 'createSet', tick: s.tick, payload: { id, name, setType, targetSize } });
     return id;
   },
-  designCard(s: SimState, setId: SetId, subjectIp: IpId, cameos: IpId[], rarity: Rarity, artistId: ArtistId): CardId {
+  designCard(
+    s: SimState, setId: SetId, subjectIp: IpId, cameos: IpId[], rarity: Rarity, artistId: ArtistId,
+    progressionLink?: { chainId: ChainId; position: number },
+  ): CardId {
     const id = nextId(s, 'card') as CardId;
-    submit(s, { type: 'designCard', tick: s.tick, payload: { id, setId, subjectIp, cameos, rarity, artistId } });
+    submit(s, {
+      type: 'designCard', tick: s.tick,
+      payload: { id, setId, subjectIp, cameos, rarity, artistId, progressionLink },
+    });
     return id;
   },
   defineProduct(s: SimState, setId: SetId, kind: ProductKind, regionId: RegionId, packs: number, msrp: number): ProductId {
@@ -820,6 +871,7 @@ function castDesire(s: SimState, card: Card): number {
   const subj = s.ips[card.subjectIp]!;
   let d = subj.affection + subj.resurgence * cfg.affection.resurgenceToModernDemand * 100;
   for (const cid of card.cameos) d += s.ips[cid]!.affection * cfg.value.cameoWeight;
+  d += chainDesire(s, card);
   return Math.max(1, d);
 }
 
@@ -2383,6 +2435,7 @@ export function tick(s: SimState): void {
   tickGrading(s, printings);
   tickAudience(s);
   tickActors(s, products, printings);
+  tickCreators(s, printings);
   tickArtists(s);
   tickArt(s);
   tickRoster(s);

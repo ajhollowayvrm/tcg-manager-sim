@@ -25,8 +25,8 @@
  * separate stream is there so the movement is attributable to the mechanism
  * rather than to reshuffled noise.
  */
-import type { SimState, Printing, Product, CardSet, SimEvent } from './types.ts';
-import { gauss } from './rng.ts';
+import type { SimState, Printing, Product, CardSet, SimEvent, IpId } from './types.ts';
+import { gauss, rand } from './rng.ts';
 import { nextId } from './world.ts';
 
 /**
@@ -229,3 +229,98 @@ function clamp(x: number, lo: number, hi: number): number {
 
 /** Populations move on a quarterly clock. Nothing here changes weekly. */
 export const ACTOR_STRIDE = 13;
+
+// ---------------------------------------------------------------------------
+// Creators (CONCEPT.md §6.8, §8)
+// ---------------------------------------------------------------------------
+
+/**
+ * Named creators, as distinct from the reseller population.
+ *
+ * The population says how much product gets opened. A creator says *which
+ * card* the market is talking about this week, and does it repeatedly, to an
+ * audience that is their own. CONCEPT.md asks resellers to "create visible
+ * price events", and an aggregate cannot: a price event needs a cause you can
+ * name and a relationship you can build.
+ *
+ * `Creator` was declared with `format`, `audienceSize`, `influence`,
+ * `affinityIps` and `relationship`, and `world.ts` seeded an empty record. The
+ * `creatorOpened` event kind existed and nothing emitted it.
+ */
+export function tickCreators(s: SimState, printings: Printing[]): void {
+  if (s.tick % CREATOR_STRIDE !== 0) return;
+  const cfg = s.config.creators;
+  const creators = Object.values(s.creators);
+  if (creators.length === 0 || printings.length === 0) return;
+
+  // A creator with no affinities has no opinion, and at tick 0 there is nothing
+  // to have one about. They pick their IPs the first time there are any.
+  const ipIds = Object.keys(s.ips);
+  if (ipIds.length > 0) {
+    for (const c of creators) {
+      if (c.affinityIps.length > 0) continue;
+      const want = 1 + Math.floor(rand(s.actorRng) * 2);
+      for (let i = 0; i < want; i++) {
+        const pickIp = ipIds[Math.floor(rand(s.actorRng) * ipIds.length)] as IpId;
+        if (!c.affinityIps.includes(pickIp)) c.affinityIps.push(pickIp);
+      }
+    }
+  }
+
+  for (const c of creators) {
+    // A creator covers what suits them. Relationship raises the odds, which is
+    // what makes cultivating one a decision rather than weather.
+    const odds = cfg.coverChancePerStride * (0.4 + 1.2 * c.relationship);
+    if (rand(s.actorRng) >= odds) continue;
+
+    // Recent, and preferably about something they care about. A creator who
+    // covered the whole catalogue uniformly would be indistinguishable from a
+    // flat heat bonus.
+    const fresh = printings.filter(
+      pr => (s.tick as number) - (pr.releaseTick as number) < cfg.freshnessWeeks,
+    );
+    const pool = fresh.length > 0 ? fresh : printings;
+    let chosen = pool[Math.floor(rand(s.actorRng) * pool.length)]!;
+    for (let tries = 0; tries < cfg.affinityTries; tries++) {
+      const card = s.cards[chosen.cardId];
+      if (card && c.affinityIps.includes(card.subjectIp)) break;
+      chosen = pool[Math.floor(rand(s.actorRng) * pool.length)]!;
+    }
+
+    // Reach times influence, against a reference audience. A big channel with
+    // no credibility and a small one with a lot of it land in the same place,
+    // which is the right shape for a recommendation.
+    const reach = (c.audienceSize / cfg.audienceReference) * c.influence;
+    const delta = cfg.heatPerCoverage * Math.min(cfg.maxCoverageHeat, reach);
+    chosen.market.heat = Math.min(s.config.value.heatCeiling, chosen.market.heat + delta);
+
+    emit2(s, 'creatorOpened', { printingId: chosen.id, cardId: chosen.cardId, creatorId: c.id },
+      { heat: delta, audience: c.audienceSize, format: c.format });
+  }
+
+  // The relationship converges on how much you are giving them to cover, and
+  // it must not be driven by coverage itself. Coverage odds already rise with
+  // the relationship, so paying the relationship out of coverage makes the two
+  // a feedback loop with no stable middle: measured, it pinned at 0.99 in every
+  // seed on one setting and collapsed to 0.04 on the next, with nothing in
+  // between. What a creator actually responds to is new product, so that is
+  // what this tracks.
+  const freshCount = printings.filter(
+    pr => (s.tick as number) - (pr.releaseTick as number) < cfg.freshnessWeeks,
+  ).length;
+  const target = Math.min(1, freshCount / cfg.freshPrintingsReference);
+  for (const c of creators) {
+    c.relationship = Math.max(0, Math.min(1,
+      c.relationship + (target - c.relationship) * cfg.relationshipConvergence));
+  }
+}
+
+/** Creators are checked monthly. A weekly cadence makes every card news. */
+export const CREATOR_STRIDE = 4;
+
+function emit2(
+  s: SimState, kind: 'creatorOpened',
+  refs: SimEvent['refs'], data: SimEvent['data'],
+): void {
+  s.events.push({ id: nextId(s, 'ev') as SimEvent['id'], t: s.tick, kind, interrupts: false, refs, data });
+}

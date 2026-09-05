@@ -176,6 +176,20 @@ export interface RunMetrics {
    * collabs should sell well and own little.
    */
   meanIpAffection: number;
+
+  /** Times a named creator covered any printing. */
+  creatorCoverage: number;
+  /** Share of that coverage that landed on this publisher's own cards. */
+  creatorOwnShare: number;
+  /** Best relationship with any creator at the end of the run. */
+  bestCreatorRelationship: number;
+
+  /** Collectible chains built. */
+  chains: number;
+  /** Share of them that span more than one set — the cross-set hedge. */
+  chainsSpanningSets: number;
+  /** Mean printed members per chain. */
+  meanChainLength: number;
 }
 
 /** Pearson r. Returns 0 rather than NaN for a degenerate sample. */
@@ -416,6 +430,17 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
   const meanIpAffection = allIps.length
     ? allIps.reduce((n, ip) => n + ip.affection, 0) / allIps.length : 0;
 
+  const coverage = s.events.filter(e => e.kind === 'creatorOpened');
+  const ownCoverage = coverage.filter(e => {
+    const card = e.refs.cardId ? s.cards[e.refs.cardId as never] : undefined;
+    return card?.publisherId === pub.id;
+  }).length;
+  const creatorRels = Object.values(s.creators).map(c => c.relationship);
+
+  const chains = Object.values(s.chains);
+  const printedMembers = chains.map(
+    c => c.cardIds.filter(cid => !!s.printingByCard[cid]).length);
+
   return {
     bot,
     seed: s.seed,
@@ -487,6 +512,14 @@ export function computeMetrics(s: SimState, bot: string, _years: number): RunMet
     collabsSigned,
     collabSpend,
     meanIpAffection,
+    creatorCoverage: coverage.length,
+    creatorOwnShare: coverage.length > 0 ? ownCoverage / coverage.length : 0,
+    bestCreatorRelationship: creatorRels.length ? Math.max(...creatorRels) : 0,
+    chains: chains.length,
+    chainsSpanningSets: chains.length
+      ? chains.filter(c => c.spansSets).length / chains.length : 0,
+    meanChainLength: printedMembers.length
+      ? printedMembers.reduce((a, b) => a + b, 0) / printedMembers.length : 0,
   };
 }
 

@@ -6,7 +6,7 @@
 import type {
   SimState, SimConfig, Tick, Cents, PublisherId, RegionId, ArtistId, GraderId,
   AudienceSegment, Rarity, ArtistPersonality, ArtistSpecialty, IpKind, ProductKind,
-  Channel, ChannelId, Unit,
+  Channel, ChannelId, Unit, CreatorId,
 } from './types.ts';
 import { seedRng, rand, randRange, pick } from './rng.ts';
 import { CHANNEL_IDS } from './channels.ts';
@@ -228,6 +228,29 @@ export function createWorld(seed: string, config: SimConfig): SimState {
       // A region you have never sold into is a region you know nothing about.
       knowledge: 0,
       unlockedTick: null,
+    };
+  }
+
+  // The creator roster. Drawn from `regionRng` rather than `rng`, for the same
+  // reason the regions above are: an extra draw on the main stream renumbers
+  // every later roll in the run. Their affinity IPs are empty at tick 0 because
+  // no IP exists yet — `tickCreators` matches on whatever the publisher has
+  // made, and `seedCreatorAffinities` fills these in once there is a roster to
+  // have an opinion about.
+  const CREATOR_FORMATS = ['ripAndShip', 'review', 'openings', 'investing'] as const;
+  for (let i = 0; i < config.creators.rosterSize; i++) {
+    const id = `creator_${i}` as CreatorId;
+    s.creators[id] = {
+      id,
+      name: `Creator ${i + 1}`,
+      format: CREATOR_FORMATS[i % CREATOR_FORMATS.length]!,
+      // A long tail: a couple of large channels and a lot of small ones, which
+      // is what a creator ecosystem looks like and what makes cultivating the
+      // right one worth doing.
+      audienceSize: Math.round(20_000 * Math.pow(1.6, randRange(rrng, 0, 6))),
+      influence: randRange(rrng, 0.2, 0.9) as Unit,
+      affinityIps: [],
+      relationship: randRange(rrng, 0.05, 0.3) as Unit,
     };
   }
 

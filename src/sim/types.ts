@@ -341,6 +341,12 @@ export interface Chain {
   kind: ChainKind;
   name: string;
   cardIds: CardId[];
+  /**
+   * The sets its members were designed into. `Card` carries no `setId`, so
+   * recording it here is what lets `spansSets` be maintained without scanning
+   * every set on every link.
+   */
+  setIds: SetId[];
   spansSets: boolean;
 }
 
@@ -890,6 +896,11 @@ export type Decision =
         /** Optional. The engine derives each of these when not supplied. */
         name?: string; treatment?: Treatment; serialized?: { runSize: number } | null;
         artBrief?: Partial<ArtBrief>; flavorText?: string;
+        /**
+         * Puts this card in a collectible chain. The engine mints the chain the
+         * first time one is named, so a caller does not have to create it first.
+         */
+        progressionLink?: { chainId: ChainId; position: number };
       };
     }
   | { type: 'commissionArt'; tick: Tick; payload: { cardId: CardId; artistId: ArtistId; brief: ArtBrief } }
@@ -1331,6 +1342,32 @@ export interface SimConfig {
     speculatorHeatGain: number;
     speculatorSensitivity: number;
     speculatorNoise: number;
+  };
+
+  creators: {
+    rosterSize: number;
+    coverChancePerStride: number;
+    freshnessWeeks: number;
+    affinityTries: number;
+    audienceReference: number;
+    heatPerCoverage: number;
+    maxCoverageHeat: number;
+    /** Fresh printings on the market at which a creator is fully engaged. */
+    freshPrintingsReference: number;
+    relationshipConvergence: number;
+  };
+
+  chains: {
+    /** Extra desire per other card already printed in the same chain. */
+    desirePerLink: number;
+    /** How many links still count. Past this a chain stops paying more. */
+    maxCountedLinks: number;
+    /**
+     * Multiplier on the chain bonus when the chain spans sets. CONCEPT.md calls
+     * a cross-set chain "the hedge that can carry a set with a weak subject",
+     * which only means anything if it pays more than a chain inside one set.
+     */
+    spansSetsBonus: number;
   };
 
   collabs: {
