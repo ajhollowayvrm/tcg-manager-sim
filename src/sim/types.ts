@@ -1326,12 +1326,24 @@ export interface SimConfig {
     interestBase: number;
     creditToRate: number;
     borrowCeilingMultiple: number;
+    /** Window of sales the borrow ceiling is measured over, in ticks. */
+    borrowCeilingRevenueWeeks: number;
+    /** Opening ticks during which the full ceiling is available regardless of sales. */
+    borrowCeilingGraceTicks: number;
+    /** Annual revenue at which a studio can borrow the full ceiling. */
+    borrowCeilingRevenueReference: Cents;
+    /** Share of the ceiling a studio with no sales at all can still reach. */
+    borrowCeilingIdleFloor: number;
     /** How fast brandStanding converges toward its affection/goodwill-driven target each tick. */
     brandConvergenceRate: number;
     /** Weekly cost of the studio existing at all. */
     weeklyOverheadBase: Cents;
     weeklyOverheadPerChannel: Cents;
     weeklyOverheadPerRegion: Cents;
+    /** Exponent on `audienceScale` applied to the whole standing bill. 0 is flat. */
+    overheadAudienceExponent: number;
+    /** The market size the weekly overhead lines are quoted at. */
+    overheadReferenceScale: number;
     /** Warehousing, per unsold unit per week. */
     storagePerUnitPerTick: Cents;
     /**

@@ -2087,9 +2087,17 @@ function tickFinance(s: SimState): void {
   // from capital locked up into capital bleeding.
   const pubChannels = pub.unlocks.channels.length;
   const abroad = Math.max(0, pub.unlocks.regions.length - 1);
-  const overhead = cfg.weeklyOverheadBase
+  // The bill follows the market, sub-linearly. A studio selling into a market
+  // 25 times the size it started in does not run on the same payroll, and a
+  // flat bill stops being a bill: it falls from about a third of revenue in
+  // year 1 to 1.9% by year 50, and takes the standing pressure behind three
+  // death routes with it. The exponent is what decides how much of the growth
+  // the bill follows — see the config note.
+  const overhead = Math.round((cfg.weeklyOverheadBase
     + cfg.weeklyOverheadPerChannel * pubChannels
-    + cfg.weeklyOverheadPerRegion * abroad;
+    + cfg.weeklyOverheadPerRegion * abroad)
+    * Math.max(1, Math.pow(audienceScale(s) / Math.max(0.01, cfg.overheadReferenceScale),
+      cfg.overheadAudienceExponent)));
   pub.cash = C(pub.cash - overhead);
   pub.ledger.push({ t: s.tick, amount: C(-overhead), category: 'overhead', note: 'studio' });
 
@@ -2123,7 +2131,25 @@ function tickFinance(s: SimState): void {
     if (interest > 0) pub.ledger.push({ t: s.tick, amount: C(-interest), category: 'interest', note: 'debt service' });
   }
 
-  const ceiling = cfg.borrowCeilingBase * cfg.borrowCeilingMultiple * (0.3 + pub.credit);
+  // What the studio has sold lately, annualised. The ledger is append-only and
+  // ordered, so this walks back from the end and stops at the window edge
+  // rather than reading thirty years of entries every tick.
+  let recent = 0;
+  const from = s.tick - cfg.borrowCeilingRevenueWeeks;
+  for (let i = pub.ledger.length - 1; i >= 0; i--) {
+    const e = pub.ledger[i]!;
+    if (e.t < from) break;
+    if (e.category === 'sales') recent += e.amount;
+  }
+  const annualised = recent * (52 / Math.max(1, cfg.borrowCeilingRevenueWeeks));
+  // A lender lends against the business. A studio with no sales gets the floor
+  // and nothing more, which is what stops "do nothing" being funded by the bank
+  // for four years after the cash runs out.
+  const lendable = s.tick < cfg.borrowCeilingGraceTicks ? 1
+    : cfg.borrowCeilingIdleFloor + (1 - cfg.borrowCeilingIdleFloor)
+      * Math.min(1, annualised / Math.max(1, cfg.borrowCeilingRevenueReference));
+  const ceiling = cfg.borrowCeilingBase * cfg.borrowCeilingMultiple
+    * (0.3 + pub.credit) * lendable;
   if (pub.cash < 0) {
     const need = -pub.cash;
     if (pub.debt + need <= ceiling) {

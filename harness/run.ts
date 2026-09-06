@@ -49,6 +49,10 @@ for (const a of process.argv.slice(2)) {
   if (!Number.isFinite(n)) throw new Error(`--set=${a.slice(6)} is not a number`);
   overrides[path!] = n;
 }
+const cadenceWeeks = args.cadence === undefined ? undefined : Number(args.cadence);
+if (cadenceWeeks !== undefined && (!Number.isFinite(cadenceWeeks) || cadenceWeeks < 1)) {
+  throw new Error(`--cadence=${args.cadence} is not a positive number of weeks`);
+}
 const showDist = args.dist === 'true';
 const setsOut = String(args['sets-out'] ?? 'on') !== 'off';
 const snapshotAges = args['snapshot-ages'] === undefined
@@ -70,7 +74,7 @@ const tasks: RunTask[] = [];
 for (const botName of botNames) {
   if (!BOTS[botName]) throw new Error(`unknown bot: ${botName}`);
   for (let i = 0; i < seeds; i++) {
-    tasks.push({ botName, seedIndex: i, years, checkEvery, overrides, snapshotAges });
+    tasks.push({ botName, seedIndex: i, years, checkEvery, overrides, snapshotAges, cadenceWeeks });
   }
 }
 

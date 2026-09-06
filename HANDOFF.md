@@ -35,6 +35,7 @@ npm run sim:quick
 npm run sim -- --seeds=40 --years=50 --bot=all
 npm run sim -- --set=value.noiseSigma=0.09 --set=attention.fatigueGain=0.05
 npm run sim -- --seeds=1 --years=25 --bot=conservative --dist
+npm run sim -- --cadence=18            # override every set bot's release cadence
 npm run sim -- --jobs=1          # force the synchronous path
 ```
 
@@ -79,12 +80,11 @@ on `harness/worker.mjs`, which installs the TypeScript loader and then imports
   Under-releasing is a gentle loss; over-releasing is a cliff. That asymmetry is
   what CONCEPT.md §6.2 asks for.
 
-  **The net-worth row above predates the difficulty pass** and is not comparable
-  to anything the harness prints today: weekly overhead, storage and the lower
-  reference demand all landed after it was measured. The shape — an optimum with
-  a cliff on the fast side — is what this row is kept for. Re-measuring the
-  levels is a scratch-script job, because cadence is a bot constant rather than
-  a config path.
+  **[Round 10] SUPERSEDED. Both rows are re-measured in the Round 10 section**,
+  and cadence is a harness flag now: `npm run sim -- --cadence=18`. The shape
+  still holds and every level has moved. The optimum is 26 weeks, not 18, and a
+  14-week cadence — roughly what Wizards ships — kills every run. Read the Round
+  10 section before quoting either table.
 - The price distribution is a power law, not flat mush. `Printing.truth.chase`
   is a hidden lognormal roll made once per printing, so two commons in the same
   set do not settle at the same price; `market.nostalgia` now compounds only on
@@ -552,6 +552,13 @@ seeded and unread — regional demand draws on the global audience rather than o
 a per-region one, which is a real simplification and the obvious next thing to
 do to regions.
 
+**[Round 10] Two findings are now waiting on a demand round.** The release
+cadence optimum has drifted to 26 weeks and the model kills the real industry
+cadence; and the blind bet has almost no downside left (`diff.flopRate` 0.005,
+`diff.sellThrough` on its ceiling). Both are the same knob set — the fatigue
+triple and `attention.referenceRunUnits` — and neither is affordable from the
+finance side. The Round 10 section holds the measurements.
+
 **2. Performance.** `tickPrices` is still about 20% of a run, and the remaining
 ideas change behaviour: backing a cold printing off to a longer stride changes
 RNG draw counts, so it cannot be validated by hashing the CSV — it has to be
@@ -618,6 +625,209 @@ was taking the bankroll off the whole roster before any strategy could express
 itself — fixing the artist rates alone moved `diff.botsAlwaysSurvive` from 1 to 6
 and `allIn` from 0.05 to 0.40. Re-derive the `smallBets` and `globalist`
 mechanisms before tuning them; the shipped numbers under them have moved.
+
+
+## Finance and difficulty (tuning Round 10, 2026-09-06)
+
+**The suite reads 54 gates, 50 PASS, 0 FAIL, 4 KNOWN, 0 DRIFT.** Banked under
+`docs/tuning/bank/round-10/`. One gate is new, one was fixed and promoted, one
+regressed and is demoted, and one had its aggregation repaired.
+
+This is the last of the tuning rounds. It made the standing bill follow the
+market, fixed the reason doing nothing did not lose, and turned three of the
+plan's items into measurements rather than changes — with the numbers to say
+why.
+
+### What shipped
+
+| Path | Was | Now | What it does |
+|---|---|---|---|
+| `finance.overheadAudienceExponent` | — (new) | 1.0 | the standing bill follows the market past a 10x one |
+| `finance.overheadReferenceScale` | — (new) | 10 | the market size the weekly lines are quoted at |
+| `finance.borrowCeilingRevenueWeeks` | — (new) | 52 | the sales window the credit line is measured over |
+| `finance.borrowCeilingRevenueReference` | — (new) | $400,000 | annual revenue that earns the full line |
+| `finance.borrowCeilingIdleFloor` | — (new) | 0.1 | what a studio with no sales can still borrow |
+| `finance.borrowCeilingGraceTicks` | — (new) | 104 | the opening window that borrows against its plan |
+
+No existing knob moved. `startingCash`, `borrowCeilingBase`, `interestBase`,
+`overprintDeathUnits`, the two attention death thresholds and the whole fatigue
+triple were all measured and deliberately left where they were. The reasons are
+below and in the config comments.
+
+### 1. A flat bill does not stay a bill
+
+Measured, `conservative` over 20 seeds: the standing bill is about **35% of
+revenue in year 1 and 1.9% by year 50**, because the market it sells into grows
+about 25x and the bill does not move. Four of the five death routes need that
+bill to keep biting.
+
+The fix has a floor, and the floor is the whole trick:
+
+```
+overhead = lines * max(1, (audienceScale / overheadReferenceScale) ** exponent)
+```
+
+A plain power law cannot be neutral at day one AND neutral where the roster
+actually dies. Both failures were measured:
+
+| Shape | `idle` dies | `conservative` survives | Always-surviving bots |
+|---|---|---|---|
+| flat (before) | 12.0 | 0.95 | 5 |
+| quoted at day one, exp 0.2 | 11.2 | **0.80** | 4 |
+| quoted at day one, exp 0.5 | 10.2 | **0.75** | 0 |
+| quoted at 10x, exp 0.35, no floor | **15.6** | 1.00 | 6 |
+| **quoted at 10x, exp 1.0, floored** | 8.8 | 0.95 | 6 |
+
+Quoted at day one it raises the bill exactly where the deaths cluster and costs
+the reference strategy 15 to 20 points of survival. Quoted at 10x without the
+floor it hands every small studio a 55% lifelong discount and lets `idle` live
+to 15.6 years. Floored, it changes **no survival number on the roster at either
+horizon** and lifts the mature overhead share from 1.9% to 3.1% — next to
+Stonemaier's $25M on 8 staff, the only real anchor the research has.
+
+The exponent was free at 0.35, 0.7 and 1.0 alike: identical survival and
+identical death counts, and only the mature share moves. 1.0 ships because it
+states the cleanest rule — past a 10x market, the bill grows as fast as the
+market.
+
+### 2. Doing nothing did not lose, and the bill was not why
+
+`diff.idleDies` read 12.0 against a band of [2.5, 9]. The `weeklyOverheadBase`
+comment was right about the cash — $500,000 lasts 7.7 years — and the missing
+4.3 years were **the bank**. The borrow ceiling read
+`base * multiple * (0.3 + credit)` and nothing else, so a studio with no sales
+at all could borrow exactly what a working one could.
+
+The ceiling is now scaled by the studio's own recent sales. `idle` dies at
+**8.83 years**, inside the band, and `weeklyOverheadBase` never moved.
+
+**The grace period is not a nicety.** Without it the revenue gate fired hardest
+on the publisher it was not aimed at: `allIn` commits its bankroll in week 8
+against a release 18 weeks out, so it went cash-negative with no sales on the
+books, found its line at the floor, and **died at year 0.2 in all 20 seeds** —
+before its first set shipped, having never placed the bet the bot exists to
+measure. Two years of grace covers the first release and its first selling year,
+and is far short of the 7.7 years `idle` needs to burn its cash.
+
+**This gate is what pins `startingCash`.** Doubling the opening cash and the
+borrow ceiling together takes `idle` straight back to **17.8 years**. A later
+round that lifts capital toward real scale must raise `weeklyOverheadBase` in
+the same ratio, in the same change — and shrink the Round 7 art-rate factor in
+step, which is the other coupling on that knob.
+
+### 3. Doing nothing at year 40 still does not lose
+
+New bot `lateIdle`: `conservative` for twenty years, then nothing at all. New
+gate `diff.lateIdleSurvives`, a known-fail, band [0, 0.35], reading **0.85**.
+
+It survives 85% of 50-year runs at every exponent tried, and every death it does
+have happens in its active first twenty years. A back catalogue that keeps
+selling plus twenty years of banked cash beats any bill this model would call
+overhead. Killing it needs a standing bill about **20x** the current one, which
+costs `conservative` 60 points of survival.
+
+**This is a design decision, not a round.** Either a mature studio should be
+killable and the model needs a mechanism that is not overhead, or a mature
+studio is genuinely safe and the gate should be deleted. Round 10 shipped the
+affordable half and left the question stated.
+
+### 4. The release cadence optimum has drifted, and the fix is not affordable here
+
+`--cadence=N` is now a harness flag, so the cadence table in this file is
+sweepable for the first time. `cadenceWeeks` had lived as a constant inside
+nineteen bot definitions.
+
+Re-measured on `conservative`, 20 seeds x 30 years, at the shipped
+`fatigueDecay: 0.015`:
+
+| cadence | 6wk | 10wk | 14wk | 18wk | 26wk | 34wk | 52wk |
+|---|---|---|---|---|---|---|---|
+| survived | 0.00 | 0.00 | 0.00 | 0.45 | **1.00** | 1.00 | 0.95 |
+| net worth | $0.2M | $0.1M | $0.2M | $8.4M | **$135.1M** | $117.1M | $65.0M |
+| fatigue | 0.94 | 0.92 | 0.80 | 0.70 | 0.37 | 0.42 | 0.22 |
+
+**The optimum has moved from 18 weeks to 26, and the cliff moved with it.** A
+14-week cadence — roughly what Wizards actually ships — now kills 100% of runs.
+The old table in "Verified working" is superseded; the shape is the same and
+every level is different.
+
+`fatigueDecay: 0.03` puts the optimum back on 18 weeks ($244.8M against $184.8M
+at 26) and leaves 14 weeks survivable 45% of the time. **It is not shipped.**
+Faster recovery is more demand everywhere, and it broke four difficulty gates in
+one move:
+
+| Gate | At 0.015 | At 0.03 |
+|---|---|---|
+| `diff.sellThrough` | 0.949 | 0.956 (over its ceiling) |
+| `diff.flopRate` | 0.014 | 0.003 |
+| `diff.allInSurvival` | 0.300 | 0 |
+| `diff.attentionBurnerDies` | 1 | 0.750 |
+
+The obvious compensating knob does not pay for it either: `referenceRunUnits`
+5000 -> 3500 restores the sell-through and the flop rate, and costs
+`conservative` 15 points of survival and takes the always-surviving bot count to
+2, below its own band floor. A half step (0.02) lands between both failures and
+fixes neither.
+
+**This is a demand-side re-fit wearing a difficulty knob's clothes**, and the
+plan orders the demand rounds before this one for exactly that reason. It needs
+a round, with the value block and the populations re-checked under it.
+
+### 5. The `specialtyOnly` contradiction: the comment is wrong
+
+The `weeklyOverheadBase` comment claimed "at $1,000 the base is survivable on
+its own", citing `specialtyOnly` at 100% survival. Measured over 20 seeds x 30
+years it survives **0%**, dying of `debt_spiral` at a median year 10.6.
+
+It is not the base rate that kills it. Its whole standing bill is **82% of its
+revenue** — about $77,000 a year against $94,000 of sales. A studio that small
+is not viable at any overhead this model would call a bill, and the fix is a
+bigger niche business, not a cheaper one. The survival figure quoted in the
+comment was measured at a shorter horizon than the 30 years the suite now runs.
+The comment is corrected in place.
+
+### 6. What was measured and left alone
+
+**`interestBase` is inert at these bankrolls.** 0.08, 0.14 and 0.22 give the
+same roster: `conservative` 0.95 throughout and death counts inside noise. The
+reason is in the same table — median peak debt across the roster is **$60,000**,
+so a 14-point rate is worth $8,400 a year to a studio earning millions. It is
+not a knob until debt matters, and nothing in the roster borrows seriously.
+
+**`overprintDeathUnits` is live, and it is a classifier.** Raising it 20,000 ->
+60,000 collapses overprint deaths 47 -> 9 and pushes `debt_spiral` to 135, well
+past its ceiling of 90. It is not the inert floor it looks like next to
+`meanRun * 2.5`: it decides which of two death routes a small studio's failure
+is reported as. Left at 20,000.
+
+**The attention death thresholds** were not moved. `attentionBurner` reads 1.00
+on `diff.attentionBurnerDies` at the shipped fatigue, so the classification is
+correct on the only bot that reaches the route. They would need re-basing only
+if the fatigue triple moves — see item 4.
+
+### 7. `diff.flopRate`: the gate was measuring one seed
+
+Demoted to known-fail, and its aggregation repaired. Two separate faults:
+
+1. **It was a mean of per-run rates.** An 11-set run that died early counted the
+   same as a 29-set one. Before this round 4 of 20 runs carried a flop and one
+   of them was that short run; after it, 3 did — and the gate moved 0.014 ->
+   0.005 on that single seed. It now pools flops over sets across the sweep,
+   which is what a rate means.
+2. **The pooled number is still 0.005** — 3 flopped sets in roughly 560. The
+   blind bet almost never loses money outright.
+
+Read it beside `diff.sellThrough`, which has sat ON its 0.95 ceiling for two
+rounds. Both say the same thing: the market absorbs everything the reference bot
+prints. Same owner as item 4 — the demand round.
+
+### The new metrics
+
+`overheadSpend`, `overheadShare`, `storageSpend`, `interestSpend` and
+`audienceScale` in `harness/metrics.ts`. The standing bill could not be read
+against what a studio earns before this, which is the only way it means
+anything, and `audienceScale` is what "scale with the audience" actually reads
+as in a run.
 
 
 ## The reveal window (tuning Round 9, 2026-09-06)
@@ -2232,91 +2442,100 @@ horizon fixed.
 
 ## Suggested next session
 
-**Round 10 of the tuning run: finance, difficulty and death routes.** The round
-plan lives outside the repo, at
-`~/.claude/plans/let-s-start-the-tuning-zesty-magpie.md`. Read it first, then
-the "The reveal window" section above, then run `npm run check`.
+**The tuning run is done. Rounds 0 to 10 are complete and banked.** The suite
+stands at **50 PASS, 0 FAIL, 4 KNOWN, 0 DRIFT** across 54 gates, and takes about
+two and a half minutes. The plan file is
+`~/.claude/plans/let-s-start-the-tuning-zesty-magpie.md`; its round-order table
+and per-round outcome notes are current to Round 10.
 
-Rounds 0 to 9 are done and banked under `docs/tuning/bank/`. The suite stands at
-**50 PASS, 0 FAIL, 3 KNOWN, 0 DRIFT** across 53 gates, and takes about two and a
-half minutes.
+Two things can come next, and they are different in kind.
+
+### Option A — Round 11, the optional new mechanisms
+
+The plan lists three, one at a time, each with a full regression pass and a
+rebank:
+
+1. **The bulk buylist spread** — high priority; it closes an exploit. A $0.20
+   card liquidates at $0.004 in the real market. `Printing.market.liquidity` is
+   declared and barely read; this is what it is for. Without it a player sells a
+   warehouse of commons at market price. It also owns `sub.scalperShare`.
+2. **The Fallen Empires order-inflation loop** — medium. **Sweep the `channels`
+   block first**: 17 paths plus 30 trait constants have never been measured at
+   all, and `sub.channelHogLosesReach` is sitting exactly on its ceiling because
+   of it.
+3. **The foil production bottleneck** — low. `rarity.pull` already produces the
+   scarcity.
+
+### Option B — the demand round Round 10 could not do
+
+Round 10 found two defects that share one knob set and handed both on. **They
+are the strongest candidate for the next round**, because unlike Round 11's
+items they are things the model gets wrong rather than things it lacks:
+
+- **The release cadence optimum has drifted to 26 weeks**, and a 14-week
+  cadence — roughly what Wizards ships — kills 100% of runs.
+  `attention.fatigueDecay: 0.03` fixes the optimum and breaks four difficulty
+  gates; `attention.referenceRunUnits` pays for two of them and costs the
+  reference strategy 15 points of survival.
+- **The blind bet has almost no downside.** `diff.flopRate` pools to 0.005 — 3
+  flopped sets in roughly 560 — and `diff.sellThrough` has sat ON its 0.95
+  ceiling for two rounds.
+
+The Round 10 section holds every measurement, including what each candidate
+value costs. A demand round has to re-check the value block (Round 4) and the
+populations (Round 5) underneath it, which is why the plan ordered those first
+and why Round 10 refused to do it from the finance side.
 
 ### Read this before you change anything
 
-**Round 9 was the last round allowed to renumber the main RNG stream.** Round 10
-must not change a draw count. Every banked value in `docs/tuning/bank/round-9/`
-is comparable to what you measure, so a drift line means a real move — treat one
-as a finding, not as noise.
+**The main RNG stream is stable and must stay that way.** Round 9 was the last
+round allowed to renumber it. Every banked value in `docs/tuning/bank/round-10/`
+is comparable to what you measure, so a DRIFT line is a finding, not noise.
 
-Round 10 is the last of the tuning rounds by necessity: Rounds 4 to 9 each moved
-revenue, so a finance sweep run before them was thrown away. It is now safe.
+**Three gates sit exactly on a band edge.** `diff.conservativeSurvives` reads
+0.950 against a floor of 0.95, `sub.channelHogLosesReach` reads 6 against a
+ceiling of 6, and `struct.debtSpiralDeaths` reads 83 against a ceiling of 90.
+The first two came back on Round 9's re-roll rather than on a repair. Any of the
+three can go FAIL on a change that looks unrelated, and if one does, it is
+telling you something.
 
-### The scope
+**Two couplings pin `finance.startingCash`.** Lifting it needs
+`weeklyOverheadBase` raised in the same ratio — doubling capital alone takes
+`diff.idleDies` from 8.8 years back to 17.8 — and needs the Round 7 art-rate
+scale factor shrunk toward 1 in the same change, or art becomes a rounding error
+again. Neither is optional, and both are in the same change or none of it.
 
-The plan gives the order:
-
-1. The `weeklyOverhead*` lines. Scale them with the audience, so "doing nothing
-   loses" stays true at year 40 as well as year 1.
-2. `startingCash` with `borrowCeilingBase` in step, then `interestBase`.
-3. `overprintDeathUnits` and the two death thresholds.
-4. `attention.fatigueBite`, `fatigueDecay`, `fatigueExponent` and
-   `referenceRunUnits` — the most load-bearing knobs now rivals are gone.
-5. Move `cadenceWeeks` into a harness flag, so the cadence table in this file
-   becomes sweepable. It changes no draw counts.
-
-### Four things Round 10 must settle
-
-**1. The `specialtyOnly` contradiction.** The `weeklyOverheadBase` comment in
-`config.ts` claims "At $1,000 the base is survivable on its own", citing
-`specialtyOnly` at 100% survival. It measures 0% over 20 seeds x 30 years.
-Decide whether the number or the comment is wrong, and say which in the notes.
-
-**2. The two gates Round 9 promoted on a re-roll.**
-`diff.conservativeSurvives` reads 0.950 against a floor of 0.95, and
-`sub.channelHogLosesReach` reads 6 against a ceiling of 6. Neither was repaired;
-the RNG stream moved under both. They are the two most likely FAIL lines in the
-suite, and a FAIL on either is a real signal because the stream is stable now.
-The conservative trade — 0.950 at a 1.3x storage cliff against 0.900 at 1.7x —
-is described in the Round 7 section and is Round 10's to make.
-
-**3. The art rate band is a scale correction, not a rate.** It ships at a fifth
-of the researched $400-$2,500 because our publisher earns about a fifth of a
-real one. When Round 10 lifts `startingCash` and print volume toward real scale,
-that factor must shrink toward 1 in step, or art silently becomes a rounding
-error again. The full reasoning is in the Round 7 section.
-
-**4. The art exit bands are unfitted on purpose.** Per AJ's call in Round 7 they
-are pre-measurement guesses, to be re-fitted after capital settles, against what
-the corrected model produces. Round 7 recorded the measurements to start that
-re-fit from: `conservative` 3.5%, `safeHands` 13.3%, `scout` 0.7%, and `scout`
-beating `safeHands` on top card in 15 of 20 seeds.
-
-### The three remaining known-fails
+### The four known-fails
 
 | Gate | Reads | Owner |
 |---|---|---|
-| `diff.idleDies` | 12.019 against [2.5, 9] | Round 10 |
+| `diff.flopRate` | 0.005 against [0.01, 0.25] | the demand round (Option B) |
 | `sub.scalperShare` | 0.070 against [0.1, 0.5] | Round 11 item 1 |
-| `shape.surpriseGrail` | 1 against [0.1, 0.6] | **nobody** |
+| `diff.lateIdleSurvives` | 0.850 against [0, 0.35] | **a design decision** |
+| `shape.surpriseGrail` | 1 against [0.1, 0.6] | **a design decision** |
 
-`sub.scalperShare` is new to this list. Round 9 shortened the free reveal window
-and took the hype off a non-campaigning launch with it. Read the Round 9 section
-before touching it: the gate is dominated by the run horizon, it passes at 50
-years, and the `drops` block is not the lever.
+The two design decisions cannot be cleared by tuning at any value, and both need
+AJ rather than a round:
 
-`shape.surpriseGrail` cannot be cleared by tuning at any value: it is a
-scale-invariant ratio over the whole catalogue, so at 280 cards a set it asks
-whether any one of about 8,400 printings ever broke out over 30 years, and the
-answer is certain. Fixing it needs the metric redefined per set, and that needs
-a band `05-real-world.md` says the research cannot supply. **It is a design
-decision, not a round.**
+- **`diff.lateIdleSurvives`.** A studio that runs well for twenty years and then
+  stops does not die: back catalogue plus banked cash beats any bill this model
+  would call overhead, and killing it needs a standing bill 20x the current one,
+  costing the reference strategy 60 points of survival. Either a mature studio
+  should be killable by some mechanism that is not overhead, or it is genuinely
+  safe and the gate should be deleted.
+- **`shape.surpriseGrail`** is a scale-invariant ratio over the whole catalogue,
+  so at 280 cards a set it asks whether any one of about 8,400 printings ever
+  broke out over 30 years, and the answer is certain. Fixing it needs the metric
+  redefined per set, and that needs a band `05-real-world.md` says the research
+  cannot supply.
 
 ### The commands
 
 ```
-npm run check                                                   # all 53 gates
-npm run check -- --bank=10                                      # and rebank it
+npm run check                                                   # all 54 gates
+npm run check -- --bank=11                                      # and rebank it
 npm run sim -- --seeds=1 --years=25 --bot=conservative --dist   # the ladder
+npm run sim -- --seeds=20 --years=30 --bot=conservative --cadence=18
 npx tsx harness/check.ts --print-bands                          # after a band edit
 ```
 
@@ -2332,11 +2551,11 @@ then run `npm run check` once more to confirm it is green.
 banked two gates off the probe it fitted on; both sat under the drift threshold,
 so nothing flagged, and it quietly spent the next round's drift budget.
 
-### Ten things this run has learned the hard way
+### Twelve things this run learned the hard way
 
 Each of these cost a round or a correction. They are in `04-workflow.md` as
 rules; this is the short form. Numbers 6 to 8 are stated in full in the Round 7
-section above.
+section.
 
 1. **Run the decile ladder DURING a value sweep, not after it.** Round 4 fitted
    the whole value block off the gate table and shipped a distribution with 40%
@@ -2347,56 +2566,47 @@ section above.
    broke both and detonated at year 40, silently, because nothing measured the
    catalogue past the gated horizon.
 3. **A knob the bot roster cannot reach has not been measured**, however
-   carefully it is fitted. Three so far: `drops.scalperAppealPremium` (the only
-   bot that makes a premium collection never opens the direct store),
-   `printing.qualityGradeShift.budget` (`flooder` is the only budget bot and it
-   dies at a median year 0.75) and `.archival` (nothing prints it). The fix is a
-   bot, not a value.
+   carefully it is fitted. The fix is a bot, not a value — Round 10 added
+   `lateIdle` for exactly this and it immediately produced a finding no gate
+   could see. Still unreachable: `drops.scalperAppealPremium`,
+   `printing.qualityGradeShift.budget` and `.archival`.
 4. **A cumulative state cannot answer a question about a moment.** A gem rate
-   read off a pop report averages a printing's whole submission history. It
-   understated the age effect by nearly six times — and the same round shipped
-   the identical defect on the quality split one screen further down the same
-   file. When you find a defect of this shape, grep for its siblings before
-   closing the round.
-5. **Measure the claim you are about to write down.** This document has twice
-   recorded something as true of "every bot and every seed" that was measured on
-   three bots at one seed, and was wrong once. Round 5 declared collector
-   holding unfixable on that basis; Round 5b fixed it.
+   read off a pop report averages a printing's whole submission history. When
+   you find a defect of this shape, grep for its siblings before closing.
+5. **Measure the claim you are about to write down.** Round 5 declared collector
+   holding unfixable on three bots at one seed; Round 5b fixed it. Round 10
+   found the same fault in the `weeklyOverheadBase` comment.
 9. **Never discard stderr in a sweep, and never trust `out/runs.csv` without
-   checking the exit code.** A silenced sweep in Round 8 threw on every leg,
-   left the previous run's CSV in place, and read back as three identical rows
-   — a perfectly convincing measurement that a live knob was inert. A sweep loop
-   writes its log to a file and reports a non-zero exit.
-10. **Read the knob before you turn it. The name is not the mechanism.** Round 9
-   was handed three instructions and all three were backwards.
-   `hype.defaultLeadWeeks` counted forward from the commit, not back from the
-   release, so lowering it LENGTHENED the window it was supposed to shorten.
-   `hype.marketingReference` is the bend in a log curve, so lowering it makes
-   cash-bought hype stronger, not weaker. And a prerelease had never been
-   revenue-positive, so the change the plan asked for had nothing to act on. Ten
-   minutes in `engine.ts` would have caught all three. Where a name and an
-   arithmetic disagree, fix the name in the same round — Round 9 did, and the
-   trap is gone.
-
-### Before you touch the value engine again
-
-```
-npm run check                                                   # all 53 gates
-npm run check -- --bank=10                                      # and bank it
-npm run sim -- --seeds=1 --years=25 --bot=conservative --dist   # the ladder
-```
+   checking the exit code.** A silenced sweep in Round 8 read back as three
+   identical rows — a convincing measurement that a live knob was inert.
+10. **Read the knob before you turn it. The name is not the mechanism.** All
+   three of Round 9's instructions were backwards.
+   `hype.defaultLeadWeeks` counted forward from the commit, so lowering it
+   lengthened the window it was meant to shorten. Where a name and the
+   arithmetic disagree, fix the name in the same round.
+11. **Check how a gate AGGREGATES before you believe it moved.**
+   `diff.flopRate` was a mean of per-run rates, so one 11-set run that died
+   early outvoted nineteen full ones and the gate swung 3x on a single seed. A
+   rate over runs is pooled, never averaged.
+12. **A mechanism fix has a blast radius, and it lands on whoever the mechanism
+   was not aimed at.** Round 10 gated the borrow ceiling on recent sales to stop
+   the bank funding an idle studio. It killed `allIn` at year 0.2 in every seed
+   instead — a bot that commits in week 8 against a release 18 weeks out has no
+   sales to be measured on. The grace period is the fix; the lesson is to look
+   at who ELSE the new test is being applied to before reading the gates.
 
 ### The scratch scripts are gone
 
-Rounds 7, 8 and 9 needed none of them: every sweep was `npm run sim --set=...`
-read back from `out/<dir>/runs.csv`, and the numbers the harness could not
-produce (`revenue`, `artSpendShare`, `marketingShare`) were added to
-`harness/metrics.ts` instead of measured in a probe. Prefer that order — a
-metric the suite owns cannot drift away from the claim it supports.
+Rounds 7 to 10 needed none. Every sweep was `npm run sim --set=...` read back
+from `out/<dir>/runs.csv`, and the numbers the harness could not produce were
+added to `harness/metrics.ts` instead of measured in a probe: `revenue` and
+`artSpendShare` in Round 7, `marketingShare` in Round 9, and `overheadSpend`,
+`overheadShare`, `storageSpend`, `interestSpend` and `audienceScale` in Round
+10. Prefer that order — a metric the suite owns cannot drift away from the claim
+it supports.
 
-Rounds 5 and 6 leaned on throwaway scripts under `out/scratch/`. **`out/` is
-gitignored, so none of them are in the repo.** They are cheap to rewrite and the
-method matters more than the code: each one builds `RunTask`s, calls `runBatch`
-from `harness/batch.ts` with 12 jobs, and reduces `RunMetrics` to a median per
-config point. If a later round wants a screen permanently, promote it into
-`harness/` rather than rebuilding it a third time.
+**`out/` is gitignored**, so the throwaway scripts Rounds 5 and 6 used are not
+in the repo. They are cheap to rewrite and the method matters more than the
+code: build `RunTask`s, call `runBatch` from `harness/batch.ts` with 12 jobs,
+and reduce `RunMetrics` to a median per config point. If a later round wants a
+screen permanently, promote it into `harness/`.

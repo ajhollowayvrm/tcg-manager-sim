@@ -160,6 +160,26 @@ export interface RunMetrics {
   /** Graders taking submissions at the end of the run. The third is brand-gated. */
   gradersActive: number;
 
+  /** Studio overhead paid over the run, in dollars. The standing bill. */
+  overheadSpend: number;
+  /**
+   * Overhead as a share of revenue. The dollar total cannot say whether the
+   * bill is heavy: the same $156,000 a year is fatal to a year-1 studio and
+   * invisible to a year-40 one, which is the whole reason Round 10 scales it
+   * with the audience. Null before any sale.
+   */
+  overheadShare: number | null;
+  /** Warehousing paid over the run, in dollars. */
+  storageSpend: number;
+  /** Debt service paid over the run, in dollars. */
+  interestSpend: number;
+  /**
+   * Engaged audience against the year-0 denominator — `audienceScale` as the
+   * engine reads it. 1 is the opening market. It is the number every absolute
+   * count in the model is divided by, so it is what "scale with the audience"
+   * means in practice.
+   */
+  audienceScale: number;
   /** Art commissions and standing arrangements, in dollars. */
   artSpend: number;
   /** Everything the studio ever took in, in dollars. Sales only, not borrowing. */
@@ -639,6 +659,19 @@ export function computeMetrics(
   const revenue = pub.ledger
     .filter(e => e.category === 'sales')
     .reduce((n, e) => n + e.amount, 0) / 100;
+  // The standing bill, split from the discretionary one. Overhead and storage
+  // are what the studio pays for existing and for holding stock; everything
+  // else on the ledger is a decision. Round 10 tunes the standing bill, and it
+  // can only be read against what the studio earns.
+  const overheadSpend = pub.ledger
+    .filter(e => e.category === 'overhead')
+    .reduce((n, e) => n - e.amount, 0) / 100;
+  const storageSpend = pub.ledger
+    .filter(e => e.category === 'storage')
+    .reduce((n, e) => n - e.amount, 0) / 100;
+  const interestSpend = pub.ledger
+    .filter(e => e.category === 'interest')
+    .reduce((n, e) => n - e.amount, 0) / 100;
   const artSpend = pub.ledger
     .filter(e => e.category === 'art_commission' || e.category === 'staff')
     .reduce((n, e) => n - e.amount, 0) / 100;
@@ -817,6 +850,11 @@ export function computeMetrics(
     gem10Premium,
     printingsGraded,
     gradersActive,
+    overheadSpend,
+    overheadShare: revenue > 0 ? overheadSpend / revenue : null,
+    storageSpend,
+    interestSpend,
+    audienceScale: engagedTotal(s) / s.config.attention.referenceAudience,
     artSpend,
     revenue,
     artSpendShare: revenue > 0 ? artSpend / revenue : null,

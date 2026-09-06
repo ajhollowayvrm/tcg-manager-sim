@@ -122,12 +122,12 @@ The sharpest penalty in the model. `fatigueResponse` is
 
 | Path | Value | What it moves | Status |
 |---|---|---|---|
-| `attention.referenceRunUnits` | 5000 | Print run one region's demand is measured against. **The single most load-bearing number in the model.** At 8000 a reference run cleared 96% and flopped 2% of the time, so the blind bet had no variance. At 5000 it clears 87% and flops 11%. | swept |
+| `attention.referenceRunUnits` | 5000 | Print run one region's demand is measured against. **The single most load-bearing number in the model.** At 8000 a reference run cleared 96% and flopped 2% of the time, so the blind bet had no variance. At 5000 it clears 87% and flops 11%. [round 10] It is the lever on the blind bet's downside, which has gone: the roster now pools a 0.005 flop rate and sits on the sell-through ceiling. 5000 -> 3500 restores both and costs `conservative` 15 points of survival — a demand round's trade, not a finance round's. | swept |
 | `attention.referenceAudience` | 600000 | Audience the run is measured at. With the line above, a reference run into the starting audience sells as it did before demand was decoupled from print size. | structural |
 | `attention.perReleaseCost` | 0.22 | Attention one release spends. | first-guess |
 | `attention.regenPerTick` | 0.02 | Weekly attention recovery. | first-guess |
 | `attention.fatigueGain` | 0.18 | Fatigue one release adds. | swept |
-| `attention.fatigueDecay` | 0.015 | Proportional weekly decay. Proportional, not flat: a flat decay makes fatigue bimodal and the response curve stops discriminating. | swept |
+| `attention.fatigueDecay` | 0.015 | Proportional weekly decay. Proportional, not flat: a flat decay makes fatigue bimodal and the response curve stops discriminating. [round 10] Re-measured with the new `--cadence` flag: the release optimum has drifted from 18 weeks to 26, and a 14-week cadence kills 100% of runs. 0.03 restores the 18-week optimum and breaks four difficulty gates. Measured, not shipped. | swept |
 | `attention.fatigueBite` | 0.97 | Demand lost at saturated fatigue. This is what makes flooding fatal. The old 0.6 let a flooder keep 40% of demand whatever it did. | swept |
 | `attention.fatigueExponent` | 2 | Protects the careful publisher only. Above 1 it makes low fatigue nearly free. It does **not** sharpen the mid-range penalty. | swept |
 | `attention.fatigueWarnThreshold` | 0.45 | Mean fatigue that emits `fatigueWarning`. | first-guess |
@@ -202,13 +202,15 @@ unreachable.
 
 | Path | Value | What it moves | Status |
 |---|---|---|---|
-| `finance.weeklyOverheadBase` | 100000 | $1,000/week = $52k/year. At $2,000 the base alone kills every small studio: `specialtyOnly` went 100% to 0% survival. | swept |
+| `finance.weeklyOverheadBase` | 100000 | $1,000/week = $52k/year. At $2,000 the base alone kills every small studio. [round 10] The claim that $1,000 is "survivable on its own" is wrong: `specialtyOnly` survives 0% over 20 seeds x 30 years, with a standing bill worth 82% of its revenue. The base is also what pins `startingCash` — lifting capital without lifting this takes `diff.idleDies` from 8.8 years to 17.8. | swept |
+| `finance.overheadAudienceExponent` | 1.0 | How hard the standing bill follows the market: `max(1, (audienceScale / overheadReferenceScale) ** exp)`. [round 10] NEW. A flat bill fell from 35% of revenue in year 1 to 1.9% by year 50. Free at 0.35, 0.7 and 1.0 alike — only the mature share moves. | swept |
+| `finance.overheadReferenceScale` | 10 | The market size the weekly overhead lines are quoted at, and the point past which the bill starts to follow the market. [round 10] NEW. The floor is what makes the exponent affordable — see the Round 10 handoff section. | swept |
 | `finance.weeklyOverheadPerChannel` | 25000 | $250/week per channel. Reach is what costs money to run. | swept |
 | `finance.weeklyOverheadPerRegion` | 60000 | $600/week per region past the home market. An office abroad. | swept |
 | `finance.storagePerUnitPerTick` | 1 | $0.01 per unsold unit per week. Nothing on a 20,000-unit tail (~$10k/year), ruinous on 1.2M units (~$624k/year against $442k revenue). **Overprint death is unreachable without it.** | swept |
-| `finance.interestBase` | 0.14 | Annual interest before credit. Charged every 4 ticks as `(base - credit*creditToRate)/13`. | first-guess |
+| `finance.interestBase` | 0.14 | Annual interest before credit. Charged every 4 ticks as `(base - credit*creditToRate)/13`. [round 10] Swept 0.08/0.14/0.22 over 20 seeds x 30 years: the roster does not move. Median peak debt is $60,000, so the rate is worth $8,400 a year. **Inert until debt matters.** | measured, inert |
 | `finance.creditToRate` | 0.08 | How far good credit cuts the rate. | first-guess |
-| `finance.borrowCeilingMultiple` | 2.5 | Debt ceiling, as a multiple of a hardcoded $500,000 base times `(0.3 + credit)`. See [02-hardcoded.md](02-hardcoded.md). | first-guess |
+| `finance.borrowCeilingMultiple` | 2.5 | Debt ceiling, as a multiple of `borrowCeilingBase` times `(0.3 + credit)`. [round 10] The ceiling is now also scaled by the studio's own recent sales (`borrowCeilingRevenueReference`, `borrowCeilingIdleFloor`) outside a two-year opening grace (`borrowCeilingGraceTicks`). A lender lends against the business: that is what fixed `diff.idleDies`. | first-guess |
 | `finance.brandConvergenceRate` | 0.01 | How fast brand standing follows its affection-and-goodwill target. | fitted |
 
 Sizing reference: `conservative` earns ~$442k/year and spends ~$148k printing.

@@ -39,6 +39,7 @@ npm run sim:quick
 npm run sim -- --seeds=40 --years=50 --bot=all
 npm run sim -- --set=value.noiseSigma=0.09 --set=attention.fatigueGain=0.05
 npm run sim -- --seeds=1 --years=25 --bot=conservative --dist
+npm run sim -- --cadence=18            # override every set bot's release cadence
 npm run sim -- --jobs=1          # force the synchronous path
 npm run typecheck
 ```

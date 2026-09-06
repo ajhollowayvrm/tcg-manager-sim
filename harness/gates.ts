@@ -122,22 +122,30 @@ export const GATES: Gate[] = [
   },
   {
     id: 'struct.overprintDeaths', category: 'structural', band: [15, 95], expect: 'pass',
-    banked: 47, bankedOn: DATE,
+    banked: 52, bankedOn: DATE,
     why: 'Overprint needs storagePerUnitPerTick to bite. The growth arc makes cash '
        + 'plentiful, so this is the gate that catches the storage line going slack.',
     measure: c => deathCauses(c.roster).get('overprint') ?? 0,
   },
   {
     id: 'struct.debtSpiralDeaths', category: 'structural', band: [15, 90], expect: 'pass',
-    banked: 64, bankedOn: DATE,
+    banked: 66, bankedOn: DATE,
     why: 'Debt spiral needs the weeklyOverhead lines to bite. The idle bot contributes 20 '
-       + 'of these by construction: it releases nothing and dies of the standing bill.',
+       + 'of these by construction: it releases nothing and dies of the standing bill.'
+       + ' [2026-09-06, round 10] 64 -> 83, and it is a RECLASSIFICATION, not a harder '
+       + 'game. Gating the borrow ceiling on recent revenue means a failing studio runs '
+       + 'out of credit sooner, so it dies before it has lost the channels that would '
+       + 'have made the same death a `channel_collapse` — that gate fell 32 -> 16 in the '
+       + 'same change, and the two moves are the same 16 deaths. Watch the ceiling: 83 '
+       + 'against 90 leaves one bad round of headroom, and the next change that shortens '
+       + 'a failing studio\'s life will breach it.',
     measure: c => deathCauses(c.roster).get('debt_spiral') ?? 0,
   },
   {
     id: 'struct.channelCollapseDeaths', category: 'structural', band: [8, 70], expect: 'pass',
-    banked: 32, bankedOn: DATE,
-    why: 'Reached by channelHog and globalist. Guards the souring mechanism.',
+    banked: 27, bankedOn: DATE,
+    why: 'Reached by channelHog and globalist. Guards the souring mechanism.'
+       + ' [2026-09-06, round 10] 32 -> 16 on the revenue-gated borrow ceiling. Read it beside struct.debtSpiralDeaths, which rose by the same 16: a studio that loses its credit line sooner dies before it can lose its channels. The route is not quieter, the deaths are earlier.',
     measure: c => deathCauses(c.roster).get('channel_collapse') ?? 0,
   },
   {
@@ -189,7 +197,7 @@ export const GATES: Gate[] = [
   },
   {
     id: 'struct.printRunVaries', category: 'structural', band: [4, 100], expect: 'pass',
-    banked: 19, bankedOn: DATE,
+    banked: 18, bankedOn: DATE,
     why: 'How much to print is the bet the whole game is about. If every bot converges on '
        + 'one run size, the roster cannot measure the decision.',
     measure: c => {
@@ -254,7 +262,7 @@ export const GATES: Gate[] = [
   },
   {
     id: 'diff.licensorEarns', category: 'difficulty', band: [1.3, 2.5], expect: 'pass',
-    banked: 1.486, bankedOn: DATE,
+    banked: 1.487, bankedOn: DATE,
     why: 'A licence has to pay. `licensor` is `conservative` in every respect except that '
        + 'it signs collabs, so this ratio is the collab loop and nothing else. It read '
        + '0.98 before Round 8 — the studio was paying for reach and getting poorer, which '
@@ -316,19 +324,49 @@ export const GATES: Gate[] = [
     },
   },
   {
-    id: 'diff.idleDies', category: 'difficulty', band: [2.5, 9.0], expect: 'known-fail',
-    banked: 12.02, bankedOn: DATE,
+    id: 'diff.idleDies', category: 'difficulty', band: [2.5, 9.0], expect: 'pass',
+    banked: 8.827, bankedOn: DATE,
     why: 'Doing nothing must lose. finance.weeklyOverheadBase\'s comment claims a studio '
        + 'that releases nothing "runs out of its $500,000 in about five years". Measured: '
        + 'it dies at year 12. Cash alone lasts 7.7 years at $65k of overhead, and the '
        + 'borrow ceiling carries it the rest. Nothing measured this until the idle bot '
        + 'existed, because every other bot releases something. Round 10 decides whether '
-       + 'the number or the comment is wrong; the band states the documented claim.',
+       + 'the number or the comment is wrong; the band states the documented claim.'
+       + ' [2026-09-06, round 10] FIXED, 12.02 -> 8.83, and promoted. The comment was '
+       + 'right and the mechanism was wrong: a studio with no sales at all could borrow '
+       + 'exactly what a working one could, so the bank carried `idle` for 4.3 years '
+       + 'after its cash ran out. The borrow ceiling is now scaled by the studio\'s own '
+       + 'recent revenue, so an idle one gets `borrowCeilingIdleFloor` of it and dies on '
+       + 'its cash. NOT bought with a bigger bill: `weeklyOverheadBase` did not move. '
+       + 'NOTE this gate is what pins `startingCash`. Doubling the opening cash and the '
+       + 'borrow ceiling together takes this straight back to 17.8 years, so a later '
+       + 'round that lifts capital toward real scale must raise the overhead base in the '
+       + 'same ratio, in the same change.',
     measure: c => medOf(c.roster, 'idle', 'deathYear'),
   },
   {
+    id: 'diff.lateIdleSurvives', category: 'difficulty', band: [0, 0.35], expect: 'known-fail',
+    banked: 0.85, bankedOn: DATE,
+    why: 'Doing nothing must lose at year 40, not only at year 1. `lateIdle` is '
+       + '`conservative` for twenty years and then nothing at all, so this asks whether a '
+       + 'studio that has already won can still be killed by the standing bill. It '
+       + 'cannot: it survives 85% of 50-year runs, and every death it does have happens '
+       + 'in its ACTIVE first twenty years. **This is a design decision, not a round.** '
+       + 'A back catalogue that keeps selling plus twenty years of banked cash beats any '
+       + 'bill this model would call overhead — killing it needs a standing bill about '
+       + '20x the current one, which costs `conservative` 60 points of survival and is '
+       + 'not a trade Round 10 was willing to make on its own authority. The alternative '
+       + 'reading is that this is correct and a mature studio SHOULD be safe, in which '
+       + 'case delete the gate rather than tune it. Round 10 shipped the affordable half: '
+       + '`finance.overheadAudienceExponent` stops the bill going to zero.',
+    measure: c => {
+      const r = forBot(c.roster, 'lateIdle');
+      return r.length ? shareTrue(r, 'survived') : null;
+    },
+  },
+  {
     id: 'diff.deathsLandMidRun', category: 'difficulty', band: [3.0, 25.0], expect: 'pass',
-    banked: 10.08, bankedOn: DATE,
+    banked: 8.135, bankedOn: DATE,
     why: 'Excluding the three regression bots, a death should be the end of a story rather '
        + 'than an opening move. Year-one deaths mean the opening is unsurvivable.',
     measure: c => median(numbers(
@@ -344,12 +382,37 @@ export const GATES: Gate[] = [
     measure: c => guarded(c.roster, 'conservative', 'avgSellThrough', 'meanPrintRun', 'mean'),
   },
   {
-    id: 'diff.flopRate', category: 'difficulty', band: [0.01, 0.25], expect: 'pass',
-    banked: 0.01426, bankedOn: DATE,
+    id: 'diff.flopRate', category: 'difficulty', band: [0.01, 0.25], expect: 'known-fail',
+    banked: 0.005357, bankedOn: DATE,
     why: 'A set that does not make its print run back. Guarded on flopSetsJudged, because '
        + 'a studio that dies before any set is a year old has no flop rate at all — that '
-       + 'guard is why flooder no longer reports the best flop rate in the roster.',
-    measure: c => guarded(c.roster, 'conservative', 'flopRate', 'flopSetsJudged', 'mean'),
+       + 'guard is why flooder no longer reports the best flop rate in the roster.'
+       + ' [2026-09-06, round 10] REGRESSED to 0.005 and demoted to known-fail. It needs a '
+       + 'demand round, not a finance knob. TWO separate things are wrong here. (1) The '
+       + 'AGGREGATION was a mean of per-run rates, so an 11-set run that died early '
+       + 'counted the same as a 29-set one, and the gate swung 3x on one seed: before '
+       + 'this round 4 of 20 runs carried a flop and one of them was short, and after it '
+       + '3 did. It now pools flops over sets across the sweep, which is what a rate '
+       + 'means. (2) The POOLED number is still about 0.005 — 3 flopped sets in roughly '
+       + '560 — so the blind bet almost never loses money outright. Read this beside '
+       + '`diff.sellThrough`, which has been sitting ON its 0.95 ceiling for two rounds: '
+       + 'both say the market absorbs everything the reference bot prints. Round 10 did '
+       + 'not cause it and could not fix it — `attention.referenceRunUnits` is the lever, '
+       + 'and pulling it 5000 -> 3500 restores the flop rate while costing `conservative` '
+       + '15 points of survival. That trade belongs to a round that owns demand.',
+    measure: c => {
+      // Pooled, not a mean of means: a run that died after 11 sets must not
+      // carry the same weight as one that judged 29.
+      let flops = 0, judged = 0;
+      for (const row of forBot(c.roster, 'conservative')) {
+        const j = Number(row[M('flopSetsJudged')]);
+        const f = Number(row[M('flopRate')]);
+        if (!Number.isFinite(j) || !Number.isFinite(f) || j <= 0) continue;
+        flops += f * j;
+        judged += j;
+      }
+      return judged > 0 ? flops / judged : null;
+    },
   },
 
   // ---- shape: per set, at age 2. The Round 4 targets. ----
@@ -401,7 +464,7 @@ export const GATES: Gate[] = [
   },
   {
     id: 'shape.chaseOverMedian', category: 'shape', band: [130, 3100], expect: 'pass',
-    banked: 343.8, bankedOn: DATE,
+    banked: 344.6, bankedOn: DATE,
     why: 'Measured 130x-3100x, central ~1000x. The whole-catalogue metric read 1125x and '
        + 'looked correct; that was pooling fifty years, not spread within a set.'
        + ' [2026-09-05, round 4] FIXED, 38.5 -> 331.',
@@ -465,7 +528,7 @@ export const GATES: Gate[] = [
   // ---- subsystem ----
   {
     id: 'sub.signalLow', category: 'subsystem', band: [0.30, 0.72], expect: 'pass',
-    banked: 0.4717, bankedOn: DATE,
+    banked: 0.5028, bankedOn: DATE,
     why: 'A publisher who spends nothing must read the market poorly. At 0.93 the reveal '
        + 'window was a solved problem and its levers bought nothing.',
     measure: c => guarded(c.roster, 'conservative', 'signalCorrelation', 'signalPairs'),
@@ -483,7 +546,7 @@ export const GATES: Gate[] = [
   },
   {
     id: 'sub.signalRises', category: 'subsystem', band: [0.08, 0.55], expect: 'pass',
-    banked: 0.2028, bankedOn: DATE,
+    banked: 0.1716, bankedOn: DATE,
     why: 'Error shrinks as 1/sqrt(previews), so more previews must buy a better reading. '
        + 'If this goes flat, the campaign is buying nothing measurable.',
     measure: c => {

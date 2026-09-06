@@ -27,6 +27,13 @@ export interface RunTask {
   overrides: Record<string, number>;
   /** Set ages, in years, to snapshot. Empty disables the sampler. */
   snapshotAges?: number[];
+  /**
+   * Release cadence override, in weeks, applied to every set bot in the run.
+   * It replaces a constant that used to be written into each bot definition,
+   * so the cadence table in HANDOFF.md is sweepable. It changes no draw count
+   * on its own: a bot that releases less often simply submits fewer decisions.
+   */
+  cadenceWeeks?: number;
 }
 
 export interface RunResult {
@@ -46,7 +53,8 @@ export function runOne(
   const makeBot = BOTS[task.botName];
   if (!makeBot) throw new Error(`unknown bot: ${task.botName}`);
   const config = withOverrides(defaultConfig, task.overrides);
-  const bot = makeBot();
+  const bot = makeBot(task.cadenceWeeks === undefined ? undefined
+    : { cadenceWeeks: task.cadenceWeeks });
   const seed = `${task.botName}-${task.seedIndex}`;
   const state = createWorld(seed, config);
   const violations: string[] = [];

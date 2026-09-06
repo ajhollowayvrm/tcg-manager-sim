@@ -169,6 +169,26 @@ export const defaultConfig: SimConfig = {
     // release cadence from 6 to 78 weeks: this triple puts the profit optimum at
     // ~18 weeks, kills a 6-10 week cadence outright, and taxes a once-a-year
     // publisher under 5% of demand.
+    //
+    // [round 10] MEASURED AND LEFT ALONE. The optimum has drifted: re-measured
+    // on `conservative` over 20 seeds x 30 years with the new `--cadence` flag,
+    // it now sits at 26 weeks, an 18-week cadence kills 55% of runs and a
+    // 14-week one — roughly what Wizards actually ships — kills 100%.
+    //
+    // 0.03 puts the optimum back on 18 weeks and leaves 14 weeks survivable
+    // 45% of the time, which is the shape this comment claims. It is NOT
+    // shipped, because it is not affordable here: faster recovery is more
+    // demand everywhere, and it breaks four difficulty gates in one move —
+    // `diff.sellThrough` 0.949 -> 0.956, `diff.flopRate` 0.014 -> 0.003,
+    // `diff.allInSurvival` 0.300 -> 0, `diff.attentionBurnerDies` 1 -> 0.750.
+    // The obvious compensating knob does not pay for it either: pulling
+    // `referenceRunUnits` 5000 -> 3500 restores the sell-through and the flop
+    // rate and costs `conservative` 15 points of survival, taking the count of
+    // always-surviving bots below its own band floor.
+    //
+    // This is a demand-side re-fit wearing a difficulty knob's clothes, and the
+    // plan orders the demand rounds BEFORE this one for that reason. See the
+    // Round 10 handoff section: it needs a round, not a knob.
     fatigueDecay: 0.015,
     fatigueBite: 0.97,
     fatigueExponent: 2,
@@ -342,6 +362,41 @@ export const defaultConfig: SimConfig = {
     interestBase: 0.14,
     creditToRate: 0.08,
     borrowCeilingMultiple: 2.5,
+    /**
+     * A lender lends against the business, not against the door being open.
+     *
+     * The ceiling used to read `base * multiple * (0.3 + credit)` and nothing
+     * else, so a studio with no sales at all could borrow exactly what a
+     * working one could. That is what kept the `idle` bot alive to year 12: its
+     * $500,000 lasted 7.7 years and the bank carried it for another 4.3 on no
+     * revenue whatsoever.
+     *
+     * The ceiling is now multiplied by
+     * `idleFloor + (1 - idleFloor) * min(1, annualRevenue / revenueReference)`.
+     * A studio at or above the reference borrows what it always could. One with
+     * no sales gets the floor. The reference is deliberately low — one year of
+     * `conservative`'s opening revenue — because this is a solvency test, not a
+     * growth lever, and a studio that is selling anything at all should not
+     * find its credit line rationed.
+     */
+    borrowCeilingRevenueWeeks: 52,
+    /**
+     * A new studio borrows against its plan, not against its sales, because it
+     * has not had time to have any. Inside this window the full ceiling is
+     * available whatever the revenue test says.
+     *
+     * It is not a nicety. Without it the revenue gate fires hardest on exactly
+     * the publisher it was not aimed at: `allIn` commits its bankroll in week 8
+     * against a release 18 weeks out, so it went cash-negative with no sales on
+     * the books, found its credit line at the floor, and died at year 0.2 in
+     * every seed — before its first set shipped, having never placed the bet
+     * the bot exists to measure. Two years covers the first release and its
+     * first year of selling, and it is far short of the 7.7 years `idle` takes
+     * to burn its cash, so it does not weaken the test it was built for.
+     */
+    borrowCeilingGraceTicks: 104,
+    borrowCeilingRevenueReference: C(400_000_00),
+    borrowCeilingIdleFloor: 0.1,
     brandConvergenceRate: 0.01,
 
     // Time is not free. Every outflow in the model used to be discretionary —
@@ -357,13 +412,63 @@ export const defaultConfig: SimConfig = {
     // years, which is what makes doing nothing a way to lose.
     // Swept over 20 seeds x 30 years. At $2,000 a week the base alone is
     // $104k a year and it kills every small studio outright — `specialtyOnly`
-    // went from 100% survival to 0%. At $1,000 the base is survivable on its
-    // own and the per-channel line is what makes a large studio expensive,
-    // which is the right way round: reach is what costs money to run.
+    // went from 100% survival to 0%. At $1,000 the per-channel line is what
+    // makes a large studio expensive, which is the right way round: reach is
+    // what costs money to run.
+    //
+    // [round 10] The claim that "$1,000 is survivable on its own" is WRONG, and
+    // the number is not. `specialtyOnly` measures 0% survival at $1,000 over 20
+    // seeds x 30 years, dying of `debt_spiral` at a median year 10.6. It is not
+    // the base rate that kills it: its whole standing bill is 82% of its
+    // revenue, because it earns about $94,000 a year against a $77,000 bill. A
+    // studio that small is not viable at any overhead this model would call a
+    // bill, and the fix is a bigger niche business, not a cheaper one. The
+    // survival number quoted above was measured at a shorter horizon than the
+    // 30 years the suite now runs.
     weeklyOverheadBase: C(1_000_00),
     weeklyOverheadPerChannel: C(250_00),
     /** Per region past the home market. An office abroad is a standing cost. */
     weeklyOverheadPerRegion: C(600_00),
+    /**
+     * How hard the whole standing bill follows the market. The three lines
+     * above are multiplied by `audienceScale ** overheadAudienceExponent`, so 0
+     * is a flat bill and 1 is one that grows exactly as fast as the market
+     * around it.
+     *
+     * A flat bill does not stay a bill. Measured over 20 seeds, `conservative`
+     * pays about 35% of its revenue in overhead in year 1 and 1.9% by year 50,
+     * because the market it sells into grows about 25x and the bill does not
+     * move. Four of the five death routes in CONCEPT.md §7 need the standing
+     * bill to keep biting, and a line worth 1.9% cannot bite anything.
+     *
+     * 1 is affordable only because the multiplier is FLOORED at 1 — see
+     * `overheadReferenceScale`. Without the floor, an exponent of 1 quoted at
+     * day one costs `conservative` 60 points of survival, and quoted at a 10x
+     * market it hands every small studio a 55% discount for its whole life and
+     * takes `diff.idleDies` from 8.8 years to 18.7. Floored, the same exponent
+     * changes no survival number on the roster at either horizon and lifts the
+     * mature overhead share from 1.9% to 3.1% — next to the only real anchor we
+     * have, Stonemaier's $25M on 8 staff.
+     */
+    overheadAudienceExponent: 1.0,
+    /**
+     * The market size past which the bill starts to follow the market. The
+     * multiplier is `max(1, (audienceScale / overheadReferenceScale) ** exp)`,
+     * so the three weekly lines above are the bill for every studio up to a 10x
+     * market, and only a studio that outgrows one pays more.
+     *
+     * The floor is what makes this affordable, and it was not obvious. A plain
+     * power law cannot be neutral at day one AND neutral where the roster dies:
+     * quoted at day one it raises the bill 1.6x exactly where the deaths
+     * cluster and costs `conservative` 15 points of survival; quoted at 10x it
+     * halves the early bill and lets `idle` live to 18.7 years. Flooring it
+     * keeps every early and mid-game death route at the value Rounds 0-9 fitted
+     * and adds pressure only in the tail nothing was measuring.
+     *
+     * 10 is where the roster's deaths cluster, which is why it is the point the
+     * bill is allowed to start moving.
+     */
+    overheadReferenceScale: 10,
     /**
      * Warehousing, per unsold unit per week. Deliberately small: it is nothing
      * to a publisher holding a normal tail of stock and ruinous to one holding
