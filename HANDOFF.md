@@ -2068,29 +2068,103 @@ Rounds 0 to 8 are done and banked under `docs/tuning/bank/`. The suite stands at
 **48 PASS, 0 FAIL, 4 KNOWN, 0 DRIFT** across 52 gates, and takes about two and a
 half minutes.
 
-### What Round 9 is for
+### Read this before you change anything
 
-`hype.defaultLeadWeeks` 12 -> 3 and `hypeBuilder.revealLeadWeeks` 16 -> 3.
-`marketingReference` and `marketingHypeGain` come down so cash-bought hype is
-weak per dollar, and the load shifts onto prereleases. The plan recommends
-making a prerelease **cost-neutral rather than revenue-positive** — a free lever
-with an upside is not a decision.
+**Round 9 renumbers the main RNG stream, and it is the last round allowed to.**
+`tickReveal` draws one `gauss` per preview, which is two `rand` calls on
+`s.rng`. Shrinking the window from 12 previews to 3 removes 18 draws per set,
+and every draw after the first preview of the first set shifts. So:
 
-Exit criteria: `marketingTotal` under 1% of revenue; `signalCorrelation` still
-rises with previews and lands 0.5-0.9; a campaign pays only when it lets you
-print a bigger run.
+- Every banked value becomes incomparable at the moment the window changes.
+  **Rebank the whole suite** with `npm run check -- --bank=9`.
+- Do not read a Round 8 number against a Round 9 one, including the numbers in
+  the "Licensing" section above.
+- Exit criteria are therefore absolute — bands, invariants, no NaN — never a
+  comparison to an earlier bank. Rounds 2 and 3 worked the same way.
+- Make the renumbering change FIRST, rebank, and only then tune. Tuning against
+  a bank you are about to invalidate is a round thrown away.
 
-**Round 9 is the one round after Round 3 that may renumber the main RNG stream.**
-`tickReveal` changes its draw count when the window shrinks. Every banked value
-becomes incomparable, so rebank the whole suite and do not read a Round 8 number
-against a Round 9 one.
+### The knobs, and what they read today
 
-**Round 8 left a live warning for it.** The reveal window and the licence now
-compete for the same lever: `licensor` sizes its print run to the demand the
-licence bought, and `campaignRunMultiple` sizes it to the campaign. If Round 9
-weakens bought hype, check `diff.licensorEarns` and `diff.licensorSurvival` in
-the same sweep — they are the two newest gates and neither has survived a
-renumbering yet.
+| Path | Now | Round 9 target |
+|---|---|---|
+| `hype.defaultLeadWeeks` | 12 | 3 |
+| `hype.defaultCadenceWeeks` | 2 | — |
+| `hype.marketingReference` | $100,000 | down |
+| `hype.marketingHypeGain` | 1.2 | down |
+| `hype.prereleaseCostPerScale` | $25,000 | see below |
+| `hype.prereleaseHypeGain` | 0.12 | — |
+| `hype.signalNoiseSigma` | 2.0 | holds the signal band |
+
+`hypeBuilder` and `hypeGambler` both carry `revealLeadWeeks: 16` and
+`revealCadenceWeeks: 1` in `harness/bots.ts`. The plan takes both to 3. They are
+the only bots that campaign, so they are the only bots that will move.
+
+**`marketingHypeGain` was swept in an earlier round and has a reason attached.**
+At 0.35 marketing was strictly dominated by a prerelease at equal spend, so
+nobody would ever buy it. 1.2 makes it competitive and still the dearer route to
+the same hype, which is the relationship the round wanted. Lowering it is
+allowed — that is this round's job — but do not lower it past the point where
+cash-bought hype is dominated again, or the lever stops being a decision.
+
+### One premise in the plan to check before acting on it
+
+The plan says to make a prerelease **cost-neutral rather than revenue-positive**,
+on the grounds that a free lever with an upside is not a decision. **Verify that
+premise first.** `hostPrerelease` in `engine.ts` books a `category: 'event'`
+debit and no revenue at all — it buys hype, segment goodwill and LGS
+relationship for cash, and sells nothing. So it is already revenue-negative, and
+the plan's recommendation may be describing a model that no longer exists. If it
+is, say so in the round notes rather than implementing a change to match it.
+
+### Exit criteria
+
+- `marketingTotal` under 1% of revenue. The metric already exists in
+  `harness/metrics.ts` and prints in the hype table.
+- `signalCorrelation` still rises with previews and lands 0.5-0.9. The three
+  gates that hold this are `sub.signalLow` (0.447), `sub.signalHigh` (0.826) and
+  `sub.signalRises` (0.379). **A three-preview window is the low end of that
+  spread**, and `signalNoiseSigma: 2.0` was fitted so a default three-preview
+  window reads r = 0.55 — check the fit still holds when 3 becomes the default
+  rather than the floor.
+- The campaign-economics shape survives: a campaign pays only when it lets you
+  print a bigger run.
+
+### The gates most likely to move
+
+| Gate | Reads now | Why it is exposed |
+|---|---|---|
+| `sub.signalLow` | 0.447 | fewer previews at the low end |
+| `sub.signalHigh` | 0.826 | the 16-preview campaign is going to 3 |
+| `sub.signalRises` | 0.379 | the spread between the two shrinks |
+| `diff.hypeGamblerSurvival` | 0.850 | sits on its band ceiling of 0.85 already |
+| `diff.hypeGamblerTopEarner` | 1 | the greedy campaign must stay the top earner |
+| `diff.licensorEarns` | 1.536 | see below |
+| `diff.licensorSurvival` | 0.850 | see below |
+
+**The two licensing gates are the newest and neither has survived a
+renumbering.** Round 8 made `licensor` the only bot whose print run is sized by
+an engine-side quantity — `collabOfferFactor` — rather than by its own options.
+The reveal window and the licence now compete for the same lever: a campaign
+sizes the run through `campaignRunMultiple`, and a licence sizes it through the
+demand it bought. If Round 9 weakens cash-bought hype, read both licensing gates
+in the same sweep rather than assuming they are out of scope.
+
+### The commands
+
+```
+npm run check                                                   # all 52 gates
+npm run check -- --bank=9                                       # and rebank it
+npm run sim -- --seeds=1 --years=25 --bot=conservative --dist   # the ladder
+npx tsx harness/check.ts --print-bands                          # after a band edit
+```
+
+`harness/gates.ts` is the single source of truth for every band.
+`docs/tuning/03-targets.md` holds a generated copy between the `BANDS:START` and
+`BANDS:END` markers, and `static.bandsInSync` fails if they drift. `--bank=N`
+writes `docs/tuning/bank/round-N/` but does **not** write the `banked:` values
+back into `gates.ts` — set those by hand, then regenerate the band table, then
+run `npm run check` once more to confirm it is green.
 
 ### The four remaining known-fails
 
@@ -2169,8 +2243,8 @@ section above.
 ### Before you touch the value engine again
 
 ```
-npm run check                                                   # all 50 gates
-npm run check -- --bank=8                                       # and bank it
+npm run check                                                   # all 52 gates
+npm run check -- --bank=9                                       # and bank it
 npm run sim -- --seeds=1 --years=25 --bot=conservative --dist   # the ladder
 ```
 

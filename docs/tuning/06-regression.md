@@ -63,14 +63,23 @@ inside a wide band, which no pass/fail can see.
 
 ## Known failures, and what owns them
 
-Eleven gates fail by design today. Each one is a later round's job.
+**[2026-09-05, after Round 8] Four gates fail by design.** Rounds 4, 5 and 6
+cleared the nine `shape` gates, `sub.gemRate` and `sub.scalperShare` that this
+table used to list.
 
-| Gates | Owner |
-|---|---|
-| `shape.median`, `under1`, `under25c`, `top1`, `top10`, `gini`, `chaseOverMedian`, `ageCurveDirection`, `ageCurveLate` | Round 4, the value block |
-| `sub.gemRate` | Round 6, grading |
-| `sub.scalperShare` | Round 5, populations |
-| `diff.idleDies` | Round 10, finance |
+| Gate | Reads | Owner |
+|---|---|---|
+| `diff.conservativeSurvives` | 0.900 against [0.95, 1] | Round 10, finance |
+| `diff.idleDies` | 12.019 against [2.5, 9] | Round 10, finance |
+| `sub.channelHogLosesReach` | 7 against [0.5, 6] | Round 11, item 2 |
+| `shape.surpriseGrail` | 1 against [0.1, 0.6] | **nobody** — see below |
+
+`shape.surpriseGrail` cannot be cleared by tuning at any value. It is a
+scale-invariant ratio over the whole catalogue, so at 280 cards a set it asks
+whether any one of about 8,400 printings ever broke out over 30 years, and the
+answer is certain. Fixing it needs the metric redefined per set, and that needs
+a band `05-real-world.md` says the research cannot supply. It is a design
+decision, not a round.
 
 Anything **else** failing is a real regression. Investigate it in the round that
 caused it, not later.
@@ -83,7 +92,10 @@ caused it, not later.
 - **The whole-catalogue price columns** (`medianCardPrice`, `p90`, `p99`, `max`).
   They pool fifty years of printings and the project has decided they are the
   wrong measurement. The per-set columns supersede them.
-- **Collabs, creators and chains.** No targets are measured for any of the three;
-  all are wired for behaviour rather than balance.
+- **Creators and chains.** No targets are measured for either; both are wired
+  for behaviour rather than balance. **Collabs are no longer on this list:**
+  Round 8 gave them `diff.licensorEarns` and `diff.licensorSurvival`, which
+  gate the licence as a trade — it has to pay, and it has to be able to be the
+  wrong licence.
 - **The p99 decile step.** Read from `--dist`, which forces one run. A sample of
   one is not a gate.
