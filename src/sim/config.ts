@@ -149,6 +149,10 @@ export const defaultConfig: SimConfig = {
     relatabilityMax: 96,
     affinityMin: -0.8,
     affinityMax: 0.9,
+    // Exactly 0 on purpose: `ageing` evaluates to exactly 1 and no number
+    // moves. Round 12 fits it. This is the only thing that makes an IP's roll
+    // matter past `relatability`.
+    longevityWeight: 0,
     longevityMin: 0.85,
     longevityMax: 1.18,
   },
@@ -1273,7 +1277,6 @@ export const defaultConfig: SimConfig = {
     startingCollectors: 5_000,
     startingSpeculators: 800,
     startingClimate: 1,
-    startingIndex: 100,
     // Each region is a different shape of bet rather than a bigger version of
     // the same one. Japan is small, rich and opinionated; Latin America is
     // large, poor and cheap to enter; Europe is the safe middle. The taste

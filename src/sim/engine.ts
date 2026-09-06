@@ -1,6 +1,6 @@
 import type {
   SimState, Decision, Tick, Cents, Unit, IpId, CardId, SetId, ProductId, PrintingId, RngState, ChainKind,
-  ProductLineId, RegionId, ChannelId, ArtistId, IpEntity, Card, CardSet, Product,
+  RegionId, ChannelId, ArtistId, IpEntity, Card, CardSet, Product,
   Printing, SimEvent, EventId, SetType, Rarity, ProductKind, PrintQualityTier,
   Treatment, ArtBrief, UnlockState, ChannelAllocation, Channel, SetPerformance,
   Drop, DropId, Grader, GradeTier, GradingSubmission, Collab, CollabId, AudienceSegment, ChainId,
@@ -153,7 +153,7 @@ function createIp(s: SimState, id: IpId, name: string, kind: IpEntity['kind']): 
   const af = s.config.affection;
   bumpRoster(s);
   s.ips[id] = {
-    id, publisherId: s.playerId, name, kind, createdTick: s.tick, relatedIps: [],
+    id, publisherId: s.playerId, name, kind, createdTick: s.tick,
     truth: {
       // The whole game lives in this roll. High variance is deliberate.
       relatability: randRange(r, af.relatabilityMin, af.relatabilityMax),
@@ -164,7 +164,7 @@ function createIp(s: SimState, id: IpId, name: string, kind: IpEntity['kind']): 
     },
     exposure: 0, affection: 4, affectionHistory: emptySeries(s.tick),
     resurgence: 0, resurgenceHistory: emptySeries(s.tick),
-    appearanceCount: 0, cameoCount: 0, firstPrintingId: null, isMascot: false,
+    appearanceCount: 0, cameoCount: 0, firstPrintingId: null,
   };
 }
 
@@ -192,7 +192,6 @@ function createSet(s: SimState, id: SetId, name: string, type: SetType, size: nu
 interface CardOverrides {
   name?: string;
   treatment?: Treatment;
-  serialized?: { runSize: number } | null;
   artBrief?: Partial<ArtBrief>;
   flavorText?: string;
   progressionLink?: { chainId: ChainId; position: number };
@@ -222,7 +221,7 @@ function designCard(
     createdTick: s.tick,
     subjectIp, cameos, rarity,
     treatment: overrides.treatment ?? (rarity === 'common' ? 'none' : 'holo'),
-    serialized: overrides.serialized ?? null, artistId,
+    artistId,
     artBrief: { mood: 'neutral', composition: 'portrait', budget: artist.rate, notes: '', ...overrides.artBrief },
     // A designed card has no art yet. It carries the house floor until a
     // commission lands, which is what makes `commissionArt` a real decision
@@ -319,12 +318,12 @@ function chainTerm(s: SimState, card: Card, chainId: ChainId | undefined, kind: 
 
 function defineProduct(
   s: SimState, id: ProductId, setId: SetId, kind: ProductKind,
-  regionId: RegionId, packs: number, msrp: number, cardsPerPack = 10,
+  regionId: RegionId, packs: number, msrp: number,
 ): void {
   bumpRoster(s);
   s.products[id] = {
-    id, lineId: `line_${kind}` as ProductLineId, setId, regionId, kind,
-    packsPerUnit: packs, cardsPerPack,
+    id, setId, regionId, kind,
+    packsPerUnit: packs,
     msrp: C(msrp), unitCogs: C(0),
     unitsPrinted: 0, unitsRemaining: 0, printedTick: null, allocations: {},
     scalperAppeal: U(kind === 'etb' || kind === 'premiumCollection'
@@ -333,7 +332,7 @@ function defineProduct(
       price: C(msrp), heat: 1, nostalgia: 1, history: emptySeries(s.tick),
       hidden: {
         sealedRemaining: 0, ripRate: s.config.sealed.baseRipRatePerTick,
-        heldByCollectors: U(0.35), contentsValue: 0,
+        contentsValue: 0,
       },
     },
   };
@@ -927,7 +926,7 @@ function applyDecision(s: SimState, d: Decision): void {
     case 'designCard':
       designCard(s, d.payload.id, d.payload.setId, d.payload.subjectIp, d.payload.cameos,
         d.payload.rarity, d.payload.artistId, {
-          name: d.payload.name, treatment: d.payload.treatment, serialized: d.payload.serialized,
+          name: d.payload.name, treatment: d.payload.treatment,
           artBrief: d.payload.artBrief, flavorText: d.payload.flavorText,
           progressionLink: d.payload.progressionLink,
           illustrationLink: d.payload.illustrationLink,
@@ -935,7 +934,7 @@ function applyDecision(s: SimState, d: Decision): void {
       break;
     case 'defineProduct':
       defineProduct(s, d.payload.id, d.payload.setId, d.payload.kind, d.payload.regionId,
-        d.payload.packsPerUnit, d.payload.msrp, d.payload.cardsPerPack);
+        d.payload.packsPerUnit, d.payload.msrp);
       break;
     case 'commitPrintRun':
       commitPrintRun(s, d.payload.setId, d.payload.quantities, d.payload.quality);
@@ -1215,7 +1214,16 @@ function tickAffection(s: SimState, ips: IpEntity[]): void {
       ip.affection += (target - ip.affection) * cfg.convergenceRate * conv;
       ip.exposure *= (1 - cfg.exposureDecayPerTick);
     } else {
-      ip.affection *= (1 - cfg.decayPerTickUnexposed);
+      // `truth.longevity` is the mascot mechanic, and until now it was rolled
+      // for every IP and read by nothing: an IP's roll stopped mattering after
+      // `relatability`. Above 1 the character keeps its hold once the exposure
+      // stops, below 1 it fades faster than the pack.
+      //
+      // `affection.longevityWeight` is 0, so `ageing` is `1 + 0 * x` and
+      // evaluates to exactly 1. Plan 2 fits the weight.
+      const ageing = 1 + cfg.longevityWeight
+        * (1 / Math.max(0.01, ip.truth.longevity) - 1);
+      ip.affection *= (1 - cfg.decayPerTickUnexposed * ageing);
     }
     ip.resurgence *= (1 - cfg.resurgenceDecayPerTick);
     writePoint(ip.affectionHistory, s.tick, ip.affection, 0.04);
@@ -2162,7 +2170,7 @@ function resolveDrop(s: SimState, drop: Drop): void {
 
   drop.result = {
     offered, demand: Math.round(demand), soldToCollectors: toCollectors,
-    soldToScalpers: toScalpers, soldOut: sold >= offered, expectedPremium: premium,
+    soldToScalpers: toScalpers, soldOut: sold >= offered,
   };
 
   if (sold > 0) {
@@ -2917,10 +2925,14 @@ function tickRoster(s: SimState): void {
     const id = nextId(s, 'art') as ArtistId;
     const newcomerRate = Math.round(
       randRange(s.artRng, cfg.newcomerRateMin, cfg.newcomerRateMax)) as Cents;
+    // [round 11 C12] `personality` is CUT — it was drawn and read by nothing.
+    // The DRAW STAYS. Removing it would renumber every later draw on `artRng`
+    // and move eleven rounds of banked numbers for a field that did nothing.
+    // `specialty` is inert rather than cut: Plan 2 fits it.
+    pick(s.artRng, ARTIST_PERSONALITIES);
     s.artists[id] = {
       id,
       name: `Artist ${Object.keys(s.artists).length + 1}`,
-      personality: pick(s.artRng, ARTIST_PERSONALITIES),
       specialty: pick(s.artRng, ARTIST_SPECIALTIES),
       stats: {
         linework: randRange(s.artRng, cfg.newcomerStatMin, cfg.newcomerStatMax),

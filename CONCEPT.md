@@ -332,3 +332,35 @@ Network access is available, but the simulation never depends on it. The game ru
 | Run sharing | Since decisions are data, a seed plus a decision log is a complete shareable run | Off |
 
 **Do not** put the tick loop, price engine, or save state behind a server. A local run simulates 50 years in under a second; round-tripping that to a backend would be slower, costlier, and add failure modes for zero gameplay gain.
+
+---
+
+## 13. Cut fields — decisions, not omissions
+
+**Struck on 2026-09-06, Round 11 C12.** Each of these was declared in the model
+and read by nothing. A struck system is a decision; an unmentioned one is a bug,
+which is why they are listed rather than quietly deleted. Do not re-add one
+expecting the rest of this document to fit around it.
+
+| Field | Why it is gone |
+|---|---|
+| `Card.serialized` | Serial-numbered print runs. Never written by any decision, never read by the value engine. |
+| `Product.cardsPerPack` | **A second representation of a live quantity.** `Printing.pullRate` already carries cards per pack, and the two disagreeing by four times WAS the Round 4a bug. A dead duplicate is worse than a dead field: it is a defect waiting for somebody to wire it. |
+| `Product.market.hidden.heldByCollectors` | The same shape. `collectorHeldShare` in `actors.ts` is the live version and reads the collector population; this was a frozen 0.35. |
+| `Product.lineId` | Regional SKU grouping. Products are already grouped by `setId` plus `regionId`, which is every query the UI needs. |
+| `MarketState.indexes.*` | Price indexes for charts, written once at world creation and never updated. A chart built on this would have drawn a flat line for fifty years. Compute an index from `rawHistory` when a screen asks for one. |
+| `IpEntity.relatedIps` | IP-to-IP relationships. `Card.cameos` is the live relationship and it is per card, which is the level the value engine reads. |
+| `IpEntity.isMascot` | A boolean nothing ever set to true. The mascot mechanic is `truth.longevity`, which C12 wired instead. |
+| `Artist.personality` | Flavour with no consumer. **Its RNG draw stays in place** — removing the draw would renumber every later draw on `artRng` and move eleven rounds of banked numbers for a field that did nothing. |
+| `DropResult.expectedPremium` | Named like a forward read and was not one: `resolveDrop` assigned it the realised premium, so a metric over it read exactly 1.0000 in every drop of every seed. |
+
+### Wired but inert
+
+These are live in the code with a weight of exactly 0, so they move no number
+today and Round 12 fits them: `IpEntity.truth.longevity` (the mascot mechanic —
+above 1 a character keeps its hold once exposure stops), `Card.illustrationLink`
+chains, preorder conversion, the buylist spread, and the regional segment mix.
+
+Four remain declared and unread, and are **not** struck because each has a
+named consumer waiting: `Card.treatment`, `progressionLink.position`,
+`Artist.specialty` and `Channel.reliability`.

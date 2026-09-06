@@ -144,11 +144,6 @@ export function createWorld(seed: string, config: SimConfig): SimState {
     market: {
       climate: config.world.startingClimate,
       climateHistory: emptySeries(t0),
-      indexes: {
-        allCards: config.world.startingIndex,
-        byPublisher: { [playerId]: config.world.startingIndex },
-        bySet: {},
-      },
       gradingQueue: [],
       gradingTally: {
         modernCopies: 0, modernGems: 0, vintageCopies: 0, vintageGems: 0,
@@ -367,10 +362,13 @@ export function createWorld(seed: string, config: SimConfig): SimState {
     // and that last one now costs it four seeds in fifteen. Three times higher
     // and `safeHands` stops being viable at all.
     const rate0 = Math.round(randRange(rng, ca.openingRateMin, ca.openingRateMax)) as Cents;
+    // [round 11 C12] `personality` is CUT and its DRAW STAYS — see the same
+    // note in `engine.ts`. Removing the draw renumbers this seed's whole
+    // artist roster.
+    pick(rng, personalities);
     s.artists[id] = {
       id,
       name: `Artist ${i + 1}`,
-      personality: pick(rng, personalities),
       specialty: pick(rng, specialties),
       stats: {
         linework: randRange(rng, ca.openingStatMin, ca.openingStatMax),

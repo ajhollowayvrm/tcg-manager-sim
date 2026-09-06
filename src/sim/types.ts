@@ -29,7 +29,6 @@ export type CardId = Brand<string, 'CardId'>;
 export type PrintingId = Brand<string, 'PrintingId'>;
 export type SetId = Brand<string, 'SetId'>;
 export type ProductId = Brand<string, 'ProductId'>;
-export type ProductLineId = Brand<string, 'ProductLineId'>;
 export type ArtistId = Brand<string, 'ArtistId'>;
 export type ChannelId = Brand<string, 'ChannelId'>;
 export type RegionId = Brand<string, 'RegionId'>;
@@ -248,7 +247,6 @@ export interface IpEntity {
   name: string;
   kind: IpKind;
   createdTick: Tick;
-  relatedIps: IpId[];
 
   /**
    * GROUND TRUTH — never rendered directly, never exposed to the UI layer.
@@ -286,7 +284,6 @@ export interface IpEntity {
   appearanceCount: number;
   cameoCount: number;
   firstPrintingId: PrintingId | null;
-  isMascot: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -314,7 +311,6 @@ export interface Card {
 
   rarity: Rarity;
   treatment: Treatment;
-  serialized: { runSize: number } | null;
 
   artistId: ArtistId;
   artBrief: ArtBrief;
@@ -513,13 +509,11 @@ export type ProductKind =
  */
 export interface Product {
   id: ProductId;
-  lineId: ProductLineId;
   setId: SetId;
   regionId: RegionId;
   kind: ProductKind;
 
   packsPerUnit: number;
-  cardsPerPack: number;
 
   /** Sticker price only. What consumers actually pay is per channel. */
   msrp: Cents;
@@ -572,8 +566,6 @@ export interface SealedMarket {
     sealedRemaining: number;
     /** Fraction of remaining sealed stock opened per tick. Falls as price rises. */
     ripRate: number;
-    /** Share of sealed stock held by long-hold collectors vs. flippers. */
-    heldByCollectors: Unit;
     /**
      * Last computed expected value of one unit's contents, in cents. 0 until the
      * first sealed tick computes it.
@@ -766,8 +758,6 @@ export interface DropResult {
   soldToCollectors: number;
   soldToScalpers: number;
   soldOut: boolean;
-  /** Resale premium over MSRP the scalpers were betting on when they queued. */
-  expectedPremium: number;
 }
 
 export interface Grader {
@@ -797,7 +787,6 @@ export type ArtistSpecialty =
 export interface Artist {
   id: ArtistId;
   name: string;
-  personality: ArtistPersonality;
   specialty: ArtistSpecialty;
   stats: {
     linework: Unit; color: Unit; composition: Unit; speed: Unit; reliability: Unit;
@@ -981,12 +970,6 @@ export interface MarketState {
   /** Global speculative climate. Bull runs and crashes. */
   climate: number;
   climateHistory: SparseSeries;
-  /** Indexes for charts and for harness metrics. */
-  indexes: {
-    allCards: number;
-    byPublisher: Record<PublisherId, number>;
-    bySet: Record<SetId, number>;
-  };
   gradingQueue: GradingSubmission[];
   /**
    * Grade outcomes counted AT the moment of grading, split by how old the
@@ -1074,7 +1057,7 @@ export type Decision =
         id: CardId; setId: SetId; subjectIp: IpId; cameos: IpId[];
         rarity: Rarity; artistId: ArtistId;
         /** Optional. The engine derives each of these when not supplied. */
-        name?: string; treatment?: Treatment; serialized?: { runSize: number } | null;
+        name?: string; treatment?: Treatment;
         artBrief?: Partial<ArtBrief>; flavorText?: string;
         /**
          * Puts this card in a collectible chain. The engine mints the chain the
@@ -1089,7 +1072,7 @@ export type Decision =
   | {
       type: 'defineProduct'; tick: Tick; payload: {
         id: ProductId; setId: SetId; kind: ProductKind; regionId: RegionId;
-        packsPerUnit: number; msrp: Cents; cardsPerPack?: number;
+        packsPerUnit: number; msrp: Cents;
       };
     }
   | { type: 'commitPrintRun'; tick: Tick; payload: { setId: SetId; quantities: Record<ProductId, number>; quality: PrintQualityTier } }
@@ -1267,6 +1250,12 @@ export interface SimConfig {
     /** Range a per-segment affinity is rolled in. */
     affinityMin: number;
     affinityMax: number;
+    /**
+     * How hard `IpEntity.truth.longevity` moves the unexposed decay. 0 means
+     * the roll is ignored and every character fades at one rate, which is what
+     * happened for eleven rounds. See `tickAffection`.
+     */
+    longevityWeight: number;
     /** Range an IP's `longevity` is rolled in. How well it ages. */
     longevityMin: number;
     longevityMax: number;
@@ -2135,7 +2124,6 @@ export interface SimConfig {
     startingSpeculators: number;
     /** Opening market climate and index level. */
     startingClimate: number;
-    startingIndex: number;
     /** Per-region shape. `knowledge` is what the studio starts knowing. */
     regions: Record<string, {
       marketSize: number;
