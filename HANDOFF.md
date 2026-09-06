@@ -627,6 +627,168 @@ and `allIn` from 0.05 to 0.40. Re-derive the `smallBets` and `globalist`
 mechanisms before tuning them; the shipped numbers under them have moved.
 
 
+## Round 11 — Plan 1, IN PROGRESS (2026-09-06)
+
+**This round is not finished. C0 to C7 are committed and green; C8 to C13 are
+not started.** The suite reads **53 gates, 51 PASS, 0 FAIL, 2 KNOWN, 0 DRIFT**.
+
+**The plan lives outside the repo at
+`~/.claude/plans/alright-let-s-plan-on-zippy-waffle.md`.** It is two plans:
+Plan 1 builds every declared-but-unbuilt system with every new knob at an
+exactly-neutral default; Plan 2 is the last tuning round, which turns those
+knobs on and fits them. Read it before doing anything here.
+
+### The rule that makes this round safe
+
+> **Land the mechanism with an exactly-neutral default. Hand the on-value to Plan 2.**
+
+Exactly neutral means arithmetically identical — a branch that is not entered,
+or a multiplier that evaluates to exactly 1. That gives every step a far
+stronger acceptance test than the gate table: **`out/check/runs.csv`
+byte-identical to the previous step's**. Six of the nine steps so far came back
+byte-identical. A wide band can absorb a small leak; a byte diff cannot.
+
+**`out/` is gitignored, so the baseline CSV does not survive a fresh session.**
+Regenerate it before starting C8:
+
+```
+npm run check && cp out/check/runs.csv out/baseline.csv
+```
+
+The column comparator for steps that ADD metrics (byte-identity no longer
+applies once a column is added) is at `/tmp/cmpcols.py` and is three lines of
+`csv.DictReader` — rewrite it rather than hunt for it.
+
+### What shipped, C0 to C7
+
+| Commit | Step | Acceptance |
+|---|---|---|
+| `a3379b3` | C0 gate hygiene | bands rewritten, no observed value moved |
+| `7da939e` | C1 save/load | all 51 balance gates unmoved |
+| `8955378` | C2 `mintPrinting` + `eventRng` | byte-identical |
+| `9526579` | C3 the unlock tree | byte-identical |
+| `616ed6c` | C4 free wiring | 118/118 existing columns identical |
+| `8255743` | C4b drop fix | `dropRunner` only, 19 of 20 rows |
+| `4f982e9` | C5 readings | 3 rows, all `globalist` |
+| `822e596` | C6 illustration chains | byte-identical |
+| `325048b` | C7 preorders | byte-identical |
+
+Banked baseline: `docs/tuning/bank/round-11a/`. **That bank is C0's, not
+HEAD's** — C4b and C5 moved rows after it was written. Rebank before relying on
+it for comparison.
+
+### Four defects found by wiring dead fields
+
+Each was invisible to a green suite. The method that found them was: wire the
+field, then look at what it says.
+
+1. **The sealed-contents cache was state.** A `WeakMap` keyed on the product
+   object, refreshed only every sixth sealed stride — so the price in between
+   derives from a stale number. A reloaded run found the map empty, recomputed
+   against current prices, and diverged by a cent that propagated. It lives on
+   the product as `market.hidden.contentsValue` now. Found by
+   `static.saveRoundTrip`.
+2. **Player-scheduled drops were silently voided.** `resolveDrop` set
+   `status = 'complete'` on its first line and then returned early if the set
+   had not shipped. Allocation locks 18 weeks before release, so a player
+   queueing a drop as soon as they had stock lost it — no sale, no event, no
+   feedback. Measured on `dropRunner`: 40 scheduled over 20 years, 40 voided.
+   **`sub.scalperShare` and `sub.scalperCycles` have been reading the store's
+   default cadence rather than the bot's decision since Round 5.**
+3. **`readRegion` moved the world by looking at it.** Three-plus `gauss` draws
+   from `regionRng` per call, so two reads gave two answers and advanced the
+   run. A UI repainting that screen would have changed the game. It derives its
+   error from `Region.truth.readingNoiseSeed` now.
+4. **`DropResult.expectedPremium` is not a forward read.** `resolveDrop`
+   assigns it the realised premium, so a metric over it reads exactly 1.0000 in
+   every drop of every seed. Cut in C12.
+
+### The measurements Plan 2 needs
+
+- **Preorders are not sell-through-neutral.** A preorder converts an uncertain
+  sale into a certain one: `conservative` over 12 years reads sell-through
+  0.9643 at `conversionRate` 0, 0.9652 at 0.0002, 0.9758 at 0.002.
+  `diff.sellThrough` has sat ON its 0.95 ceiling for two rounds, so this knob is
+  fitted against that gate or not at all. `creditUnitsSold` in `fillPreorders`
+  was added expecting it to remove the lift and **measured not to** (0.9755 ->
+  0.9758); `recentUnitsByRegion` feeds acquisition, not the demand pool.
+- **The illustration chain hedge works and may be too strong.** On an otherwise
+  identical six-card set: 349% mean price lift with the subject's affection at
+  5, 11.7% at 60. Right shape, first-guess size. The progression chain beside it
+  has never been swept either — fit the pair together.
+- **The reading tiers narrow 0.500 -> 0.179 against a floor of 0.120.**
+  `residualSigma` is CONCEPT.md §6.1's sentence that the reading is never exact,
+  and it must stay above zero at every tier.
+- **A 50-year save is 63.7 MB**, of which the event log is 36% (142,596 events).
+  `serialize` takes an explicit, lossy `trimEventsBefore`; it is not the default
+  because the harness reads drops and creator coverage off that log.
+
+### C8 to C13, not started
+
+- **C8 — per-tick `segmentMix`.** `regionSegmentWeight` (`regions.ts:193`) has
+  zero callers; the mix shapes the audience at bootstrap and is never consulted
+  again, so a region stops being itself by year 15. Wire it into the acquisition
+  drive in `audience.ts` behind `region.segmentMixAcquisitionWeight`, **default
+  0** so `mixTilt` evaluates to exactly 1. Do NOT touch the bootstrap draws at
+  `world.ts:181` — they are on the main stream.
+- **C9 — liquidity and the buylist spread.** `Printing.market.liquidity` and
+  `lastTradeTick` are written and never read. **The exploit `HANDOFF.md` used to
+  describe is not live**: the publisher never holds singles, and `metrics.ts`
+  values inventory at `unitCogs`. The real mispricing is the RIPPER'S RETURN —
+  `expectedSinglesValue` and the sealed-contents loop both price a box at
+  `sum(rawPrice * pullRate) * packsPerUnit` at full retail across 280 cards,
+  most of them bulk. **Both consumers must move together** or Round 4a's 4x
+  disagreement comes back. Ships behind `actors.buylistWeight`, default 0, as a
+  BRANCH not an arithmetic blend. Largest blast radius in the round: it reaches
+  every `shape.*` gate through `tradeablePopulation`. Run `--dist` DURING the
+  sweep, not after. This owns the known-fail `sub.scalperShare`.
+- **C10 — event promos.** `hostEvent` beside `hostPrerelease`, gated on
+  `canHostEvents` (C3 made it purchasable), minting one promo printing off
+  `s.eventRng` (C2 exists for this). **No automatic scheduler** — an
+  engine-initiated event would fire for every bot and change every bot's demand
+  pool. Decision-gated only.
+- **C11 — every new bot, in ONE commit.** `researcher`, `artChainWeaver`,
+  `eventHost`, `preSeller`, plus the reachability probes `budgetSurvivor`,
+  `archivist`, `reprinter` (`api.reprint` is implemented and called by no bot
+  ever) and `mixer` (unused set types and product kinds, including a premium
+  collection that also opens the direct store — what `drops.scalperAppealPremium`
+  needs). Every new `SetBotOptions` field is optional and its ABSENCE must mean
+  the branch is not evaluated. No new draw on the main stream inside
+  `makeSetBot`'s common path — the four draws at `bots.ts:38, 49, 50, 519` keep
+  their order. **This is the one step where gates are expected to move**, because
+  it changes roster-wide denominators. Rebank after it.
+- **C12 — the deletions.** Cut: `Card.serialized`, `Product.cardsPerPack`,
+  `Product.market.hidden.heldByCollectors`, `Product.lineId`,
+  `MarketState.indexes.*`, `IpEntity.relatedIps`, `isMascot`,
+  `Artist.personality`, `DropResult.expectedPremium`. Wire inert:
+  `Card.treatment`, `progressionLink.position`, `IpEntity.truth.longevity` (the
+  mascot mechanic, already drawn, highest value of the inert set),
+  `Artist.specialty`, `Channel.reliability`. **Cut loudly where a field is a
+  second representation of a live quantity** — `cardsPerPack` and
+  `heldByCollectors` are exactly the Round 4a bug shape, and a dead duplicate is
+  worse than a dead field because it is a defect waiting for someone to wire it.
+  Everything cut is struck in `CONCEPT.md` the way rivals were.
+- **C13 — the screens audit.** Six of seven CONCEPT.md §8 screens are feedable
+  after C4. The two gaps were `Artist.reputationHistory` (added in C4) and the
+  event log's growth (C1 measured it). Write the audit into `docs/`.
+
+### New gates still owed by Plan 1
+
+`struct.unlockTiersBought`, `sub.readingNarrows`, `sub.preorderShare` (ships
+`known-fail` — reads 0 until Plan 2 raises `conversionRate`),
+`sub.illustrationChainPays`, `sub.buylistSpread`, `sub.eventPromoPremium`. Plus
+metrics for channels, creators, chains, per-segment audience and product mix,
+which have none.
+
+### Three gates sit on a band edge
+
+`diff.conservativeSurvives` 0.950 against a floor of 0.95;
+`sub.channelHogLosesReach` 6 against a ceiling of 6; `struct.debtSpiralDeaths`
+0.165 against a ceiling of 0.225 (comfortable now that C0 made it a rate). If
+one fires during a byte-identity step, something leaked and the CSV diff will
+say where.
+
+
 ## Finance and difficulty (tuning Round 10, 2026-09-06)
 
 **The suite reads 54 gates, 50 PASS, 0 FAIL, 4 KNOWN, 0 DRIFT.** Banked under
@@ -2442,171 +2604,71 @@ horizon fixed.
 
 ## Suggested next session
 
-**The tuning run is done. Rounds 0 to 10 are complete and banked.** The suite
-stands at **50 PASS, 0 FAIL, 4 KNOWN, 0 DRIFT** across 54 gates, and takes about
-two and a half minutes. The plan file is
-`~/.claude/plans/let-s-start-the-tuning-zesty-magpie.md`; its round-order table
-and per-round outcome notes are current to Round 10.
+**Continue Round 11, Plan 1, at step C8.** The plan is
+`~/.claude/plans/alright-let-s-plan-on-zippy-waffle.md` and it is TWO plans:
+Plan 1 builds every declared-but-unbuilt system with each new knob at an
+exactly-neutral default, Plan 2 is the last tuning round and turns them on.
+Read the plan, then the "Round 11 — Plan 1, IN PROGRESS" section above, then:
 
-Two things can come next, and they are different in kind.
+```
+npm run check && cp out/check/runs.csv out/baseline.csv   # the acceptance test
+```
 
-### Option A — Round 11, the optional new mechanisms
+`out/` is gitignored, so that baseline does not survive a session. Regenerate
+it first or the byte-identity check — the thing that has caught every leak in
+this round — is not available.
 
-The plan lists three, one at a time, each with a full regression pass and a
-rebank:
+### The order, and why it is the order
 
-1. **The bulk buylist spread** — high priority; it closes an exploit. A $0.20
-   card liquidates at $0.004 in the real market. `Printing.market.liquidity` is
-   declared and barely read; this is what it is for. Without it a player sells a
-   warehouse of commons at market price. It also owns `sub.scalperShare`.
-2. **The Fallen Empires order-inflation loop** — medium. **Sweep the `channels`
-   block first**: 17 paths plus 30 trait constants have never been measured at
-   all, and `sub.channelHogLosesReach` is sitting exactly on its ceiling because
-   of it.
-3. **The foil production bottleneck** — low. `rarity.pull` already produces the
-   scarcity.
+C8 `segmentMix` -> C9 buylist -> C10 event promos -> C11 all the bots in one
+commit -> C12 deletions -> C13 screens audit. C11 is last of the mechanisms
+because a bot changes roster-wide gate denominators and that jump should happen
+once, against a finished model. C12 is after everything because a deletion must
+never hide a wiring something still needed.
 
-### Option B — the demand round Round 10 could not do
+**Each step ends with `npm run check`, and each is expected to be
+byte-identical to the one before it.** C11 is the single exception. If a step
+that should be neutral is not, the CSV diff names the bot and the column before
+any gate does.
 
-Round 10 found two defects that share one knob set and handed both on. **They
-are the strongest candidate for the next round**, because unlike Round 11's
-items they are things the model gets wrong rather than things it lacks:
+### Then Plan 2, which is the actual last tuning round
 
-- **The release cadence optimum has drifted to 26 weeks**, and a 14-week
-  cadence — roughly what Wizards ships — kills 100% of runs.
-  `attention.fatigueDecay: 0.03` fixes the optimum and breaks four difficulty
-  gates; `attention.referenceRunUnits` pays for two of them and costs the
-  reference strategy 15 points of survival.
-- **The blind bet has almost no downside.** `diff.flopRate` pools to 0.005 — 3
-  flopped sets in roughly 560 — and `diff.sellThrough` has sat ON its 0.95
-  ceiling for two rounds.
+`harness/screen.ts` measures all 555 config paths once and produces the
+verdict table `01-knobs.md` needs; the never-swept blocks get fitted, `channels`
+first; every knob Plan 1 shipped inert gets turned on and fitted; and the demand
+re-fit Round 10 handed on gets decided one way or the other. Plan 2 owns the
+knobs whose values are stated in the Round 11 section above — do not tune
+anything during Plan 1.
 
-The Round 10 section holds every measurement, including what each candidate
-value costs. A demand round has to re-check the value block (Round 4) and the
-populations (Round 5) underneath it, which is why the plan ordered those first
-and why Round 10 refused to do it from the finance side.
+### The four things that must stay true
 
-### Read this before you change anything
+1. **The main RNG stream must not renumber.** Rounds 3 and 9 were the only
+   renumbering rounds and there are no more. A new system draws on a NEW stream
+   or on none — `seedRng` is self-contained, so a sixth stream costs nothing.
+   `harness/bots.ts` draws from the main stream at lines 38, 49, 50 and 519, so
+   new bot behaviour is opt-in or existing worlds move.
+2. **An observer must not draw.** A UI repaints a screen many times per state,
+   and replay is `seed` plus the decision log. `readings.ts` derives its error
+   from a stored noise seed through a throwaway PRNG; `readRegion` was repaired
+   to match in C5. Do not add a third contract.
+3. **Every new knob ships at an exactly-neutral default** — a branch not
+   entered, or a multiplier that is exactly 1. `x * 1.0` is bit-identical;
+   `x + 0.0 * k` is not always.
+4. **Probe the mechanism, do not trust the green suite.** A C3 script printed
+   instead of writing and the upkeep never landed; the byte-identity check
+   passed, because missing code is also neutral. What caught it was checking
+   that two hires produced two staff ledger entries. Every mechanism in this
+   round was proved by direct probe before it was committed.
 
-**The main RNG stream is stable and must stay that way.** Round 9 was the last
-round allowed to renumber it. Every banked value in `docs/tuning/bank/round-10/`
-is comparable to what you measure, so a DRIFT line is a finding, not noise.
-
-**Three gates sit exactly on a band edge.** `diff.conservativeSurvives` reads
-0.950 against a floor of 0.95, `sub.channelHogLosesReach` reads 6 against a
-ceiling of 6, and `struct.debtSpiralDeaths` reads 83 against a ceiling of 90.
-The first two came back on Round 9's re-roll rather than on a repair. Any of the
-three can go FAIL on a change that looks unrelated, and if one does, it is
-telling you something.
-
-**Two couplings pin `finance.startingCash`.** Lifting it needs
-`weeklyOverheadBase` raised in the same ratio — doubling capital alone takes
-`diff.idleDies` from 8.8 years back to 17.8 — and needs the Round 7 art-rate
-scale factor shrunk toward 1 in the same change, or art becomes a rounding error
-again. Neither is optional, and both are in the same change or none of it.
-
-### The four known-fails
+### The known-fails
 
 | Gate | Reads | Owner |
 |---|---|---|
-| `diff.flopRate` | 0.005 against [0.01, 0.25] | the demand round (Option B) |
-| `sub.scalperShare` | 0.070 against [0.1, 0.5] | Round 11 item 1 |
-| `diff.lateIdleSurvives` | 0.850 against [0, 0.35] | **a design decision** |
-| `shape.surpriseGrail` | 1 against [0.1, 0.6] | **a design decision** |
+| `sub.scalperShare` | 0.076 against [0.1, 0.5] | Round 11 C9, the buylist |
+| `diff.flopRate` | 0.005 against [0.01, 0.25] | Plan 2, the demand re-fit |
 
-The two design decisions cannot be cleared by tuning at any value, and both need
-AJ rather than a round:
-
-- **`diff.lateIdleSurvives`.** A studio that runs well for twenty years and then
-  stops does not die: back catalogue plus banked cash beats any bill this model
-  would call overhead, and killing it needs a standing bill 20x the current one,
-  costing the reference strategy 60 points of survival. Either a mature studio
-  should be killable by some mechanism that is not overhead, or it is genuinely
-  safe and the gate should be deleted.
-- **`shape.surpriseGrail`** is a scale-invariant ratio over the whole catalogue,
-  so at 280 cards a set it asks whether any one of about 8,400 printings ever
-  broke out over 30 years, and the answer is certain. Fixing it needs the metric
-  redefined per set, and that needs a band `05-real-world.md` says the research
-  cannot supply.
-
-### The commands
-
-```
-npm run check                                                   # all 54 gates
-npm run check -- --bank=11                                      # and rebank it
-npm run sim -- --seeds=1 --years=25 --bot=conservative --dist   # the ladder
-npm run sim -- --seeds=20 --years=30 --bot=conservative --cadence=18
-npx tsx harness/check.ts --print-bands                          # after a band edit
-```
-
-`harness/gates.ts` is the single source of truth for every band.
-`docs/tuning/03-targets.md` holds a generated copy between the `BANDS:START` and
-`BANDS:END` markers, and `static.bandsInSync` fails if they drift. `--bank=N`
-writes `docs/tuning/bank/round-N/` but does **not** write the `banked:` values
-back into `gates.ts` — set those by hand from
-`docs/tuning/bank/round-N/gates.json`, bump `DATE`, regenerate the band table,
-then run `npm run check` once more to confirm it is green.
-
-**Bank what the suite measures, not what a scratch probe measured.** Round 6
-banked two gates off the probe it fitted on; both sat under the drift threshold,
-so nothing flagged, and it quietly spent the next round's drift budget.
-
-### Twelve things this run learned the hard way
-
-Each of these cost a round or a correction. They are in `04-workflow.md` as
-rules; this is the short form. Numbers 6 to 8 are stated in full in the Round 7
-section.
-
-1. **Run the decile ladder DURING a value sweep, not after it.** Round 4 fitted
-   the whole value block off the gate table and shipped a distribution with 40%
-   of every set pinned against the price floor. No gate measures concentration
-   at the floor.
-2. **Per-capita applies to what a population PUSHES, not only to what it earns
-   — and a population must not be paid with its own bid.** The speculator loop
-   broke both and detonated at year 40, silently, because nothing measured the
-   catalogue past the gated horizon.
-3. **A knob the bot roster cannot reach has not been measured**, however
-   carefully it is fitted. The fix is a bot, not a value — Round 10 added
-   `lateIdle` for exactly this and it immediately produced a finding no gate
-   could see. Still unreachable: `drops.scalperAppealPremium`,
-   `printing.qualityGradeShift.budget` and `.archival`.
-4. **A cumulative state cannot answer a question about a moment.** A gem rate
-   read off a pop report averages a printing's whole submission history. When
-   you find a defect of this shape, grep for its siblings before closing.
-5. **Measure the claim you are about to write down.** Round 5 declared collector
-   holding unfixable on three bots at one seed; Round 5b fixed it. Round 10
-   found the same fault in the `weeklyOverheadBase` comment.
-9. **Never discard stderr in a sweep, and never trust `out/runs.csv` without
-   checking the exit code.** A silenced sweep in Round 8 read back as three
-   identical rows — a convincing measurement that a live knob was inert.
-10. **Read the knob before you turn it. The name is not the mechanism.** All
-   three of Round 9's instructions were backwards.
-   `hype.defaultLeadWeeks` counted forward from the commit, so lowering it
-   lengthened the window it was meant to shorten. Where a name and the
-   arithmetic disagree, fix the name in the same round.
-11. **Check how a gate AGGREGATES before you believe it moved.**
-   `diff.flopRate` was a mean of per-run rates, so one 11-set run that died
-   early outvoted nineteen full ones and the gate swung 3x on a single seed. A
-   rate over runs is pooled, never averaged.
-12. **A mechanism fix has a blast radius, and it lands on whoever the mechanism
-   was not aimed at.** Round 10 gated the borrow ceiling on recent sales to stop
-   the bank funding an idle studio. It killed `allIn` at year 0.2 in every seed
-   instead — a bot that commits in week 8 against a release 18 weeks out has no
-   sales to be measured on. The grace period is the fix; the lesson is to look
-   at who ELSE the new test is being applied to before reading the gates.
-
-### The scratch scripts are gone
-
-Rounds 7 to 10 needed none. Every sweep was `npm run sim --set=...` read back
-from `out/<dir>/runs.csv`, and the numbers the harness could not produce were
-added to `harness/metrics.ts` instead of measured in a probe: `revenue` and
-`artSpendShare` in Round 7, `marketingShare` in Round 9, and `overheadSpend`,
-`overheadShare`, `storageSpend`, `interestSpend` and `audienceScale` in Round
-10. Prefer that order — a metric the suite owns cannot drift away from the claim
-it supports.
-
-**`out/` is gitignored**, so the throwaway scripts Rounds 5 and 6 used are not
-in the repo. They are cheap to rewrite and the method matters more than the
-code: build `RunTask`s, call `runBatch` from `harness/batch.ts` with 12 jobs,
-and reduce `RunMetrics` to a median per config point. If a later round wants a
-screen permanently, promote it into `harness/`.
+Two gates were retired by AJ at C0 and their reasoning lives in the
+`harness/gates.ts` header: `diff.lateIdleSurvives` (the gate was wrong, not the
+model — a mature studio with a back catalogue should be hard to kill; the
+`lateIdle` BOT stays because it feeds four other gates) and
+`shape.surpriseGrail` (cannot pass at any value; the METRIC stays).
