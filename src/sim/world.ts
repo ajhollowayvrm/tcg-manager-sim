@@ -388,6 +388,7 @@ export function createWorld(seed: string, config: SimConfig): SimState {
       relationship: ca.openingRelationship,
       exclusiveTo: null,
       available: true,
+      reputationHistory: emptySeries(s.tick),
     };
   }
 

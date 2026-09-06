@@ -80,6 +80,8 @@ export interface RunMetrics {
   scalperPopulation: number;
   /** Boom-to-bust crossings. Zero means the population never cycled at all. */
   scalperCycles: number;
+  /** Share of drops the store ran on its own cadence rather than the player scheduling. */
+  automaticDropShare: number | null;
   /** Population at the widest point of any cycle, read off the crash events. */
   peakScalpers: number;
 
@@ -160,6 +162,20 @@ export interface RunMetrics {
   /** Graders taking submissions at the end of the run. The third is brand-gated. */
   gradersActive: number;
 
+  /** Units of the studio's released sets that sold, across the whole run. */
+  setUnitsSold: number;
+  /** Units of the studio's released sets that never sold. */
+  setUnitsUnsold: number;
+  /** Sell-through measured per SET, not per channel allocation. */
+  setSellThrough: number | null;
+  /** Mean goodwill a release nets, after the attention it burns. Negative is a warning. */
+  setGoodwillDelta: number | null;
+  /** Mean gap between a set's best and worst channel sell-through. Reach, measured. */
+  setChannelSpread: number | null;
+  /** Years since the studio was founded. Reads `Publisher.foundedTick`. */
+  studioAgeYears: number;
+  /** In-world calendar year. Reads `SimConfig.startYear`. */
+  calendarYear: number;
   /** Studio overhead paid over the run, in dollars. The standing bill. */
   overheadSpend: number;
   /**
@@ -582,6 +598,14 @@ export function computeMetrics(
   const dropScalperUnits = dropEvents.reduce(
     (n, e) => n + Number(e.data.sold ?? 0) * Number(e.data.scalperShare ?? 0), 0);
   const peakDropPremium = dropEvents.reduce((n, e) => Math.max(n, Number(e.data.premium ?? 0)), 0);
+  // Player-scheduled against store-scheduled. `dropRunner` schedules its own and
+  // everyone else gets the store's cadence, so without this split every drop
+  // metric mixes a decision with a default.
+  const autoDrops = dropEvents.filter(e => Number(e.data.automatic ?? 0) === 1).length;
+  // `DropResult.expectedPremium` is NOT a forward read, whatever its name says:
+  // `resolveDrop` assigns it the realised premium, so a metric over it reads
+  // exactly 1.0000 in every drop of every seed. Measured, then removed rather
+  // than shipped as a column of ones. The field is cut in C12.
 
   // The population's shape, not just where it stopped. A crash fires on the
   // boom-to-bust crossing, which is where the population is widest, so the
@@ -672,6 +696,31 @@ export function computeMetrics(
   const interestSpend = pub.ledger
     .filter(e => e.category === 'interest')
     .reduce((n, e) => n - e.amount, 0) / 100;
+  // The four `SetPerformance` accumulators. Every one of them was written on
+  // every release and read by nothing — not by the engine, not by the harness —
+  // which is what made CONCEPT.md §8's "set health" screen a declared screen
+  // rather than a real one.
+  const judged = Object.values(s.sets).filter(
+    set => set.publisherId === pub.id && set.performance !== null);
+  const setUnitsSold = judged.reduce((n, set) => n + set.performance!.unitsSold, 0);
+  const setUnitsUnsold = judged.reduce((n, set) => n + set.performance!.unitsUnsold, 0);
+  const setSellThrough = setUnitsSold + setUnitsUnsold > 0
+    ? setUnitsSold / (setUnitsSold + setUnitsUnsold) : null;
+  // Releasing burns goodwill up front and pays it back through the channels.
+  // Negative here means the studio is spending audience patience faster than it
+  // earns it, which is `attention_collapse` seen a long way out.
+  const setGoodwillDelta = judged.length > 0
+    ? judged.reduce((n, set) => n + set.performance!.goodwillDelta, 0) / judged.length : null;
+  // The spread between a set's best and worst channel. A studio that sells
+  // through everywhere has reach; one that sells through in one place has a
+  // customer.
+  const channelSpreads = judged.map(set => {
+    const v = Object.values(set.performance!.sellThroughByChannel).map(Number);
+    return v.length > 1 ? Math.max(...v) - Math.min(...v) : null;
+  }).filter((v): v is number => v !== null);
+  const setChannelSpread = channelSpreads.length > 0
+    ? channelSpreads.reduce((a, b) => a + b, 0) / channelSpreads.length : null;
+
   const artSpend = pub.ledger
     .filter(e => e.category === 'art_commission' || e.category === 'staff')
     .reduce((n, e) => n - e.amount, 0) / 100;
@@ -827,6 +876,7 @@ export function computeMetrics(
     peakDropPremium,
     scalperPopulation: s.audience.actors.scalpers,
     scalperCycles: crashes.length,
+    automaticDropShare: dropsRun > 0 ? autoDrops / dropsRun : null,
     peakScalpers,
     avgHypeAtRelease: hypeAtRelease.length
       ? hypeAtRelease.reduce((a, b) => a + b, 0) / hypeAtRelease.length : 0,
@@ -850,6 +900,13 @@ export function computeMetrics(
     gem10Premium,
     printingsGraded,
     gradersActive,
+    setUnitsSold,
+    setUnitsUnsold,
+    setSellThrough,
+    setGoodwillDelta,
+    setChannelSpread,
+    studioAgeYears: (s.tick - pub.foundedTick) / 52,
+    calendarYear: s.config.startYear + Math.floor(s.tick / 52),
     overheadSpend,
     overheadShare: revenue > 0 ? overheadSpend / revenue : null,
     storageSpend,

@@ -410,6 +410,17 @@ export interface CardSet {
   printQuality: PrintQualityTier;
   attentionCost: number;
 
+  /**
+   * The card count the set was created for.
+   *
+   * `Decision.createSet` has always carried it and `createSet` has always
+   * ignored the parameter, so the size of a set was whatever the caller
+   * happened to design into it. It is a CAP rather than a target: `designCard`
+   * refuses to add card n+1. Every bot in the roster designs exactly the count
+   * it asked for, so enforcing it changes nothing today and stops a UI from
+   * quietly shipping a 900-card set tomorrow.
+   */
+  targetSize: number;
   performance: SetPerformance | null;
   /** Pre-launch demand, built across the reveal window. Null until commit. */
   hype: SetHype | null;
@@ -776,6 +787,17 @@ export interface Artist {
    * hired in year 2 lifts the price of their old cards once they break out.
    */
   reputation: Unit;
+  /**
+   * Reputation over time.
+   *
+   * CONCEPT.md §8's artist roster asks for a "reputation trajectory", and
+   * without a series that is a point value: the screen could show what an
+   * artist is worth today and never whether they are climbing. It is written
+   * beside the growth step in `tickArtists` and compacted with everything else.
+   * It is display state — nothing in the value engine reads it, which still
+   * reads `reputation` live.
+   */
+  reputationHistory: SparseSeries;
   /** HIDDEN. Career compounding rate. Never shown; scouting is a gamble. */
   growth: number;
 

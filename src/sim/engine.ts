@@ -171,7 +171,7 @@ function createSet(s: SimState, id: SetId, name: string, type: SetType, size: nu
   }
   bumpRoster(s);
   s.sets[id] = {
-    id, publisherId: s.playerId, name, type, status: 'design',
+    id, publisherId: s.playerId, name, type, status: 'design', targetSize: Math.max(1, size),
     cardIds: [], productIds: [], collabId: null,
     regionSchedule: [], regionReadings: null,
     designStartTick: s.tick, commitTick: null, revealStartTick: null,
@@ -194,6 +194,12 @@ function designCard(
   s: SimState, id: CardId, setId: SetId, subjectIp: IpId, cameos: IpId[],
   rarity: Rarity, artistId: ArtistId, overrides: CardOverrides = {},
 ): void {
+  // The set's declared size is a cap. `createSet` has always been handed a
+  // `targetSize` and always ignored it, so a set was whatever the caller
+  // designed into it; every bot designs exactly the count it asked for, so this
+  // refuses nothing today and stops a caller running away with a set tomorrow.
+  const target = s.sets[setId];
+  if (target && target.cardIds.length >= target.targetSize) return;
   const artist = s.artists[artistId]!;
   s.cards[id] = {
     id, publisherId: s.playerId,
@@ -1143,6 +1149,11 @@ function tickAffection(s: SimState, ips: IpEntity[]): void {
     }
     ip.resurgence *= (1 - cfg.resurgenceDecayPerTick);
     writePoint(ip.affectionHistory, s.tick, ip.affection, 0.04);
+    // Declared beside `affectionHistory` and never written to since the day it
+    // was minted. It is what CONCEPT.md §8's "trend arrows" read: affection says
+    // where a character stands, resurgence says whether the back catalogue just
+    // pulled them back into the light.
+    writePoint(ip.resurgenceHistory, s.tick, ip.resurgence, s.config.history.writeThreshold);
   }
 }
 
@@ -1921,6 +1932,12 @@ function resolveDrop(s: SimState, drop: Drop): void {
     {
       productId: p.id, offered, sold, demand: drop.result.demand,
       scalperShare, oversubscription, premium,
+      // `automatic` was written onto the drop and read by nothing. It is the
+      // attribution `sub.scalperShare` has wanted since Round 5: a drop the
+      // player scheduled and a drop the store ran on its own cadence are
+      // different events. Drops are pruned as feed history in `tickCompaction`,
+      // so the harness reads this here or not at all.
+      automatic: drop.automatic ? 1 : 0,
     });
 }
 
@@ -2378,6 +2395,9 @@ function tickArtists(s: SimState): void {
   for (const a of Object.values(s.artists)) {
     a.reputation = U(a.reputation
       + a.growth * (ca.reputationGrowthFloor + rand(s.rng) * ca.reputationGrowthRange));
+    // The trajectory CONCEPT.md §8's artist roster asks for. Display only: the
+    // value engine goes on reading `reputation` live.
+    writePoint(a.reputationHistory, s.tick, a.reputation, s.config.history.writeThreshold);
     if (a.reputation > ca.retireReputationThreshold && chance(s.rng, ca.retireAtPeakChance)) {
       emit(s, 'artistBreakout', true, { artistId: a.id }, { reputation: a.reputation });
     }
@@ -2619,6 +2639,7 @@ function tickRoster(s: SimState): void {
       relationship: cfg.openingRelationship,
       exclusiveTo: null,
       available: true,
+      reputationHistory: emptySeries(s.tick),
     };
     emit(s, 'artistArrived', false, { artistId: id }, { rate: s.artists[id]!.rate });
   }
@@ -2866,7 +2887,13 @@ function tickCompaction(s: SimState): void {
     }
   }
   for (const p of products) compact(p.market.history, s.tick, s.config.history);
-  for (const ip of ips) compact(ip.affectionHistory, s.tick, s.config.history);
+  for (const ip of ips) {
+    compact(ip.affectionHistory, s.tick, s.config.history);
+    compact(ip.resurgenceHistory, s.tick, s.config.history);
+  }
+  // Artists are not in the tick cache — they are a fixed-ish roster rather than
+  // a growing catalogue — so they are compacted from their own map.
+  for (const a of Object.values(s.artists)) compact(a.reputationHistory, s.tick, s.config.history);
 }
 
 // ---------------------------------------------------------------------------
