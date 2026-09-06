@@ -1774,6 +1774,24 @@ export interface SimConfig {
     enforceSpecialtySlots: number;
   };
 
+  /**
+   * What a reading costs in error. See `src/sim/readings.ts`.
+   */
+  readings: {
+    /** Error a studio that has bought nothing reads with. */
+    baseSigma: number;
+    /** The floor. CONCEPT.md §6.1: the reading is never exact, at any tier. */
+    residualSigma: number;
+    /** Share of the remaining error each fully-bought tier removes. */
+    researchNarrowing: Unit;
+    communityNarrowing: Unit;
+    analyticsNarrowing: Unit;
+    /** How long a reading holds still. A screen must not flicker per repaint. */
+    rereadWeeks: number;
+    /** Horizon at which a price forecast has doubled its error. */
+    forecastHorizonWeeks: number;
+  };
+
   chains: {
     /** Extra desire per other card already printed in the same chain. */
     desirePerLink: number;

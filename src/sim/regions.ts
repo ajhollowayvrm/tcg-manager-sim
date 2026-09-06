@@ -24,7 +24,7 @@
 import type {
   SimState, Region, RegionId, CardSet, Product, IpKind, Rarity, AudienceSegment,
 } from './types.ts';
-import { gauss } from './rng.ts';
+import { regionReadingNoise } from './readings.ts';
 
 /** A reading of a region's taste. Every field carries error; none is the truth. */
 export interface RegionReading {
@@ -103,8 +103,14 @@ export function regionDemandFactor(s: SimState, region: Region, set: CardSet, p:
  * reading is close to useless and at 1 it is close to the truth, which is the
  * whole reason to release into a region you have not learned yet.
  *
- * This draws from `s.regionRng`, never from `s.rng`: a reading is an
- * observation, and an observation must not renumber the value engine's draws.
+ * [round 11] **This used to DRAW, and that was a defect.** It took three or
+ * more `gauss` calls from `s.regionRng` per call, so reading a region twice
+ * gave two different answers AND advanced the run — which means a UI that
+ * repainted the region screen would have changed the world by looking at it,
+ * and a replay would not reproduce. The error is now derived from
+ * `Region.truth.readingNoiseSeed`, drawn once at world creation and read by
+ * nothing until now, through the same throwaway-PRNG shape every other reading
+ * uses. Same error model, same width, no side effect. See `readings.ts`.
  */
 export function readRegion(s: SimState, regionId: RegionId): RegionReading | null {
   const region = s.regions[regionId];
@@ -114,18 +120,19 @@ export function readRegion(s: SimState, regionId: RegionId): RegionReading | nul
 
   const tasteBias = {} as Record<IpKind, number>;
   for (const [k, v] of Object.entries(t.tasteBias)) {
-    tasteBias[k as IpKind] = v + gauss(s.regionRng, 0, err * s.config.region.tasteReadingNoiseScale);
+    tasteBias[k as IpKind] = v + regionReadingNoise(
+      s, regionId, `taste:${k}`, err * s.config.region.tasteReadingNoiseScale);
   }
   const rarityAppetite = {} as Record<Rarity, number>;
   for (const [k, v] of Object.entries(t.rarityAppetite)) {
-    rarityAppetite[k as Rarity] = v * Math.exp(gauss(s.regionRng, 0, err));
+    rarityAppetite[k as Rarity] = v * Math.exp(regionReadingNoise(s, regionId, `rarity:${k}`, err));
   }
   return {
     regionId,
     confidence: region.knowledge,
     tasteBias,
     rarityAppetite,
-    priceTolerance: t.priceTolerance * Math.exp(gauss(s.regionRng, 0, err)),
+    priceTolerance: t.priceTolerance * Math.exp(regionReadingNoise(s, regionId, 'price', err)),
   };
 }
 

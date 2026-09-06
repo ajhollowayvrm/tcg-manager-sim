@@ -1034,6 +1034,26 @@ export const defaultConfig: SimConfig = {
     enforceSpecialtySlots: 0,
   },
 
+  // First-guess numbers; Round 11's sweep fits them. The shape that matters:
+  // every tier narrows the band, none of them closes it, and the narrowing
+  // diminishes — the third level of a tier is worth less than the first.
+  //
+  // `baseSigma` 0.5 means a studio that has bought nothing reads an affection of
+  // 50 as somewhere between about 30 and 82, which is wide enough to build the
+  // wrong set around. Fully invested it reads between about 44 and 57, which is
+  // still wide enough to be wrong and never wide enough to be an excuse.
+  readings: {
+    baseSigma: 0.5,
+    residualSigma: 0.12,
+    researchNarrowing: 0.35,
+    communityNarrowing: 0.45,
+    analyticsNarrowing: 0.5,
+    // A reading holds for a quarter. Shorter and a UI flickers; longer and a
+    // player can wait out the error instead of paying to remove it.
+    rereadWeeks: 13,
+    forecastHorizonWeeks: 52,
+  },
+
   chains: {
     desirePerLink: 6,
     maxCountedLinks: 5,
