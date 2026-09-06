@@ -564,11 +564,25 @@ export const defaultConfig: SimConfig = {
   // matters: every lever diminishes, and none of them can rescue a set the
   // audience does not want — hype multiplies demand, it does not create it.
   hype: {
-    defaultLeadWeeks: 12,
+    // Weeks before the home release that previews start, so the free window is
+    // `defaultLeadWeeks / defaultCadenceWeeks` previews long — 1 at these
+    // values. It is counted back from the release, the same way a bot's
+    // `revealLeadWeeks` is.
+    //
+    // [round 9] It used to count FORWARD from the commit, against a release
+    // fixed 18 weeks out, so 12 meant a 6-week window and 3 previews, and
+    // lowering it made the window LONGER. Both the plan and the handoff read it
+    // the other way round. The number moved 12 -> 2 and the window moved 3
+    // previews -> 1; the direction of the knob is what actually changed.
+    defaultLeadWeeks: 2,
     defaultCadenceWeeks: 2,
     revealHypePerCard: 0.05,
     revealHalfLife: 0.8,
     revealAttentionCost: 0.004,
+    // NOT a price. It is the scale at which the log curve bends, so LOWERING it
+    // makes cash-bought hype STRONGER per dollar. Round 9's plan asked for it
+    // to come down "so cash-bought hype is weak per dollar", which is the
+    // opposite of what the knob does; the gain carries that job alone instead.
     marketingReference: C(100_000_00),
     // Swept over 20 seeds x 30 years at equal spend against a prerelease. At
     // 0.35 marketing was strictly dominated — the same hype cost twice what
@@ -576,7 +590,15 @@ export const defaultConfig: SimConfig = {
     // 1.2 it is competitive and still the more expensive way to the same
     // number, which is the right relationship: attention bought with cash
     // should cost more than attention earned through the stores.
-    marketingHypeGain: 1.2,
+    //
+    // [round 9] 1.2 had stopped meeting that description. Per $50,000 it paid
+    // 0.487 hype against a prerelease's 0.24, so cash was the CHEAP route, not
+    // the dear one, and it carried two thirds of a campaign once the window
+    // shrank. 0.5 pays 0.203 against the prerelease's 0.24: still worth buying,
+    // and once again the dearer of the two. Swept at 0.35, 0.5, 0.7 and 1.2 —
+    // median net worth moves 2.6% across that whole range, so this knob buys
+    // the RELATIONSHIP between the two routes and almost no outcome.
+    marketingHypeGain: 0.5,
     prereleaseCostPerScale: C(25_000_00),
     prereleaseHypeGain: 0.12,
     prereleaseGoodwillGain: 0.02,
@@ -591,9 +613,15 @@ export const defaultConfig: SimConfig = {
     // Wide on purpose. The read has to be genuinely poor without a campaign,
     // or the reveal window is a solved problem and its levers buy nothing: at
     // 0.55 a publisher who spent nothing already scored r = 0.93. Error shrinks
-    // as 1/sqrt(previews), so 2.0 puts a default three-preview window at
-    // r = 0.55 and a sixteen-preview campaign at r = 0.86.
-    signalNoiseSigma: 2.0,
+    // as 1/sqrt(previews).
+    //
+    // [round 9] Re-fitted for the short window. The campaign fell from 16
+    // previews to 3 and the free window from 3 to 1, so the same sigma no
+    // longer reads the same. Swept over 20 seeds x 30 years at 1.0, 1.2 and
+    // 1.4, which give (free, campaign) reads of (0.53, 0.75), (0.47, 0.69) and
+    // (0.42, 0.63). 1.2 holds the free read at the 0.45 the last three rounds
+    // measured, and puts the campaign mid-band rather than near either edge.
+    signalNoiseSigma: 1.2,
     heatFromHype: 0.8,
   },
 

@@ -296,15 +296,15 @@ create it.
 
 | Path | Value | What it moves | Status |
 |---|---|---|---|
-| `hype.signalNoiseSigma` | 2.0 | Error on the reveal-window signal, shrinking as `1/sqrt(previews)`. Wide on purpose. At 0.55 a publisher who spent nothing already read r = 0.93 and the window was a solved problem. At 2.0 a default 3-preview window reads r = 0.55 and a 16-preview campaign r = 0.86. | swept |
+| `hype.signalNoiseSigma` | 1.2 | Error on the reveal-window signal, shrinking as `1/sqrt(previews)`. Wide on purpose. At 0.55 a publisher who spent nothing already read r = 0.93 and the window was a solved problem. [round 9] Re-fitted to the short window: a 1-preview free window reads r = 0.47 and a 3-preview campaign r = 0.67. | swept |
 | `hype.decayPerTickAfterRelease` | 0.02 | Hype decay after launch. At 0.06 hype was gone in two months while the run it paid for sells over years, so every lever lost money at every price. At 0.02 hype lasts about a year, which is the horizon a print run sells over. | swept |
-| `hype.marketingHypeGain` | 1.2 | Hype per unit of marketing spend. At 0.35 marketing was strictly dominated by prereleases. At 1.2 it is competitive and still the dearer route, which is the right relationship. | swept |
+| `hype.marketingHypeGain` | 0.5 | Hype per unit of marketing spend. At 0.35 marketing was strictly dominated by prereleases. [round 9] 1.2 had inverted the relationship instead: per $50,000 it paid 0.487 hype against a prerelease's 0.240, so cash was the CHEAP route. 0.5 pays 0.203 and is the dearer route again. The knob moves median net worth 2.6% across 0.35 to 1.2 — it buys the relationship, not an outcome. | swept |
 | `hype.marketingReference` | 10000000 | $100,000. Spend at which the marketing curve equals 1. | structural |
 | `hype.prereleaseCostPerScale` | 2500000 | $25,000 per point of scale. | swept |
 | `hype.prereleaseHypeGain` | 0.12 | Hype per point of prerelease scale. | swept |
 | `hype.prereleaseGoodwillGain` | 0.02 | Goodwill a prerelease earns. | swept |
 | `hype.prereleaseRelationshipGain` | 0.04 | LGS relationship a prerelease earns. | swept |
-| `hype.defaultCadenceWeeks` | 2 | Preview cadence when a bot schedules none. | first-guess |
+| `hype.defaultCadenceWeeks` | 2 | Preview cadence when a bot schedules none. Read it with `defaultLeadWeeks`: the free window is `defaultLeadWeeks / defaultCadenceWeeks` previews long, which is 1 today. | first-guess |
 | `hype.revealHypePerCard` | 0.05 | Hype per previewed card. | swept |
 | `hype.revealHalfLife` | 0.8 | Decay on hype inside the reveal window. | swept |
 | `hype.revealAttentionCost` | 0.004 | Attention a preview spends. | swept |

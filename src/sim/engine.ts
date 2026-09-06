@@ -224,10 +224,6 @@ function commitPrintRun(s: SimState, setId: SetId, quantities: Record<ProductId,
   pub.cash = C(pub.cash - cost);
   pub.ledger.push({ t: s.tick, amount: C(-cost), category: 'print_run', note: set.name, refId: setId });
 
-  // Blind commitment: reveal and release are scheduled here, before any signal.
-  // `scheduleReveal` can move the reveal start inside this window afterwards.
-  // The release date and the print run cannot move at all — that is the bet.
-  set.revealStartTick = T(s.tick + s.config.hype.defaultLeadWeeks);
   // Every region this set has a product in gets a release date, staggered by
   // `entryLeadWeeks`. The home market ships first and the rest follow, which is
   // CONCEPT.md §6.6's "region order is the preview mechanism": a publisher who
@@ -246,6 +242,16 @@ function commitPrintRun(s: SimState, setId: SetId, quantities: Record<ProductId,
     regionId,
     releaseTick: T(s.tick + 18 + i * s.config.region.entryLeadWeeks),
   }));
+  // Blind commitment: reveal and release are scheduled here, before any signal.
+  // `scheduleReveal` can move the reveal start inside this window afterwards.
+  // The release date and the print run cannot move at all — that is the bet.
+  //
+  // The lead is counted back from the home release, which is what the name says
+  // and what `revealLeadWeeks` means to a bot. It used to count forward from the
+  // commit, so the same word meant two different things and the knob moved the
+  // window in the opposite direction to the one it read as. See the config note.
+  set.revealStartTick = T(Math.max(
+    s.tick, (set.regionSchedule[0]!.releaseTick as number) - s.config.hype.defaultLeadWeeks));
   // The reading is taken here and frozen, for the same reason the reveal
   // signal's truth is frozen at release: this is the last moment before the
   // answer is knowable, so it is the only moment at which scoring the reading

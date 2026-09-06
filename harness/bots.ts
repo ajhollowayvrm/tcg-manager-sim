@@ -816,7 +816,7 @@ export const BOTS: Record<string, () => Bot> = {
     label: 'HypeBuilder', cadenceWeeks: 52, cardsPerSet: 280, setType: 'main',
     quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000, productKind: 'boosterBox',
     allocationPolicy: 'spread',
-    revealLeadWeeks: 16, revealCadenceWeeks: 1,
+    revealLeadWeeks: 3, revealCadenceWeeks: 1,
     marketingPerSet: 50_000_00, prereleaseScale: 2, campaignRunMultiple: 1.6,
     // The market sizes the run; the bankroll only caps it. 0.30 exactly covered
     // 8,000 boxes at the opening cash, which left no headroom at all to grow
@@ -835,7 +835,7 @@ export const BOTS: Record<string, () => Bot> = {
     label: 'HypeGambler', cadenceWeeks: 52, cardsPerSet: 280, setType: 'main',
     quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000, productKind: 'boosterBox',
     allocationPolicy: 'spread',
-    revealLeadWeeks: 16, revealCadenceWeeks: 1,
+    revealLeadWeeks: 3, revealCadenceWeeks: 1,
     marketingPerSet: 50_000_00, prereleaseScale: 2, campaignRunMultiple: 2.2,
     // The market sizes the run; the bankroll only caps it. 0.30 exactly covered
     // 8,000 boxes at the opening cash, which left no headroom at all to grow

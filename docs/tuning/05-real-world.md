@@ -504,7 +504,7 @@ buys a discount and nothing else — this would give it a real downside instead.
 
 | Measure | Real | Ours |
 |---|---|---|
-| Preview window | **3 weeks** | `hype.defaultLeadWeeks` 12; `hypeBuilder` uses 16 |
+| Preview window | **3 weeks** | [round 9] `hype.defaultLeadWeeks` 2, and `hypeBuilder` uses 3 |
 | Prerelease timing | 1 week before release | — |
 | Measured media spend | **under $750,000/year, company-wide** | `hypeBuilder` spends $50,000 *per set* |
 
@@ -521,6 +521,15 @@ events — not paid media**. Our `hype.marketingReference` of $100,000 and
 `marketingHypeGain 1.2` make cash-bought hype a first-class lever. Against
 `conservative`'s ~$442k annual revenue, `hypeBuilder`'s $50k per set is over 10%
 of revenue on media. The real figure is about 0.04%.
+
+**[Round 9] Both halves of this were acted on.** The campaign window is 3 weeks,
+which is the measured number, and the free window is 1 preview.
+`marketingHypeGain` went 1.2 -> 0.5, so cash-bought hype is the dearer route
+again. `hypeBuilder`'s media bill is now 0.7% of its revenue against the 10%
+recorded above — the fall is mostly the growth arc raising revenue, not the
+spend falling, and the real figure of 0.04% is still 17x below us. The gate
+`sub.marketingShare` holds it under 2%. Closing the last 17x means cutting the
+bot's `marketingPerSet`, which is a bot constant, not a config path.
 
 Either our marketing lever should be much weaker per dollar, or much cheaper —
 and prereleases should carry more of the load. Note that **prereleases may be a

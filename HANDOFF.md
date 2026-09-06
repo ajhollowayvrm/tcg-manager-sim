@@ -559,6 +559,13 @@ re-measured against the value targets and the decile ladder as one unit. Typed
 arrays for the hot price loop are behaviour-neutral but mean giving up the
 object model in `tickPrices`.
 
+**[Round 9] The hype block is swept, except for two paths.**
+`signalNoiseSigma` and `marketingHypeGain` were fitted in Round 9, and
+`decayPerTickAfterRelease` in an earlier one. `marketingReference` and
+`prereleaseCostPerScale` were read and deliberately left alone — the Round 9
+section says why for both. `heatFromHype` is still unswept and is still the
+most likely cause of the steepening top tail.
+
 **3. What is still unswept.** Much less than before. The `art`, `hype` and
 `finance` storage lines are swept, and so are the two grading knobs this section used to name — they do
 different jobs (`feeWorthMultiple` decides which printings clear the hurdle at
@@ -582,7 +589,9 @@ terms, and left `collectorConvergence`, `resellerConvergence`,
 untouched; and
 `hype.heatFromHype`, which is what puts every set's opening heat at
 `1.6 + hype * heatFromHype` and is the most likely cause of the steepening top
-tail noted under the power-law bullet.
+tail noted under the power-law bullet. Round 9 halved the hype a campaign
+carries into a launch, so `heatFromHype` now acts on a smaller number than the
+value it was guessed against.
 
 **4. Three probe bots are unviable and it is not clear they should be.**
 `smallBets` dies in 20/20 seeds of `debt_spiral` — under-printing means never
@@ -609,6 +618,171 @@ was taking the bankroll off the whole roster before any strategy could express
 itself — fixing the artist rates alone moved `diff.botsAlwaysSurvive` from 1 to 6
 and `allIn` from 0.05 to 0.40. Re-derive the `smallBets` and `globalist`
 mechanisms before tuning them; the shipped numbers under them have moved.
+
+
+## The reveal window (tuning Round 9, 2026-09-06)
+
+**The suite reads 53 gates, 50 PASS, 0 FAIL, 3 KNOWN, 0 DRIFT.** Banked under
+`docs/tuning/bank/round-9/`. One gate is new and passes. One gate regressed and
+is now a known-fail. Two gates came back to pass on the re-roll, not on a
+repair — read the warning below before you count them.
+
+The round shortened the reveal window, re-fitted the signal noise to the short
+window, and made cash-bought hype the dear route again.
+
+### Three of the round's premises were wrong. Check the code before the plan.
+
+The plan and the Round 9 handoff agreed on all three, and all three failed at
+the first read of the source. This cost about a third of the round.
+
+**1. "Make a prerelease cost-neutral rather than revenue-positive."**
+`hostPrerelease` books a `category: 'event'` debit and no revenue at all. It has
+never been revenue-positive. It buys hype, segment goodwill and an LGS
+relationship for cash, and sells nothing. **No change made.** The Round 9
+handoff asked for this premise to be verified, and this is the answer.
+
+**2. "`hype.defaultLeadWeeks` 12 -> 3 shrinks the window."** It did the
+opposite. The knob counted FORWARD from the commit, against a home release
+fixed 18 weeks out, so 12 bought a 6-week window and — at `defaultCadenceWeeks:
+2` — **three previews, not twelve**. Lowering it to 3 would have bought a
+15-week window and seven previews. The name said one thing and the arithmetic
+did another.
+
+`commitPrintRun` now counts the lead back from the home release, which is what
+the name says and what a bot's `revealLeadWeeks` has always meant. One word,
+one meaning. The number reads 2 and the free window is 1 preview.
+
+**3. "`marketingReference` down, so cash-bought hype is weak per dollar."**
+`marketingReference` is the scale at which the log curve bends, so lowering it
+makes cash-bought hype STRONGER per dollar. **Not moved.** `marketingHypeGain`
+carries that job alone.
+
+### What shipped
+
+| Path | Was | Now | Why |
+|---|---|---|---|
+| `hype.defaultLeadWeeks` | 12 (forward from commit) | 2 (back from release) | semantics fixed; free window 3 previews -> 1 |
+| `hype.signalNoiseSigma` | 2.0 | 1.2 | re-fitted to the short window |
+| `hype.marketingHypeGain` | 1.2 | 0.5 | cash is the dear route again |
+| `hypeBuilder.revealLeadWeeks` | 16 | 3 | the campaign window, in `harness/bots.ts` |
+| `hypeGambler.revealLeadWeeks` | 16 | 3 | the same |
+| `hype.marketingReference` | $100,000 | unchanged | see premise 3 |
+| `hype.prereleaseCostPerScale` | $25,000 | unchanged | see premise 1 |
+
+A campaign now runs three weekly previews into the release. A publisher who
+spends nothing gets one.
+
+### The signal, re-fitted
+
+The campaign fell from 16 previews to 3 and the free window from 3 to 1, so the
+old sigma no longer read the same. Swept over 20 seeds x 30 years:
+
+| `signalNoiseSigma` | free read (1 preview) | campaign read (3 previews) |
+|---|---|---|
+| 1.0 | 0.53 | 0.75 |
+| 1.2 | **0.47** | **0.69** |
+| 1.4 | 0.42 | 0.63 |
+
+1.2 ships. It holds the free read at the 0.45 the last three rounds measured,
+and puts the campaign mid-band instead of against an edge. The suite reads
+`sub.signalLow` 0.472, `sub.signalHigh` 0.674, `sub.signalRises` 0.203.
+
+**The free window cannot be longer than 1 preview while the campaign is 3.** The
+error shrinks as `1/sqrt(previews)`, so 2 previews against 3 is a spread of
+about 0.08 — the floor of `sub.signalRises`. Whoever lengthens the free window
+must lengthen the campaign in step, or that gate stops measuring anything.
+
+### Marketing is the dear route again
+
+Per $50,000 of spend, at the old `marketingHypeGain: 1.2`:
+
+```
+marketing  1.2 * ln(1 + 50000/100000) = 0.487 hype
+prerelease 0.12 * 2 scale             = 0.240 hype
+```
+
+Cash bought twice the hype the store route did, which is the reverse of the
+relationship the config comment claims, and once the window shrank it carried
+two thirds of a whole campaign. At 0.5 marketing pays 0.203 against the
+prerelease's 0.240: still worth buying, and once again the dearer of the two.
+
+**This knob buys the relationship and almost no outcome.** Swept at 0.35, 0.5,
+0.7 and 1.2 over 20 seeds x 30 years, `hypeBuilder`'s median net worth moves
+from $125.4M to $128.7M — 2.6% across the whole range. Do not expect it to move
+a survival number.
+
+### What it cost: `sub.scalperShare`, 0.131 -> 0.070
+
+Demoted to known-fail. **Round 11 item 1 owns it.** The gate reads `dropRunner`,
+which runs no campaign at all, so no campaign knob touched it. The free window
+did: a set that reveals once instead of three times carries half the hype into
+its launch (`dropRunner` reads 0.069 hype at release against 0.021 now), and a
+launch with less hype is a drop with less shortage for a scalper to read.
+
+Everything below is `dropRunner`:
+
+| Measurement | Share |
+|---|---|
+| 40 seeds x 30 years, shipped | 0.080 |
+| 20 seeds x 30 years, shipped | 0.070 |
+| 20 seeds x 30 years, free window put back to 3 previews | 0.103 |
+| 20 seeds x 50 years, shipped | 0.306 |
+
+Read those together. 0.070 is not a small sample: 40 seeds say 0.080. The old
+three-preview window only just cleared the 0.10 floor anyway. And the gate is
+dominated by the horizon, exactly as its own note has warned since Round 5 — it
+passes comfortably at 50 years and fails at 30.
+
+**Do not chase it through the `drops` block.** Raising
+`drops.shortagePremiumWeight` from 0.2 to 0.32 — a 60% move on a constant Round
+5 fitted — buys 0.080 -> 0.087. The lever is not there.
+
+### Two gates came back, and neither was repaired
+
+`diff.conservativeSurvives` 0.900 -> 0.950 and `sub.channelHogLosesReach` 7 ->
+6. **Both are re-rolls.** Round 9 renumbered the main RNG stream, so every seed
+is a different world. Nothing in this round touched finance, overhead, the
+storage cliff or the channels block.
+
+Both now sit exactly ON a band edge, and both are promoted to `pass` on
+purpose: as pass gates, a return to 0.900 or to 7 reads FAIL rather than KNOWN.
+Round 10 still owns the conservative trade. Round 11 item 2 still owns the
+channels sweep. If either number moves back, that is the mechanism, not noise.
+
+### Exit criteria
+
+| Criterion | Result |
+|---|---|
+| `marketingTotal` under 1% of revenue | `hypeBuilder` 0.7%. `hypeGambler` 2.1%. See below. |
+| `signalCorrelation` rises with previews, lands 0.5-0.9 | 0.472 free, 0.674 campaign. Met. |
+| A campaign pays only when it prints a bigger run | Met. See the table below. |
+
+**`hypeGambler` misses the marketing criterion and no hype knob can fix it.**
+Both campaign bots spend a flat `marketingPerSet: 50_000_00`, so the share is
+revenue in the denominator, not the lever in the numerator. `hypeGambler` dies
+in a third of its seeds, so it earns less against the same bill. The share
+measures its survival. The new gate `sub.marketingShare` therefore reads
+`hypeBuilder`, and the band is [0.003, 0.02]: under about 1% is the target, 2%
+is the ceiling, and the floor is there because a lever nobody buys is not a
+lever.
+
+The campaign economics, 20 seeds x 30 years at the shipped values:
+
+| Bot | Survival | Median net worth | Median print run |
+|---|---|---|---|
+| `conservative` | 0.95 | $65.7M | 70,600 |
+| `hypeBuilder` | 0.90 | $126.0M | 132,200 |
+| `hypeGambler` | 0.65 | $172.1M | 193,500 |
+
+Net worth tracks the print run and nothing else. A campaign pays because
+`campaignRunMultiple` lets it print more, and the greedy campaign still buys its
+extra $46M with 25 points of survival. That is the shape the round had to keep.
+
+### The new metric
+
+`marketingShare` in `harness/metrics.ts`, and a column in the reveal-window
+table in `harness/run.ts`. The round's exit criterion had no metric behind it,
+and the workflow rule says a claim the suite does not own drifts away from it.
 
 
 ## Licensing (tuning Round 8, 2026-09-05)
@@ -2058,131 +2232,77 @@ horizon fixed.
 
 ## Suggested next session
 
-**Round 9 of the tuning run: the reveal window.** The round plan lives outside
-the repo, at `~/.claude/plans/let-s-start-the-tuning-zesty-magpie.md`. It holds
-the ordering and the reasoning for all twelve rounds, and its round-order table
-and per-round outcome notes are current to Round 8. Read it first, then the
-"Licensing" section above, then run `npm run check`.
+**Round 10 of the tuning run: finance, difficulty and death routes.** The round
+plan lives outside the repo, at
+`~/.claude/plans/let-s-start-the-tuning-zesty-magpie.md`. Read it first, then
+the "The reveal window" section above, then run `npm run check`.
 
-Rounds 0 to 8 are done and banked under `docs/tuning/bank/`. The suite stands at
-**48 PASS, 0 FAIL, 4 KNOWN, 0 DRIFT** across 52 gates, and takes about two and a
+Rounds 0 to 9 are done and banked under `docs/tuning/bank/`. The suite stands at
+**50 PASS, 0 FAIL, 3 KNOWN, 0 DRIFT** across 53 gates, and takes about two and a
 half minutes.
 
 ### Read this before you change anything
 
-**Round 9 renumbers the main RNG stream, and it is the last round allowed to.**
-`tickReveal` draws one `gauss` per preview, which is two `rand` calls on
-`s.rng`. Shrinking the window from 12 previews to 3 removes 18 draws per set,
-and every draw after the first preview of the first set shifts. So:
+**Round 9 was the last round allowed to renumber the main RNG stream.** Round 10
+must not change a draw count. Every banked value in `docs/tuning/bank/round-9/`
+is comparable to what you measure, so a drift line means a real move — treat one
+as a finding, not as noise.
 
-- Every banked value becomes incomparable at the moment the window changes.
-  **Rebank the whole suite** with `npm run check -- --bank=9`.
-- Do not read a Round 8 number against a Round 9 one, including the numbers in
-  the "Licensing" section above.
-- Exit criteria are therefore absolute — bands, invariants, no NaN — never a
-  comparison to an earlier bank. Rounds 2 and 3 worked the same way.
-- Make the renumbering change FIRST, rebank, and only then tune. Tuning against
-  a bank you are about to invalidate is a round thrown away.
+Round 10 is the last of the tuning rounds by necessity: Rounds 4 to 9 each moved
+revenue, so a finance sweep run before them was thrown away. It is now safe.
 
-### The knobs, and what they read today
+### The scope
 
-| Path | Now | Round 9 target |
-|---|---|---|
-| `hype.defaultLeadWeeks` | 12 | 3 |
-| `hype.defaultCadenceWeeks` | 2 | — |
-| `hype.marketingReference` | $100,000 | down |
-| `hype.marketingHypeGain` | 1.2 | down |
-| `hype.prereleaseCostPerScale` | $25,000 | see below |
-| `hype.prereleaseHypeGain` | 0.12 | — |
-| `hype.signalNoiseSigma` | 2.0 | holds the signal band |
+The plan gives the order:
 
-`hypeBuilder` and `hypeGambler` both carry `revealLeadWeeks: 16` and
-`revealCadenceWeeks: 1` in `harness/bots.ts`. The plan takes both to 3. They are
-the only bots that campaign, so they are the only bots that will move.
+1. The `weeklyOverhead*` lines. Scale them with the audience, so "doing nothing
+   loses" stays true at year 40 as well as year 1.
+2. `startingCash` with `borrowCeilingBase` in step, then `interestBase`.
+3. `overprintDeathUnits` and the two death thresholds.
+4. `attention.fatigueBite`, `fatigueDecay`, `fatigueExponent` and
+   `referenceRunUnits` — the most load-bearing knobs now rivals are gone.
+5. Move `cadenceWeeks` into a harness flag, so the cadence table in this file
+   becomes sweepable. It changes no draw counts.
 
-**`marketingHypeGain` was swept in an earlier round and has a reason attached.**
-At 0.35 marketing was strictly dominated by a prerelease at equal spend, so
-nobody would ever buy it. 1.2 makes it competitive and still the dearer route to
-the same hype, which is the relationship the round wanted. Lowering it is
-allowed — that is this round's job — but do not lower it past the point where
-cash-bought hype is dominated again, or the lever stops being a decision.
+### Four things Round 10 must settle
 
-### One premise in the plan to check before acting on it
+**1. The `specialtyOnly` contradiction.** The `weeklyOverheadBase` comment in
+`config.ts` claims "At $1,000 the base is survivable on its own", citing
+`specialtyOnly` at 100% survival. It measures 0% over 20 seeds x 30 years.
+Decide whether the number or the comment is wrong, and say which in the notes.
 
-The plan says to make a prerelease **cost-neutral rather than revenue-positive**,
-on the grounds that a free lever with an upside is not a decision. **Verify that
-premise first.** `hostPrerelease` in `engine.ts` books a `category: 'event'`
-debit and no revenue at all — it buys hype, segment goodwill and LGS
-relationship for cash, and sells nothing. So it is already revenue-negative, and
-the plan's recommendation may be describing a model that no longer exists. If it
-is, say so in the round notes rather than implementing a change to match it.
+**2. The two gates Round 9 promoted on a re-roll.**
+`diff.conservativeSurvives` reads 0.950 against a floor of 0.95, and
+`sub.channelHogLosesReach` reads 6 against a ceiling of 6. Neither was repaired;
+the RNG stream moved under both. They are the two most likely FAIL lines in the
+suite, and a FAIL on either is a real signal because the stream is stable now.
+The conservative trade — 0.950 at a 1.3x storage cliff against 0.900 at 1.7x —
+is described in the Round 7 section and is Round 10's to make.
 
-### Exit criteria
+**3. The art rate band is a scale correction, not a rate.** It ships at a fifth
+of the researched $400-$2,500 because our publisher earns about a fifth of a
+real one. When Round 10 lifts `startingCash` and print volume toward real scale,
+that factor must shrink toward 1 in step, or art silently becomes a rounding
+error again. The full reasoning is in the Round 7 section.
 
-- `marketingTotal` under 1% of revenue. The metric already exists in
-  `harness/metrics.ts` and prints in the hype table.
-- `signalCorrelation` still rises with previews and lands 0.5-0.9. The three
-  gates that hold this are `sub.signalLow` (0.447), `sub.signalHigh` (0.826) and
-  `sub.signalRises` (0.379). **A three-preview window is the low end of that
-  spread**, and `signalNoiseSigma: 2.0` was fitted so a default three-preview
-  window reads r = 0.55 — check the fit still holds when 3 becomes the default
-  rather than the floor.
-- The campaign-economics shape survives: a campaign pays only when it lets you
-  print a bigger run.
+**4. The art exit bands are unfitted on purpose.** Per AJ's call in Round 7 they
+are pre-measurement guesses, to be re-fitted after capital settles, against what
+the corrected model produces. Round 7 recorded the measurements to start that
+re-fit from: `conservative` 3.5%, `safeHands` 13.3%, `scout` 0.7%, and `scout`
+beating `safeHands` on top card in 15 of 20 seeds.
 
-### The gates most likely to move
-
-| Gate | Reads now | Why it is exposed |
-|---|---|---|
-| `sub.signalLow` | 0.447 | fewer previews at the low end |
-| `sub.signalHigh` | 0.826 | the 16-preview campaign is going to 3 |
-| `sub.signalRises` | 0.379 | the spread between the two shrinks |
-| `diff.hypeGamblerSurvival` | 0.850 | sits on its band ceiling of 0.85 already |
-| `diff.hypeGamblerTopEarner` | 1 | the greedy campaign must stay the top earner |
-| `diff.licensorEarns` | 1.536 | see below |
-| `diff.licensorSurvival` | 0.850 | see below |
-
-**The two licensing gates are the newest and neither has survived a
-renumbering.** Round 8 made `licensor` the only bot whose print run is sized by
-an engine-side quantity — `collabOfferFactor` — rather than by its own options.
-The reveal window and the licence now compete for the same lever: a campaign
-sizes the run through `campaignRunMultiple`, and a licence sizes it through the
-demand it bought. If Round 9 weakens cash-bought hype, read both licensing gates
-in the same sweep rather than assuming they are out of scope.
-
-### The commands
-
-```
-npm run check                                                   # all 52 gates
-npm run check -- --bank=9                                       # and rebank it
-npm run sim -- --seeds=1 --years=25 --bot=conservative --dist   # the ladder
-npx tsx harness/check.ts --print-bands                          # after a band edit
-```
-
-`harness/gates.ts` is the single source of truth for every band.
-`docs/tuning/03-targets.md` holds a generated copy between the `BANDS:START` and
-`BANDS:END` markers, and `static.bandsInSync` fails if they drift. `--bank=N`
-writes `docs/tuning/bank/round-N/` but does **not** write the `banked:` values
-back into `gates.ts` — set those by hand, then regenerate the band table, then
-run `npm run check` once more to confirm it is green.
-
-### The four remaining known-fails
+### The three remaining known-fails
 
 | Gate | Reads | Owner |
 |---|---|---|
-| `diff.conservativeSurvives` | 0.900 against [0.95, 1] | Round 10 |
 | `diff.idleDies` | 12.019 against [2.5, 9] | Round 10 |
-| `sub.channelHogLosesReach` | 7 against [0.5, 6] | Round 11 item 2 |
+| `sub.scalperShare` | 0.070 against [0.1, 0.5] | Round 11 item 1 |
 | `shape.surpriseGrail` | 1 against [0.1, 0.6] | **nobody** |
 
-Round 7 repaired `diff.botsAlwaysSurvive` (1 -> 6) and `diff.allInSurvival`
-(0.050 -> 0.400), both by fixing the artist rates rather than by touching
-finance. `diff.conservativeSurvives` moved 0.700 -> 0.900 and is one seed short;
-the Round 7 section shows the storage setting that reaches 0.950 and what it
-costs, which is the blind bet's downside. That is Round 10's trade to make.
-
-`sub.channelHogLosesReach` is new, and it is a tripwire Round 3 armed on purpose
-rather than a regression. Do not widen its band. See the Round 7 section.
+`sub.scalperShare` is new to this list. Round 9 shortened the free reveal window
+and took the hype off a non-campaigning launch with it. Read the Round 9 section
+before touching it: the gate is dominated by the run horizon, it passes at 50
+years, and the `drops` block is not the lever.
 
 `shape.surpriseGrail` cannot be cleared by tuning at any value: it is a
 scale-invariant ratio over the whole catalogue, so at 280 cards a set it asks
@@ -2191,20 +2311,28 @@ answer is certain. Fixing it needs the metric redefined per set, and that needs
 a band `05-real-world.md` says the research cannot supply. **It is a design
 decision, not a round.**
 
-### Two things Round 10 should know before it starts
+### The commands
 
-1. **The art rate band is a scale correction, not a rate.** It ships at a fifth
-   of the researched $400-$2,500 because our publisher earns about a fifth of a
-   real one. When Round 10 lifts `startingCash` and print volume toward real
-   scale, that factor must shrink toward 1 in step, or art silently becomes a
-   rounding error again. The full reasoning is in the Round 7 section.
-2. **The art exit bands are unfitted on purpose.** Per AJ's call in Round 7 they
-   are pre-measurement guesses, to be re-fitted after capital settles, against
-   what the corrected model produces. Round 7 recorded the measurements to start
-   that re-fit from: `conservative` 3.5%, `safeHands` 13.3%, `scout` 0.7%, and
-   `scout` beating `safeHands` on top card in 15 of 20 seeds.
+```
+npm run check                                                   # all 53 gates
+npm run check -- --bank=10                                      # and rebank it
+npm run sim -- --seeds=1 --years=25 --bot=conservative --dist   # the ladder
+npx tsx harness/check.ts --print-bands                          # after a band edit
+```
 
-### Nine things this run has learned the hard way
+`harness/gates.ts` is the single source of truth for every band.
+`docs/tuning/03-targets.md` holds a generated copy between the `BANDS:START` and
+`BANDS:END` markers, and `static.bandsInSync` fails if they drift. `--bank=N`
+writes `docs/tuning/bank/round-N/` but does **not** write the `banked:` values
+back into `gates.ts` — set those by hand from
+`docs/tuning/bank/round-N/gates.json`, bump `DATE`, regenerate the band table,
+then run `npm run check` once more to confirm it is green.
+
+**Bank what the suite measures, not what a scratch probe measured.** Round 6
+banked two gates off the probe it fitted on; both sat under the drift threshold,
+so nothing flagged, and it quietly spent the next round's drift budget.
+
+### Ten things this run has learned the hard way
 
 Each of these cost a round or a correction. They are in `04-workflow.md` as
 rules; this is the short form. Numbers 6 to 8 are stated in full in the Round 7
@@ -2239,39 +2367,36 @@ section above.
    left the previous run's CSV in place, and read back as three identical rows
    — a perfectly convincing measurement that a live knob was inert. A sweep loop
    writes its log to a file and reports a non-zero exit.
+10. **Read the knob before you turn it. The name is not the mechanism.** Round 9
+   was handed three instructions and all three were backwards.
+   `hype.defaultLeadWeeks` counted forward from the commit, not back from the
+   release, so lowering it LENGTHENED the window it was supposed to shorten.
+   `hype.marketingReference` is the bend in a log curve, so lowering it makes
+   cash-bought hype stronger, not weaker. And a prerelease had never been
+   revenue-positive, so the change the plan asked for had nothing to act on. Ten
+   minutes in `engine.ts` would have caught all three. Where a name and an
+   arithmetic disagree, fix the name in the same round — Round 9 did, and the
+   trap is gone.
 
 ### Before you touch the value engine again
 
 ```
-npm run check                                                   # all 52 gates
-npm run check -- --bank=9                                       # and bank it
+npm run check                                                   # all 53 gates
+npm run check -- --bank=10                                      # and bank it
 npm run sim -- --seeds=1 --years=25 --bot=conservative --dist   # the ladder
 ```
 
-`harness/gates.ts` is the single source of truth for every band. `03-targets.md`
-holds a generated copy between comment markers and `static.bandsInSync` fails if
-they drift — so after editing a band or a banked value, regenerate it:
-
-```
-npx tsx harness/check.ts --print-bands
-```
-
-**Bank what the suite measures, not what a scratch probe measured.** Round 6
-banked two gates off the probe it fitted on; both sat under the drift threshold,
-so nothing flagged, and it quietly spent the next round's drift budget.
-
 ### The scratch scripts are gone
 
-Round 7 needed none of them: every sweep it ran was `npm run sim --set=...`
-piped through `awk`, and the two numbers the harness could not produce
-(`revenue`, `artSpendShare`) were added to `harness/metrics.ts` instead of
-measured in a probe. Prefer that order — a metric the suite owns cannot drift
-away from the claim it supports.
+Rounds 7, 8 and 9 needed none of them: every sweep was `npm run sim --set=...`
+read back from `out/<dir>/runs.csv`, and the numbers the harness could not
+produce (`revenue`, `artSpendShare`, `marketingShare`) were added to
+`harness/metrics.ts` instead of measured in a probe. Prefer that order — a
+metric the suite owns cannot drift away from the claim it supports.
 
-Rounds 5 and 6 leaned on throwaway scripts under `out/scratch/` — a config
-sensitivity screen, a drops sweep driver, a grading probe, a config-path
-auditor. **`out/` is gitignored, so none of them are in the repo.** They are
-cheap to rewrite and the method matters more than the code: each one builds
-`RunTask`s, calls `runBatch` from `harness/batch.ts` with 12 jobs, and reduces
-`RunMetrics` to a median per config point. If a later round wants the screen
-permanently, promote it into `harness/` rather than rebuilding it a third time.
+Rounds 5 and 6 leaned on throwaway scripts under `out/scratch/`. **`out/` is
+gitignored, so none of them are in the repo.** They are cheap to rewrite and the
+method matters more than the code: each one builds `RunTask`s, calls `runBatch`
+from `harness/batch.ts` with 12 jobs, and reduces `RunMetrics` to a median per
+config point. If a later round wants a screen permanently, promote it into
+`harness/` rather than rebuilding it a third time.

@@ -87,6 +87,14 @@ export interface RunMetrics {
   avgHypeAtRelease: number;
   /** Total marketing outlay, in dollars. */
   marketingTotal: number;
+  /**
+   * Marketing outlay as a share of revenue. The dollar total says nothing on
+   * its own: the same $2,000,000 campaign is a rounding error to a mature
+   * publisher and the whole company to a new one. Round 9 holds this under 1%,
+   * which is what keeps cash-bought hype a decision rather than the answer.
+   * Null before any sale.
+   */
+  marketingShare: number | null;
   prereleasesHosted: number;
   /**
    * Correlation between the reveal-window signal and the set's true chase at
@@ -790,6 +798,7 @@ export function computeMetrics(
     avgHypeAtRelease: hypeAtRelease.length
       ? hypeAtRelease.reduce((a, b) => a + b, 0) / hypeAtRelease.length : 0,
     marketingTotal,
+    marketingShare: revenue > 0 ? marketingTotal / revenue : null,
     prereleasesHosted,
     signalCorrelation,
     signalPairs: signalSets.length,

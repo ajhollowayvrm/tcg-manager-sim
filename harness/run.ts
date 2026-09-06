@@ -293,6 +293,7 @@ const hypeRows = botNames
       runsWithHype: `${ran.length}/${r.length}`,
       hypeAtRelease: mean(ran.map(x => x.avgHypeAtRelease)).toFixed(2) + 'x',
       marketing$: (mean(ran.map(x => x.marketingTotal)) / 1e6).toFixed(1) + 'M',
+      marketingShare: (100 * mean(ran.map(x => x.marketingShare ?? 0))).toFixed(2) + '%',
       prereleases: mean(ran.map(x => x.prereleasesHosted)).toFixed(0),
       signalR: mean(ran.map(x => x.signalCorrelation)).toFixed(2),
     };
