@@ -629,7 +629,7 @@ mechanisms before tuning them; the shipped numbers under them have moved.
 
 ## Round 11 — Plan 1, IN PROGRESS (2026-09-06)
 
-**This round is not finished. C0 to C7 are committed and green; C8 to C13 are
+**This round is not finished. C0 to C8 are committed and green; C9 to C13 are
 not started.** The suite reads **53 gates, 51 PASS, 0 FAIL, 2 KNOWN, 0 DRIFT**.
 
 **The plan lives outside the repo at
@@ -659,7 +659,7 @@ The column comparator for steps that ADD metrics (byte-identity no longer
 applies once a column is added) is at `/tmp/cmpcols.py` and is three lines of
 `csv.DictReader` — rewrite it rather than hunt for it.
 
-### What shipped, C0 to C7
+### What shipped, C0 to C8
 
 | Commit | Step | Acceptance |
 |---|---|---|
@@ -672,6 +672,7 @@ applies once a column is added) is at `/tmp/cmpcols.py` and is three lines of
 | `4f982e9` | C5 readings | 3 rows, all `globalist` |
 | `822e596` | C6 illustration chains | byte-identical |
 | `325048b` | C7 preorders | byte-identical |
+| _this_ | C8 per-tick `segmentMix` | byte-identical |
 
 Banked baseline: `docs/tuning/bank/round-11a/`. **That bank is C0's, not
 HEAD's** — C4b and C5 moved rows after it was written. Rebank before relying on
@@ -719,18 +720,19 @@ field, then look at what it says.
 - **The reading tiers narrow 0.500 -> 0.179 against a floor of 0.120.**
   `residualSigma` is CONCEPT.md §6.1's sentence that the reading is never exact,
   and it must stay above zero at every tier.
+- **The segment mix tilt is strong and its sign is right.** `conservative`, 6
+  seeds over 25 years, `region.segmentMixAcquisitionWeight` 0 against 0.6: 71 of
+  124 columns move. `peakDebt` falls 31758 -> 20595 and `interestSpend` falls
+  50028 -> 33816, because acquisition that follows a region's taste converts
+  cheaper. `scalperPopulation` rises 1572 -> 1947, so the knob also feeds the
+  known-fail `sub.scalperShare`. Fit it BEFORE C9's buylist weight, which
+  reaches the same gate from the other side.
 - **A 50-year save is 63.7 MB**, of which the event log is 36% (142,596 events).
   `serialize` takes an explicit, lossy `trimEventsBefore`; it is not the default
   because the harness reads drops and creator coverage off that log.
 
-### C8 to C13, not started
+### C9 to C13, not started
 
-- **C8 — per-tick `segmentMix`.** `regionSegmentWeight` (`regions.ts:193`) has
-  zero callers; the mix shapes the audience at bootstrap and is never consulted
-  again, so a region stops being itself by year 15. Wire it into the acquisition
-  drive in `audience.ts` behind `region.segmentMixAcquisitionWeight`, **default
-  0** so `mixTilt` evaluates to exactly 1. Do NOT touch the bootstrap draws at
-  `world.ts:181` — they are on the main stream.
 - **C9 — liquidity and the buylist spread.** `Printing.market.liquidity` and
   `lastTradeTick` are written and never read. **The exploit `HANDOFF.md` used to
   describe is not live**: the publisher never holds singles, and `metrics.ts`

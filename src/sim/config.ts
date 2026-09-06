@@ -809,6 +809,9 @@ export const defaultConfig: SimConfig = {
     knowledgeCeiling: 0.95,
     researchCreditShare: 0.25,
     tasteReadingNoiseScale: 0.5,
+    // Exactly 0 on purpose: `mixTilt` evaluates to exactly 1, so the mechanism
+    // lands without moving a number. Round 12 fits the on-value.
+    segmentMixAcquisitionWeight: 0,
   },
 
   // First-guess numbers, wired for behaviour rather than swept. Each population

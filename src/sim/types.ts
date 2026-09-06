@@ -1686,6 +1686,13 @@ export interface SimConfig {
     researchCreditShare: number;
     /** Reading error on the signed taste axis, relative to the rest. */
     tasteReadingNoiseScale: number;
+    /**
+     * How far `Region.truth.segmentMix` tilts the acquisition drive toward the
+     * segments a region actually favours. 0 means the mix is ignored and every
+     * segment is acquired at the same rate, which is what happened for the
+     * first eleven rounds. See `tickAudienceSystem` step 3.
+     */
+    segmentMixAcquisitionWeight: number;
   };
 
   /**

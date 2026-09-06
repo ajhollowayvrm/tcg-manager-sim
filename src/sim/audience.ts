@@ -26,13 +26,15 @@
  * Before this existed, six segments each carried a `size` that nothing ever
  * wrote, `audienceAverages` meaned them into one number, and demand read a
  * single global scalar. `Region.truth.segmentMix` was seeded per region and
- * never read at all.
+ * never read at all; step 3 reads it now, behind
+ * `region.segmentMixAcquisitionWeight`.
  */
 import type {
-  SimState, SimConfig, AudienceSegment, SegmentState, RegionId, IpEntity,
+  SimState, SimConfig, AudienceSegment, SegmentState, RegionId, IpEntity, Region,
 } from './types.ts';
 import { AGE_COHORTS } from './types.ts';
 import { SEGMENTS } from './world.ts';
+import { regionSegmentWeight } from './regions.ts';
 
 /** The segments of one region. Falls back to the home market if unknown. */
 export function segmentsIn(s: SimState, regionId: RegionId): Record<AudienceSegment, SegmentState> {
@@ -147,6 +149,41 @@ export function segmentAffinity(s: SimState, setId: string, seg: AudienceSegment
   return Math.max(0, Math.min(1, 0.5 + mean * 0.5));
 }
 
+/**
+ * The mean of one region's segment mix, the reference the tilt is measured
+ * against. Guarded away from zero so the ratio in `segmentMixTilt` stays
+ * finite: `0 * Infinity` is `NaN`, and a `NaN` here would poison `reached`.
+ */
+function meanSegmentMix(s: SimState, rid: RegionId): number {
+  const region = s.regions[rid];
+  if (!region) return 1;
+  let total = 0;
+  for (const g of SEGMENTS) total += regionSegmentWeight(region, g);
+  return Math.max(1e-9, total / SEGMENTS.length);
+}
+
+/**
+ * How far a region's taste in players tilts who it acquires.
+ *
+ * `Region.truth.segmentMix` is rolled per region at bootstrap. Until now
+ * nothing read it, so every open region acquired all six segments at one rate
+ * and a region stopped being itself by about year 15 — Japan and the home
+ * market converged on the same shape regardless of what they were rolled as.
+ *
+ * The tilt is relative to the region's OWN mean weight, not an absolute
+ * number, so a region whose mix is flat gets exactly 1 for every segment and
+ * only the difference between segments does any work.
+ *
+ * `region.segmentMixAcquisitionWeight` is 0 today, which makes this exactly 1
+ * — `1 + 0 * x` is bit-identical to 1 for any finite `x`. Round 12 fits the
+ * on-value. Do NOT change the bootstrap draws in `world.ts`; they are on the
+ * main stream and every seeded run depends on their order.
+ */
+function segmentMixTilt(s: SimState, region: Region, g: AudienceSegment, mixMean: number): number {
+  const w = s.config.region.segmentMixAcquisitionWeight;
+  return Math.max(0, 1 + w * (regionSegmentWeight(region, g) / mixMean - 1));
+}
+
 /** Records a shipment into a region, for the acquisition drive. */
 export function creditUnitsSold(s: SimState, regionId: RegionId, units: number): void {
   if (units <= 0) return;
@@ -211,6 +248,9 @@ export function tickAudienceSystem(s: SimState): void {
       for (const g of SEGMENTS) regionPopulation += segs[g].population;
       const perCapita = recent / Math.max(1, regionPopulation);
       const reach = Math.min(2, perCapita / Math.max(1e-9, cfg.reachPerCapitaReference));
+      // A region's taste in players, applied to who it acquires. See `mixTilt`.
+      const region = s.regions[rid];
+      const mixMean = meanSegmentMix(s, rid);
       for (const g of SEGMENTS) {
         const st = segs[g];
         const unreached = Math.max(0, st.population - st.reached);
@@ -219,7 +259,9 @@ export function tickAudienceSystem(s: SimState): void {
           + cfg.acquisitionFromReach * reach
           + cfg.acquisitionFromBrand * pub.brandStanding
           + cfg.acquisitionFromGoodwill * st.goodwill;
-        st.reached = Math.min(st.population, st.reached + unreached * cfg.acquisitionRate * drive);
+        const mixTilt = region ? segmentMixTilt(s, region, g, mixMean) : 1;
+        st.reached = Math.min(st.population,
+          st.reached + unreached * cfg.acquisitionRate * drive * mixTilt);
       }
     }
 
