@@ -1,0 +1,678 @@
+[
+  {
+    "id": "static.typecheck",
+    "category": "static",
+    "observed": 1,
+    "band": [
+      1,
+      1
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 1,
+    "drift": null
+  },
+  {
+    "id": "static.invariants",
+    "category": "static",
+    "observed": 0,
+    "band": [
+      0,
+      0
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0,
+    "drift": null
+  },
+  {
+    "id": "static.parallelIdentity",
+    "category": "static",
+    "observed": 1,
+    "band": [
+      1,
+      1
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 1,
+    "drift": null
+  },
+  {
+    "id": "static.bandsInSync",
+    "category": "static",
+    "observed": 1,
+    "band": [
+      1,
+      1
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 1,
+    "drift": null
+  },
+  {
+    "id": "struct.deathRoutes",
+    "category": "structural",
+    "observed": 4,
+    "band": [
+      4,
+      4
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 4,
+    "drift": null
+  },
+  {
+    "id": "struct.overprintDeaths",
+    "category": "structural",
+    "observed": 0.13,
+    "band": [
+      0.0375,
+      0.2375
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.13,
+    "drift": null
+  },
+  {
+    "id": "struct.debtSpiralDeaths",
+    "category": "structural",
+    "observed": 0.165,
+    "band": [
+      0.0375,
+      0.225
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.165,
+    "drift": null
+  },
+  {
+    "id": "struct.channelCollapseDeaths",
+    "category": "structural",
+    "observed": 0.0675,
+    "band": [
+      0.02,
+      0.175
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.0675,
+    "drift": null
+  },
+  {
+    "id": "struct.attentionCollapseDeaths",
+    "category": "structural",
+    "observed": 0.05,
+    "band": [
+      0.02,
+      0.15
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.05,
+    "drift": null
+  },
+  {
+    "id": "struct.speculatorMoves",
+    "category": "structural",
+    "observed": 2.946053386369342,
+    "band": [
+      1.2,
+      500
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 2.946,
+    "drift": null
+  },
+  {
+    "id": "struct.heatNotPinned",
+    "category": "structural",
+    "observed": 0,
+    "band": [
+      0,
+      0.1
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0,
+    "drift": null
+  },
+  {
+    "id": "struct.ripRationBinds",
+    "category": "structural",
+    "observed": 0.7092634485161097,
+    "band": [
+      0.2,
+      0.95
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.7093,
+    "drift": null
+  },
+  {
+    "id": "struct.collectorNotPinned",
+    "category": "structural",
+    "observed": 20,
+    "band": [
+      5,
+      1000000000
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 20,
+    "drift": null
+  },
+  {
+    "id": "struct.printRunVaries",
+    "category": "structural",
+    "observed": 18,
+    "band": [
+      4,
+      100
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 18,
+    "drift": null
+  },
+  {
+    "id": "diff.botsAlwaysSurvive",
+    "category": "difficulty",
+    "observed": 5,
+    "band": [
+      3,
+      11
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 5,
+    "drift": null
+  },
+  {
+    "id": "diff.botsNeverSurvive",
+    "category": "difficulty",
+    "observed": 5,
+    "band": [
+      2,
+      8
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 5,
+    "drift": null
+  },
+  {
+    "id": "diff.conservativeSurvives",
+    "category": "difficulty",
+    "observed": 0.95,
+    "band": [
+      0.95,
+      1
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.95,
+    "drift": null
+  },
+  {
+    "id": "diff.licensorEarns",
+    "category": "difficulty",
+    "observed": 1.4872364901158566,
+    "band": [
+      1.3,
+      2.5
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 1.487,
+    "drift": null
+  },
+  {
+    "id": "diff.licensorSurvival",
+    "category": "difficulty",
+    "observed": 0.9,
+    "band": [
+      0.75,
+      0.95
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.9,
+    "drift": null
+  },
+  {
+    "id": "diff.hypeGamblerSurvival",
+    "category": "difficulty",
+    "observed": 0.65,
+    "band": [
+      0.4,
+      0.85
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.65,
+    "drift": null
+  },
+  {
+    "id": "diff.hypeGamblerTopEarner",
+    "category": "difficulty",
+    "observed": 1,
+    "band": [
+      1,
+      3
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 1,
+    "drift": null
+  },
+  {
+    "id": "diff.allInSurvival",
+    "category": "difficulty",
+    "observed": 0.3,
+    "band": [
+      0.1,
+      0.6
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.3,
+    "drift": null
+  },
+  {
+    "id": "diff.flooderDiesEarly",
+    "category": "difficulty",
+    "observed": 0.75,
+    "band": [
+      0.4,
+      2.5
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.75,
+    "drift": null
+  },
+  {
+    "id": "diff.attentionBurnerDies",
+    "category": "difficulty",
+    "observed": 1,
+    "band": [
+      0.85,
+      1
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 1,
+    "drift": null
+  },
+  {
+    "id": "diff.idleDies",
+    "category": "difficulty",
+    "observed": 8.826923076923077,
+    "band": [
+      2.5,
+      9
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 8.827,
+    "drift": null
+  },
+  {
+    "id": "diff.deathsLandMidRun",
+    "category": "difficulty",
+    "observed": 8.134615384615385,
+    "band": [
+      3,
+      25
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 8.135,
+    "drift": null
+  },
+  {
+    "id": "diff.sellThrough",
+    "category": "difficulty",
+    "observed": 0.9493623564976449,
+    "band": [
+      0.75,
+      0.95
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.9494,
+    "drift": null
+  },
+  {
+    "id": "diff.flopRate",
+    "category": "difficulty",
+    "observed": 0.005357142857142857,
+    "band": [
+      0.01,
+      0.25
+    ],
+    "expect": "known-fail",
+    "verdict": "KNOWN",
+    "banked": 0.005357,
+    "drift": null
+  },
+  {
+    "id": "shape.median",
+    "category": "shape",
+    "observed": 0.22,
+    "band": [
+      0.2,
+      0.5
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.22,
+    "drift": null
+  },
+  {
+    "id": "shape.under1",
+    "category": "shape",
+    "observed": 0.8107142857142857,
+    "band": [
+      0.64,
+      0.92
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.8107,
+    "drift": null
+  },
+  {
+    "id": "shape.under25c",
+    "category": "shape",
+    "observed": 0.5392857142857143,
+    "band": [
+      0.25,
+      0.8
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.5393,
+    "drift": null
+  },
+  {
+    "id": "shape.top1",
+    "category": "shape",
+    "observed": 0.3439855845254293,
+    "band": [
+      0.21,
+      0.62
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.344,
+    "drift": null
+  },
+  {
+    "id": "shape.top10",
+    "category": "shape",
+    "observed": 0.7698705307382321,
+    "band": [
+      0.66,
+      0.95
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.7699,
+    "drift": null
+  },
+  {
+    "id": "shape.gini",
+    "category": "shape",
+    "observed": 0.8287815508569087,
+    "band": [
+      0.72,
+      0.98
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.8288,
+    "drift": null
+  },
+  {
+    "id": "shape.chaseOverMedian",
+    "category": "shape",
+    "observed": 344.6333333333333,
+    "band": [
+      130,
+      3100
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 344.6,
+    "drift": null
+  },
+  {
+    "id": "shape.tailAlpha",
+    "category": "shape",
+    "observed": 1.9849306108482323,
+    "band": [
+      1.6,
+      2.7
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 1.985,
+    "drift": null
+  },
+  {
+    "id": "shape.ageCurveDirection",
+    "category": "shape",
+    "observed": 0.06428571428571428,
+    "band": [
+      0.02,
+      0.45
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.06429,
+    "drift": null
+  },
+  {
+    "id": "shape.ageCurveLate",
+    "category": "shape",
+    "observed": 0.85,
+    "band": [
+      0.55,
+      0.92
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.85,
+    "drift": null
+  },
+  {
+    "id": "shape.yearsTo100",
+    "category": "shape",
+    "observed": 2.6923076923076925,
+    "band": [
+      2,
+      9
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 2.692,
+    "drift": null
+  },
+  {
+    "id": "sub.signalLow",
+    "category": "subsystem",
+    "observed": 0.5028207558296703,
+    "band": [
+      0.3,
+      0.72
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.5028,
+    "drift": null
+  },
+  {
+    "id": "sub.signalHigh",
+    "category": "subsystem",
+    "observed": 0.6744417857593231,
+    "band": [
+      0.55,
+      0.9
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.6744,
+    "drift": null
+  },
+  {
+    "id": "sub.signalRises",
+    "category": "subsystem",
+    "observed": 0.17162102992965278,
+    "band": [
+      0.08,
+      0.55
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.1716,
+    "drift": null
+  },
+  {
+    "id": "sub.gem10Premium",
+    "category": "subsystem",
+    "observed": 4.087464097099972,
+    "band": [
+      2,
+      5.5
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 4.087,
+    "drift": null
+  },
+  {
+    "id": "sub.gradedPrintingShare",
+    "category": "subsystem",
+    "observed": 0.05452380952380952,
+    "band": [
+      0.02,
+      0.09
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.05452,
+    "drift": null
+  },
+  {
+    "id": "sub.gemRate",
+    "category": "subsystem",
+    "observed": 0.5131103829014516,
+    "band": [
+      0.3,
+      0.6
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.5131,
+    "drift": null
+  },
+  {
+    "id": "sub.gemRateByQuality",
+    "category": "subsystem",
+    "observed": 1.7188140425748566,
+    "band": [
+      1.3,
+      2
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 1.719,
+    "drift": null
+  },
+  {
+    "id": "sub.gemRateVintage",
+    "category": "subsystem",
+    "observed": 0.3959396873848745,
+    "band": [
+      0.15,
+      0.45
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.3959,
+    "drift": null
+  },
+  {
+    "id": "sub.scalperCycles",
+    "category": "subsystem",
+    "observed": 5,
+    "band": [
+      3,
+      35
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 5,
+    "drift": null
+  },
+  {
+    "id": "sub.scalperShare",
+    "category": "subsystem",
+    "observed": 0.06993192398568299,
+    "band": [
+      0.1,
+      0.5
+    ],
+    "expect": "known-fail",
+    "verdict": "KNOWN",
+    "banked": 0.06993,
+    "drift": null
+  },
+  {
+    "id": "sub.marketingShare",
+    "category": "subsystem",
+    "observed": 0.006911059803966374,
+    "band": [
+      0.003,
+      0.02
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.006911,
+    "drift": null
+  },
+  {
+    "id": "sub.houseArtShare",
+    "category": "subsystem",
+    "observed": 0.08583333333333333,
+    "band": [
+      0.02,
+      0.2
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 0.08583,
+    "drift": null
+  },
+  {
+    "id": "sub.channelHogLosesReach",
+    "category": "subsystem",
+    "observed": 6,
+    "band": [
+      0.5,
+      6
+    ],
+    "expect": "pass",
+    "verdict": "PASS",
+    "banked": 6,
+    "drift": null
+  }
+]

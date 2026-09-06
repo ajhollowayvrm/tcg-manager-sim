@@ -9,6 +9,27 @@
  *
  * Bands are inclusive on both ends. Widen one only in the same change that
  * appends a dated reason to its `why`.
+ *
+ * ## Retired gates
+ *
+ * A deleted gate leaves no `why` behind, so the reasons live here. Both were
+ * retired by AJ's decision on 2026-09-06, at the start of Round 11.
+ *
+ * - `diff.lateIdleSurvives` — asked whether a studio that runs well for twenty
+ *   years and then stops still dies. It does not: it survived 85% of 50-year
+ *   runs, and killing it needs a standing bill about 20x the current one, which
+ *   costs `conservative` 60 points of survival. **The gate was wrong, not the
+ *   model** — a mature studio with a back catalogue and twenty years of banked
+ *   cash should be hard to kill, and the mechanism that would kill it is not
+ *   overhead. The `lateIdle` bot STAYS: it feeds `diff.botsAlwaysSurvive`,
+ *   `diff.botsNeverSurvive` and the four death-route rates.
+ * - `shape.surpriseGrail` — could not pass at any knob value. It is a
+ *   scale-invariant ratio over the whole catalogue, so at 280 cards a set it
+ *   asks whether any one of about 8,400 printings ever broke out in 30 years,
+ *   and the answer is certain. Fixing it needs the metric redefined per set,
+ *   against a band `05-real-world.md` says the research cannot supply. The
+ *   `surpriseGrail` METRIC stays — CONCEPT.md §10 still wants the behaviour
+ *   visible, it just cannot be a band.
  */
 import type { RunMetrics } from './metrics.ts';
 import {
@@ -58,6 +79,22 @@ function meanOf(rows: Row[], bot: string, key: keyof RunMetrics): number | null 
 /** Median across seeds over every bot's rows. */
 function medAll(rows: Row[], key: keyof RunMetrics): number | null {
   return median(numbers(rows, M(key)));
+}
+
+/**
+ * Share of the sweep's runs that died of one cause.
+ *
+ * A RATE, not a count. These four gates counted deaths over a fixed roster of
+ * 20 bots x 20 seeds, so every band was really a statement about 400 runs with
+ * the denominator left implicit — and the moment the roster grows, the gate
+ * fails on arithmetic rather than on mechanism. `struct.debtSpiralDeaths` read
+ * 83 against a ceiling of 90 with four new bots waiting to be added. It is the
+ * same defect Round 10 repaired one level down in `diff.flopRate`: a rate over
+ * runs is pooled, never averaged, and never left as a bare count.
+ */
+function deathRate(rows: Row[], cause: string): number | null {
+  if (rows.length === 0) return null;
+  return (deathCauses(rows).get(cause) ?? 0) / rows.length;
 }
 
 /** A ratio gate that reports NO-DATA unless its denominator column is non-zero somewhere. */
@@ -117,19 +154,23 @@ export const GATES: Gate[] = [
        + 'must fire with at least five runs each, or a whole failure mode has gone quiet.',
     measure: c => countWhere(
       [...deathCauses(c.roster).entries()].map(([cause, n]) => ({ cause, n })) as unknown as Row[],
-      r => Number(r.n) >= 5,
+      // The evidence bar scales with the roster for the same reason the four
+      // death gates below are rates: a fixed count of 5 gets easier to clear
+      // every time a bot is added, so the gate quietly weakens as the suite grows.
+      r => Number(r.n) >= c.roster.length * 0.0125,
     ),
   },
   {
-    id: 'struct.overprintDeaths', category: 'structural', band: [15, 95], expect: 'pass',
-    banked: 52, bankedOn: DATE,
+    id: 'struct.overprintDeaths', category: 'structural', band: [0.0375, 0.2375], expect: 'pass',
+    banked: 0.13, bankedOn: DATE,
     why: 'Overprint needs storagePerUnitPerTick to bite. The growth arc makes cash '
-       + 'plentiful, so this is the gate that catches the storage line going slack.',
-    measure: c => deathCauses(c.roster).get('overprint') ?? 0,
+       + 'plentiful, so this is the gate that catches the storage line going slack.'
+       + ' [2026-09-06, round 11a] CONVERTED FROM A COUNT TO A RATE. The band was a statement about 400 runs with the denominator left implicit; Round 11 adds bots, which would have failed this on arithmetic rather than on mechanism. The band is the old one divided by 400 and the observed value did not move.',
+    measure: c => deathRate(c.roster, 'overprint'),
   },
   {
-    id: 'struct.debtSpiralDeaths', category: 'structural', band: [15, 90], expect: 'pass',
-    banked: 66, bankedOn: DATE,
+    id: 'struct.debtSpiralDeaths', category: 'structural', band: [0.0375, 0.225], expect: 'pass',
+    banked: 0.165, bankedOn: DATE,
     why: 'Debt spiral needs the weeklyOverhead lines to bite. The idle bot contributes 20 '
        + 'of these by construction: it releases nothing and dies of the standing bill.'
        + ' [2026-09-06, round 10] 64 -> 83, and it is a RECLASSIFICATION, not a harder '
@@ -138,21 +179,24 @@ export const GATES: Gate[] = [
        + 'have made the same death a `channel_collapse` — that gate fell 32 -> 16 in the '
        + 'same change, and the two moves are the same 16 deaths. Watch the ceiling: 83 '
        + 'against 90 leaves one bad round of headroom, and the next change that shortens '
-       + 'a failing studio\'s life will breach it.',
-    measure: c => deathCauses(c.roster).get('debt_spiral') ?? 0,
+       + 'a failing studio\'s life will breach it.'
+       + ' [2026-09-06, round 11a] CONVERTED FROM A COUNT TO A RATE. The band was a statement about 400 runs with the denominator left implicit; Round 11 adds bots, which would have failed this on arithmetic rather than on mechanism. The band is the old one divided by 400 and the observed value did not move.',
+    measure: c => deathRate(c.roster, 'debt_spiral'),
   },
   {
-    id: 'struct.channelCollapseDeaths', category: 'structural', band: [8, 70], expect: 'pass',
-    banked: 27, bankedOn: DATE,
+    id: 'struct.channelCollapseDeaths', category: 'structural', band: [0.02, 0.175], expect: 'pass',
+    banked: 0.0675, bankedOn: DATE,
     why: 'Reached by channelHog and globalist. Guards the souring mechanism.'
-       + ' [2026-09-06, round 10] 32 -> 16 on the revenue-gated borrow ceiling. Read it beside struct.debtSpiralDeaths, which rose by the same 16: a studio that loses its credit line sooner dies before it can lose its channels. The route is not quieter, the deaths are earlier.',
-    measure: c => deathCauses(c.roster).get('channel_collapse') ?? 0,
+       + ' [2026-09-06, round 10] 32 -> 16 on the revenue-gated borrow ceiling. Read it beside struct.debtSpiralDeaths, which rose by the same 16: a studio that loses its credit line sooner dies before it can lose its channels. The route is not quieter, the deaths are earlier.'
+       + ' [2026-09-06, round 11a] CONVERTED FROM A COUNT TO A RATE. The band was a statement about 400 runs with the denominator left implicit; Round 11 adds bots, which would have failed this on arithmetic rather than on mechanism. The band is the old one divided by 400 and the observed value did not move.',
+    measure: c => deathRate(c.roster, 'channel_collapse'),
   },
   {
-    id: 'struct.attentionCollapseDeaths', category: 'structural', band: [8, 60], expect: 'pass',
-    banked: 20, bankedOn: DATE,
-    why: 'Reached by attentionBurner. The route nothing else touches until the finance round.',
-    measure: c => deathCauses(c.roster).get('attention_collapse') ?? 0,
+    id: 'struct.attentionCollapseDeaths', category: 'structural', band: [0.02, 0.15], expect: 'pass',
+    banked: 0.05, bankedOn: DATE,
+    why: 'Reached by attentionBurner. The route nothing else touches until the finance round.'
+       + ' [2026-09-06, round 11a] CONVERTED FROM A COUNT TO A RATE. The band was a statement about 400 runs with the denominator left implicit; Round 11 adds bots, which would have failed this on arithmetic rather than on mechanism. The band is the old one divided by 400 and the observed value did not move.',
+    measure: c => deathRate(c.roster, 'attention_collapse'),
   },
   {
     id: 'struct.speculatorMoves', category: 'structural', band: [1.2, 500], expect: 'pass',
@@ -345,26 +389,6 @@ export const GATES: Gate[] = [
     measure: c => medOf(c.roster, 'idle', 'deathYear'),
   },
   {
-    id: 'diff.lateIdleSurvives', category: 'difficulty', band: [0, 0.35], expect: 'known-fail',
-    banked: 0.85, bankedOn: DATE,
-    why: 'Doing nothing must lose at year 40, not only at year 1. `lateIdle` is '
-       + '`conservative` for twenty years and then nothing at all, so this asks whether a '
-       + 'studio that has already won can still be killed by the standing bill. It '
-       + 'cannot: it survives 85% of 50-year runs, and every death it does have happens '
-       + 'in its ACTIVE first twenty years. **This is a design decision, not a round.** '
-       + 'A back catalogue that keeps selling plus twenty years of banked cash beats any '
-       + 'bill this model would call overhead — killing it needs a standing bill about '
-       + '20x the current one, which costs `conservative` 60 points of survival and is '
-       + 'not a trade Round 10 was willing to make on its own authority. The alternative '
-       + 'reading is that this is correct and a mature studio SHOULD be safe, in which '
-       + 'case delete the gate rather than tune it. Round 10 shipped the affordable half: '
-       + '`finance.overheadAudienceExponent` stops the bill going to zero.',
-    measure: c => {
-      const r = forBot(c.roster, 'lateIdle');
-      return r.length ? shareTrue(r, 'survived') : null;
-    },
-  },
-  {
     id: 'diff.deathsLandMidRun', category: 'difficulty', band: [3.0, 25.0], expect: 'pass',
     banked: 8.135, bankedOn: DATE,
     why: 'Excluding the three regression bots, a death should be the end of a story rather '
@@ -500,18 +524,6 @@ export const GATES: Gate[] = [
   },
 
   // ---- shape: whole-catalogue legacy targets, kept because the value block is tuned on them ----
-  {
-    id: 'shape.surpriseGrail', category: 'shape', band: [0.10, 0.60], expect: 'known-fail',
-    banked: 1, bankedOn: DATE,
-    why: 'CONCEPT.md §10: a common or uncommon must occasionally break out 100x. Emergent '
-       + 'value, not authored by rarity placement. '
-       + 'Measured on the 30-year ROSTER sweep, not the 50-year shape sweep: this is a '
-       + 'per-run boolean, so it is strongly horizon-dependent — 0.40 over 30 years and '
-       + '0.80 over 50. One horizon, one band.'
-       + ' [2026-09-04, round 2] Was 0.40. Prices rose with the market, so a 100x breakout is now certain. Round 4 lowers the whole price body about elevenfold and should restore it.'
-       + ' [2026-09-05, round 4] The note above is WRONG and no tuning round can clear this gate. `metrics.ts` tests `rawPrice / value.baseCardPrice >= 100`, a scale-invariant ratio, so lowering the price body cannot move it: measured 1.000 at fifteen points spanning a 30x range of `baseCardPrice`. The real cause is Round 3. This is a per-run boolean over the whole catalogue, so at 280 cards a set it asks whether any one of about 8,400 printings ever broke out, and the answer is certain. Fixing it needs the metric redefined per set, which needs a new band, and 05-real-world.md cannot supply one - it calls its own 0.5-1% figure weak. That is a design decision, not a tuning one.',
-    measure: c => shareTrue(forBot(c.roster, 'conservative'), 'surpriseGrail'),
-  },
   {
     id: 'shape.yearsTo100', category: 'shape', band: [2.0, 9.0], expect: 'pass',
     banked: 2.692, bankedOn: DATE,

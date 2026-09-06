@@ -31,10 +31,10 @@ line to flip — flipping it is what stops the next round undoing the work.
 | `static.parallelIdentity` | static | 1 – 1 | 1 | pass |
 | `static.bandsInSync` | static | 1 – 1 | 1 | pass |
 | `struct.deathRoutes` | structural | 4 – 4 | 4 | pass |
-| `struct.overprintDeaths` | structural | 15 – 95 | 52 | pass |
-| `struct.debtSpiralDeaths` | structural | 15 – 90 | 66 | pass |
-| `struct.channelCollapseDeaths` | structural | 8 – 70 | 27 | pass |
-| `struct.attentionCollapseDeaths` | structural | 8 – 60 | 20 | pass |
+| `struct.overprintDeaths` | structural | 0.0375 – 0.2375 | 0.13 | pass |
+| `struct.debtSpiralDeaths` | structural | 0.0375 – 0.225 | 0.165 | pass |
+| `struct.channelCollapseDeaths` | structural | 0.02 – 0.175 | 0.0675 | pass |
+| `struct.attentionCollapseDeaths` | structural | 0.02 – 0.15 | 0.05 | pass |
 | `struct.speculatorMoves` | structural | 1.2 – 500 | 2.946 | pass |
 | `struct.heatNotPinned` | structural | 0 – 0.1 | 0 | pass |
 | `struct.ripRationBinds` | structural | 0.2 – 0.95 | 0.7093 | pass |
@@ -51,7 +51,6 @@ line to flip — flipping it is what stops the next round undoing the work.
 | `diff.flooderDiesEarly` | difficulty | 0.4 – 2.5 | 0.75 | pass |
 | `diff.attentionBurnerDies` | difficulty | 0.85 – 1 | 1 | pass |
 | `diff.idleDies` | difficulty | 2.5 – 9 | 8.827 | pass |
-| `diff.lateIdleSurvives` | difficulty | 0 – 0.35 | 0.85 | known-fail |
 | `diff.deathsLandMidRun` | difficulty | 3 – 25 | 8.135 | pass |
 | `diff.sellThrough` | difficulty | 0.75 – 0.95 | 0.9494 | pass |
 | `diff.flopRate` | difficulty | 0.01 – 0.25 | 0.0054 | known-fail |
@@ -65,7 +64,6 @@ line to flip — flipping it is what stops the next round undoing the work.
 | `shape.tailAlpha` | shape | 1.6 – 2.7 | 1.985 | pass |
 | `shape.ageCurveDirection` | shape | 0.02 – 0.45 | 0.0643 | pass |
 | `shape.ageCurveLate` | shape | 0.55 – 0.92 | 0.85 | pass |
-| `shape.surpriseGrail` | shape | 0.1 – 0.6 | 1 | known-fail |
 | `shape.yearsTo100` | shape | 2 – 9 | 2.692 | pass |
 | `sub.signalLow` | subsystem | 0.3 – 0.72 | 0.5028 | pass |
 | `sub.signalHigh` | subsystem | 0.55 – 0.9 | 0.6744 | pass |
