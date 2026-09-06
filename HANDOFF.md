@@ -675,7 +675,7 @@ applies once a column is added) is at `/tmp/cmpcols.py` and is three lines of
 | `694bb69` | C8 per-tick `segmentMix` | byte-identical |
 | `4f4b59b` | C9 liquidity and the buylist spread | 126/126 existing columns identical |
 | `7510bf7` | C10 event promos | byte-identical |
-| _this_ | C11 the eight new bots | 400/400 existing rows identical; 5 gates rebanked |
+| `587471d` | C11 the eight new bots | 400/400 existing rows identical; 5 gates rebanked |
 
 Banked baseline: `docs/tuning/bank/round-11b/`, written at C11 and current with
 HEAD. `round-11a/` is C0's and is now three roster changes stale.
