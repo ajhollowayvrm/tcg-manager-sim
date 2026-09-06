@@ -1,5 +1,5 @@
 import type {
-  SimState, Decision, Tick, Cents, Unit, IpId, CardId, SetId, ProductId, PrintingId, RngState,
+  SimState, Decision, Tick, Cents, Unit, IpId, CardId, SetId, ProductId, PrintingId, RngState, ChainKind,
   ProductLineId, RegionId, ChannelId, ArtistId, IpEntity, Card, CardSet, Product,
   Printing, SimEvent, EventId, SetType, Rarity, ProductKind, PrintQualityTier,
   Treatment, ArtBrief, UnlockState, ChannelAllocation, Channel, SetPerformance,
@@ -188,6 +188,13 @@ interface CardOverrides {
   artBrief?: Partial<ArtBrief>;
   flavorText?: string;
   progressionLink?: { chainId: ChainId; position: number };
+  /**
+   * The art-subset chain. CONCEPT.md §4 calls it "the hedge against a weak
+   * character": a progression chain pays because collectors chase complete
+   * lines, an illustration chain pays because the ART is the reason to want the
+   * card, which is exactly when the subject is not.
+   */
+  illustrationLink?: ChainId;
 }
 
 function designCard(
@@ -215,23 +222,34 @@ function designCard(
     artQuality: U(s.config.art.houseQuality),
     artSource: 'pending',
     progressionLink: overrides.progressionLink ?? null,
-    illustrationLink: null, flavorText: overrides.flavorText ?? '',
+    illustrationLink: overrides.illustrationLink ?? null,
+    flavorText: overrides.flavorText ?? '',
   };
   s.sets[setId]!.cardIds.push(id);
 
   // The chain is minted on first reference, so a caller names one rather than
   // creating one first. `spansSets` is recomputed each time a member joins: a
   // chain only becomes the cross-set hedge once it actually crosses.
-  const link = overrides.progressionLink;
-  if (link) {
-    const chain = s.chains[link.chainId] ?? (s.chains[link.chainId] = {
-      id: link.chainId, kind: 'progression',
-      name: `Chain ${link.chainId}`, cardIds: [], setIds: [], spansSets: false,
-    });
-    if (!chain.cardIds.includes(id)) chain.cardIds.push(id);
-    if (!chain.setIds.includes(setId)) chain.setIds.push(setId);
-    chain.spansSets = chain.setIds.length > 1;
-  }
+  //
+  // `kind` used to be hardcoded `'progression'`, which is what made
+  // `ChainKind`'s other variant unreachable and `Card.illustrationLink` a field
+  // that was written `null` and read by nothing.
+  registerChainLink(s, id, setId, overrides.progressionLink?.chainId, 'progression');
+  registerChainLink(s, id, setId, overrides.illustrationLink, 'illustration');
+}
+
+/** Files a card into a chain, minting the chain the first time it is named. */
+function registerChainLink(
+  s: SimState, cardId: CardId, setId: SetId, chainId: ChainId | undefined, kind: ChainKind,
+): void {
+  if (!chainId) return;
+  const chain = s.chains[chainId] ?? (s.chains[chainId] = {
+    id: chainId, kind,
+    name: `Chain ${chainId}`, cardIds: [], setIds: [], spansSets: false,
+  });
+  if (!chain.cardIds.includes(cardId)) chain.cardIds.push(cardId);
+  if (!chain.setIds.includes(setId)) chain.setIds.push(setId);
+  chain.spansSets = chain.setIds.length > 1;
 }
 
 /**
@@ -245,9 +263,27 @@ function designCard(
  * inside one set.
  */
 function chainDesire(s: SimState, card: Card): number {
-  const link = card.progressionLink;
-  if (!link) return 0;
-  const chain = s.chains[link.chainId];
+  return chainTerm(s, card, card.progressionLink?.chainId, 'progression')
+    + chainTerm(s, card, card.illustrationLink ?? undefined, 'illustration');
+}
+
+/**
+ * One chain's contribution to a card's desire.
+ *
+ * The two kinds pay for different reasons, and that is the whole point of
+ * having two — otherwise it is one system with two names.
+ *
+ * A PROGRESSION chain pays flat: collectors chase complete lines, and the line
+ * is worth completing whoever is on the cards.
+ *
+ * An ILLUSTRATION chain pays MORE when the subject is weak. CONCEPT.md §4 calls
+ * it "the hedge against a weak character", and a hedge that pays best when you
+ * least need it is not a hedge. A studio that built a set around a character
+ * nobody bonded with still has the art, and the art is what carries it.
+ */
+function chainTerm(s: SimState, card: Card, chainId: ChainId | undefined, kind: ChainKind): number {
+  if (!chainId) return 0;
+  const chain = s.chains[chainId];
   if (!chain) return 0;
   const cfg = s.config.chains;
 
@@ -258,7 +294,19 @@ function chainDesire(s: SimState, card: Card): number {
     if (cid !== card.id && s.printingByCard[cid]) printed++;
   }
   const links = Math.min(cfg.maxCountedLinks, printed);
-  return links * cfg.desirePerLink * (chain.spansSets ? cfg.spansSetsBonus : 1);
+  if (links <= 0) return 0;
+
+  if (kind === 'progression') {
+    return links * cfg.desirePerLink * (chain.spansSets ? cfg.spansSetsBonus : 1);
+  }
+
+  const subject = s.ips[card.subjectIp];
+  const affection = subject ? subject.affection : 0;
+  const weakness = 1 - Math.min(1, affection / Math.max(1, cfg.subjectReference));
+  const hedge = cfg.illustrationWeakSubjectFloor
+    + (1 - cfg.illustrationWeakSubjectFloor) * weakness;
+  return links * cfg.illustrationDesirePerLink
+    * (chain.spansSets ? cfg.illustrationSpansSetsBonus : 1) * hedge;
 }
 
 function defineProduct(
@@ -874,6 +922,7 @@ function applyDecision(s: SimState, d: Decision): void {
           name: d.payload.name, treatment: d.payload.treatment, serialized: d.payload.serialized,
           artBrief: d.payload.artBrief, flavorText: d.payload.flavorText,
           progressionLink: d.payload.progressionLink,
+          illustrationLink: d.payload.illustrationLink,
         });
       break;
     case 'defineProduct':
@@ -952,11 +1001,12 @@ export const api = {
   designCard(
     s: SimState, setId: SetId, subjectIp: IpId, cameos: IpId[], rarity: Rarity, artistId: ArtistId,
     progressionLink?: { chainId: ChainId; position: number },
+    illustrationLink?: ChainId,
   ): CardId {
     const id = nextId(s, 'card') as CardId;
     submit(s, {
       type: 'designCard', tick: s.tick,
-      payload: { id, setId, subjectIp, cameos, rarity, artistId, progressionLink },
+      payload: { id, setId, subjectIp, cameos, rarity, artistId, progressionLink, illustrationLink },
     });
     return id;
   },

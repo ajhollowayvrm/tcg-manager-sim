@@ -1052,6 +1052,8 @@ export type Decision =
          * first time one is named, so a caller does not have to create it first.
          */
         progressionLink?: { chainId: ChainId; position: number };
+        /** The art-subset chain. CONCEPT.md §4's hedge against a weak character. */
+        illustrationLink?: ChainId;
       };
     }
   | { type: 'commissionArt'; tick: Tick; payload: { cardId: CardId; artistId: ArtistId; brief: ArtBrief } }
@@ -1803,6 +1805,18 @@ export interface SimConfig {
      * which only means anything if it pays more than a chain inside one set.
      */
     spansSetsBonus: number;
+    /**
+     * The illustration chain, which pays for a different reason — see
+     * `chainTerm`. Kept as its own weights rather than sharing the progression
+     * ones, because a hedge that behaves identically to the thing it hedges is
+     * not a hedge.
+     */
+    illustrationDesirePerLink: number;
+    illustrationSpansSetsBonus: number;
+    /** What an illustration chain still pays on a beloved subject. */
+    illustrationWeakSubjectFloor: Unit;
+    /** Affection at which a subject counts as fully carrying the card itself. */
+    subjectReference: number;
   };
 
   collabs: {

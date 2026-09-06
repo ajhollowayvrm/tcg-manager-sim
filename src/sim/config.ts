@@ -1058,6 +1058,21 @@ export const defaultConfig: SimConfig = {
     desirePerLink: 6,
     maxCountedLinks: 5,
     spansSetsBonus: 1.6,
+    // [round 11] The illustration chain, wired for the first time — `ChainKind`
+    // had two variants and `designCard` hardcoded one of them, so
+    // `Card.illustrationLink` was written null and read by nothing.
+    //
+    // It pays LESS per link than a progression chain and more when it spans
+    // sets, because an art subset that runs across a year of releases is the
+    // thing collectors actually chase. The hedge term is the reason it exists:
+    // at `illustrationWeakSubjectFloor` the chain adds almost nothing to a card
+    // whose character is already loved, and the full amount to one whose
+    // character nobody bonded with. First-guess numbers; Round 11's sweep fits
+    // them against the progression chain that has never been swept either.
+    illustrationDesirePerLink: 4,
+    illustrationSpansSetsBonus: 2.0,
+    illustrationWeakSubjectFloor: 0.25,
+    subjectReference: 60,
   },
 
   creators: {
