@@ -1804,14 +1804,27 @@ function tickSales(s: SimState, products: Product[]): void {
  */
 function resolveDrop(s: SimState, drop: Drop): void {
   const cfg = s.config.drops;
-  drop.status = 'complete';
 
   const p = s.products[drop.productId];
   const ch = s.channels[drop.channelId];
+  const set = p ? s.sets[p.setId] : undefined;
+  // A drop on a set that has not shipped yet WAITS. It is not void.
+  //
+  // This is the difference between "not yet" and "never", and the two used to
+  // be the same branch. Channel allocation locks with the print run, 18 weeks
+  // before release, so a player who queues a drop the moment they have stock
+  // was queueing it against an unreleased set — `status = 'complete'` was set
+  // on the first line, the set-status check returned, and the drop was
+  // silently gone: no sale, no event, no feedback, and the store's own cadence
+  // ran instead. Measured on `dropRunner`, whose entire strategy is scheduling
+  // drops: 40 scheduled over 20 years, 40 voided, and every drop the harness
+  // ever saw was one the store scheduled for it.
+  if (set && set.status !== 'released') return;
+
+  drop.status = 'complete';
   if (!p || !ch || !ch.unlocked) return;
   const a = p.allocations[ch.id];
-  const set = s.sets[p.setId];
-  if (!a || !set || set.status !== 'released') return;
+  if (!a || !set) return;
   const pub = s.publishers[set.publisherId];
   if (!pub) return;
 
