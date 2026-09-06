@@ -97,6 +97,18 @@ export interface SimState {
    * mechanism rather than to renumbered noise.
    */
   actorRng: RngState;
+  /**
+   * A sixth stream, for systems the player invokes explicitly and that mint
+   * entities — event promos today.
+   *
+   * It exists so that a printing born outside the release pipeline does not
+   * renumber the release pipeline. Minting one costs three to five draws (the
+   * error roll, then the chase), and on the main stream that would shift every
+   * later roll in the run and make every banked value in `docs/tuning/bank/`
+   * incomparable. `seedRng` is self-contained, so adding this stream cost
+   * nothing on any existing one.
+   */
+  eventRng: RngState;
   tick: Tick;
 
   /** Monotonic counter for deterministic id generation. */

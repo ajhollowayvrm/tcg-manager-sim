@@ -106,6 +106,10 @@ export const defaultConfig: SimConfig = {
     errorHeatGain: 0.00000004,
     errorIncidenceFloor: 0.0002,
     resurgenceCheckChance: 0.02,
+    // [round 11] Both of these were dead `--set` paths: `engine.ts` minted every
+    // printing with the literals 1.6 and 0.5 and never read the config. The
+    // single `mintPrinting` now reads them, at exactly the values the literals
+    // had, so this un-deads two paths and changes nothing.
     openingHeat: 1.6,
     openingLiquidity: 0.5,
     // The measured average value drop from a reprint is about 27%, and the

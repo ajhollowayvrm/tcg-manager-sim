@@ -1,5 +1,5 @@
 import type {
-  SimState, Decision, Tick, Cents, Unit, IpId, CardId, SetId, ProductId, PrintingId,
+  SimState, Decision, Tick, Cents, Unit, IpId, CardId, SetId, ProductId, PrintingId, RngState,
   ProductLineId, RegionId, ChannelId, ArtistId, IpEntity, Card, CardSet, Product,
   Printing, SimEvent, EventId, SetType, Rarity, ProductKind, PrintQualityTier,
   Treatment, ArtBrief, UnlockState, ChannelAllocation, Channel, SetPerformance,
@@ -49,8 +49,72 @@ function rarityPull(s: SimState, r: Rarity, setSize: number): number {
  * the median printing rolls 1 and a rare few roll many times that — the shape
  * a power law needs (CONCEPT.md §5).
  */
-function rollChase(s: SimState): number {
-  return Math.exp(gauss(s.rng, 0, s.config.value.chaseSigma));
+/**
+ * A printing's hidden chase multiplier.
+ *
+ * Takes the stream explicitly rather than reaching for `s.rng`, so a printing
+ * minted off the main line — an event promo, say — can roll on its own stream
+ * without renumbering every later draw in the run. The two existing callers
+ * pass `s.rng` and are unchanged.
+ */
+function rollChase(s: SimState, r: RngState): number {
+  return Math.exp(gauss(r, 0, s.config.value.chaseSigma));
+}
+
+/**
+ * Everything a new printing needs that the two minting paths disagree about.
+ * Anything they agree on is inside `mintPrinting`, which is the point.
+ */
+interface PrintingSpec {
+  cardId: CardId;
+  setId: SetId;
+  regionId: RegionId;
+  printQuantity: number;
+  /** Copies in circulation at birth. NOT always `printQuantity` — see the callers. */
+  sealed: number;
+  pullRate: number;
+  printQuality: PrintQualityTier;
+  isReprintOf: PrintingId | null;
+  /** Opening market heat. A campaign launches a set hotter than the floor. */
+  heat: number;
+}
+
+/**
+ * Mints one printing and files it. The single place a `Printing` is born.
+ *
+ * The draws happen in a fixed order — the error roll, then the chase — because
+ * that is the order both call sites already used, and changing it would
+ * renumber every later draw on whichever stream is passed. `r` is a parameter
+ * for the same reason `rollChase` takes one: a printing minted by a system that
+ * did not exist when the balance was fitted must be able to roll somewhere
+ * other than the main stream.
+ */
+function mintPrinting(s: SimState, r: RngState, spec: PrintingSpec): PrintingId {
+  const cfg = s.config;
+  const id = nextId(s, 'pr') as PrintingId;
+  const err = chance(r, cfg.printing.errorRate[spec.printQuality])
+    ? {
+        kind: pick(r, ['miscut', 'inkError', 'missingFoil', 'wrongBack', 'textError', 'crimp'] as const),
+        incidence: randRange(r, cfg.printing.errorIncidenceMin, cfg.printing.errorIncidenceMax),
+        discoveredTick: null,
+      }
+    : null;
+
+  bumpRoster(s);
+  s.printings[id] = {
+    id, cardId: spec.cardId, setId: spec.setId, regionId: spec.regionId, releaseTick: s.tick,
+    printQuantity: spec.printQuantity, pullRate: spec.pullRate, printQuality: spec.printQuality,
+    isReprintOf: spec.isReprintOf, error: err,
+    truth: { chase: rollChase(s, r) },
+    population: { sealed: spec.sealed, opened: 0, destroyed: 0, graded: {} as never },
+    market: {
+      rawPrice: C(cfg.value.baseCardPrice), gradedPrices: {} as never,
+      heat: spec.heat, speculatorHeat: 0, nostalgia: 1,
+      liquidity: U(cfg.value.openingLiquidity), lastTradeTick: s.tick,
+      rawHistory: emptySeries(s.tick), gradedHistory: {} as never,
+    },
+  };
+  return id;
 }
 
 /** Below `ceiling`, identity. Above it, tapers to logarithmic growth instead of compounding freely. */
@@ -291,30 +355,17 @@ function reprint(s: SimState, cardId: CardId, intoSetId: SetId, quantity: number
   const cfg = s.config;
   const originalId = s.printingByCard[cardId] ?? null;
 
-  const id = nextId(s, 'pr') as PrintingId;
-  const err = chance(s.rng, cfg.printing.errorRate[set.printQuality])
-    ? {
-        kind: pick(s.rng, ['miscut', 'inkError', 'missingFoil', 'wrongBack', 'textError', 'crimp'] as const),
-        incidence: randRange(s.rng, s.config.printing.errorIncidenceMin, s.config.printing.errorIncidenceMax), discoveredTick: null,
-      }
-    : null;
-
-  bumpRoster(s);
-  s.printings[id] = {
-    id, cardId, setId: intoSetId, regionId: 'reg_us' as RegionId, releaseTick: s.tick,
-    printQuantity: Math.max(1, quantity), pullRate: rarityPull(s, card.rarity, set.cardIds.length),
+  // A reprint rolls its own chase. It is a different collectible, and the
+  // market is free to want it more or less than the printing it copies.
+  mintPrinting(s, s.rng, {
+    cardId, setId: intoSetId, regionId: 'reg_us' as RegionId,
+    printQuantity: Math.max(1, quantity),
+    sealed: Math.max(1, quantity),
+    pullRate: rarityPull(s, card.rarity, set.cardIds.length),
     printQuality: set.printQuality,
-    isReprintOf: originalId, error: err,
-    // A reprint rolls its own chase. It is a different collectible, and the
-    // market is free to want it more or less than the printing it copies.
-    truth: { chase: rollChase(s) },
-    population: { sealed: Math.max(1, quantity), opened: 0, destroyed: 0, graded: {} as any },
-    market: {
-      rawPrice: C(cfg.value.baseCardPrice), gradedPrices: {} as any,
-      heat: 1.6, speculatorHeat: 0, nostalgia: 1, liquidity: U(0.5), lastTradeTick: s.tick,
-      rawHistory: emptySeries(s.tick), gradedHistory: {} as any,
-    },
-  };
+    isReprintOf: originalId,
+    heat: cfg.value.openingHeat,
+  });
   // printingByCard deliberately still points at the original. tickSealed reads
   // it per set to value a sealed product's contents; repointing it here would
   // make the original set's sealed price track the reprint instead.
@@ -885,35 +936,24 @@ function releaseSet(s: SimState, setId: SetId, regionId: RegionId): void {
 
   for (const cardId of set.cardIds) {
     const card = s.cards[cardId]!;
-    const id = nextId(s, 'pr') as PrintingId;
     const totalPacks = set.productIds.reduce((n, pid) => {
       const p = s.products[pid]!;
       return n + p.unitsPrinted * p.packsPerUnit;
     }, 0);
     const pullRate = rarityPull(s, card.rarity, set.cardIds.length);
-    const err = chance(s.rng, cfg.printing.errorRate[set.printQuality])
-      ? { kind: pick(s.rng, ['miscut', 'inkError', 'missingFoil', 'wrongBack', 'textError', 'crimp'] as const), incidence: randRange(s.rng, s.config.printing.errorIncidenceMin, s.config.printing.errorIncidenceMax), discoveredTick: null }
-      : null;
-
-    const printing: Printing = {
-      id, cardId, setId, regionId, releaseTick: s.tick,
+    const id = mintPrinting(s, s.rng, {
+      cardId, setId, regionId,
       printQuantity: Math.max(1, Math.round(totalPacks * pullRate)),
+      // NOT `printQuantity`: the floor of 1 is a guard on the quantity, and
+      // applying it to the population would conjure a copy of a card the run
+      // printed none of.
+      sealed: Math.round(totalPacks * pullRate),
       pullRate, printQuality: set.printQuality,
-      isReprintOf: null, error: err,
-      truth: { chase: rollChase(s) },
-      population: { sealed: Math.round(totalPacks * pullRate), opened: 0, destroyed: 0, graded: {} as any },
-      market: {
-        rawPrice: C(cfg.value.baseCardPrice), gradedPrices: {} as any,
-        // A hyped set launches hot. This is where the reveal window reaches the
-        // value engine; a set with no campaign opens at exactly 1.6 as before.
-        heat: 1.6 + launchHype * cfg.hype.heatFromHype,
-        speculatorHeat: 0,
-        nostalgia: 1, liquidity: U(0.5), lastTradeTick: s.tick,
-        rawHistory: emptySeries(s.tick), gradedHistory: {} as any,
-      },
-    };
-    bumpRoster(s);
-    s.printings[id] = printing;
+      isReprintOf: null,
+      // A hyped set launches hot. This is where the reveal window reaches the
+      // value engine; a set with no campaign opens at exactly `openingHeat`.
+      heat: cfg.value.openingHeat + launchHype * cfg.hype.heatFromHype,
+    });
     s.printingByCard[cardId] = id;
 
     const ip = s.ips[card.subjectIp]!;

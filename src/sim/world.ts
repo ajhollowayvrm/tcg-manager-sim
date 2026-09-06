@@ -74,6 +74,7 @@ export function createWorld(seed: string, config: SimConfig): SimState {
     // value engine's draws. That is what keeps the price movement this pass
     // causes attributable to the art multiplier rather than to reshuffled noise.
     artRng: seedRng(`${seed}:art`),
+    eventRng: seedRng(`${seed}:events`),
     tick: t0,
     idCounter: 0,
     printingByCard: {},
