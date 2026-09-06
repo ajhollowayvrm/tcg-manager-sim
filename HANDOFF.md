@@ -698,7 +698,7 @@ Run `--dist` DURING that sweep, not after.
 | `7510bf7` | C10 event promos | byte-identical |
 | `587471d` | C11 the eight new bots | 400/400 existing rows identical; 5 gates rebanked |
 | `57871f2` | C12 the deletions | byte-identical |
-| _this_ | C13 the screens audit | docs only |
+| `c7dc8ec` | C13 the screens audit | docs only |
 
 ### Five defects found by wiring dead fields
 
