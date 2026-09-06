@@ -409,15 +409,26 @@ earned. A studio that lives on collabs owns nothing at the end.
 | `collabs.offerChancePerQuarter` | 0.35 | Offer arrival rate at full brand standing. Rolled every 13 ticks. | first-guess |
 | `collabs.offerWindowWeeks` | 26 | How long an offer stands. | first-guess |
 | `collabs.maxOpenOffers` | 3 | | first-guess |
-| `collabs.feeMin` | 12000000 | $120,000. | first-guess |
-| `collabs.feeMax` | 90000000 | $900,000. | first-guess |
-| `collabs.reachToDemand` | 1.2 | Demand multiplier per point of weighted reach. | first-guess |
+| `collabs.advanceMin` | 6000000 | $60,000. Paid at signing, recoupable. | round 8 |
+| `collabs.advanceMax` | 50000000 | $500,000. | round 8 |
+| `collabs.royaltyShareMin` | 0.05 | Licensor's share of net sales. Rolled against the advance, inverted. | round 8 |
+| `collabs.royaltyShareMax` | 0.15 | | round 8 |
+| `collabs.minimumGuaranteeMultiple` | 2.0 | Minimum guarantee, as a multiple of the advance. | round 8 |
+| `collabs.guaranteeSettleWeeks` | 104 | Weeks after the home release that the shortfall falls due. | round 8 |
+| `collabs.reachToDemand` | 8 | Demand multiplier per point of weighted reach. | round 8 |
 | `collabs.goodwillPerReach` | 0.05 | Goodwill a collab earns in the segments it reaches. | first-guess |
 | `collabs.exposureShare` | 0.3 | Share of usual IP exposure a collab set returns to your own IPs. The licensor's audience came for the licensor; this is the rent. | first-guess |
 
+One roll sets the advance and the royalty share together, in opposite
+directions: a licensor either wants the money up front or wants a share of the
+upside. That is the decision the offer presents, and it costs the single draw
+the old flat fee cost, so the main RNG stream keeps its numbering.
+
 The arithmetic: a collab only pays back if the run is sized up to meet the extra
-demand, and sizing up is exactly how it becomes an overprint. `licensor` uses
-`collabRunMultiple: 1.5`.
+demand, and sizing up is exactly how it becomes an overprint. `licensor` sizes
+its run to `collabOfferFactor` of the offer it signed. Before Round 8 it used a
+fixed multiple, which left it supply-bound at 0.968 sell-through and made
+`reachToDemand` inert — a fivefold change in the knob moved its net worth by 3%.
 
 ---
 

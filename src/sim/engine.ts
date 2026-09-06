@@ -3,7 +3,7 @@ import type {
   ProductLineId, RegionId, ChannelId, ArtistId, IpEntity, Card, CardSet, Product,
   Printing, SimEvent, EventId, SetType, Rarity, ProductKind, PrintQualityTier,
   Treatment, ArtBrief, UnlockState, ChannelAllocation, Channel, SetPerformance,
-  Drop, DropId, Grader, GradeTier, GradingSubmission, CollabId, AudienceSegment, ChainId,
+  Drop, DropId, Grader, GradeTier, GradingSubmission, Collab, CollabId, AudienceSegment, ChainId,
   Artist, Publisher, Commission, CommissionId, ArtistTerms,
 } from './types.ts';
 import { rand, randRange, randInt, pick, chance, gauss } from './rng.ts';
@@ -408,7 +408,7 @@ function signCollab(s: SimState, collabId: CollabId, setId?: SetId): void {
   if (!pub || !collab || collab.signedTick !== null) return;
   if (collab.expiresTick !== null && s.tick > collab.expiresTick) return;
   if (pub.brandStanding < collab.requiredBrandStanding) return;
-  if (pub.cash < collab.licenseFee) return;
+  if (pub.cash < collab.advance) return;
 
   // A collab attaches to a set that has not printed yet. After the commit the
   // print run is locked and the reveal is running, so there is nothing left for
@@ -420,18 +420,22 @@ function signCollab(s: SimState, collabId: CollabId, setId?: SetId): void {
       .sort((a, b) => (b.designStartTick as number) - (a.designStartTick as number))[0];
   if (!target || target.status !== 'design' || target.collabId) return;
 
-  pub.cash = C(pub.cash - collab.licenseFee);
+  pub.cash = C(pub.cash - collab.advance);
   pub.ledger.push({
-    t: s.tick, amount: C(-collab.licenseFee), category: 'licensing',
-    note: collab.name, refId: collab.id,
+    t: s.tick, amount: C(-collab.advance), category: 'licensing',
+    note: `advance ${collab.name}`, refId: collab.id,
   });
+  collab.paidTotal = collab.advance;
   collab.signedForSetId = target.id;
   collab.signedTick = s.tick;
   collab.expiresTick = null;
   target.collabId = collab.id;
   target.type = 'collab';
   emit(s, 'collabSigned', true, { publisherId: pub.id, setId: target.id, collabId: collab.id },
-    { fee: collab.licenseFee, kind: collab.kind });
+    {
+      advance: collab.advance, royaltyShare: collab.royaltyShare,
+      minimumGuarantee: collab.minimumGuarantee, kind: collab.kind,
+    });
 }
 
 /**
@@ -470,17 +474,106 @@ function tickCollabOffers(s: SimState): void {
 
   const id = nextId(s, 'collab') as CollabId;
   const kind = pick(s.rng, ['externalIp', 'event', 'retailExclusive'] as const);
+  // One roll, two terms, opposite directions. A licensor that wants the money
+  // up front takes less of the back end, and one that believes in the set does
+  // the reverse — so the offer is a position on the bet, not a price tag.
+  const terms = rand(s.rng);
+  const advance = C(cfg.advanceMin + terms * (cfg.advanceMax - cfg.advanceMin));
+  const royaltyShare = cfg.royaltyShareMax - terms * (cfg.royaltyShareMax - cfg.royaltyShareMin);
   s.collabs[id] = {
     id, kind,
     name: `${kind === 'externalIp' ? 'Licensed IP' : kind === 'event' ? 'Event' : 'Retail'} Collab ${id}`,
-    licenseFee: C(randRange(s.rng, cfg.feeMin, cfg.feeMax)),
+    advance,
+    royaltyShare,
+    minimumGuarantee: C(advance * cfg.minimumGuaranteeMultiple),
+    royaltyAccrued: C(0),
+    paidTotal: C(0),
+    settledTick: null,
     reachBonus,
     requiredBrandStanding: U(randRange(s.rng, cfg.gateMin, cfg.gateMax)),
     expiresTick: T(s.tick + cfg.offerWindowWeeks),
     signedForSetId: null, signedTick: null,
   };
   emit(s, 'collabOffered', true, { publisherId: pub.id, collabId: id },
-    { fee: s.collabs[id]!.licenseFee, kind, requiredBrandStanding: s.collabs[id]!.requiredBrandStanding });
+    {
+      advance, royaltyShare, minimumGuarantee: s.collabs[id]!.minimumGuarantee,
+      kind, requiredBrandStanding: s.collabs[id]!.requiredBrandStanding,
+    });
+}
+
+/**
+ * Hands the licensor whatever the deal now says it is owed, and no more.
+ *
+ * One expression covers the advance, the recoupment, the running royalty and
+ * the guarantee, because all four are the same question: what does the deal
+ * owe in total so far, and how much of that has already gone out?
+ *
+ *   due = max(royalty earned, the advance, and — once settled — the guarantee)
+ *
+ * The advance sits inside the max, which is what makes it recoupable: a set
+ * has to earn past the advance before a single further dollar leaves. The
+ * guarantee joins the max only at settlement, so a set that is still selling
+ * is never charged for a shortfall it has not finished making up.
+ */
+function payCollab(s: SimState, collab: Collab): void {
+  const pub = s.publishers[s.playerId];
+  if (!pub) return;
+  const due = Math.max(
+    collab.royaltyAccrued,
+    collab.advance,
+    collab.settledTick !== null ? collab.minimumGuarantee : 0,
+  );
+  const owed = due - collab.paidTotal;
+  if (owed <= 0) return;
+  collab.paidTotal = C(collab.paidTotal + owed);
+  pub.cash = C(pub.cash - owed);
+  pub.ledger.push({
+    t: s.tick, amount: C(-owed), category: 'licensing',
+    note: `royalty ${collab.name}`, refId: collab.id,
+  });
+}
+
+/**
+ * Books the licensor's share of a set's sales revenue.
+ *
+ * Charged where the revenue is booked rather than in a settlement pass, so the
+ * royalty is a cost of selling and shows up in the same tick as the sale that
+ * caused it. A set with no collab pays nothing and costs one property read.
+ */
+function accrueCollabRoyalty(s: SimState, set: CardSet, revenue: number): void {
+  if (!set.collabId) return;
+  const collab = s.collabs[set.collabId];
+  if (!collab || collab.signedTick === null) return;
+  collab.royaltyAccrued = C(collab.royaltyAccrued + revenue * collab.royaltyShare);
+  payCollab(s, collab);
+}
+
+/**
+ * Settles the minimum guarantee on every signed collab whose selling is done.
+ *
+ * This is the risk in a licence, and it is the reason a licence is a bet
+ * rather than a purchase. A set that sold pays its royalty and owes nothing
+ * extra; a set that flopped never earned its way to the guarantee, and the
+ * shortfall falls due here in one payment, years after the reach it bought
+ * stopped being worth anything.
+ */
+function tickCollabSettlement(s: SimState): void {
+  const cfg = s.config.collabs;
+  for (const collab of Object.values(s.collabs)) {
+    if (collab.signedTick === null || collab.settledTick !== null) continue;
+    const set = collab.signedForSetId ? s.sets[collab.signedForSetId] : undefined;
+    if (!set || set.regionSchedule.length === 0) continue;
+    const released = Math.min(...set.regionSchedule.map(r => r.releaseTick as number));
+    if (s.tick < released + cfg.guaranteeSettleWeeks) continue;
+    collab.settledTick = s.tick;
+    const shortfall = collab.minimumGuarantee - collab.paidTotal;
+    payCollab(s, collab);
+    if (shortfall > 0) {
+      emit(s, 'collabGuaranteeCalled', false,
+        { publisherId: s.playerId, setId: set.id, collabId: collab.id },
+        { shortfall: C(shortfall), minimumGuarantee: collab.minimumGuarantee, royaltyAccrued: collab.royaltyAccrued });
+    }
+  }
 }
 
 /**
@@ -494,6 +587,23 @@ function collabDemandFactor(s: SimState, set: CardSet): number {
   if (!set.collabId) return 1;
   const collab = s.collabs[set.collabId];
   if (!collab) return 1;
+  return collabOfferFactor(s, collab);
+}
+
+/**
+ * The same factor, for an offer nobody has signed yet.
+ *
+ * Split out and exported for two reasons. A bot has to price an offer with the
+ * engine's own arithmetic rather than a copy of it — the moment the two
+ * disagree, the roster is choosing offers by one rule and being paid by
+ * another, and every licensing measurement after that is fiction. And a print
+ * run has to be sized against this number: demand a licence buys that the
+ * publisher never printed for is demand nobody can sell, which is what made
+ * `reachToDemand` inert before Round 8 changed how the run is sized.
+ *
+ * It is a pure read of `s`.
+ */
+export function collabOfferFactor(s: SimState, collab: Collab): number {
   // Weighted by who is out there, not by who is already buying: a licence
   // reaches people the studio has not reached, which is the whole point of one.
   const home = segmentsIn(s, s.homeRegionId);
@@ -1479,6 +1589,7 @@ function tickSales(s: SimState, products: Product[]): void {
     pub.cash = C(pub.cash + revenue);
     pub.ledger.push({ t: s.tick, amount: C(revenue), category: 'sales', note: p.kind, refId: p.id });
     if (set.performance) set.performance.revenue = C(set.performance.revenue + revenue);
+    accrueCollabRoyalty(s, set, revenue);
 
     // `aftermarketIndex` is the set-health number CONCEPT.md §8 asks for, and
     // it was written as 0 and read by nothing. It is refreshed here rather than
@@ -1587,10 +1698,14 @@ function resolveDrop(s: SimState, drop: Drop): void {
     pub.cash = C(pub.cash + revenue);
     pub.ledger.push({ t: s.tick, amount: C(revenue), category: 'sales', note: `drop ${p.kind}`, refId: p.id });
     if (set.performance) set.performance.revenue = C(set.performance.revenue + revenue);
+    accrueCollabRoyalty(s, set, revenue);
 
+    // Same rent as the shelf path: a collab set returns only a share of the
+    // exposure. A drop is a different counter, not a different deal.
+    const exposureShare = set.collabId ? s.config.collabs.exposureShare : 1;
     for (const cid of set.cardIds) {
       const ip = s.ips[s.cards[cid]!.subjectIp];
-      if (ip) ip.exposure += sold
+      if (ip) ip.exposure += sold * exposureShare
         / (s.config.affection.unitsPerExposurePoint * audienceScale(s));
     }
 
@@ -2653,6 +2768,7 @@ export function tick(s: SimState): void {
   tickFinance(s);
   tickRegionKnowledge(s);
   tickCollabOffers(s);
+  tickCollabSettlement(s);
   tickCompaction(s);
 }
 

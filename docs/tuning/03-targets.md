@@ -43,6 +43,8 @@ line to flip — flipping it is what stops the next round undoing the work.
 | `diff.botsAlwaysSurvive` | difficulty | 3 – 11 | 6 | pass |
 | `diff.botsNeverSurvive` | difficulty | 2 – 8 | 5 | pass |
 | `diff.conservativeSurvives` | difficulty | 0.95 – 1 | 0.9 | known-fail |
+| `diff.licensorEarns` | difficulty | 1.3 – 2.5 | 1.536 | pass |
+| `diff.licensorSurvival` | difficulty | 0.75 – 0.95 | 0.85 | pass |
 | `diff.hypeGamblerSurvival` | difficulty | 0.4 – 0.85 | 0.85 | pass |
 | `diff.hypeGamblerTopEarner` | difficulty | 1 – 3 | 1 | pass |
 | `diff.allInSurvival` | difficulty | 0.1 – 0.6 | 0.4 | pass |
@@ -160,6 +162,13 @@ Survival: 100% for `licensor`, `chainRunner`, `chainWeaver`, `conservative`,
 
 `flooder` (year 0.9) and `attentionBurner` (year 2.2) are the flood-death and
 attention-death regressions and are meant to die.
+
+**[Round 8, 2026-09-05] `licensor` no longer survives 100%.** It reads 85%, and
+that is the round's intent rather than a regression: it sizes its print run to
+the demand the licence bought, so a licence that under-delivers is an overprint,
+and the minimum guarantee falls due on it years later whatever the set did.
+`diff.licensorSurvival` gates it at 0.75–0.95. The snapshot above is a record of
+2026-09-04 and is not re-measured here.
 
 **Death routes.** CONCEPT.md §7 lists five. Four fire:
 

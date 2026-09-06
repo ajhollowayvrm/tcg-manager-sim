@@ -791,11 +791,53 @@ export const defaultConfig: SimConfig = {
     offerChancePerQuarter: 0.35,
     offerWindowWeeks: 26,
     maxOpenOffers: 3,
-    /** Licence fee, as a share of a typical print run's cost. */
-    feeMin: C(120_000_00),
-    feeMax: C(900_000_00),
-    /** Demand multiplier per point of weighted reach bonus. */
-    reachToDemand: 1.2,
+    // The deal, in the shape the licensing research documents: an advance, a
+    // royalty on net sales, and a minimum guarantee under both.
+    //
+    // ONE roll sets the advance and the royalty share, and it sets them in
+    // opposite directions. That is not a shortcut — it is the decision. A
+    // licensor either wants the money now or wants a share of what the set
+    // does, so an offer is a point on that line, and choosing between two
+    // offers is choosing how much of the bet to keep. Two independent rolls
+    // would have produced offers that are simply cheaper or dearer than each
+    // other, which is not a choice.
+    //
+    // It also costs exactly the one draw the flat fee used to cost, so the
+    // main RNG stream keeps its numbering. Round 9 is the only round after
+    // Round 3 that is allowed to renumber it.
+    advanceMin: C(60_000_00),
+    advanceMax: C(500_000_00),
+    royaltyShareMin: 0.05,
+    royaltyShareMax: 0.15,
+    // A flop still owes twice its advance. This is the whole downside of a
+    // licence: the reach was rented in advance, and the rent does not fall
+    // when nobody turns up.
+    minimumGuaranteeMultiple: 2.0,
+    // Two years after the home release. Sales decay as e^(-1.4 * years), so by
+    // then a set has earned about 94% of everything it will ever earn, and the
+    // royalty measured against the guarantee is the final one in all but name.
+    guaranteeSettleWeeks: 104,
+    /**
+     * Demand multiplier per point of weighted reach bonus.
+     *
+     * 1.2 -> 8 in Round 8, and the size of that jump is the point. At 1.2 a
+     * licence bought about a 5% demand lift against a fee, an exposure cut and
+     * a royalty, so `licensor` earned LESS than `conservative` — the inverted
+     * sign the round exists to fix. The ladder, measured at the gate suite's
+     * own shape (20 seeds x 30 years), reads `licensor`/`conservative` median
+     * net worth and `licensor` survival:
+     *
+     *   1.2 -> 0.98 / 0.95      6 -> 1.39 / 0.90
+     *     3 -> 1.10 / 0.95      7 -> 1.52 / 0.95
+     *                           8 -> 1.47 / 0.85
+     *                          10 -> 1.47 / 0.80
+     *
+     * The earnings ratio plateaus around 7; survival keeps falling, because
+     * the run is now sized to the licence and a licence that under-delivers is
+     * an overprint. 8 is where both land mid-band. 7 reads 0.950 survival,
+     * which is exactly the band ceiling and would flap.
+     */
+    reachToDemand: 8,
     /** Goodwill a collab set earns in the segments it reaches. */
     goodwillPerReach: 0.05,
     /**

@@ -611,6 +611,129 @@ and `allIn` from 0.05 to 0.40. Re-derive the `smallBets` and `globalist`
 mechanisms before tuning them; the shipped numbers under them have moved.
 
 
+## Licensing (tuning Round 8, 2026-09-05)
+
+**The suite reads 52 gates, 48 PASS, 0 FAIL, 4 KNOWN, 0 DRIFT.** Two gates are
+new and both pass. No existing gate moved outside its drift threshold. Banked
+under `docs/tuning/bank/round-8/`.
+
+The round replaced the flat licence fee with the structure the licensing
+research documents, and fixed the reason the mechanism could not be tuned.
+
+### What the deal is now
+
+`Collab.licenseFee` is gone. A collab now carries five numbers:
+
+| Field | What it is |
+|---|---|
+| `advance` | paid at signing, and recoupable against the royalty |
+| `royaltyShare` | the licensor's share of the set's net sales revenue |
+| `minimumGuarantee` | `advance * minimumGuaranteeMultiple`, the floor under the deal |
+| `royaltyAccrued` | royalty earned to date, before recoupment |
+| `paidTotal` | cash handed over to date, the advance included |
+
+One function pays all of it, because the advance, the recoupment, the running
+royalty and the guarantee are the same question asked at different times:
+
+```
+due = max(royaltyAccrued, advance, settled ? minimumGuarantee : 0)
+pay(due - paidTotal)
+```
+
+The advance sits inside the `max`, which is what makes it recoupable: a set has
+to earn past the advance before another dollar leaves. The guarantee joins the
+`max` only at settlement, so a set still selling is never charged for a
+shortfall it has not finished making up. Settlement is
+`collabs.guaranteeSettleWeeks` (104) after the home release, by which point
+`e^(-1.4 * years)` decay has taken a set past 94% of everything it will earn.
+
+The royalty is charged where revenue is booked — both the shelf path and the
+drop path — so it is a cost of selling and lands in the same tick as the sale.
+
+### One roll sets both terms, and it sets them in opposite directions
+
+The plan asked for two draws on `advance` and `royaltyShare`, on the basis that
+two draws already set the fee. **That was wrong: `randRange` is one `rand` call,
+so the fee cost one draw.** Taking two would have added a draw to the main RNG
+stream and renumbered it, which no round after Round 3 may do — Round 9 is the
+only permitted exception.
+
+So one roll sets both, inverted: `advanceMin -> advanceMax` against
+`royaltyShareMax -> royaltyShareMin`. This is better than the plan, not a
+concession to it. A licensor either wants the money up front or wants a share
+of what the set does, so an offer is a position on that trade-off and choosing
+between two offers is choosing how much of the bet to keep. Two independent
+rolls would have produced offers that were merely dearer or cheaper.
+
+Shipped: advance $60,000-$500,000, royalty 5-15%, guarantee 2x the advance.
+
+### `reachToDemand` was inert, and the print run was the reason
+
+`collabs.reachToDemand` went 1.2 -> 8. The first sweep of it moved `licensor`
+net worth by 3% across a fivefold change, which is the signature of a knob
+nothing reads.
+
+It was read. Nothing could act on it. `licensor` printed a fixed
+`collabRunMultiple` of 1.5 on every collab set, and sell-through was already
+0.968 — **the bot was supply-bound, not demand-bound**, so demand the licence
+bought was demand nobody had printed for.
+
+The fix is on the bot: it now sizes the run to `collabOfferFactor` of the offer
+it just signed. `collabRunMultiple` is deleted. The engine exports the factor
+rather than the bot recomputing it, because the moment the two copies disagree
+the roster is choosing offers by one rule and being paid by another.
+
+The bot also prices the whole deal instead of the advance:
+`max(minimumGuarantee, advance + royaltyShare * expectedRevenue)`, where the
+expected revenue is itself sized by the offer's demand factor. Scoring the
+advance alone would have taken every low-advance offer and handed the licensor
+a seventh of every set it ever sold.
+
+### The ladder
+
+Measured at the gate suite's own shape, 20 seeds x 30 years, as
+`licensor`/`conservative` median net worth and `licensor` survival:
+
+| `reachToDemand` | earns | survives |
+|---|---|---|
+| 1.2 | 0.98 | 0.95 |
+| 3 | 1.10 | 0.95 |
+| 6 | 1.39 | 0.90 |
+| **7** | **1.52** | **0.95** |
+| **8** | **1.47** | **0.85** |
+| 10 | 1.47 | 0.80 |
+
+Earnings plateau around 7. Survival keeps falling, and it should: the run is now
+sized to the licence, so a licence that under-delivers is an overprint. **8
+ships.** 7 earns marginally more but reads 0.950 survival, exactly the band
+ceiling, and a gate sitting on its boundary flaps.
+
+The suite reads `diff.licensorEarns` 1.536 and `diff.licensorSurvival` 0.850.
+
+### The shape the round bought
+
+At 40 seeds x 50 years, `licensor` signs 14.5 licences, pays $22.4M for them,
+and **81% of that is royalty rather than advance** — the deals are earned, not
+bought, which is the whole difference from a fee. About 3 of those licences per
+run never earn their guarantee and the shortfall falls due years later. That is
+the licence going wrong, and it is why survival is 0.775 over the long run
+against 0.925 for `conservative`.
+
+### One defect found and fixed on the way
+
+The drop path never applied `collabs.exposureShare`. A collab set sold through
+the direct store built full affection for the publisher's own IPs, so a bot that
+sold through drops got the reach of a licence without paying the equity for it.
+The shelf path had always applied it. This is the fourth instance of HANDOFF
+lesson 4's shape — the same rule implemented twice and only maintained once.
+
+### A rule this round paid for
+
+**Never discard stderr in a sweep.** A `>/dev/null 2>&1` sweep hid a thrown
+`TypeError` in all three legs, left the previous run's `out/runs.csv` in place,
+and produced three byte-identical rows that read as a cleanly inert knob. The
+loop now writes the log to a file and reports a non-zero exit.
+
 ## Art and storage (tuning Round 7, 2026-09-05)
 
 **The suite reads 50 gates, 46 PASS, 0 FAIL, 4 KNOWN, 0 DRIFT.** Two known-fails
@@ -1935,38 +2058,39 @@ horizon fixed.
 
 ## Suggested next session
 
-**Round 8 of the tuning run: licensing.** The round plan lives outside the repo,
-at `~/.claude/plans/let-s-start-the-tuning-zesty-magpie.md`. It holds the
-ordering and the reasoning for all twelve rounds, and its round-order table and
-per-round outcome notes are current to Round 7. Read it first, then the "Art and
-storage" section above, then run `npm run check`.
+**Round 9 of the tuning run: the reveal window.** The round plan lives outside
+the repo, at `~/.claude/plans/let-s-start-the-tuning-zesty-magpie.md`. It holds
+the ordering and the reasoning for all twelve rounds, and its round-order table
+and per-round outcome notes are current to Round 8. Read it first, then the
+"Licensing" section above, then run `npm run check`.
 
-Rounds 0 to 7 are done and banked under `docs/tuning/bank/`. The suite stands at
-**46 PASS, 0 FAIL, 4 KNOWN, 0 DRIFT** across 50 gates, and takes about two and a
+Rounds 0 to 8 are done and banked under `docs/tuning/bank/`. The suite stands at
+**48 PASS, 0 FAIL, 4 KNOWN, 0 DRIFT** across 52 gates, and takes about two and a
 half minutes.
 
-### What Round 8 is for
+### What Round 9 is for
 
-`licensor` earns less than `conservative` and should not. The plan replaces the
-flat `collabs.feeMin/feeMax` with the structure the research documents: an
-advance, a 5-15% royalty on net sales, and a minimum guarantee — new paths
-`advanceMin/Max`, `royaltyShareMin/Max`, `minimumGuaranteeMultiple`. The royalty
-is charged where set revenue is booked.
+`hype.defaultLeadWeeks` 12 -> 3 and `hypeBuilder.revealLeadWeeks` 16 -> 3.
+`marketingReference` and `marketingHypeGain` come down so cash-bought hype is
+weak per dollar, and the load shifts onto prereleases. The plan recommends
+making a prerelease **cost-neutral rather than revenue-positive** — a free lever
+with an upside is not a decision.
 
-**Keep the draw count fixed.** Two draws set `fee` today; spend the same two on
-`advance` and `royaltyShare`. No round after Round 3 may renumber the main
-stream.
+Exit criteria: `marketingTotal` under 1% of revenue; `signalCorrelation` still
+rises with previews and lands 0.5-0.9; a campaign pays only when it lets you
+print a bigger run.
 
-Raise `reachToDemand` so a licensed set outsells an in-house set decisively, and
-keep `exposureShare` at 0.3 as the cost.
+**Round 9 is the one round after Round 3 that may renumber the main RNG stream.**
+`tickReveal` changes its draw count when the window shrinks. Every banked value
+becomes incomparable, so rebank the whole suite and do not read a Round 8 number
+against a Round 9 one.
 
-Exit criteria: `licensor` netWorth at least 1.3x `conservative`, survival 75-95%
-— a licence must be able to be the wrong licence, and a minimum guarantee on a
-flop is how.
-
-**Round 7 moved the ground under this.** The whole roster now survives far
-longer, so any `licensor` comparison banked before Round 7 is not usable. Take
-the baseline fresh.
+**Round 8 left a live warning for it.** The reveal window and the licence now
+compete for the same lever: `licensor` sizes its print run to the demand the
+licence bought, and `campaignRunMultiple` sizes it to the campaign. If Round 9
+weakens bought hype, check `diff.licensorEarns` and `diff.licensorSurvival` in
+the same sweep — they are the two newest gates and neither has survived a
+renumbering yet.
 
 ### The four remaining known-fails
 
@@ -2006,7 +2130,7 @@ decision, not a round.**
    that re-fit from: `conservative` 3.5%, `safeHands` 13.3%, `scout` 0.7%, and
    `scout` beating `safeHands` on top card in 15 of 20 seeds.
 
-### Eight things this run has learned the hard way
+### Nine things this run has learned the hard way
 
 Each of these cost a round or a correction. They are in `04-workflow.md` as
 rules; this is the short form. Numbers 6 to 8 are stated in full in the Round 7
@@ -2036,6 +2160,11 @@ section above.
    recorded something as true of "every bot and every seed" that was measured on
    three bots at one seed, and was wrong once. Round 5 declared collector
    holding unfixable on that basis; Round 5b fixed it.
+9. **Never discard stderr in a sweep, and never trust `out/runs.csv` without
+   checking the exit code.** A silenced sweep in Round 8 threw on every leg,
+   left the previous run's CSV in place, and read back as three identical rows
+   — a perfectly convincing measurement that a live knob was inert. A sweep loop
+   writes its log to a file and reports a non-zero exit.
 
 ### Before you touch the value engine again
 

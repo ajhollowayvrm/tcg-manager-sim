@@ -222,6 +222,9 @@ const collabRows = botNames
       offers: mean(ran.map(x => x.collabOffers)).toFixed(1),
       signed: mean(ran.map(x => x.collabsSigned)).toFixed(1),
       licenceSpend: '$' + money(median(ran.map(x => x.collabSpend))),
+      royaltyShareOfSpend: (100 * mean(ran.map(x =>
+        x.collabSpend > 0 ? x.collabRoyaltySpend / x.collabSpend : 0))).toFixed(0) + '%',
+      guaranteesCalled: mean(ran.map(x => x.collabGuaranteesCalled)).toFixed(1),
       ipAffection: mean(ran.map(x => x.meanIpAffection)).toFixed(1),
     };
   })

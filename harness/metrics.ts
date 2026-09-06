@@ -219,8 +219,20 @@ export interface RunMetrics {
   collabOffers: number;
   /** Offers signed. */
   collabsSigned: number;
-  /** Licence fees paid, in dollars. */
+  /** Everything paid to licensors, advances and royalties together, in dollars. */
   collabSpend: number;
+  /**
+   * The royalty half of `collabSpend`, in dollars. Read against `collabSpend`
+   * it says whether the deals in this run were bought or earned — a licence
+   * that is nearly all advance is a fee wearing a new name.
+   */
+  collabRoyaltySpend: number;
+  /**
+   * Signed collabs whose set never earned its minimum guarantee, so the
+   * shortfall fell due. This is the licence going wrong, and a run of them is
+   * the death route a licence is supposed to carry.
+   */
+  collabGuaranteesCalled: number;
   /**
    * Mean IP affection at the end of the run. The collab trade is reach now
    * against equity later, and this is the equity half — a studio that lives on
@@ -690,8 +702,11 @@ export function computeMetrics(
 
   const collabOffers = s.events.filter(e => e.kind === 'collabOffered').length;
   const collabsSigned = s.events.filter(e => e.kind === 'collabSigned').length;
-  const collabSpend = pub.ledger
-    .filter(e => e.category === 'licensing').reduce((n, e) => n - e.amount, 0) / 100;
+  const licensing = pub.ledger.filter(e => e.category === 'licensing');
+  const collabSpend = licensing.reduce((n, e) => n - e.amount, 0) / 100;
+  const collabRoyaltySpend = licensing
+    .filter(e => e.note.startsWith('royalty')).reduce((n, e) => n - e.amount, 0) / 100;
+  const collabGuaranteesCalled = s.events.filter(e => e.kind === 'collabGuaranteeCalled').length;
   const allIps = Object.values(s.ips);
   const meanIpAffection = allIps.length
     ? allIps.reduce((n, ip) => n + ip.affection, 0) / allIps.length : 0;
@@ -821,6 +836,8 @@ export function computeMetrics(
     collabOffers,
     collabsSigned,
     collabSpend,
+    collabRoyaltySpend,
+    collabGuaranteesCalled,
     meanIpAffection,
     creatorCoverage: coverage.length,
     creatorCoverageShareOfPrintings: printings.length > 0

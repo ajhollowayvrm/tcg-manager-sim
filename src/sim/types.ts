@@ -768,7 +768,24 @@ export interface Collab {
   id: CollabId;
   name: string;
   kind: 'externalIp' | 'event' | 'retailExclusive';
-  licenseFee: Cents;
+  /**
+   * Paid at signing, and recoupable: the licensor keeps it whatever happens,
+   * but it counts against the royalty the set later earns.
+   */
+  advance: Cents;
+  /** Share of the set's net sales revenue the licensor takes, 0..1. */
+  royaltyShare: number;
+  /**
+   * The floor under the whole deal. If the set flops, the publisher still owes
+   * this much in total, and the difference falls due at settlement.
+   */
+  minimumGuarantee: Cents;
+  /** Royalty earned to date, before recoupment. Grows as the set sells. */
+  royaltyAccrued: Cents;
+  /** Cash handed over to date, advance included. */
+  paidTotal: Cents;
+  /** When the guarantee shortfall fell due. Null until it does. */
+  settledTick: Tick | null;
   /** Segments this collab reaches that your brand otherwise doesn't. */
   reachBonus: Record<AudienceSegment, number>;
   requiredBrandStanding: Unit;
@@ -1036,6 +1053,7 @@ export type SimEventKind =
   | 'artCommissioned' | 'artDelivered' | 'artMissedRelease'
   | 'artistSigned' | 'artistRetired' | 'artistArrived'
   | 'regionUnlocked' | 'collabOffered' | 'collabSigned' | 'collabExpired'
+  | 'collabGuaranteeCalled'
   | 'speculatorSwing';
 
 export interface SimEvent {
@@ -1671,8 +1689,25 @@ export interface SimConfig {
     offerChancePerQuarter: number;
     offerWindowWeeks: number;
     maxOpenOffers: number;
-    feeMin: Cents;
-    feeMax: Cents;
+    /**
+     * Range the advance is rolled in. One roll sets the advance AND the royalty
+     * share, and it sets them in opposite directions — see `royaltyShareMin`.
+     */
+    advanceMin: Cents;
+    advanceMax: Cents;
+    /**
+     * Range the royalty share is rolled in, against the SAME roll that sets the
+     * advance, inverted. A licensor either takes the money up front or takes a
+     * share of the upside, so an offer is a point on that trade-off rather than
+     * two independent numbers. It also keeps the draw count at one, which is
+     * what stops this round renumbering the main RNG stream.
+     */
+    royaltyShareMin: number;
+    royaltyShareMax: number;
+    /** Minimum guarantee, as a multiple of the advance. At 1 it is the advance. */
+    minimumGuaranteeMultiple: number;
+    /** Weeks after the home release that the guarantee shortfall falls due. */
+    guaranteeSettleWeeks: number;
     /** Demand multiplier per point of weighted reach bonus. */
     reachToDemand: number;
     goodwillPerReach: number;

@@ -8,9 +8,9 @@
 import type {
   SimState, IpId, ArtistId, Rarity, PrintQualityTier, ProductKind, SetType, ProductId, IpKind,
   ChannelId, Channel, Tick, SetId, Cents, Artist, ArtistTerms, RegionId,
-  CollabId, AudienceSegment, ChainId,
+  Collab, CollabId, AudienceSegment, ChainId,
 } from '../src/sim/types.ts';
-import { api } from '../src/sim/engine.ts';
+import { api, collabOfferFactor } from '../src/sim/engine.ts';
 import { rand, pick, chance } from '../src/sim/rng.ts';
 import { REGION_US, IP_KINDS } from '../src/sim/world.ts';
 import { readRegion } from '../src/sim/regions.ts';
@@ -174,15 +174,6 @@ export interface SetBotOptions {
    * in the same tick, so this is a matter of submitting in the right order.
    */
   collabPolicy?: 'never' | 'sign';
-  /**
-   * How much larger a print run gets when the bot has signed a collab for it.
-   *
-   * This is the whole point of a collab and the whole risk of one. Extra demand
-   * is worth nothing to a publisher who printed for the demand it already had,
-   * so a licence fee only pays back if the run is sized up to meet it — and
-   * sizing up is exactly how a collab that under-delivers becomes an overprint.
-   */
-  collabRunMultiple?: number;
   /**
    * Cards per progression chain, and whether the chains run across sets.
    *
@@ -463,8 +454,14 @@ export function makeSetBot(opts: SetBotOptions): Bot {
       const campaigning = opts.revealLeadWeeks !== undefined
         || (opts.marketingPerSet ?? 0) > 0
         || (opts.prereleaseScale ?? 0) > 0;
+      // Print to the demand the licence actually bought, not to a fixed
+      // multiple. A collab lifts demand by `collabOfferFactor`, and a run
+      // sized without reading it either strands stock in the warehouse or
+      // leaves the reach unsold — either way the offer stops being a decision
+      // and `collabs.reachToDemand` stops reaching the roster at all.
+      const collabMultiple = signedCollab ? collabOfferFactor(s, signedCollab) : 1;
       const committedUnits = Math.round(runUnits
-        * (signedCollab ? (opts.collabRunMultiple ?? 1.5) : 1)
+        * collabMultiple
         * (campaigning ? (opts.campaignRunMultiple ?? 1) : 1));
 
       const reachByRegion = shipTo.map(regionId => {
@@ -570,37 +567,72 @@ function maybeSign(s: SimState, opts: SetBotOptions, artistId: ArtistId): void {
 }
 
 /**
+ * What the bot thinks a set carrying this offer will take at the till.
+ *
+ * The publisher is paid on MSRP times the channel's margin share, so the mean
+ * margin share across the channels it can actually ship through is the right
+ * multiplier — a bot that used MSRP flat would overstate every royalty by
+ * whatever the trade takes, and would then reject deals that pay.
+ *
+ * The run is sized by the offer's own demand factor, which is the same number
+ * the bot will print against once it signs. So a bigger licence costs more
+ * royalty AND sells more units, and the score below compares offers on what
+ * they are actually worth rather than on what they cost.
+ */
+function expectedCollabRevenue(s: SimState, opts: SetBotOptions, collab: Collab): number {
+  const open = openChannels(s);
+  if (open.length === 0) return 0;
+  const margin = open.reduce((n, ch) => n + ch.marginShare, 0) / open.length;
+  const units = printRunUnits(s, opts) * collabOfferFactor(s, collab);
+  return units * opts.msrp * margin;
+}
+
+/**
  * Signs the best open collab offer for the set just created.
  *
  * "Best" is weighted reach per dollar, not the largest headline bonus: an offer
  * that reaches the smallest segment hard is worth less than one that reaches
  * the largest segment gently, and a bot that sorts on the headline number would
- * never find that out. The reserve is one print run — a licence fee that eats
- * the money the set needs to print is not a collab, it is a mistake.
+ * never find that out. The reserve is one print run — an advance that eats the
+ * money the set needs to print is not a collab, it is a mistake.
+ *
+ * The dollar in "per dollar" is the whole deal, not the advance. An offer is a
+ * point on the advance/royalty trade-off, so a bot that priced the advance
+ * alone would take every low-advance offer and hand the licensor a seventh of
+ * every set it ever sold. The cost it scores against is therefore the larger
+ * of the minimum guarantee and the advance plus the royalty on the revenue it
+ * expects — the floor and the expectation, whichever binds.
  */
-function maybeSignCollab(s: SimState, opts: SetBotOptions, setId: SetId): boolean {
-  if (opts.collabPolicy !== 'sign') return false;
+function maybeSignCollab(s: SimState, opts: SetBotOptions, setId: SetId): Collab | null {
+  if (opts.collabPolicy !== 'sign') return null;
   const pub = s.publishers[s.playerId]!;
   const reserve = printRunCost(s, opts);
   const home = segmentsIn(s, s.homeRegionId);
   const total = Object.values(home).reduce((n, g) => n + g.population, 0);
-  if (total <= 0) return false;
+  if (total <= 0) return null;
 
   let best: { id: CollabId; score: number } | null = null;
   for (const c of Object.values(s.collabs)) {
     if (c.signedTick !== null) continue;
     if (pub.brandStanding < c.requiredBrandStanding) continue;
-    if (pub.cash - c.licenseFee < reserve) continue;
+    if (pub.cash - c.advance < reserve) continue;
     let weighted = 0;
     for (const [seg, bonus] of Object.entries(c.reachBonus)) {
       weighted += bonus * (home[seg as AudienceSegment]?.population ?? 0) / total;
     }
-    const score = weighted / Math.max(1, c.licenseFee);
+    const cost = Math.max(
+      c.minimumGuarantee,
+      c.advance + c.royaltyShare * expectedCollabRevenue(s, opts, c),
+    );
+    const score = weighted / Math.max(1, cost);
     if (!best || score > best.score) best = { id: c.id, score };
   }
-  if (!best) return false;
+  if (!best) return null;
   api.signCollab(s, best.id, setId);
-  return true;
+  // The signing is a queued decision, so the set does not carry the collab yet
+  // and `s.sets[setId]` does not exist at all. Hand the offer back instead —
+  // the caller needs it this tick to size the print run.
+  return s.collabs[best.id] ?? null;
 }
 
 /**
@@ -688,7 +720,7 @@ export const BOTS: Record<string, () => Bot> = {
     label: 'Licensor', cadenceWeeks: 52, cardsPerSet: 280, setType: 'main',
     quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000,
     productKind: 'boosterBox', allocationPolicy: 'spread',
-    collabPolicy: 'sign', collabRunMultiple: 1.5,
+    collabPolicy: 'sign',
     // The market sizes the run; the bankroll only caps it. 0.30 exactly covered
     // 8,000 boxes at the opening cash, which left no headroom at all to grow
     // into, so the cap bound every tick and the studio died in 70% of seeds

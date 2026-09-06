@@ -619,9 +619,15 @@ licensed set must outsell an in-house set to reach the same profit. Wizards
 prices the licence in: collector boosters cost more for licensed sets.
 
 **Structure to copy:** licence fees are **5–15% of net sales plus an advance and
-a minimum guarantee**, not a flat fee. Our `collabs.feeMin/feeMax` are flat
-$120,000–$900,000. A royalty scales with success and a flat fee does not, which
-changes the whole risk shape of the decision.
+a minimum guarantee**, not a flat fee. A royalty scales with success and a flat
+fee does not, which changes the whole risk shape of the decision.
+
+**[Round 8, 2026-09-05] Copied, and the sign is now the right way round.** The
+flat fee is gone. A collab carries an advance ($60,000–$500,000, recoupable),
+a 5–15% royalty on net sales, and a minimum guarantee at twice the advance,
+settling two years after release. `licensor` now ends on 1.54x `conservative`
+at 85% survival, against 0.98x before the round. The paragraph above this one
+records the old measurement and is kept as the record of the defect.
 
 **Lead time is years:** a Universes Beyond partnership runs 5–7 years; the Final
 Fantasy set took over 4 years from first contact. Our

@@ -84,6 +84,14 @@ on literals with no RNG at all, for the same reason.
 
 A change that only reshuffles noise is not free. It is a full re-measurement.
 
+**Count the draws before you claim there is room for one.** `randRange`,
+`randInt`, `pick` and `chance` are one `rand` call each; `gauss` is two. Round 8
+needed two numbers where a flat licence fee had used one, and got them from a
+single roll by deriving both from it in opposite directions — a bigger advance
+against a smaller royalty share. Folding two terms onto one roll is usually
+available, and it is usually a better mechanism than two independent rolls,
+because it makes the two numbers a trade-off rather than a pair.
+
 ### 4. The parallel path must stay byte-identical
 
 The CSV from a worker-pool run must match `--jobs=1` byte for byte. That
@@ -147,16 +155,33 @@ long horizon, not only the gated one.
 
 ---
 
+### 10. Never discard stderr in a sweep, and check the exit code
+
+A sweep loop that pipes a run to `/dev/null 2>&1` cannot tell a finished run
+from a crashed one. A crashed run leaves the PREVIOUS run's `out/runs.csv` in
+place, so the summary step reads real, well-formed, completely wrong numbers.
+
+Round 8 lost a sweep to this. Three legs of a `reachToDemand` ladder threw the
+same `TypeError`, all three read back identical, and the reading said a live
+knob was inert — which was also the answer the round half expected, so it was
+nearly believed. Write the log to a file and report a non-zero exit:
+
+```bash
+npm run sim -- ... > sweep.log 2>&1 || { echo "RUN FAILED"; tail -12 sweep.log; continue; }
+```
+
+---
+
 ## A sweep in practice
 
 ```bash
 # 1. Baseline. Keep it.
 npm run sim -- --seeds=20 --years=30 --bot=all --out=./out-base
 
-# 2. One value per run, same seeds and years.
+# 2. One value per run, same seeds and years. Never hide the exit code.
 for v in 0.20 0.30 0.45 0.60; do
   npm run sim -- --seeds=20 --years=30 --bot=conservative \
-    --set=value.scarcityExponent=$v --out=./out-scarcity-$v
+    --set=value.scarcityExponent=$v --out=./out-scarcity-$v || break
 done
 
 # 3. Shape, on the value you chose.

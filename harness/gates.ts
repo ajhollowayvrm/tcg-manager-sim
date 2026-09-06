@@ -247,6 +247,29 @@ export const GATES: Gate[] = [
     measure: c => shareTrue(forBot(c.roster, 'conservative'), 'survived'),
   },
   {
+    id: 'diff.licensorEarns', category: 'difficulty', band: [1.3, 2.5], expect: 'pass',
+    banked: 1.536, bankedOn: DATE,
+    why: 'A licence has to pay. `licensor` is `conservative` in every respect except that '
+       + 'it signs collabs, so this ratio is the collab loop and nothing else. It read '
+       + '0.98 before Round 8 — the studio was paying for reach and getting poorer, which '
+       + 'made the whole mechanism a trap rather than a decision. The ceiling matters too: '
+       + 'past about 2.5 a licence stops being a trade and becomes the only strategy.',
+    measure: c => {
+      const lic = medOf(c.roster, 'licensor', 'netWorth');
+      const base = medOf(c.roster, 'conservative', 'netWorth');
+      return lic !== null && base !== null && base > 0 ? lic / base : null;
+    },
+  },
+  {
+    id: 'diff.licensorSurvival', category: 'difficulty', band: [0.75, 0.95], expect: 'pass',
+    banked: 0.85, bankedOn: DATE,
+    why: 'A licence must be able to be the wrong licence. The print run is sized to the '
+       + 'demand the licence bought, so a collab that under-delivers is an overprint, and '
+       + 'the minimum guarantee falls due on it years later whatever the set did. If this '
+       + 'reaches 1 the upside above has been bought with no downside at all.',
+    measure: c => shareTrue(forBot(c.roster, 'licensor'), 'survived'),
+  },
+  {
     id: 'diff.hypeGamblerSurvival', category: 'difficulty', band: [0.40, 0.85], expect: 'pass',
     banked: 0.85, bankedOn: DATE,
     why: 'The greedy campaign must be able to lose. If it stops dying, the reveal window '
