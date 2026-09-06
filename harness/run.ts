@@ -337,6 +337,8 @@ const artRows = botNames
     return {
       bot: b,
       art$: (mean(ran.map(x => x.artSpend)) / 1000).toFixed(1) + 'k',
+      ofRev: (100 * mean(ran.filter(x => x.artSpendShare !== null)
+        .map(x => x.artSpendShare as number))).toFixed(1) + '%',
       houseArt: (100 * mean(ran.map(x => x.houseArtShare))).toFixed(0) + '%',
       artQuality: mean(ran.map(x => x.meanArtQuality)).toFixed(2),
       artistRep: mean(ran.map(x => x.meanArtistReputation)).toFixed(2),

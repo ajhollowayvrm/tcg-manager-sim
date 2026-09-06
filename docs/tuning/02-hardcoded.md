@@ -82,7 +82,7 @@ Three values used to be written in two places. Two are fixed:
 
 ---
 
-## 5. The newcomer artist rate defect, still live
+## 5. The newcomer artist rate defect — FIXED in Round 7
 
 `art.newcomerRateMin` and `newcomerRateMax` ship at **50 and 300 cents** —
 $0.50 to $3.00 per card. `art.openingRateMin` and `openingRateMax` ship at 7,500
@@ -103,6 +103,25 @@ npm run sim -- --seeds=20 --years=30 --bot=scout,safeHands,conservative \
 ```
 
 Expect `scout` to get worse and long-run `artSpend` to rise.
+
+**[Round 7, 2026-09-05] Fixed. Both bands are now $80 to $500.** The prediction
+above was right about `scout` and badly understated the rest. This defect was
+holding three difficulty gates down: fixing it alone moved
+`diff.botsAlwaysSurvive` from 1 to 6, `diff.allInSurvival` from 0.05 to 0.40 and
+`diff.conservativeSurvives` from 0.700 to 0.900, all of which had been assigned
+to Round 10 as finance problems. `allIn` was not losing its bet — the art bill
+took the bankroll before it could place one.
+
+The shipped band is a fifth of the researched $400 to $2,500 (see
+`05-real-world.md` finding 3), because our publisher earns about a fifth of what
+a real one does. **That factor must shrink toward 1 as Round 10 lifts capital and
+print volume**, or this becomes a rounding error again. Full reasoning and the
+sweep are in `HANDOFF.md`, "Art and storage (tuning Round 7)".
+
+The lesson is worth keeping separately from the fix: **a defect recorded in the
+docs is not a defect anybody has measured.** This one sat here, with a NOTE in
+`config.ts` preserving it on purpose, through six rounds, while the gates it
+caused were being triaged to a different round.
 
 ---
 

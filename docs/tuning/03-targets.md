@@ -31,27 +31,27 @@ line to flip — flipping it is what stops the next round undoing the work.
 | `static.parallelIdentity` | static | 1 – 1 | 1 | pass |
 | `static.bandsInSync` | static | 1 – 1 | 1 | pass |
 | `struct.deathRoutes` | structural | 4 – 4 | 4 | pass |
-| `struct.overprintDeaths` | structural | 15 – 95 | 82 | pass |
+| `struct.overprintDeaths` | structural | 15 – 95 | 36 | pass |
 | `struct.debtSpiralDeaths` | structural | 15 – 90 | 81 | pass |
-| `struct.channelCollapseDeaths` | structural | 8 – 70 | 12 | pass |
+| `struct.channelCollapseDeaths` | structural | 8 – 70 | 32 | pass |
 | `struct.attentionCollapseDeaths` | structural | 8 – 60 | 20 | pass |
 | `struct.speculatorMoves` | structural | 1.2 – 500 | 3.6413 | pass |
 | `struct.heatNotPinned` | structural | 0 – 0.1 | 0 | pass |
 | `struct.ripRationBinds` | structural | 0.2 – 0.95 | 0.641 | pass |
 | `struct.collectorNotPinned` | structural | 5 – 1000000000 | 20 | pass |
 | `struct.printRunVaries` | structural | 4 – 100 | 19 | pass |
-| `diff.botsAlwaysSurvive` | difficulty | 3 – 11 | 1 | known-fail |
+| `diff.botsAlwaysSurvive` | difficulty | 3 – 11 | 6 | pass |
 | `diff.botsNeverSurvive` | difficulty | 2 – 8 | 5 | pass |
-| `diff.conservativeSurvives` | difficulty | 0.95 – 1 | 0.7 | known-fail |
-| `diff.hypeGamblerSurvival` | difficulty | 0.4 – 0.85 | 0.65 | pass |
+| `diff.conservativeSurvives` | difficulty | 0.95 – 1 | 0.9 | known-fail |
+| `diff.hypeGamblerSurvival` | difficulty | 0.4 – 0.85 | 0.85 | pass |
 | `diff.hypeGamblerTopEarner` | difficulty | 1 – 3 | 1 | pass |
-| `diff.allInSurvival` | difficulty | 0.1 – 0.6 | 0.05 | known-fail |
+| `diff.allInSurvival` | difficulty | 0.1 – 0.6 | 0.4 | pass |
 | `diff.flooderDiesEarly` | difficulty | 0.4 – 2.5 | 0.75 | pass |
 | `diff.attentionBurnerDies` | difficulty | 0.85 – 1 | 1 | pass |
 | `diff.idleDies` | difficulty | 2.5 – 9 | 12.0192 | known-fail |
-| `diff.deathsLandMidRun` | difficulty | 3 – 25 | 8.1731 | pass |
+| `diff.deathsLandMidRun` | difficulty | 3 – 25 | 11.096 | pass |
 | `diff.sellThrough` | difficulty | 0.75 – 0.95 | 0.8789 | pass |
-| `diff.flopRate` | difficulty | 0.01 – 0.25 | 0.0286 | pass |
+| `diff.flopRate` | difficulty | 0.01 – 0.25 | 0.0146 | pass |
 | `shape.median` | shape | 0.2 – 0.5 | 0.26 | pass |
 | `shape.under1` | shape | 0.64 – 0.92 | 0.7929 | pass |
 | `shape.under25c` | shape | 0.25 – 0.8 | 0.5036 | pass |
@@ -75,7 +75,7 @@ line to flip — flipping it is what stops the next round undoing the work.
 | `sub.scalperCycles` | subsystem | 3 – 35 | 4 | pass |
 | `sub.scalperShare` | subsystem | 0.1 – 0.5 | 0.131 | pass |
 | `sub.houseArtShare` | subsystem | 0.02 – 0.2 | 0.097 | pass |
-| `sub.channelHogLosesReach` | subsystem | 0.5 – 6 | 6 | pass |
+| `sub.channelHogLosesReach` | subsystem | 0.5 – 6 | 7 | known-fail |
 <!-- BANDS:END -->
 
 See [06-regression.md](06-regression.md) for how to run the suite and read a

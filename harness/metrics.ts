@@ -154,6 +154,14 @@ export interface RunMetrics {
 
   /** Art commissions and standing arrangements, in dollars. */
   artSpend: number;
+  /** Everything the studio ever took in, in dollars. Sales only, not borrowing. */
+  revenue: number;
+  /**
+   * Art spend as a share of revenue. The art bill is only meaningful beside
+   * what the studio earns: the same $350,000 set is a rounding error to a
+   * mature publisher and the whole company to a new one. Null before any sale.
+   */
+  artSpendShare: number | null;
   /** Share of the studio's cards that shipped with house filler art. */
   houseArtShare: number;
   /** Mean `artQuality` across the cards that got a real commission. */
@@ -608,6 +616,9 @@ export function computeMetrics(
   // The art pipeline. Spend comes off the ledger rather than the queue: a
   // commission that missed its release was still paid for, and pretending
   // otherwise would flatter every strategy that misses the calendar.
+  const revenue = pub.ledger
+    .filter(e => e.category === 'sales')
+    .reduce((n, e) => n + e.amount, 0) / 100;
   const artSpend = pub.ledger
     .filter(e => e.category === 'art_commission' || e.category === 'staff')
     .reduce((n, e) => n - e.amount, 0) / 100;
@@ -783,6 +794,8 @@ export function computeMetrics(
     printingsGraded,
     gradersActive,
     artSpend,
+    revenue,
+    artSpendShare: revenue > 0 ? artSpend / revenue : null,
     houseArtShare: playerCards.length > 0 ? housed / playerCards.length : 0,
     meanArtQuality: commissioned.length > 0
       ? commissioned.reduce((n, c) => n + c.artQuality, 0) / commissioned.length : 0,

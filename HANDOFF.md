@@ -559,13 +559,18 @@ re-measured against the value targets and the decile ladder as one unit. Typed
 arrays for the hot price loop are behaviour-neutral but mean giving up the
 object model in `tickPrices`.
 
-**3. What is still unswept.** Much less than before. The `art` and `hype` blocks
-are swept, and so are the two grading knobs this section used to name — they do
+**3. What is still unswept.** Much less than before. The `art`, `hype` and
+`finance` storage lines are swept, and so are the two grading knobs this section used to name — they do
 different jobs (`feeWorthMultiple` decides which printings clear the hurdle at
 all, 19.8% of them at 2 and 2.8% at 25; `submitRatePerTick` decides how many
 copies of those get sent, 13% to 31%) and at the shipped values they give 6.0%
 of printings and 18.6% of copies, which is the range the pop report was fitted
 to.
+
+**The `channels` block has never been swept at all** — 17 paths plus 30 trait
+constants — and `sub.channelHogLosesReach` is now a known-fail sitting one above
+its ceiling because of it. Round 11 item 2 owns that sweep and it has been
+promoted from "medium priority" by the tripwire firing.
 
 Still unswept: the rest of the `grading` block (`tierMultiplier`,
 `popScarcityReference`, `popScarcityCeiling` were fitted by eye); the whole
@@ -598,6 +603,194 @@ is not necessarily wrong; the claim attached to it is.
 All three are plausible mechanisms and all three may simply be too harsh. None
 has been tuned.
 
+**[Round 7] `smallBets` and `globalist` are unchanged, but the diagnosis above is
+now partly wrong.** It attributed all three deaths to their own strategies. Art
+was taking the bankroll off the whole roster before any strategy could express
+itself — fixing the artist rates alone moved `diff.botsAlwaysSurvive` from 1 to 6
+and `allIn` from 0.05 to 0.40. Re-derive the `smallBets` and `globalist`
+mechanisms before tuning them; the shipped numbers under them have moved.
+
+
+## Art and storage (tuning Round 7, 2026-09-05)
+
+**The suite reads 50 gates, 46 PASS, 0 FAIL, 4 KNOWN, 0 DRIFT.** Two known-fails
+are repaired and one new one is added. Banked under `docs/tuning/bank/round-7/`.
+
+### Art was killing the roster, and nobody had measured it
+
+The round's headline is not a tuning result. `art.newcomerRateMin/Max` was 50 to
+300 **cents** against an opening roster of $75 to $450 — a hundredfold
+inconsistency, recorded as a live defect in `02-hardcoded.md` §5 and shipped
+that way since before the tuning run started. Roster drift mints newcomers
+continuously, so after twenty years most of the board was working for pennies
+and the art budget was noise. Fixing the inconsistency is what this round did;
+everything below is the consequence.
+
+Two of Round 10's four assigned known-fails were repaired by it, without
+touching a single finance knob:
+
+| Gate | Was | Now | |
+|---|---|---|---|
+| `diff.botsAlwaysSurvive` | 1 | **6** | in [3, 11] |
+| `diff.allInSurvival` | 0.050 | **0.400** | in [0.1, 0.6] |
+| `diff.conservativeSurvives` | 0.700 | 0.900 | still short of [0.95, 1] |
+
+`allIn` is the one worth understanding. It was not losing its bet — the art bill
+took the bankroll before the bet could be placed, so it never made one. The
+Round 3 note that predicted this ("the set size is correct and the artist rates
+are not") was right, and the plan's instruction to measure the side effect
+before Round 10 repeated the work paid for itself.
+
+### The rates are scaled to our revenue, not to the research
+
+`05-real-world.md` finding 3 documents a card illustration at **$400 to $2,500**,
+flat fee, no royalty. Shipping that number outright kills the game:
+
+| | art as % of revenue | survived |
+|---|---|---|
+| `conservative` | 92.4% | 0/15 |
+| `safeHands` | 224.1% | 0/15 |
+| `scout` | 4.7% | 14/15 |
+
+A 280-card set costs $406,000 in art at the researched median — 81% of the
+studio's entire starting capital, spent before a single unit prints.
+`conservative` and `safeHands` died 8/8 in year 4 of `debt_spiral`.
+
+**The shipped band is $80 to $500, a fifth of the researched one.** That is a
+deliberate, documented deviation from decision 2 of the tuning run, made by AJ
+on the measurement above. The reasoning is that art's *share of revenue* is the
+quantity the design cares about, and our publisher earns about a fifth of a real
+one: it prints 6,000 to 66,000 units against a real 16,700 to 248,000 booster
+boxes, at about $29 a unit against about $100. The band was swept as a scale
+factor over the researched one, 30 seeds x 30 years:
+
+| scale | 0.0625 | 0.125 | **0.20** | 0.25 | 0.30 | 1.0 |
+|---|---|---|---|---|---|---|
+| band | $25–156 | $50–312 | **$80–500** | $100–625 | $120–750 | $400–2500 |
+| `conservative` | 1.2% | 2.1% | **8.6%** | 9.2% | 13.0% | 92.4% |
+| `safeHands` | 5.0% | 7.6% | **20.8%** | 41.0% | 69.9% | 224.1% |
+| `scout` | 0.2% | 0.4% | **1.0%** | 1.2% | 1.5% | 4.7% |
+
+0.20 was the only point putting all three inside the plan's exit bands, and it
+is the point shipped. **When Round 10 lifts capital and print volume toward real
+scale, this factor must shrink toward 1.** It is a scale correction standing in
+for a revenue side that has not grown yet, not a claim about what art costs.
+
+`safeHands` is nonlinear here — 20.8% to 69.9% across a 1.5x change in the band
+— because it dies. Read its share beside its survival or it means nothing.
+
+### `art.rateGrowthPerReputation` 2.5 -> 0.15, and the scouting bet
+
+The research is unambiguous: Giancola's per-card rate did not move in 27 years,
+and fame pays in the art aftermarket instead. Ours dragged the rate up by 250%.
+
+Across 0.0 to 0.2 the knob is indistinguishable on all three bots. Its whole
+bite was at 2.5, and it fell on exactly one strategy:
+
+| `rateGrowthPerReputation` | 0.0 | 0.1 | **0.15** | 0.2 | 2.5 |
+|---|---|---|---|---|---|
+| `scout` art as % of revenue | 4.3% | 7.2% | **4.7%** | 6.5% | 34.9% |
+| `conservative` | 91.5% | 93.2% | 92.4% | 95.2% | 96.3% |
+
+That is the scouting bet leaking through a knob nobody had connected to it:
+`scout` buys the cheapest artist on the board, and at 2.5 its own scouted
+artists priced themselves up as their reputation climbed, so the bet paid for
+itself and then billed for it. The value is 0.15 rather than 0.0 only to keep
+`rateAdjustRate` a live mechanism; any value in the band measures the same.
+
+### The storage cliff, and why it is 1 cent and not 5
+
+New `finance.storageSurchargeAfterTicks` (26) and `storageSurchargeMultiple`
+(1.7). `Product.printedTick` is new state, written at `commitPrintRun`: stock
+still unsold half a year after the print run pays the surcharged rate. The point
+is the cliff, not the tax — a normal tail sells through inside the window and
+never meets it, so the surcharge only ever bills a publisher who printed more
+than the market wanted.
+
+**The plan asked for the base rate to go 1 -> 5 cents. It stays at 1.** Five
+cents spends the survival the art fix had just bought and breaks three gates:
+
+| base / surcharge | 1c / 1.0x | 1c / **1.7x** | 3c / 1.7x | 5c / 1.7x |
+|---|---|---|---|---|
+| `diff.botsAlwaysSurvive` | 7 | **6** | 4 | 4 |
+| `diff.conservativeSurvives` | 0.950 | **0.900** | 0.800 | 0.800 |
+| `diff.allInSurvival` | 0.050 | **0.400** | 0 | 0 |
+| `shape.yearsTo100` | 2.442 | **2.442** | 1.981 FAIL | 1.981 FAIL |
+| `sub.scalperShare` | 0.099 FAIL | **0.103** | 0.071 FAIL | 0.071 FAIL |
+| gates | 41 PASS 4 FAIL | **45 PASS 1 FAIL** | 42 PASS 3 FAIL | 42 PASS 3 FAIL |
+
+The cliff at the *old* base rate is strictly better than raising the base rate:
+it fixes `allInSurvival` and rescues `scalperShare`, which a flat rate cannot,
+because a flat rate bills the healthy tail at the same rate as the overprint.
+
+**The surcharge age is not load-bearing and does not need sweeping again.** From
+13 to 104 ticks the overprint death count moves only 60 to 64. Stock that is
+going to sit sits for years, so where the cliff falls inside the first two years
+does not change who it catches.
+
+**The multiple is noisy between 1.3 and 1.7 and was not over-fitted.** 1.3
+reaches `conservativeSurvives` 0.950 but pushes `diff.sellThrough` to 0.963 and
+`diff.flopRate` to 0.002 — publishers survive so well that the blind bet loses
+its downside, which is a worse failure than the gate it fixes. 1.5 is worse than
+both. That last 0.05 of `conservativeSurvives` is bought by taking the downside
+off the bet, so it is a trade Round 10 should make deliberately, not a defect.
+
+### What the exit criteria actually read
+
+Per AJ's call this round, the plan's art bands are treated as pre-measurement
+guesses: they get re-fitted after Round 10 settles capital, against what the
+corrected model produces. Measured at the shipped configuration, 30 seeds x 30
+years, so the re-fit starts from a number rather than a guess:
+
+| | target | measured | survived |
+|---|---|---|---|
+| `conservative` art as % of revenue | 3–9% | **3.5%** | 93% |
+| `safeHands` | 20–35% | **13.3%** | 80% |
+| `scout` | 1–3% | **0.7%** | 100% |
+| `scout` beats `safeHands` on top card | ~10/20 | **15/20** | |
+
+Two shares sit below their band and the scouting bet has leaked toward `scout`,
+both for the same reason: milder storage means longer survival means more
+revenue, so art is a smaller share of it. Nothing here is a defect. `safeHands`
+also cannot reach 20–35% by tuning at all — paying 2.5x rate to the single most
+reputable artist for all 280 cards is a policy the researched rates do not
+permit, and that is a bot to rewrite, not a knob to turn.
+
+### Two new harness metrics
+
+`revenue` and `artSpendShare`. The art exit criteria are stated as a share of
+revenue and the harness could not measure one — every earlier art claim was a
+scratch probe. `ofRev` now prints in the art table. This is the Round 6 lesson
+applied before it cost anything.
+
+### `sub.channelHogLosesReach` is a tripwire that fired
+
+It reads 7 against a ceiling of 6, and it is demoted to known-fail rather than
+tuned away. Round 3 armed it deliberately: "it sits on the ceiling, so the next
+round that adds one more lost channel turns this into a FAIL rather than a
+silent drift. That is the intent." The cause is not mysterious — art no longer
+bankrupts the roster, so `channelHog` lives long enough to sour one more
+channel. The `channels` block has never been swept at all (17 paths plus 30
+trait constants) and Round 11 item 2 owns that sweep. **Do not widen the band to
+make it green.** The number rising means the souring mechanism is working
+harder, and the band is what says how hard is too hard.
+
+### What this round teaches
+
+6. **A defect recorded in the docs is not a defect anybody has measured.** The
+   `newcomerRate` inconsistency sat in `02-hardcoded.md` §5 with a NOTE comment
+   in `config.ts` preserving it on purpose, through six rounds, while three
+   difficulty gates that it caused were being assigned to Round 10. The fix was
+   not a cheaper board — it was a *consistent* one.
+7. **Check whether the change you just made pays for the gate you were about to
+   spend money on.** The plan told this round to measure the side effect before
+   Round 10 did the work twice, and it repaired two gates for free. Reverting one
+   half of a round's change and re-running the suite is two minutes and it is the
+   only way to know which half did what.
+8. **A survival fix and a difficulty gate are the same budget.** Every storage
+   point above trades `conservativeSurvives` against `sellThrough` and
+   `flopRate`. Making the roster live longer and keeping the bet dangerous pull
+   against each other, so a round that improves survival must show what it spent.
 
 ## Grading (tuning Round 6, 2026-09-05)
 
@@ -1742,49 +1935,56 @@ horizon fixed.
 
 ## Suggested next session
 
-**Round 7 of the tuning run: art and storage.** The round plan lives outside the
-repo, at `~/.claude/plans/let-s-start-the-tuning-zesty-magpie.md`. It holds the
+**Round 8 of the tuning run: licensing.** The round plan lives outside the repo,
+at `~/.claude/plans/let-s-start-the-tuning-zesty-magpie.md`. It holds the
 ordering and the reasoning for all twelve rounds, and its round-order table and
-per-round outcome notes are current to Round 6. Read it first, then the "Grading"
-section above, then run `npm run check`.
+per-round outcome notes are current to Round 7. Read it first, then the "Art and
+storage" section above, then run `npm run check`.
 
-Rounds 0 to 6 are done and banked under `docs/tuning/bank/`. The suite stands at
-**45 PASS, 0 FAIL, 5 KNOWN, 0 DRIFT** across 50 gates, and takes about two
-minutes.
+Rounds 0 to 7 are done and banked under `docs/tuning/bank/`. The suite stands at
+**46 PASS, 0 FAIL, 4 KNOWN, 0 DRIFT** across 50 gates, and takes about two and a
+half minutes.
 
-### What Round 7 is for
+### What Round 8 is for
 
-The plan gives it the artist rates and a storage surcharge:
+`licensor` earns less than `conservative` and should not. The plan replaces the
+flat `collabs.feeMin/feeMax` with the structure the research documents: an
+advance, a 5-15% royalty on net sales, and a minimum guarantee — new paths
+`advanceMin/Max`, `royaltyShareMin/Max`, `minimumGuaranteeMultiple`. The royalty
+is charged where set revenue is booked.
 
-- `art.openingRateMin/Max` to 40,000/250,000 cents, and
-  `art.newcomerRateMin/Max` 50/300 cents to the same band — the live defect in
-  `02-hardcoded.md` §5.
-- `art.rateGrowthPerReputation` 2.5 to 0.0-0.2: the measured fee did not move in
-  27 years, and fame pays in the art aftermarket instead.
-- `finance.storagePerUnitPerTick` 1 to 5 cents, plus new
-  `storageSurchargeAfterTicks` and `storageSurchargeMultiple`, to keep
-  `overprint` a live death route once the growth arc makes cash plentiful.
+**Keep the draw count fixed.** Two draws set `fee` today; spend the same two on
+`advance` and `royaltyShare`. No round after Round 3 may renumber the main
+stream.
 
-**Check one hypothesis before Round 10 does the work twice.** Art reaches 43% of
-the print bill on a `conservative` seed that dies (see the Round 3 section), and
-`diff.botsAlwaysSurvive` fell from 7 to 1 in that round — only `scout`, which
-buys the cheapest artist, survives every seed. Three of the four open `diff.*`
-gates are assigned to Round 10. Round 7 may fix them as a side effect. Measure
-that before assuming it will not.
+Raise `reachToDemand` so a licensed set outsells an in-house set decisively, and
+keep `exposureShare` at 0.3 as the cost.
 
-Exit criteria: `artSpend` 3-9% of revenue for `conservative`, 20-35% for
-`safeHands`, 1-3% for `scout`, and `scout` still beats `safeHands` on top card
-in about half of seeds — the scouting bet must not leak.
+Exit criteria: `licensor` netWorth at least 1.3x `conservative`, survival 75-95%
+— a licence must be able to be the wrong licence, and a minimum guarantee on a
+flop is how.
 
-### The five remaining known-fails
+**Round 7 moved the ground under this.** The whole roster now survives far
+longer, so any `licensor` comparison banked before Round 7 is not usable. Take
+the baseline fresh.
+
+### The four remaining known-fails
 
 | Gate | Reads | Owner |
 |---|---|---|
-| `diff.botsAlwaysSurvive` | 1 against [3, 11] | Round 10, but see the Round 7 note |
-| `diff.conservativeSurvives` | 0.700 against [0.95, 1] | Round 10, same |
-| `diff.allInSurvival` | 0.050 against [0.1, 0.6] | Round 10 |
+| `diff.conservativeSurvives` | 0.900 against [0.95, 1] | Round 10 |
 | `diff.idleDies` | 12.019 against [2.5, 9] | Round 10 |
+| `sub.channelHogLosesReach` | 7 against [0.5, 6] | Round 11 item 2 |
 | `shape.surpriseGrail` | 1 against [0.1, 0.6] | **nobody** |
+
+Round 7 repaired `diff.botsAlwaysSurvive` (1 -> 6) and `diff.allInSurvival`
+(0.050 -> 0.400), both by fixing the artist rates rather than by touching
+finance. `diff.conservativeSurvives` moved 0.700 -> 0.900 and is one seed short;
+the Round 7 section shows the storage setting that reaches 0.950 and what it
+costs, which is the blind bet's downside. That is Round 10's trade to make.
+
+`sub.channelHogLosesReach` is new, and it is a tripwire Round 3 armed on purpose
+rather than a regression. Do not widen its band. See the Round 7 section.
 
 `shape.surpriseGrail` cannot be cleared by tuning at any value: it is a
 scale-invariant ratio over the whole catalogue, so at 280 cards a set it asks
@@ -1793,10 +1993,24 @@ answer is certain. Fixing it needs the metric redefined per set, and that needs
 a band `05-real-world.md` says the research cannot supply. **It is a design
 decision, not a round.**
 
-### Five things this run has learned the hard way
+### Two things Round 10 should know before it starts
+
+1. **The art rate band is a scale correction, not a rate.** It ships at a fifth
+   of the researched $400-$2,500 because our publisher earns about a fifth of a
+   real one. When Round 10 lifts `startingCash` and print volume toward real
+   scale, that factor must shrink toward 1 in step, or art silently becomes a
+   rounding error again. The full reasoning is in the Round 7 section.
+2. **The art exit bands are unfitted on purpose.** Per AJ's call in Round 7 they
+   are pre-measurement guesses, to be re-fitted after capital settles, against
+   what the corrected model produces. Round 7 recorded the measurements to start
+   that re-fit from: `conservative` 3.5%, `safeHands` 13.3%, `scout` 0.7%, and
+   `scout` beating `safeHands` on top card in 15 of 20 seeds.
+
+### Eight things this run has learned the hard way
 
 Each of these cost a round or a correction. They are in `04-workflow.md` as
-rules; this is the short form.
+rules; this is the short form. Numbers 6 to 8 are stated in full in the Round 7
+section above.
 
 1. **Run the decile ladder DURING a value sweep, not after it.** Round 4 fitted
    the whole value block off the gate table and shipped a distribution with 40%
@@ -1827,7 +2041,7 @@ rules; this is the short form.
 
 ```
 npm run check                                                   # all 50 gates
-npm run check -- --bank=7                                       # and bank it
+npm run check -- --bank=8                                       # and bank it
 npm run sim -- --seeds=1 --years=25 --bot=conservative --dist   # the ladder
 ```
 
@@ -1844,6 +2058,12 @@ banked two gates off the probe it fitted on; both sat under the drift threshold,
 so nothing flagged, and it quietly spent the next round's drift budget.
 
 ### The scratch scripts are gone
+
+Round 7 needed none of them: every sweep it ran was `npm run sim --set=...`
+piped through `awk`, and the two numbers the harness could not produce
+(`revenue`, `artSpendShare`) were added to `harness/metrics.ts` instead of
+measured in a probe. Prefer that order — a metric the suite owns cannot drift
+away from the claim it supports.
 
 Rounds 5 and 6 leaned on throwaway scripts under `out/scratch/` — a config
 sensitivity screen, a drops sweep driver, a grading probe, a config-path

@@ -122,7 +122,7 @@ export const GATES: Gate[] = [
   },
   {
     id: 'struct.overprintDeaths', category: 'structural', band: [15, 95], expect: 'pass',
-    banked: 82, bankedOn: DATE,
+    banked: 36, bankedOn: DATE,
     why: 'Overprint needs storagePerUnitPerTick to bite. The growth arc makes cash '
        + 'plentiful, so this is the gate that catches the storage line going slack.',
     measure: c => deathCauses(c.roster).get('overprint') ?? 0,
@@ -136,7 +136,7 @@ export const GATES: Gate[] = [
   },
   {
     id: 'struct.channelCollapseDeaths', category: 'structural', band: [8, 70], expect: 'pass',
-    banked: 12, bankedOn: DATE,
+    banked: 32, bankedOn: DATE,
     why: 'Reached by channelHog and globalist. Guards the souring mechanism.',
     measure: c => deathCauses(c.roster).get('channel_collapse') ?? 0,
   },
@@ -204,15 +204,20 @@ export const GATES: Gate[] = [
 
   // ---- difficulty: the studio must be able to die ----
   {
-    id: 'diff.botsAlwaysSurvive', category: 'difficulty', band: [3, 11], expect: 'known-fail',
-    banked: 1, bankedOn: DATE,
+    id: 'diff.botsAlwaysSurvive', category: 'difficulty', band: [3, 11], expect: 'pass',
+    banked: 6, bankedOn: DATE,
     why: 'Not every strategy may survive, and not every strategy may die. Both ends of '
        + 'this band are failure states for the difficulty curve.'
        + ' [2026-09-05, round 3] Was 7, now 1: only scout always survives. A 280-card set '
        + 'costs four times the art of a 70-card set, and a year-1 studio printing 17,000 '
        + 'boxes cannot carry it — art is 43% of the print bill on a seed that dies. The '
        + 'set size is correct and the artist rates are not. Round 7 owns art, Round 10 owns '
-       + 'difficulty; whichever lands first should report FIXED.',
+       + 'difficulty; whichever lands first should report FIXED.'
+       + ' [2026-09-05, round 7] FIXED at 6, by art, exactly as that note predicted. '
+       + 'The artist rates were the cause and Round 10 never had to touch it. The whole '
+       + 'repair came from the newcomer rate defect: roster drift minted artists at a '
+       + 'hundredth of the opening rate, so the fix was not a cheaper board but a '
+       + 'CONSISTENT one.',
     measure: c => countWhere(
       bots(c.roster).map(b => ({ s: shareTrue(forBot(c.roster, b), 'survived') })) as unknown as Row[],
       r => Number(r.s) === 1,
@@ -230,15 +235,20 @@ export const GATES: Gate[] = [
   },
   {
     id: 'diff.conservativeSurvives', category: 'difficulty', band: [0.95, 1.0], expect: 'known-fail',
-    banked: 0.7, bankedOn: DATE,
+    banked: 0.9, bankedOn: DATE,
     why: 'conservative is the control the whole roster is read against. If the baseline '
        + 'strategy stops being viable, every bot-to-bot comparison loses its reference.'
-       + ' [2026-09-04, round 2] The growth arc moved this from 1.00 to 0.90. Round 10 owns difficulty.',
+       + ' [2026-09-04, round 2] The growth arc moved this from 1.00 to 0.90. Round 10 owns difficulty.'
+       + ' [2026-09-05, round 7] 0.700 -> 0.900 on the art fix. It is one seed short of '
+       + 'the band and Round 10 still owns it, but it is no longer the art bill: at the '
+       + 'shipped rates conservative reads 0.950 with the storage cliff at 1.3x and 0.900 '
+       + 'at 1.7x. That last 0.05 is bought by giving the blind bet its downside back — '
+       + 'see the round 7 note on diff.flopRate — so it is a trade, not a defect.',
     measure: c => shareTrue(forBot(c.roster, 'conservative'), 'survived'),
   },
   {
     id: 'diff.hypeGamblerSurvival', category: 'difficulty', band: [0.40, 0.85], expect: 'pass',
-    banked: 0.65, bankedOn: DATE,
+    banked: 0.85, bankedOn: DATE,
     why: 'The greedy campaign must be able to lose. If it stops dying, the reveal window '
        + 'has stopped being a bet.',
     measure: c => shareTrue(forBot(c.roster, 'hypeGambler'), 'survived'),
@@ -252,10 +262,13 @@ export const GATES: Gate[] = [
     measure: c => rankBots(c.roster, M('netWorth')).indexOf('hypeGambler') + 1 || null,
   },
   {
-    id: 'diff.allInSurvival', category: 'difficulty', band: [0.10, 0.60], expect: 'known-fail',
-    banked: 0.05, bankedOn: DATE,
+    id: 'diff.allInSurvival', category: 'difficulty', band: [0.10, 0.60], expect: 'pass',
+    banked: 0.40, bankedOn: DATE,
     why: 'Betting the whole bankroll must usually lose and occasionally win.'
-       + ' [2026-09-04, round 2] Was 0.35. The bet-size ladder now competes against market-sized runs, so betting the bankroll is no longer the biggest bet in the roster. Round 10 owns it.',
+       + ' [2026-09-04, round 2] Was 0.35. The bet-size ladder now competes against market-sized runs, so betting the bankroll is no longer the biggest bet in the roster. Round 10 owns it.'
+       + ' [2026-09-05, round 7] FIXED at 0.40 without Round 10. Art was taking the '
+       + 'bankroll before the bet could be placed, so `allIn` was not losing its bet — it '
+       + 'never got to make one.',
     measure: c => shareTrue(forBot(c.roster, 'allIn'), 'survived'),
   },
   {
@@ -286,7 +299,7 @@ export const GATES: Gate[] = [
   },
   {
     id: 'diff.deathsLandMidRun', category: 'difficulty', band: [3.0, 25.0], expect: 'pass',
-    banked: 8.1731, bankedOn: DATE,
+    banked: 11.096, bankedOn: DATE,
     why: 'Excluding the three regression bots, a death should be the end of a story rather '
        + 'than an opening move. Year-one deaths mean the opening is unsurvivable.',
     measure: c => median(numbers(
@@ -303,7 +316,7 @@ export const GATES: Gate[] = [
   },
   {
     id: 'diff.flopRate', category: 'difficulty', band: [0.01, 0.25], expect: 'pass',
-    banked: 0.0286, bankedOn: DATE,
+    banked: 0.0146, bankedOn: DATE,
     why: 'A set that does not make its print run back. Guarded on flopSetsJudged, because '
        + 'a studio that dies before any set is a year old has no flop rate at all — that '
        + 'guard is why flooder no longer reports the best flop rate in the roster.',
@@ -547,14 +560,21 @@ export const GATES: Gate[] = [
     measure: c => medOf(c.roster, 'conservative', 'houseArtShare'),
   },
   {
-    id: 'sub.channelHogLosesReach', category: 'subsystem', band: [0.5, 6], expect: 'pass',
-    banked: 6, bankedOn: DATE,
+    id: 'sub.channelHogLosesReach', category: 'subsystem', band: [0.5, 6], expect: 'known-fail',
+    banked: 7, bankedOn: DATE,
     why: 'CONCEPT.md §6.5: over-allocating to one channel sours it. If channelHog stops '
        + 'losing channels, the souring mechanism has gone quiet.'
        + ' [2026-09-04, round 2] Was 4. Scale-coupled channel capacity changed what over-allocating means. Round 10 owns difficulty; watch that it does not keep climbing.'
        + ' [2026-09-05, round 3] FIXED at 6, which is the top of the band. It sits on the '
        + 'ceiling, so the next round that adds one more lost channel turns this into a FAIL '
-       + 'rather than a silent drift. That is the intent.',
+       + 'rather than a silent drift. That is the intent.'
+       + ' [2026-09-05, round 7] The tripwire fired: 7. It is demoted to known-fail rather '
+       + 'than tuned away, because Round 7 owns art and storage and this is the channels '
+       + 'block, which has never been swept at all — 17 paths plus 30 trait constants. '
+       + 'Round 11 item 2 owns that sweep. The cause is not mysterious: art no longer '
+       + 'bankrupts the roster, so channelHog lives long enough to sour one more channel. '
+       + 'Do NOT widen the band to make this green; the number rising means the souring '
+       + 'mechanism is working harder, and the band is what says how hard is too hard.',
     measure: c => medOf(c.roster, 'channelHog', 'channelsLost'),
   },
 ];

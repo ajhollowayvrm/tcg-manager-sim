@@ -192,7 +192,7 @@ function defineProduct(
     id, lineId: `line_${kind}` as ProductLineId, setId, regionId, kind,
     packsPerUnit: packs, cardsPerPack,
     msrp: C(msrp), unitCogs: C(0),
-    unitsPrinted: 0, unitsRemaining: 0, allocations: {},
+    unitsPrinted: 0, unitsRemaining: 0, printedTick: null, allocations: {},
     scalperAppeal: U(kind === 'etb' || kind === 'premiumCollection'
       ? s.config.drops.scalperAppealPremium : s.config.drops.scalperAppealDefault),
     market: {
@@ -211,6 +211,7 @@ function commitPrintRun(s: SimState, setId: SetId, quantities: Record<ProductId,
     const p = s.products[pid as ProductId]!;
     p.unitsPrinted = qty;
     p.unitsRemaining = qty;
+    p.printedTick = s.tick;
     p.unitCogs = C(s.config.printing.unitCost[quality] * p.packsPerUnit
       * s.config.printing.cogsCoefficient);
     p.market.hidden.sealedRemaining = qty;
@@ -1971,9 +1972,23 @@ function tickFinance(s: SimState): void {
   pub.cash = C(pub.cash - overhead);
   pub.ledger.push({ t: s.tick, amount: C(-overhead), category: 'overhead', note: 'studio' });
 
+  // Storage is charged per unit, and stock that has sat past the surcharge age
+  // is charged at a multiple of it. The cliff is the point: a normal tail sells
+  // through inside the window and never meets it, so the surcharge only ever
+  // bills the publisher who printed more than the market wanted. Without it,
+  // the growth arc makes cash plentiful enough that a flat per-unit rate stops
+  // being able to kill anybody, and `overprint` dies as a death route.
   let unsold = 0;
-  for (const p of Object.values(s.products)) unsold += p.unitsRemaining;
-  const storage = unsold * cfg.storagePerUnitPerTick;
+  let storage = 0;
+  for (const p of Object.values(s.products)) {
+    if (p.unitsRemaining <= 0) continue;
+    unsold += p.unitsRemaining;
+    const aged = p.printedTick !== null
+      && s.tick - p.printedTick > cfg.storageSurchargeAfterTicks;
+    storage += p.unitsRemaining * cfg.storagePerUnitPerTick
+      * (aged ? cfg.storageSurchargeMultiple : 1);
+  }
+  storage = Math.round(storage);
   if (storage > 0) {
     pub.cash = C(pub.cash - storage);
     pub.ledger.push({ t: s.tick, amount: C(-storage), category: 'storage', note: `${Math.round(unsold)} units` });

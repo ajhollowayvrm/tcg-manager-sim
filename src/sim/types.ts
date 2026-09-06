@@ -475,6 +475,11 @@ export interface Product {
 
   unitsPrinted: number;
   unitsRemaining: number;
+  /**
+   * When the print run landed. Null until it does. Storage reads it: stock
+   * that has sat since the release costs more to keep than this quarter's tail.
+   */
+  printedTick: Tick | null;
   allocations: Record<ChannelId, ChannelAllocation>;
 
   /** Multiplier on reseller/scalper interest for this SKU. */
@@ -1311,6 +1316,13 @@ export interface SimConfig {
     weeklyOverheadPerRegion: Cents;
     /** Warehousing, per unsold unit per week. */
     storagePerUnitPerTick: Cents;
+    /**
+     * Stock this old stops being a tail and starts being a problem. Past this
+     * many ticks since the print run, a unit costs the surcharged rate.
+     */
+    storageSurchargeAfterTicks: number;
+    /** What a unit past that age costs, as a multiple of the base rate. */
+    storageSurchargeMultiple: number;
   };
 
   sealed: {

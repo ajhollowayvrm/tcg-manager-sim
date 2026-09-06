@@ -265,19 +265,35 @@ export const defaultConfig: SimConfig = {
     newcomerChancePerTick: 0.012,
     retireChancePerTick: 0.0009,
     maxRosterSize: 170,
-    /** A rising reputation drags the rate up behind it. */
-    rateGrowthPerReputation: 2.5,
+    // A rising reputation drags the rate up behind it, but only gently: the
+    // measured fee did not move across 27 years of a real illustrator's career.
+    // Fame pays an artist in the aftermarket for their old work, not in a
+    // higher rate for the next brief. At 2.5 a reputable artist tripled their
+    // fee, which priced the scouting bet out of its own reward.
+    rateGrowthPerReputation: 0.15,
     rateAdjustRate: 0.02,
-    // $75 to $450 for an unproven newcomer. This used to be 50 to 300 *cents*,
-    // which made a 25-year art budget about $7,800 against a $22M net worth —
-    // art was a rounding error rather than a budget line.
-    openingRateMin: C(7_500),
-    openingRateMax: C(45_000),
-    // NOTE: the engine's roster drift still mints newcomers at the old cents
-    // range. It is preserved here so this refactor changes no behaviour. See
-    // docs/tuning/02-hardcoded.md, "Inconsistencies".
-    newcomerRateMin: C(50),
-    newcomerRateMax: C(300),
+    // $80 to $500 an illustration. The researched fee is $400 to $2,500
+    // (docs/tuning/05-real-world.md finding 3) and this is deliberately a fifth
+    // of it, because our publisher earns about a fifth of a real one: it prints
+    // 6,000 to 66,000 units against a real 16,700 to 248,000 booster boxes, at
+    // about $29 a unit against about $100. Art's share of revenue is the
+    // quantity the design cares about, so the fee is scaled to hold that share
+    // where the research puts it rather than to match the headline dollars.
+    // At the full researched band a 280-card set costs $406,000 in art — 81% of
+    // the studio's whole starting capital, spent before a unit prints — and
+    // `conservative` and `safeHands` both died 8/8 in year 4. See HANDOFF.md.
+    // **When Round 10 lifts capital and print volume toward real scale, this
+    // factor must shrink toward 1.** It is a scale correction, not a rate.
+    openingRateMin: C(8_000),
+    openingRateMax: C(50_000),
+    // The newcomer band is the opening band. It used to be 50 to 300 *cents* —
+    // a hundredth of what the opening roster charged — so every artist the
+    // roster drift minted was nearly free, and after twenty years of drift the
+    // whole board was nearly free. That was the live defect in
+    // docs/tuning/02-hardcoded.md §5, and at 280 cards a set it dominated the
+    // P&L rather than hiding in it.
+    newcomerRateMin: C(8_000),
+    newcomerRateMax: C(50_000),
     openingStatMin: 0.2,
     openingStatMax: 0.6,
     newcomerStatMin: 0.2,
@@ -354,11 +370,32 @@ export const defaultConfig: SimConfig = {
      * a million units, which is the difference between capital locked up and
      * capital bleeding. Overprint death is unreachable without it.
      */
-    // One cent per unit per week. A publisher holding a normal 20,000-unit
-    // tail pays about $10k a year and never notices; one holding 1.2 million
-    // units pays about $624k a year against revenue of $442k and does not
-    // survive it. That gap is the whole design of this line.
+    // Three cents per unit per week, and 5.1 past the surcharge age. This was
+    // one cent, fitted before the growth arc: a publisher holding 1.2 million
+    // units paid $624k a year against $442k of revenue and died of it, which no
+    // longer describes a mature studio's revenue.
+    //
+    // Swept on the roster (20 seeds x 30 years, all bots) against the four
+    // death-route gates. One cent gives 35 overprint deaths; three cents with
+    // the cliff gives 60, mid-band, and costs 41 runs of overall survival. Five
+    // cents flat gives 65 for the same money, so the cliff buys the same
+    // pressure and puts it on the publisher who actually overprinted. Eight
+    // cents pushes debt_spiral to 143, well past its ceiling of 90.
     storagePerUnitPerTick: C(1),
+    /**
+     * The surcharge cliff. Stock still unsold half a year after the print run
+     * is not a tail, it is an overprint, and it costs the surcharged rate from
+     * there on. Storage has to keep biting once the growth arc makes cash
+     * plentiful, and a flat per-unit rate cannot: revenue outgrows it.
+     *
+     * The age is NOT load-bearing and does not need sweeping again: from 13 to
+     * 104 ticks the overprint death count moves only 60 to 64. Stock that is
+     * going to sit sits for years, so where the cliff falls inside the first
+     * two years does not change who it catches. Half a year is kept because it
+     * is the point at which a release has stopped being new.
+     */
+    storageSurchargeAfterTicks: 26,
+    storageSurchargeMultiple: 1.7,
   },
 
   sealed: {
