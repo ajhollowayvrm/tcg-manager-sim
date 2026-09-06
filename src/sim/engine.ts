@@ -197,7 +197,10 @@ function defineProduct(
       ? s.config.drops.scalperAppealPremium : s.config.drops.scalperAppealDefault),
     market: {
       price: C(msrp), heat: 1, nostalgia: 1, history: emptySeries(s.tick),
-      hidden: { sealedRemaining: 0, ripRate: s.config.sealed.baseRipRatePerTick, heldByCollectors: U(0.35) },
+      hidden: {
+        sealedRemaining: 0, ripRate: s.config.sealed.baseRipRatePerTick,
+        heldByCollectors: U(0.35), contentsValue: 0,
+      },
     },
   };
   s.sets[setId]!.productIds.push(id);
@@ -1132,9 +1135,6 @@ function tickPrices(s: SimState, printings: Printing[]): void {
   }
 }
 
-/** Expected-contents value is expensive and slow-moving; cache it per product. */
-const contentsCache = new WeakMap<object, number>();
-
 function tickSealed(s: SimState, products: Product[]): void {
   const cfg = s.config.sealed;
   const yearFrac = s.config.strides.sealed / 52;
@@ -1148,8 +1148,11 @@ function tickSealed(s: SimState, products: Product[]): void {
     const set = s.sets[p.setId]!;
     if (set.status !== 'released') continue;
 
-    // Expected contents value drives sealed price. Recomputed occasionally.
-    let contents = contentsCache.get(p) ?? 0;
+    // Expected contents value drives sealed price. Recomputed occasionally, and
+    // held on the product rather than in a cache beside the engine: between
+    // recomputes the price is derived from the stale number, which makes it
+    // state. See the field comment in types.ts.
+    let contents = h.contentsValue;
     if (s.tick % (s.config.strides.sealed * 6) === 0 || contents === 0) {
       contents = 0;
       for (const cardId of set.cardIds) {
@@ -1164,7 +1167,7 @@ function tickSealed(s: SimState, products: Product[]): void {
         if (pr) contents += pr.market.rawPrice * pr.pullRate;
       }
       contents *= p.packsPerUnit;
-      contentsCache.set(p, contents);
+      h.contentsValue = contents;
     }
 
     p.market.nostalgia *= 1 + cfg.sealedNostalgiaRatePerYear * yearFrac;

@@ -522,6 +522,25 @@ export interface SealedMarket {
     ripRate: number;
     /** Share of sealed stock held by long-hold collectors vs. flippers. */
     heldByCollectors: Unit;
+    /**
+     * Last computed expected value of one unit's contents, in cents. 0 until the
+     * first sealed tick computes it.
+     *
+     * It lives on the product, not in a cache beside the engine, because it is
+     * deliberately STALE: `tickSealed` recomputes it only every sixth sealed
+     * stride, and the sealed price in between is derived from the old number. A
+     * value the run depends on and does not recompute is state, whatever it
+     * looks like. It was a `WeakMap` keyed on the product object until
+     * `static.saveRoundTrip` caught it — a reloaded run found the map empty,
+     * recomputed against current prices instead of the ones cached up to six
+     * strides earlier, and diverged by a cent that then propagated.
+     *
+     * A raw number, not `Cents`: it is an unrounded expectation over pull rates
+     * and it feeds a lerp. Rounding it to whole cents here would change the
+     * sealed price the day this moved out of the cache, which is exactly the
+     * kind of silent drift this step is supposed to avoid.
+     */
+    contentsValue: number;
   };
 }
 

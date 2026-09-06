@@ -49,6 +49,8 @@ export interface GateContext {
   violations: string[];
   typecheckOk: boolean;
   parallelIdentical: boolean;
+  /** null when the sweep was read from a bank rather than run. */
+  saveRoundTrips: boolean | null;
   bandsInSync: boolean;
 }
 
@@ -137,6 +139,18 @@ export const GATES: Gate[] = [
        + 'so the threaded and synchronous CSVs must match byte for byte. This is the '
        + 'acceptance test the whole harness rests on.',
     measure: c => (c.parallelIdentical ? 1 : 0),
+  },
+  {
+    id: 'static.saveRoundTrip', category: 'static', band: [1, 1], expect: 'pass',
+    banked: null, bankedOn: DATE,
+    why: 'A save must survive being reloaded AND RUN. The two states are compared after '
+       + 'both sides advance a further 200 ticks, not at rest: a stream or a counter that '
+       + 'failed to survive the trip reads identical the moment it lands and diverges '
+       + 'under load, and at-rest equality would pass it. The revived side is given a '
+       + 'FRESH bot, because bot closure state is the player\'s head and not the world\'s '
+       + '— anything a bot was carrying across the save shows up here. This is what makes '
+       + 'the sim drivable by a UI, and it is the reason `SimState.schemaVersion` exists.',
+    measure: c => c.saveRoundTrips === null ? null : (c.saveRoundTrips ? 1 : 0),
   },
   {
     id: 'static.bandsInSync', category: 'static', band: [1, 1], expect: 'pass',

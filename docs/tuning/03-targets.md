@@ -29,6 +29,7 @@ line to flip — flipping it is what stops the next round undoing the work.
 | `static.typecheck` | static | 1 – 1 | 1 | pass |
 | `static.invariants` | static | 0 – 0 | 0 | pass |
 | `static.parallelIdentity` | static | 1 – 1 | 1 | pass |
+| `static.saveRoundTrip` | static | 1 – 1 | — | pass |
 | `static.bandsInSync` | static | 1 – 1 | 1 | pass |
 | `struct.deathRoutes` | structural | 4 – 4 | 4 | pass |
 | `struct.overprintDeaths` | structural | 0.0375 – 0.2375 | 0.13 | pass |

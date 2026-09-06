@@ -12,10 +12,16 @@
  */
 import { writeFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { BOTS } from './bots.ts';
+import { BOTS, type Bot } from './bots.ts';
 import { DEFAULT_SNAPSHOT_AGES, type RunTask } from './runOne.ts';
 import { runBatch, defaultJobs } from './batch.ts';
-import { toCsv } from './metrics.ts';
+import { toCsv, computeMetrics } from './metrics.ts';
+import { createWorld } from '../src/sim/world.ts';
+import { defaultConfig } from '../src/sim/config.ts';
+import { tick } from '../src/sim/engine.ts';
+import { checkInvariants } from '../src/sim/invariants.ts';
+import { serialize, deserialize } from '../src/sim/save.ts';
+import type { SimState } from '../src/sim/types.ts';
 import { parseCsv, type Row } from './aggregate.ts';
 import { GATES, bandTable, type Gate, type GateContext, type Category } from './gates.ts';
 
@@ -78,6 +84,55 @@ async function parallelIdentity(): Promise<boolean> {
   const csv = (rs: Awaited<ReturnType<typeof runBatch>>) =>
     toCsv(rs.map(r => r.metrics) as unknown as Record<string, unknown>[]);
   return csv(par) === csv(seq);
+}
+
+/**
+ * A save must survive being reloaded and then RUN. Comparing the two states at
+ * rest is not enough: a stream or a counter that failed to survive the trip
+ * reads identical the moment it lands and diverges under load, which is the
+ * only failure mode worth testing for.
+ *
+ * **The bot instance continues across the save, and that is the point.**
+ * `makeSetBot` keeps `nextRelease`, `campaigned`, `marketingSpent` and
+ * `openChains` in a closure — the player's plan, not the world's state — and
+ * `save.ts` deliberately does not save it. Handing the revived state a FRESH
+ * bot is therefore a different experiment: it measures whether a bot can be
+ * restarted mid-run, and the answer is no, because `nextRelease` resets to 8
+ * and the bot immediately commits a set the live run did not. That is a real
+ * property of the harness and it is recorded in `save.ts`; it is not a defect
+ * in the save. A human resuming a saved game is the same instance, which is
+ * what this models.
+ *
+ * Run A is 500 ticks straight. Run B is 300, saved, reloaded, then 200 more on
+ * the same bot. Same seed, same history, so the two must agree exactly.
+ */
+function saveRoundTrip(): boolean {
+  const BEFORE = 300;
+  const AFTER = 200;
+  const YEARS = Math.round((BEFORE + AFTER) / 52);
+
+  const world = () => createWorld('conservative-0', defaultConfig);
+  const advance = (bot: Bot, st: SimState, n: number) => {
+    for (let i = 0; i < n; i++) { bot.step(st); tick(st); }
+  };
+
+  const straightBot = BOTS.conservative!();
+  const straight = world();
+  advance(straightBot, straight, BEFORE + AFTER);
+
+  const savedBot = BOTS.conservative!();
+  let saved = world();
+  advance(savedBot, saved, BEFORE);
+  saved = deserialize(serialize(saved));
+  advance(savedBot, saved, AFTER);
+
+  if (checkInvariants(saved).length > 0) return false;
+  if (JSON.stringify(straight) !== JSON.stringify(saved)) return false;
+  const metrics = (st: SimState) => toCsv([computeMetrics(
+    st, 'conservative', YEARS,
+    { snapshots: [], speculatorMin: 0, speculatorMax: 0, speculatorSamples: 0 },
+  )] as unknown as Record<string, unknown>[]);
+  return metrics(straight) === metrics(saved);
 }
 
 function typecheckOk(): boolean {
@@ -157,6 +212,7 @@ const started = Date.now();
 let roster: Awaited<ReturnType<typeof sweep>>;
 let shape: Awaited<ReturnType<typeof sweep>>;
 let identical = true;
+let saveOk: boolean | null = null;
 
 if (from) {
   const runs = parseCsv(readFileSync(`${from}/runs.csv`, 'utf8'));
@@ -165,7 +221,7 @@ if (from) {
   roster = { runs, sets, violations: [] };
   shape = roster;
   console.log(`gating ${from} (${runs.length} runs, ${sets.length} set snapshots)`);
-  console.log('note: --from cannot check invariants or thread identity; those gate as NO-DATA.\n');
+  console.log('note: --from cannot check invariants, thread identity or the save round trip; those gate as NO-DATA.\n');
 } else {
   console.log('running the roster sweep (20 seeds x 30 years, all bots)...');
   roster = await sweep(Object.keys(BOTS), 20, 30);
@@ -173,6 +229,8 @@ if (from) {
   shape = await sweep(['conservative'], 30, 50);
   console.log('checking thread identity...');
   identical = await parallelIdentity();
+  console.log('checking the save round trip...');
+  saveOk = saveRoundTrip();
 }
 
 const ctx: GateContext = {
@@ -182,6 +240,7 @@ const ctx: GateContext = {
   violations: [...roster.violations, ...shape.violations],
   typecheckOk: from ? true : typecheckOk(),
   parallelIdentical: identical,
+  saveRoundTrips: saveOk,
   bandsInSync: bandsInSync(),
 };
 
