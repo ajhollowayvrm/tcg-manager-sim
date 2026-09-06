@@ -1077,7 +1077,7 @@ export type SimEventKind =
   | 'sealedSqueeze' | 'communitySentiment'
   | 'errorDiscovered' | 'creatorOpened' | 'collabOffer'
   | 'artistOffer' | 'artistBreakout'
-  | 'channelStrained' | 'channelLost' | 'channelUnlocked'
+  | 'channelStrained' | 'channelLost' | 'channelUnlocked' | 'unlockPurchased'
   | 'debtWarning' | 'studioDead'
   | 'fatigueWarning' | 'graderEnteredMarket'
   | 'dropScheduled' | 'dropSoldOut' | 'dropUndersold' | 'scalperCrash'
@@ -1704,6 +1704,52 @@ export interface SimConfig {
     /** Fresh printings on the market at which a creator is fully engaged. */
     freshPrintingsReference: number;
     relationshipConvergence: number;
+  };
+
+  /**
+   * The unlock tree past the channels. CONCEPT.md §9: "There is no feature cut.
+   * Every system ships. What changes is what the player has *access* to."
+   */
+  unlocks: {
+    /** Ceiling on the three levelled tiers. `types.ts` documents them as 0..3. */
+    maxLevel: number;
+    /** Cost of level 1, and the multiple each further level costs over the last. */
+    marketResearchCost: Cents;
+    marketResearchCostLevelMultiple: number;
+    communityTeamCost: Cents;
+    communityTeamCostLevelMultiple: number;
+    /** A team is a payroll, not a purchase. Charged every tick it is staffed. */
+    communityTeamUpkeepPerTick: Cents;
+    /** Audience scale a community team is gated on. CONCEPT.md §9: audience size. */
+    communityTeamAudienceGate: number;
+    analyticsCost: Cents;
+    analyticsCostLevelMultiple: number;
+    analyticsUpkeepPerTick: Cents;
+    /** CONCEPT.md §9 gates analytics on capital AND brand standing. */
+    analyticsBrandGate: Unit;
+    premiumTierCost: Cents;
+    archivalTierCost: Cents;
+    /** CONCEPT.md §9 gates print quality on "capital, distributor terms". */
+    printQualityRelationshipGate: Unit;
+    specialtySlotCost: Cents;
+    specialtySlotCostMultiple: number;
+    /** Released sets needed per slot. CONCEPT.md §9: "prior set performance". */
+    specialtySlotSetsPerSlot: number;
+    eventsCost: Cents;
+    eventsAudienceGate: number;
+    /**
+     * Whether the print-quality and specialty-slot unlocks RESTRICT anything.
+     *
+     * Both default to 0, and that is a balance decision rather than a
+     * half-finished one. They are the only two unlocks in the tree that take
+     * something away rather than adding it, and enforcing them today kills
+     * `chaseMaxxer` (premium quality) and `specialtyOnly` (specialty sets) at
+     * tick 0 in every seed — two load-bearing bots, one of them half of
+     * `sub.gemRateByQuality`. Turning either on is a tuning step that pairs the
+     * flag with those bots buying their tier first.
+     */
+    enforcePrintQuality: number;
+    enforceSpecialtySlots: number;
   };
 
   chains: {

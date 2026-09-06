@@ -991,6 +991,49 @@ export const defaultConfig: SimConfig = {
   // things to cover.
   // A chain is pull demand: an incomplete set of anything is worth more than
   // the same cards unrelated. First-guess numbers.
+  // First-guess numbers, wired for reachability rather than balance — Round 11's
+  // sweep fits them. The shape that matters: every tier is a real cost against a
+  // real gate, the two ongoing hires are payroll rather than purchases, and
+  // nothing here can be bought before the studio is somebody.
+  //
+  // Until this block existed, `purchaseUnlock` rejected every unlock except
+  // `channels` in one line, so six declared systems were permanently dead:
+  // market research, the community team, analytics, the print-quality tiers,
+  // specialty set slots and self-hosted events.
+  unlocks: {
+    maxLevel: 3,
+    // Per-project research. The cheapest of the three because it buys the
+    // narrowest thing — one region's read, one project at a time.
+    marketResearchCost: C(120_000_00),
+    marketResearchCostLevelMultiple: 2.2,
+    // A standing team, gated on audience size (CONCEPT.md §9). The upkeep is
+    // what stops every tier being bought the moment it is affordable: a hire
+    // with a one-off price and a permanent benefit is not a decision.
+    communityTeamCost: C(200_000_00),
+    communityTeamCostLevelMultiple: 2.0,
+    communityTeamUpkeepPerTick: C(2_000_00),
+    communityTeamAudienceGate: 2,
+    // Capital AND brand standing, per CONCEPT.md §9. The dearest of the three:
+    // it reads the market rather than the audience.
+    analyticsCost: C(300_000_00),
+    analyticsCostLevelMultiple: 2.0,
+    analyticsUpkeepPerTick: C(3_000_00),
+    analyticsBrandGate: 0.35,
+    // "Capital, distributor terms" — so the gate is a live distributor
+    // relationship, not a number the studio can reach by waiting.
+    premiumTierCost: C(250_000_00),
+    archivalTierCost: C(600_000_00),
+    printQualityRelationshipGate: 0.5,
+    // "Prior set performance": slots are earned by shipping, not bought.
+    specialtySlotCost: C(150_000_00),
+    specialtySlotCostMultiple: 1.8,
+    specialtySlotSetsPerSlot: 3,
+    eventsCost: C(400_000_00),
+    eventsAudienceGate: 3,
+    enforcePrintQuality: 0,
+    enforceSpecialtySlots: 0,
+  },
+
   chains: {
     desirePerLink: 6,
     maxCountedLinks: 5,

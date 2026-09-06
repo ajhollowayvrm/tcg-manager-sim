@@ -161,6 +161,14 @@ function createIp(s: SimState, id: IpId, name: string, kind: IpEntity['kind']): 
 }
 
 function createSet(s: SimState, id: SetId, name: string, type: SetType, size: number): void {
+  // A specialty set needs a slot to put it in. Off by default — see
+  // `unlocks.enforceSpecialtySlots`. Counted against sets still in flight as
+  // well as released ones, because a slot is a production line, not a receipt.
+  if (s.config.unlocks.enforceSpecialtySlots > 0 && type === 'specialty') {
+    const inFlight = Object.values(s.sets).filter(
+      set => set.type === 'specialty' && set.status !== 'released').length;
+    if (inFlight >= s.publishers[s.playerId]!.unlocks.specialtySetSlots) return;
+  }
   bumpRoster(s);
   s.sets[id] = {
     id, publisherId: s.playerId, name, type, status: 'design',
@@ -273,6 +281,11 @@ function defineProduct(
 function commitPrintRun(s: SimState, setId: SetId, quantities: Record<ProductId, number>, quality: PrintQualityTier): void {
   const set = s.sets[setId]!;
   const pub = s.publishers[set.publisherId]!;
+  // A tier the studio has not unlocked. Off by default — see
+  // `unlocks.enforcePrintQuality`, which explains why a restriction ships
+  // disabled rather than half-written.
+  if (s.config.unlocks.enforcePrintQuality > 0
+    && !pub.unlocks.printQualityTiers.includes(quality)) return;
   let cost = 0;
   for (const [pid, qty] of Object.entries(quantities)) {
     const p = s.products[pid as ProductId]!;
@@ -418,12 +431,117 @@ function allocate(s: SimState, productId: ProductId, allocations: Record<Channel
   }
 }
 
+/** Cost of the next level of a levelled tier: base, then a multiple per level. */
+function tierCost(base: number, multiple: number, ownedLevels: number): number {
+  return base * Math.pow(multiple, ownedLevels);
+}
+
 /**
- * Buys a gated channel. Only the channel branch of the unlock tree is wired;
- * the rest of `UnlockState` is still a later pass.
+ * The non-channel half of the unlock tree.
+ *
+ * Split out so `purchaseUnlock` keeps reading as one idea per branch. Every
+ * path here is a no-op unless the caller asks for it by name, which is why
+ * adding this changed no existing measurement: no bot in the roster had ever
+ * submitted a `purchaseUnlock` for anything but a channel.
+ */
+function purchaseTier(s: SimState, unlock: keyof UnlockState, detail?: string): void {
+  const pub = s.publishers[s.playerId];
+  if (!pub) return;
+  const cfg = s.config.unlocks;
+  const u = pub.unlocks;
+  const scale = audienceScale(s);
+
+  const buy = (cost: number, note: string, apply: () => void): void => {
+    if (pub.cash < cost) return;
+    pub.cash = C(pub.cash - cost);
+    pub.ledger.push({ t: s.tick, amount: C(-cost), category: 'unlock', note });
+    apply();
+    emit(s, 'unlockPurchased', true, { publisherId: pub.id }, { unlock: String(unlock), cost, note });
+  };
+
+  switch (unlock) {
+    case 'marketResearch':
+      if (u.marketResearch >= cfg.maxLevel) return;
+      buy(tierCost(cfg.marketResearchCost, cfg.marketResearchCostLevelMultiple, u.marketResearch),
+        'market research', () => { u.marketResearch++; });
+      return;
+
+    case 'communityTeam':
+      if (u.communityTeam >= cfg.maxLevel) return;
+      // Audience size, per CONCEPT.md §9. A community team with no community is
+      // a payroll line and nothing else.
+      if (scale < cfg.communityTeamAudienceGate) return;
+      buy(tierCost(cfg.communityTeamCost, cfg.communityTeamCostLevelMultiple, u.communityTeam),
+        'community team', () => { u.communityTeam++; });
+      return;
+
+    case 'analytics':
+      if (u.analytics >= cfg.maxLevel) return;
+      if (pub.brandStanding < cfg.analyticsBrandGate) return;
+      buy(tierCost(cfg.analyticsCost, cfg.analyticsCostLevelMultiple, u.analytics),
+        'analytics', () => { u.analytics++; });
+      return;
+
+    case 'printQualityTiers': {
+      // "Capital, distributor terms": the gate is a live distributor
+      // relationship, which a studio has to have earned and kept.
+      const tier = detail as PrintQualityTier | undefined;
+      if (tier !== 'premium' && tier !== 'archival') return;
+      if (u.printQualityTiers.includes(tier)) return;
+      const dist = Object.values(s.channels).find(
+        ch => ch.kind === 'distributor' && ch.unlocked
+          && ch.relationship >= cfg.printQualityRelationshipGate);
+      if (!dist) return;
+      buy(tier === 'premium' ? cfg.premiumTierCost : cfg.archivalTierCost,
+        `${tier} printing`, () => { u.printQualityTiers.push(tier); });
+      return;
+    }
+
+    case 'specialtySetSlots': {
+      // "Prior set performance": slots are earned by shipping sets that did not
+      // flop, so a studio cannot buy its way into a wider release schedule.
+      // A set counts once it has made its print run back. `actualCost` is what
+      // the run cost and `performance.revenue` is what it earned, which is the
+      // same test `harness/metrics.ts` calls a flop.
+      const shipped = Object.values(s.sets).filter(
+        set => set.publisherId === pub.id && set.status === 'released'
+          && set.performance !== null && set.performance.revenue >= set.actualCost).length;
+      if (shipped < (u.specialtySetSlots + 1) * cfg.specialtySlotSetsPerSlot) return;
+      buy(tierCost(cfg.specialtySlotCost, cfg.specialtySlotCostMultiple, u.specialtySetSlots),
+        'specialty slot', () => { u.specialtySetSlots++; });
+      return;
+    }
+
+    case 'canHostEvents':
+      if (u.canHostEvents) return;
+      if (scale < cfg.eventsAudienceGate) return;
+      buy(cfg.eventsCost, 'self-hosted events', () => { u.canHostEvents = true; });
+      return;
+
+    // `regions` has its own decision with its own per-region cost, and
+    // `directStore` is set by unlocking the direct channel rather than bought.
+    default:
+      return;
+  }
+}
+
+/**
+ * Buys anything in the unlock tree.
+ *
+ * Every branch is the same three steps — check the gate, take the money, set
+ * the field — and each pays for a different thing: reach (`channels`,
+ * `regions`), a sharper reading (`marketResearch`, `communityTeam`,
+ * `analytics`), or permission (`printQualityTiers`, `specialtySetSlots`,
+ * `canHostEvents`).
+ *
+ * [round 11] This used to be `if (unlock !== 'channels') return;`. One line,
+ * and it made six declared systems permanently unreachable — including
+ * `marketResearch`, whose consumer in `tickRegionKnowledge` had been wired the
+ * whole time and was multiplying a value that could never be non-zero.
  */
 function purchaseUnlock(s: SimState, unlock: keyof UnlockState, detail?: string): void {
-  if (unlock !== 'channels' || !detail) return;
+  if (unlock !== 'channels') { purchaseTier(s, unlock, detail); return; }
+  if (!detail) return;
   const pub = s.publishers[s.playerId];
   const ch = s.channels[detail as ChannelId];
   if (!pub || !ch || ch.unlocked) return;
@@ -2143,6 +2261,20 @@ function tickFinance(s: SimState): void {
       cfg.overheadAudienceExponent)));
   pub.cash = C(pub.cash - overhead);
   pub.ledger.push({ t: s.tick, amount: C(-overhead), category: 'overhead', note: 'studio' });
+
+  // The two unlock tiers that are hires rather than purchases. A community team
+  // and an analytics desk are people, and people are paid every week — without
+  // this, a tier is a one-off price for a permanent benefit, there is never a
+  // reason not to buy every level the moment it is affordable, and the roster
+  // finds that degenerate optimum immediately. Zero for a studio that has
+  // bought neither, which is every studio until a bot asks for one.
+  const uCfg = s.config.unlocks;
+  const staff = Math.round(pub.unlocks.communityTeam * uCfg.communityTeamUpkeepPerTick
+    + pub.unlocks.analytics * uCfg.analyticsUpkeepPerTick);
+  if (staff > 0) {
+    pub.cash = C(pub.cash - staff);
+    pub.ledger.push({ t: s.tick, amount: C(-staff), category: 'staff', note: 'community and analytics' });
+  }
 
   // Storage is charged per unit, and stock that has sat past the surcharge age
   // is charged at a multiple of it. The cliff is the point: a normal tail sells
