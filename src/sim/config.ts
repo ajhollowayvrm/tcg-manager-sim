@@ -1054,6 +1054,34 @@ export const defaultConfig: SimConfig = {
     forecastHorizonWeeks: 52,
   },
 
+  // Orders taken during the reveal window. Ships INERT at `conversionRate: 0`
+  // — the whole system computes zero and returns — because preorders move
+  // `diff.sellThrough` and `diff.flopRate`, both of which are already strained,
+  // and turning it on is a tuning decision with its own measurement.
+  //
+  // The shape that matters: a preorder is demand brought FORWARD. Units taken
+  // here come off what the shelf can sell, so the studio gets its money earlier
+  // and a read on demand it can trust, and gets neither for free.
+  //
+  // MEASURED, and the sweep needs to know it: bringing demand forward is not
+  // sell-through-neutral, because a preorder converts an uncertain sale into a
+  // certain one. On `conservative` over 12 years, sell-through reads 0.9643 at
+  // rate 0, 0.9652 at 0.0002 and 0.9758 at 0.002. That is economically right —
+  // it is why publishers take preorders — but `diff.sellThrough` has sat ON its
+  // 0.95 ceiling for two rounds, so this knob is fitted against that gate or
+  // not at all.
+  preorders: {
+    conversionRate: 0,
+    hypeWeight: 0.6,
+    chaseWeight: 0.4,
+    windowFraction: 1,
+    goodwillPerUnfilled: 0.000002,
+    // Preorders are taken direct, so the studio keeps more of the price than
+    // any channel would leave it. That margin is the carrot; the promise is the
+    // stick.
+    marginShare: 0.95,
+  },
+
   chains: {
     desirePerLink: 6,
     maxCountedLinks: 5,

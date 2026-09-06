@@ -8,7 +8,7 @@ import type {
 } from './types.ts';
 import { rand, randRange, randInt, pick, chance, gauss } from './rng.ts';
 import {
-  segmentsIn, engagedIn, audienceScale, segmentAffinity,
+  segmentsIn, engagedIn, engagedTotal, audienceScale, segmentAffinity,
   creditUnitsSold, seedRegionEntry, tickAudienceSystem, globalAverages,
 } from './audience.ts';
 import { emptySeries, writePoint, compact } from './series.ts';
@@ -176,7 +176,7 @@ function createSet(s: SimState, id: SetId, name: string, type: SetType, size: nu
     regionSchedule: [], regionReadings: null,
     designStartTick: s.tick, commitTick: null, revealStartTick: null,
     budget: C(0), actualCost: C(0), printQuality: 'standard', attentionCost: 0,
-    performance: null, hype: null,
+    performance: null, hype: null, preorders: null,
   };
 }
 
@@ -946,6 +946,9 @@ function applyDecision(s: SimState, d: Decision): void {
     case 'scheduleReveal':
       scheduleReveal(s, d.payload.setId, d.payload.startTick, d.payload.cadence);
       break;
+    case 'openPreorders':
+      openPreorders(s, d.payload.setId, d.payload.unitsCap);
+      break;
     case 'hostPrerelease':
       hostPrerelease(s, d.payload.setId, d.payload.scale, d.payload.budget);
       break;
@@ -1038,6 +1041,9 @@ export const api = {
   },
   scheduleReveal(s: SimState, setId: SetId, startTick: Tick, cadence: number): void {
     submit(s, { type: 'scheduleReveal', tick: s.tick, payload: { setId, startTick, cadence } });
+  },
+  openPreorders(s: SimState, setId: SetId, unitsCap: number): void {
+    submit(s, { type: 'openPreorders', tick: s.tick, payload: { setId, unitsCap } });
   },
   hostPrerelease(s: SimState, setId: SetId, scale: number, budget: Cents): void {
     submit(s, { type: 'hostPrerelease', tick: s.tick, payload: { setId, scale, budget } });
@@ -1572,6 +1578,126 @@ function hostPrerelease(s: SimState, setId: SetId, scale: number, budget: Cents)
   lgs.relationship = U(lgs.relationship + cfg.prereleaseRelationshipGain * actual);
   emit(s, 'communitySentiment', true, { setId: set.id, channelId: lgs.id, publisherId: pub.id },
     { kind: 'prerelease', scale: actual, cost, hype: set.hype.level });
+}
+
+/**
+ * Opens preorders on a set that has not shipped.
+ *
+ * The cap is the promise. A studio that promises more than it prints has to
+ * break the promise at release, and CONCEPT.md's core loop is explicit that
+ * the print run cannot move once committed — so over-promising is a real
+ * mistake with a real cost rather than a slider.
+ */
+function openPreorders(s: SimState, setId: SetId, unitsCap: number): void {
+  const set = s.sets[setId];
+  if (!set || !inRevealWindow(set)) return;
+  if (set.preorders) return;
+  const cap = Math.max(0, Math.floor(unitsCap));
+  if (cap <= 0) return;
+  set.preorders = { units: 0, cap, revenue: C(0), openedTick: s.tick, unfilled: 0 };
+}
+
+/**
+ * Orders arriving during the reveal window.
+ *
+ * Demand brought forward, never conjured: what converts here is subtracted from
+ * the shelf at release, so the studio is selling the same customer earlier
+ * rather than finding a new one. That is what keeps preorders from quietly
+ * lifting `diff.sellThrough`, which has sat on its ceiling for two rounds.
+ *
+ * No RNG. `hype.signal` already owns the noisy read of this set, and a second
+ * noisy read of the same truth would make `sub.signalRises` unreadable — the
+ * whole point of a preorder count is that it is people spending money rather
+ * than a measurement.
+ */
+function tickPreorders(s: SimState, set: CardSet): void {
+  const po = set.preorders;
+  if (!po || po.units >= po.cap) return;
+  const cfg = s.config.preorders;
+  if (cfg.conversionRate <= 0) return;
+
+  const release = set.regionSchedule[0]?.releaseTick;
+  if (release === undefined) return;
+  const window = (release as number) - (po.openedTick as number);
+  if (window > 0 && s.tick > (po.openedTick as number) + window * cfg.windowFraction) return;
+
+  // The same audience the shelf will sell to, reached early. Hype pulls orders
+  // forward and chase decides how badly they are wanted.
+  const { attention, fatigue, goodwill } = audienceAverages(s);
+  const reach = engagedTotal(s) * attention * fatigueResponse(s, fatigue) * goodwill;
+  const pull = cfg.hypeWeight * (set.hype?.level ?? 0) + cfg.chaseWeight * setChase(s, set);
+  const arrivals = Math.floor(reach * cfg.conversionRate * pull);
+  if (arrivals <= 0) return;
+
+  const taken = Math.min(arrivals, po.cap - po.units);
+  po.units += taken;
+  emit(s, 'preordersTaken', false, { setId: set.id, publisherId: set.publisherId },
+    { units: taken, total: po.units, cap: po.cap });
+}
+
+/**
+ * Fills what was promised, out of the stock that was printed.
+ *
+ * Runs at release, before anything else can sell. Orders come off the channel
+ * allocations because that is where stock lives, and what cannot be filled is a
+ * broken promise the audience remembers.
+ */
+function fillPreorders(s: SimState, set: CardSet): void {
+  const po = set.preorders;
+  if (!po || po.units <= 0) return;
+  const pub = s.publishers[set.publisherId];
+  if (!pub) return;
+  const cfg = s.config.preorders;
+
+  let owed = po.units;
+  let revenue = 0;
+  for (const pid of set.productIds) {
+    if (owed <= 0) break;
+    const p = s.products[pid];
+    if (!p || p.regionId !== s.homeRegionId) continue;
+    for (const a of Object.values(p.allocations)) {
+      if (owed <= 0) break;
+      const take = Math.min(owed, a.unitsRemaining);
+      if (take <= 0) continue;
+      a.unitsRemaining -= take;
+      p.unitsRemaining = Math.max(0, p.unitsRemaining - take);
+      p.market.hidden.sealedRemaining = Math.max(0, p.market.hidden.sealedRemaining - take);
+      owed -= take;
+      revenue += take * p.msrp * cfg.marginShare;
+    }
+  }
+
+  const filled = po.units - owed;
+  po.unfilled = owed;
+  po.revenue = C(revenue);
+  if (revenue > 0) {
+    pub.cash = C(pub.cash + revenue);
+    pub.ledger.push({ t: s.tick, amount: C(revenue), category: 'sales', note: `preorder ${set.name}`, refId: set.id });
+    if (set.performance) {
+      set.performance.revenue = C(set.performance.revenue + revenue);
+      set.performance.unitsSold += filled;
+    }
+    accrueCollabRoyalty(s, set, revenue);
+    // The same credit a shelf sale gives, so anything reading recent units sees
+    // a preorder as the sale it is. It was added expecting it to remove the
+    // sell-through lift below, and MEASURED NOT TO: 0.9755 before, 0.9758
+    // after. `recentUnitsByRegion` feeds acquisition, not the demand pool. It
+    // is kept because the consistency is right, not because it fixes anything.
+    creditUnitsSold(s, s.homeRegionId, filled);
+  }
+
+  // A promise the studio could not keep. This is the downside that makes the
+  // cap a decision rather than a free number to maximise.
+  if (owed > 0) {
+    const segs = segmentsIn(s, s.homeRegionId);
+    for (const g of SEGMENTS) {
+      const st = segs[g];
+      st.goodwill = U(Math.max(0, st.goodwill - cfg.goodwillPerUnfilled * owed));
+    }
+    if (set.performance) set.performance.goodwillDelta -= cfg.goodwillPerUnfilled * owed;
+  }
+  emit(s, 'preordersFilled', true, { setId: set.id, publisherId: set.publisherId },
+    { filled, unfilled: owed, revenue });
 }
 
 /**
@@ -3024,8 +3150,14 @@ export function tick(s: SimState): void {
     }
     if (set.status === 'revealing') {
       const sched = set.regionSchedule[0];
-      if (sched && s.tick >= sched.releaseTick) releaseSet(s, set.id, sched.regionId);
-      else tickReveal(s, set);
+      if (sched && s.tick >= sched.releaseTick) {
+        releaseSet(s, set.id, sched.regionId);
+        // Before anything else can sell: the orders were promised first.
+        fillPreorders(s, set);
+      } else {
+        tickReveal(s, set);
+        tickPreorders(s, set);
+      }
     }
     // A released set still has later regions to reach. Those are not another
     // `releaseSet` — printings mint once, and the attention is burned once —

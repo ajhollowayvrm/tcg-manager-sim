@@ -400,6 +400,35 @@ export interface CardSet {
    */
   regionReadings: Record<RegionId, number> | null;
 
+  /**
+   * Orders taken during the reveal window, before the set ships.
+   *
+   * CONCEPT.md §2 puts preorders in the core loop — "Previews drip out.
+   * Influencers react. Preorders come in." — and nothing in the model had ever
+   * implemented them.
+   *
+   * **A preorder is demand brought FORWARD, not demand created.** Units taken
+   * here are subtracted from what the post-release pool can sell: the same
+   * customer, earlier. What a preorder actually buys the studio is cash before
+   * the storage bill starts, and an unbiased read on demand — unlike
+   * `hype.signal`, a preorder count is people spending money rather than a
+   * noisy measurement. What it risks is a promise: an order taken and not
+   * filled costs goodwill.
+   *
+   * Null until the player opens preorders on the set.
+   */
+  preorders: {
+    /** Orders taken so far. */
+    units: number;
+    /** The most the studio is willing to promise. */
+    cap: number;
+    /** Cash taken, in cents. Booked as `sales` when the orders land. */
+    revenue: Cents;
+    openedTick: Tick;
+    /** Orders that could not be filled at release. A broken promise. */
+    unfilled: number;
+  } | null;
+
   designStartTick: Tick;
   /** Print runs lock here — before reveal, before any real signal. */
   commitTick: Tick | null;
@@ -1067,6 +1096,7 @@ export type Decision =
   | { type: 'allocate'; tick: Tick; payload: { productId: ProductId; allocations: Record<ChannelId, number> } }
   | { type: 'scheduleReveal'; tick: Tick; payload: { setId: SetId; startTick: Tick; cadence: number } }
   | { type: 'hostPrerelease'; tick: Tick; payload: { setId: SetId; scale: number; budget: Cents } }
+  | { type: 'openPreorders'; tick: Tick; payload: { setId: SetId; unitsCap: number } }
   | { type: 'reprint'; tick: Tick; payload: { cardId: CardId; intoSetId: SetId; quantity: number } }
   | { type: 'hireArtist'; tick: Tick; payload: { artistId: ArtistId; terms: 'perCard' | 'retainer' | 'exclusive' } }
   | { type: 'purchaseUnlock'; tick: Tick; payload: { unlock: keyof UnlockState; detail?: string } }
@@ -1102,6 +1132,7 @@ export type SimEventKind =
   | 'errorDiscovered' | 'creatorOpened' | 'collabOffer'
   | 'artistOffer' | 'artistBreakout'
   | 'channelStrained' | 'channelLost' | 'channelUnlocked' | 'unlockPurchased'
+  | 'preordersTaken' | 'preordersFilled'
   | 'debtWarning' | 'studioDead'
   | 'fatigueWarning' | 'graderEnteredMarket'
   | 'dropScheduled' | 'dropSoldOut' | 'dropUndersold' | 'scalperCrash'
@@ -1792,6 +1823,29 @@ export interface SimConfig {
     rereadWeeks: number;
     /** Horizon at which a price forecast has doubled its error. */
     forecastHorizonWeeks: number;
+  };
+
+  /** Orders taken before a set ships. See `CardSet.preorders`. */
+  preorders: {
+    /**
+     * Share of the interested audience that converts per tick of the window.
+     *
+     * DEFAULT 0, which makes the whole system exactly inert: `tickPreorders`
+     * computes zero units and returns before touching cash, stock or goodwill.
+     * Round 11's sweep turns it on. It ships at zero because preorders move
+     * `diff.sellThrough` and `diff.flopRate`, and both are already strained.
+     */
+    conversionRate: number;
+    /** How much hype pulls orders forward. */
+    hypeWeight: number;
+    /** How much the set's chase pulls orders forward. */
+    chaseWeight: number;
+    /** Share of the reveal window preorders are open for. */
+    windowFraction: Unit;
+    /** Goodwill lost per unfilled order, per segment. */
+    goodwillPerUnfilled: number;
+    /** Share of MSRP the studio keeps. Preorders are direct, so this is high. */
+    marginShare: Unit;
   };
 
   chains: {
