@@ -503,9 +503,10 @@ export type ProductKind =
   | 'premiumCollection' | 'bundle' | 'blister' | 'surpriseBox';
 
 /**
- * A SKU as printed for one region. Regional variants of the same concept share
- * a `lineId` — a region can get a different mix, different pack counts, or a
- * SKU the other regions never see.
+ * A SKU as printed for one region. A region can get a different mix, a
+ * different pack count, or a SKU the other regions never see, so variants are
+ * grouped by `setId` plus `regionId` — `lineId` was a third representation of
+ * that pair and C12 cut it.
  */
 export interface Product {
   id: ProductId;

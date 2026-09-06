@@ -627,39 +627,60 @@ and `allIn` from 0.05 to 0.40. Re-derive the `smallBets` and `globalist`
 mechanisms before tuning them; the shipped numbers under them have moved.
 
 
-## Round 11 — Plan 1, IN PROGRESS (2026-09-06)
+## Round 11 — Plan 1, DONE (2026-09-06)
 
-**This round is not finished. C0 to C11 are committed and green; C12 and C13 are
-not started.** The suite reads **55 gates, 52 PASS, 0 FAIL, 3 KNOWN, 0 DRIFT**.
+**Plan 1 is finished. C0 to C13 are committed and green.** The suite reads
+**55 gates, 52 PASS, 0 FAIL, 3 KNOWN, 0 DRIFT**, banked at
+`docs/tuning/bank/round-11b/`.
 
-**The plan lives outside the repo at
-`~/.claude/plans/alright-let-s-plan-on-zippy-waffle.md`.** It is two plans:
-Plan 1 builds every declared-but-unbuilt system with every new knob at an
-exactly-neutral default; Plan 2 is the last tuning round, which turns those
-knobs on and fits them. Read it before doing anything here.
+**No declared field is now both unread and undeleted, every system has a bot
+that reaches it, and the sim saves and reloads.** That was Plan 1's goal.
 
-### The rule that makes this round safe
+**The next thing is Plan 2, the last tuning round**, which turns on the five
+knobs Plan 1 landed at exactly 0 and fits them. The plan file is at
+`~/.claude/plans/alright-let-s-plan-on-zippy-waffle.md`. Read the three
+findings under "What the eight new bots measured" first — they are worth more
+than the five knobs.
+
+**`docs/screens-audit.md` is the UI contract.** It says, per CONCEPT.md §8
+screen, which field feeds which element, and the three rules a UI must not
+break. Read it before designing a screen.
+
+### The rule that made this round safe
 
 > **Land the mechanism with an exactly-neutral default. Hand the on-value to Plan 2.**
 
 Exactly neutral means arithmetically identical — a branch that is not entered,
-or a multiplier that evaluates to exactly 1. That gives every step a far
-stronger acceptance test than the gate table: **`out/check/runs.csv`
-byte-identical to the previous step's**. Six of the nine steps so far came back
-byte-identical. A wide band can absorb a small leak; a byte diff cannot.
+or a multiplier that evaluates to exactly 1. That gave every step a far stronger
+acceptance test than the gate table: **`out/check/runs.csv` byte-identical to
+the previous step's**. Ten of the fourteen steps came back byte-identical, and
+the two that did not were attributable to one line each.
 
 **`out/` is gitignored, so the baseline CSV does not survive a fresh session.**
-Regenerate it before starting C8:
+Regenerate it before starting Plan 2:
 
 ```
 npm run check && cp out/check/runs.csv out/baseline.csv
 ```
 
-The column comparator for steps that ADD metrics (byte-identity no longer
-applies once a column is added) is at `/tmp/cmpcols.py` and is three lines of
-`csv.DictReader` — rewrite it rather than hunt for it.
+### The five knobs Plan 2 turns on
 
-### What shipped, C0 to C11
+Every one is live, correct, and multiplied by exactly 0 today.
+
+| Knob | What it turns on | Measured at full strength |
+|---|---|---|
+| `region.segmentMixAcquisitionWeight` | A region keeps its own taste in players | At 0.6, 71 of 124 columns move; `peakDebt` 31758 -> 20595 |
+| `actors.buylistWeight` | A box is worth what its cards realise, not sticker | At 0.8, spread 0.510, `topSealedPrice` 29444 -> 21887 |
+| `preorders.conversionRate` | Preorders actually convert | At 0.002, sell-through 0.9643 -> 0.9758 |
+| `affection.longevityWeight` | The mascot term — a character that keeps its hold | Not swept |
+| illustration chains | The hedge against weak art | 349% price lift at affection 5, 11.7% at 60 |
+
+**Fit `segmentMixAcquisitionWeight` and `buylistWeight` together.** Both reach
+the known-fail `sub.scalperShare` from opposite directions: the mix tilt raises
+the scalper population 1572 -> 1947, the buylist spread halves it 1572 -> 793.
+Run `--dist` DURING that sweep, not after.
+
+### What shipped, C0 to C13
 
 | Commit | Step | Acceptance |
 |---|---|---|
@@ -676,11 +697,10 @@ applies once a column is added) is at `/tmp/cmpcols.py` and is three lines of
 | `4f4b59b` | C9 liquidity and the buylist spread | 126/126 existing columns identical |
 | `7510bf7` | C10 event promos | byte-identical |
 | `587471d` | C11 the eight new bots | 400/400 existing rows identical; 5 gates rebanked |
+| `57871f2` | C12 the deletions | byte-identical |
+| _this_ | C13 the screens audit | docs only |
 
-Banked baseline: `docs/tuning/bank/round-11b/`, written at C11 and current with
-HEAD. `round-11a/` is C0's and is now three roster changes stale.
-
-### Four defects found by wiring dead fields
+### Five defects found by wiring dead fields
 
 Each was invisible to a green suite. The method that found them was: wire the
 field, then look at what it says.
@@ -696,75 +716,18 @@ field, then look at what it says.
    had not shipped. Allocation locks 18 weeks before release, so a player
    queueing a drop as soon as they had stock lost it — no sale, no event, no
    feedback. Measured on `dropRunner`: 40 scheduled over 20 years, 40 voided.
-   **`sub.scalperShare` and `sub.scalperCycles` have been reading the store's
-   default cadence rather than the bot's decision since Round 5.**
 3. **`readRegion` moved the world by looking at it.** Three-plus `gauss` draws
    from `regionRng` per call, so two reads gave two answers and advanced the
    run. A UI repainting that screen would have changed the game. It derives its
-   error from `Region.truth.readingNoiseSeed` now.
-4. **`DropResult.expectedPremium` is not a forward read.** `resolveDrop`
-   assigns it the realised premium, so a metric over it reads exactly 1.0000 in
+   error from `Region.truth.readingNoiseSeed` now. **This is why the screens
+   audit's rule 2 exists.**
+4. **`DropResult.expectedPremium` was not a forward read.** `resolveDrop`
+   assigned it the realised premium, so a metric over it read exactly 1.0000 in
    every drop of every seed. Cut in C12.
-
-### The measurements Plan 2 needs
-
-- **Preorders are not sell-through-neutral.** A preorder converts an uncertain
-  sale into a certain one: `conservative` over 12 years reads sell-through
-  0.9643 at `conversionRate` 0, 0.9652 at 0.0002, 0.9758 at 0.002.
-  `diff.sellThrough` has sat ON its 0.95 ceiling for two rounds, so this knob is
-  fitted against that gate or not at all. `creditUnitsSold` in `fillPreorders`
-  was added expecting it to remove the lift and **measured not to** (0.9755 ->
-  0.9758); `recentUnitsByRegion` feeds acquisition, not the demand pool.
-- **The illustration chain hedge works and may be too strong.** On an otherwise
-  identical six-card set: 349% mean price lift with the subject's affection at
-  5, 11.7% at 60. Right shape, first-guess size. The progression chain beside it
-  has never been swept either — fit the pair together.
-- **The reading tiers narrow 0.500 -> 0.179 against a floor of 0.120.**
-  `residualSigma` is CONCEPT.md §6.1's sentence that the reading is never exact,
-  and it must stay above zero at every tier.
-- **The segment mix tilt is strong and its sign is right.** `conservative`, 6
-  seeds over 25 years, `region.segmentMixAcquisitionWeight` 0 against 0.6: 71 of
-  124 columns move. `peakDebt` falls 31758 -> 20595 and `interestSpend` falls
-  50028 -> 33816, because acquisition that follows a region's taste converts
-  cheaper. `scalperPopulation` rises 1572 -> 1947, so the knob also feeds the
-  known-fail `sub.scalperShare`. Fit it BEFORE C9's buylist weight, which
-  reaches the same gate from the other side.
-- **The buylist spread deflates the ripper's return hard, and that is the
-  point.** `conservative`, 6 seeds over 25 years, `actors.buylistWeight` 0
-  against 0.8: `buylistSpread` 0 -> 0.510, `topSealedPrice` 29444 -> 21887,
-  `scalperPopulation` 1572 -> 793. `netWorth`, `peakDebt` and `medianCardPrice`
-  barely move, so the knob is priced into sealed product and the actors rather
-  than into the player's balance sheet. `meanLiquidity` reads 0.385 and does not
-  move with the weight, which is correct — liquidity is an input to the spread,
-  not an output of it.
-- **An event promo is usually worth more than the pack card, and sometimes
-  much less.** 10 seeds, `conservative`, one event hosted at scale 10 as soon
-  as `canHostEvents` is affordable: the promo-to-pack price ratio has a median
-  of 1.67 and runs from 0.29 to 9.18, on a promo chase roll with a median of
-  0.481. The spread is the reprint rule — a promo rolls its own chase and the
-  market is free to want it less — and it is a tuning decision for Plan 2, not
-  a defect. If Plan 2 wants a promo to be reliably desirable, the lever is a
-  chase floor on the event mint, NOT a bigger `promoHeat`, which decays.
-- **A 50-year save is 63.7 MB**, of which the event log is 36% (142,596 events).
-  `serialize` takes an explicit, lossy `trimEventsBefore`; it is not the default
-  because the harness reads drops and creator coverage off that log.
-
-### C12 and C13, not started
-
-- **C12 — the deletions.** Cut: `Card.serialized`, `Product.cardsPerPack`,
-  `Product.market.hidden.heldByCollectors`, `Product.lineId`,
-  `MarketState.indexes.*`, `IpEntity.relatedIps`, `isMascot`,
-  `Artist.personality`, `DropResult.expectedPremium`. Wire inert:
-  `Card.treatment`, `progressionLink.position`, `IpEntity.truth.longevity` (the
-  mascot mechanic, already drawn, highest value of the inert set),
-  `Artist.specialty`, `Channel.reliability`. **Cut loudly where a field is a
-  second representation of a live quantity** — `cardsPerPack` and
-  `heldByCollectors` are exactly the Round 4a bug shape, and a dead duplicate is
-  worse than a dead field because it is a defect waiting for someone to wire it.
-  Everything cut is struck in `CONCEPT.md` the way rivals were.
-- **C13 — the screens audit.** Six of seven CONCEPT.md §8 screens are feedable
-  after C4. The two gaps were `Artist.reputationHistory` (added in C4) and the
-  event log's growth (C1 measured it). Write the audit into `docs/`.
+5. **Two fields were second representations of live quantities.**
+   `Product.cardsPerPack` against `Printing.pullRate`, and
+   `hidden.heldByCollectors` against `collectorHeldShare`. Those two
+   disagreeing by four times WAS the Round 4a bug. Both cut in C12.
 
 ### What the eight new bots measured
 
@@ -772,18 +735,19 @@ The roster is 14 bots plus 8. Every one of the 400 existing (bot, seed) rows is
 byte-identical across all 128 columns, so every gate that moved moved on its
 DENOMINATOR. Five were rebanked, each with the reason in `gates.ts`.
 
-Three findings the new rows produced, all owed to Plan 2:
+**These three findings are worth more than the five knobs above.** They are the
+first measurements of systems that had never had a bot reach them:
 
-1. **Buying reading tiers is currently a losing move.** `researcher` split-tested
-   over 6 seeds x 20 years: `ipPolicy: bestRead` alone survives 6/6 and earns
-   slightly MORE than `conservative`; `researchPolicy: buyTiers` alone survives
-   2/6. The tiers, not the readings, are what kills it — a permanent bill
-   (`analytics` charges every tick forever) paid years before a sharper reading
-   returns anything. The bot only survives at a reserve of **14 print runs**: at
-   2 it dies in 4 seeds of 6, and at 20 it never buys a tier at all. Plan 2 owns
-   `unlocks.*Cost` and `analyticsUpkeepPerTick`.
-2. **Print quality costs money and buys almost nothing the demand side notices.**
-   `budgetSurvivor` is `conservative` with ONE field changed —
+1. **Buying reading tiers is currently a losing move.** `researcher`
+   split-tested over 6 seeds x 20 years: `ipPolicy: bestRead` alone survives 6/6
+   and earns slightly MORE than `conservative`; `researchPolicy: buyTiers` alone
+   survives 2/6. The tiers, not the readings, are what kills it — a permanent
+   bill (`analytics` charges every tick forever) paid years before a sharper
+   reading returns anything. The bot only survives at a reserve of **14 print
+   runs**: at 2 it dies in 4 seeds of 6, and at 20 it never buys a tier at all.
+   Plan 2 owns `unlocks.*Cost` and `analyticsUpkeepPerTick`.
+2. **Print quality costs money and buys almost nothing the demand side
+   notices.** `budgetSurvivor` is `conservative` with ONE field changed —
    `quality: 'budget'` — at the same $140 msrp, and it survives 6/6 and earns
    MORE ($37.8M against $29.5M median liquid over 20 years). Meanwhile
    `archival` at the same price dies in 6 seeds of 6, because it costs 2.86x
@@ -791,25 +755,49 @@ Three findings the new rows produced, all owed to Plan 2:
 3. **A 2.6x price is nearly free.** `archivist` needs msrp 36000 to live — that
    is cost-plus parity with standard — and at that price it earns $78.8M, 2.7x
    `conservative`. Demand barely resists the price move. Read this beside
-   finding 2: together they say the whole quality/price axis is unfitted.
+   finding 2: together they say the whole quality-and-price axis is unfitted,
+   and that is the biggest single thing left in the model.
 
-### New gates still owed by Plan 1
+### Other measurements Plan 2 needs
 
-`struct.unlockTiersBought`, `sub.readingNarrows`, `sub.preorderShare` (ships
-`known-fail` — reads 0 until Plan 2 raises `conversionRate`),
-`sub.illustrationChainPays`, `sub.eventPromoPremium`. C9 shipped
+- **Preorders are not sell-through-neutral.** `conservative` over 12 years reads
+  sell-through 0.9643 at `conversionRate` 0, 0.9652 at 0.0002, 0.9758 at 0.002.
+  `diff.sellThrough` has sat ON its 0.95 ceiling for two rounds, so this knob is
+  fitted against that gate or not at all.
+- **The illustration chain hedge works and may be too strong.** On an otherwise
+  identical six-card set: 349% mean price lift with the subject's affection at
+  5, 11.7% at 60. Right shape, first-guess size. Fit it with the progression
+  chain beside it; neither has ever been swept.
+- **The reading tiers narrow 0.500 -> 0.179 against a floor of 0.120.**
+  `residualSigma` is CONCEPT.md §6.1's sentence that the reading is never exact,
+  and it must stay above zero at every tier.
+- **An event promo is usually worth more than the pack card, and sometimes much
+  less.** Over 10 seeds the promo-to-pack price ratio has a median of 1.67 and
+  runs from 0.29 to 9.18. The spread is the reprint rule — a promo rolls its own
+  chase. If Plan 2 wants a promo to be reliably desirable, the lever is a chase
+  floor on the event mint, NOT a bigger `promoHeat`, which decays.
+- **A 50-year save is 63.7 MB**, of which the event log is 36% (142,596 events).
+  `serialize` takes an explicit, lossy `trimEventsBefore`; it is not the default
+  because the harness reads drops and creator coverage off that log.
+
+### Gates still owed
+
+`struct.unlockTiersBought`, `sub.readingNarrows`, `sub.preorderShare`,
+`sub.illustrationChainPays` and `sub.eventPromoPremium` were owed by Plan 1 and
+are **not shipped**. Every one is now measurable, because C11 added the bot that
+reaches it — that was the blocker. C9 shipped two of the seven:
 `sub.printingLiquidity` (PASS, 0.389) and `sub.buylistSpread` (`known-fail`,
-reads exactly 0 until Plan 2 raises `buylistWeight`). Plus
-metrics for channels, creators, chains, per-segment audience and product mix,
-which have none.
+reads exactly 0 until Plan 2 raises `buylistWeight`).
+
+There are also no metrics at all for channels, creators, chains, per-segment
+audience or product mix. Add them with the gates.
 
 ### Three gates sit on a band edge
 
 `diff.conservativeSurvives` 0.950 against a floor of 0.95;
 `sub.channelHogLosesReach` 6 against a ceiling of 6; `struct.debtSpiralDeaths`
-0.165 against a ceiling of 0.225 (comfortable now that C0 made it a rate). If
-one fires during a byte-identity step, something leaked and the CSV diff will
-say where.
+0.120 against a ceiling of 0.225 (comfortable since C0 made it a rate). If one
+fires during a neutral step, something leaked and the CSV diff will say where.
 
 
 ## Finance and difficulty (tuning Round 10, 2026-09-06)
@@ -2627,71 +2615,46 @@ horizon fixed.
 
 ## Suggested next session
 
-**Continue Round 11, Plan 1, at step C8.** The plan is
-`~/.claude/plans/alright-let-s-plan-on-zippy-waffle.md` and it is TWO plans:
-Plan 1 builds every declared-but-unbuilt system with each new knob at an
-exactly-neutral default, Plan 2 is the last tuning round and turns them on.
-Read the plan, then the "Round 11 — Plan 1, IN PROGRESS" section above, then:
+**Plan 1 is done. The next session is either Plan 2 or the UI, and they are
+independent.**
+
+### If you are designing UI
+
+Read `docs/screens-audit.md`. It is the contract: per CONCEPT.md §8 screen,
+which field feeds which element, and the three rules a UI must not break —
+never render `truth.*`, never draw RNG on a read path, and drive the sim
+through `api.*` only. All seven screens are feedable today.
+
+Two things to know before you draw. There is **no price index** — C12 cut
+`MarketState.indexes` because it was written once at world creation and never
+updated, so compute one from `rawHistory` when a screen asks. And a **50-year
+save is 63.7 MB**, of which the event log is 36%, so the feed needs a windowed
+query rather than rendering the array.
+
+### If you are running Plan 2
+
+The plan is `~/.claude/plans/alright-let-s-plan-on-zippy-waffle.md`. Start with:
 
 ```
 npm run check && cp out/check/runs.csv out/baseline.csv   # the acceptance test
 ```
 
 `out/` is gitignored, so that baseline does not survive a session. Regenerate
-it first or the byte-identity check — the thing that has caught every leak in
-this round — is not available.
+it first or the byte-identity check — the thing that caught every leak in
+Round 11 — is not available.
 
-### The order, and why it is the order
+**Do the three C11 findings before the five knobs.** The knobs are five
+mechanisms landed at exactly 0 and waiting for a value. The findings say the
+quality-and-price axis is unfitted, that buying a reading tier is a losing
+move, and that budget quality earns more than standard at the same price.
+Those are not tuning nits; they are the model telling you which of its own
+decisions do not yet cost anything.
 
-C8 `segmentMix` -> C9 buylist -> C10 event promos -> C11 all the bots in one
-commit -> C12 deletions -> C13 screens audit. C11 is last of the mechanisms
-because a bot changes roster-wide gate denominators and that jump should happen
-once, against a finished model. C12 is after everything because a deletion must
-never hide a wiring something still needed.
+**Fit `segmentMixAcquisitionWeight` and `buylistWeight` together.** Both reach
+the known-fail `sub.scalperShare` from opposite directions. Run `--dist`
+DURING that sweep, not after.
 
-**Each step ends with `npm run check`, and each is expected to be
-byte-identical to the one before it.** C11 is the single exception. If a step
-that should be neutral is not, the CSV diff names the bot and the column before
-any gate does.
-
-### Then Plan 2, which is the actual last tuning round
-
-`harness/screen.ts` measures all 555 config paths once and produces the
-verdict table `01-knobs.md` needs; the never-swept blocks get fitted, `channels`
-first; every knob Plan 1 shipped inert gets turned on and fitted; and the demand
-re-fit Round 10 handed on gets decided one way or the other. Plan 2 owns the
-knobs whose values are stated in the Round 11 section above — do not tune
-anything during Plan 1.
-
-### The four things that must stay true
-
-1. **The main RNG stream must not renumber.** Rounds 3 and 9 were the only
-   renumbering rounds and there are no more. A new system draws on a NEW stream
-   or on none — `seedRng` is self-contained, so a sixth stream costs nothing.
-   `harness/bots.ts` draws from the main stream at lines 38, 49, 50 and 519, so
-   new bot behaviour is opt-in or existing worlds move.
-2. **An observer must not draw.** A UI repaints a screen many times per state,
-   and replay is `seed` plus the decision log. `readings.ts` derives its error
-   from a stored noise seed through a throwaway PRNG; `readRegion` was repaired
-   to match in C5. Do not add a third contract.
-3. **Every new knob ships at an exactly-neutral default** — a branch not
-   entered, or a multiplier that is exactly 1. `x * 1.0` is bit-identical;
-   `x + 0.0 * k` is not always.
-4. **Probe the mechanism, do not trust the green suite.** A C3 script printed
-   instead of writing and the upkeep never landed; the byte-identity check
-   passed, because missing code is also neutral. What caught it was checking
-   that two hires produced two staff ledger entries. Every mechanism in this
-   round was proved by direct probe before it was committed.
-
-### The known-fails
-
-| Gate | Reads | Owner |
-|---|---|---|
-| `sub.scalperShare` | 0.076 against [0.1, 0.5] | Round 11 C9, the buylist |
-| `diff.flopRate` | 0.005 against [0.01, 0.25] | Plan 2, the demand re-fit |
-
-Two gates were retired by AJ at C0 and their reasoning lives in the
-`harness/gates.ts` header: `diff.lateIdleSurvives` (the gate was wrong, not the
-model — a mature studio with a back catalogue should be hard to kill; the
-`lateIdle` BOT stays because it feeds four other gates) and
-`shape.surpriseGrail` (cannot pass at any value; the METRIC stays).
+Ship the five owed gates with the sweep, not after it: `struct.unlockTiersBought`,
+`sub.readingNarrows`, `sub.preorderShare`, `sub.illustrationChainPays`,
+`sub.eventPromoPremium`. Every one is measurable now, because C11 added the bot
+that reaches it.
