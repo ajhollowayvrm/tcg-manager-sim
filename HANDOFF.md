@@ -672,7 +672,7 @@ applies once a column is added) is at `/tmp/cmpcols.py` and is three lines of
 | `4f982e9` | C5 readings | 3 rows, all `globalist` |
 | `822e596` | C6 illustration chains | byte-identical |
 | `325048b` | C7 preorders | byte-identical |
-| _this_ | C8 per-tick `segmentMix` | byte-identical |
+| `694bb69` | C8 per-tick `segmentMix` | byte-identical |
 
 Banked baseline: `docs/tuning/bank/round-11a/`. **That bank is C0's, not
 HEAD's** — C4b and C5 moved rows after it was written. Rebank before relying on
