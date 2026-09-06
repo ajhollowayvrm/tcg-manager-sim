@@ -744,6 +744,20 @@ export const defaultConfig: SimConfig = {
     heatFromHype: 0.8,
   },
 
+  // First-guess numbers, deliberately smaller than a prerelease: an event is
+  // run for a set already on the shelf, so it cannot move the launch. What it
+  // buys is goodwill, a shop relationship and one scarce promo printing.
+  // Nothing calls `hostEvent` until C11 adds `eventHost`, so these move no
+  // number today.
+  events: {
+    costPerScale: C(8_000_00),
+    maxScale: 20,
+    goodwillGain: 0.004,
+    relationshipGain: 0.01,
+    promoCopiesPerScale: 250,
+    promoHeat: 2.2,
+  },
+
   // First-guess numbers. The shape that matters: grading has to be worth doing
   // only on cards that are already worth something (the fee is a real hurdle),
   // and a gem has to stay rare enough to be worth chasing — which is what print

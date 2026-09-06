@@ -629,7 +629,7 @@ mechanisms before tuning them; the shipped numbers under them have moved.
 
 ## Round 11 — Plan 1, IN PROGRESS (2026-09-06)
 
-**This round is not finished. C0 to C9 are committed and green; C10 to C13 are
+**This round is not finished. C0 to C10 are committed and green; C11 to C13 are
 not started.** The suite reads **55 gates, 52 PASS, 0 FAIL, 3 KNOWN, 0 DRIFT**.
 
 **The plan lives outside the repo at
@@ -659,7 +659,7 @@ The column comparator for steps that ADD metrics (byte-identity no longer
 applies once a column is added) is at `/tmp/cmpcols.py` and is three lines of
 `csv.DictReader` — rewrite it rather than hunt for it.
 
-### What shipped, C0 to C9
+### What shipped, C0 to C10
 
 | Commit | Step | Acceptance |
 |---|---|---|
@@ -674,6 +674,7 @@ applies once a column is added) is at `/tmp/cmpcols.py` and is three lines of
 | `325048b` | C7 preorders | byte-identical |
 | `694bb69` | C8 per-tick `segmentMix` | byte-identical |
 | `4f4b59b` | C9 liquidity and the buylist spread | 126/126 existing columns identical |
+| _this_ | C10 event promos | byte-identical |
 
 Banked baseline: `docs/tuning/bank/round-11a/`. **That bank is C0's, not
 HEAD's** — C4b and C5 moved rows after it was written. Rebank before relying on
@@ -736,17 +737,20 @@ field, then look at what it says.
   than into the player's balance sheet. `meanLiquidity` reads 0.385 and does not
   move with the weight, which is correct — liquidity is an input to the spread,
   not an output of it.
+- **An event promo is usually worth more than the pack card, and sometimes
+  much less.** 10 seeds, `conservative`, one event hosted at scale 10 as soon
+  as `canHostEvents` is affordable: the promo-to-pack price ratio has a median
+  of 1.67 and runs from 0.29 to 9.18, on a promo chase roll with a median of
+  0.481. The spread is the reprint rule — a promo rolls its own chase and the
+  market is free to want it less — and it is a tuning decision for Plan 2, not
+  a defect. If Plan 2 wants a promo to be reliably desirable, the lever is a
+  chase floor on the event mint, NOT a bigger `promoHeat`, which decays.
 - **A 50-year save is 63.7 MB**, of which the event log is 36% (142,596 events).
   `serialize` takes an explicit, lossy `trimEventsBefore`; it is not the default
   because the harness reads drops and creator coverage off that log.
 
-### C10 to C13, not started
+### C11 to C13, not started
 
-- **C10 — event promos.** `hostEvent` beside `hostPrerelease`, gated on
-  `canHostEvents` (C3 made it purchasable), minting one promo printing off
-  `s.eventRng` (C2 exists for this). **No automatic scheduler** — an
-  engine-initiated event would fire for every bot and change every bot's demand
-  pool. Decision-gated only.
 - **C11 — every new bot, in ONE commit.** `researcher`, `artChainWeaver`,
   `eventHost`, `preSeller`, plus the reachability probes `budgetSurvivor`,
   `archivist`, `reprinter` (`api.reprint` is implemented and called by no bot

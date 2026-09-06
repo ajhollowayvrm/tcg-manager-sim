@@ -1096,6 +1096,7 @@ export type Decision =
   | { type: 'allocate'; tick: Tick; payload: { productId: ProductId; allocations: Record<ChannelId, number> } }
   | { type: 'scheduleReveal'; tick: Tick; payload: { setId: SetId; startTick: Tick; cadence: number } }
   | { type: 'hostPrerelease'; tick: Tick; payload: { setId: SetId; scale: number; budget: Cents } }
+  | { type: 'hostEvent'; tick: Tick; payload: { setId: SetId; scale: number; budget: Cents } }
   | { type: 'openPreorders'; tick: Tick; payload: { setId: SetId; unitsCap: number } }
   | { type: 'reprint'; tick: Tick; payload: { cardId: CardId; intoSetId: SetId; quantity: number } }
   | { type: 'hireArtist'; tick: Tick; payload: { artistId: ArtistId; terms: 'perCard' | 'retainer' | 'exclusive' } }
@@ -1132,7 +1133,7 @@ export type SimEventKind =
   | 'errorDiscovered' | 'creatorOpened' | 'collabOffer'
   | 'artistOffer' | 'artistBreakout'
   | 'channelStrained' | 'channelLost' | 'channelUnlocked' | 'unlockPurchased'
-  | 'preordersTaken' | 'preordersFilled'
+  | 'preordersTaken' | 'preordersFilled' | 'eventHosted'
   | 'debtWarning' | 'studioDead'
   | 'fatigueWarning' | 'graderEnteredMarket'
   | 'dropScheduled' | 'dropSoldOut' | 'dropUndersold' | 'scalperCrash'
@@ -1631,6 +1632,31 @@ export interface SimConfig {
     signalNoiseSigma: number;
     /** How hard hype at release seeds the singles market's opening heat. */
     heatFromHype: number;
+  };
+
+  /**
+   * Organised play (CONCEPT.md §6.5). A prerelease sells a set that has not
+   * shipped; an EVENT is run for a set that already has, and what it hands out
+   * is a promo card that was never in a pack.
+   *
+   * There is no automatic scheduler and there must not be one. An
+   * engine-initiated event would fire for every bot, change every bot's demand
+   * pool, and make every gate in the suite an event gate. `hostEvent` runs only
+   * when a decision asks for it.
+   */
+  events: {
+    /** Cash one unit of event scale costs to run. */
+    costPerScale: Cents;
+    /** Upper bound on the scale one event can be run at. */
+    maxScale: number;
+    /** Goodwill one unit of scale earns in the home region. */
+    goodwillGain: number;
+    /** LGS relationship one unit of scale earns. Events run through the shops. */
+    relationshipGain: number;
+    /** Promo copies handed out per unit of scale. */
+    promoCopiesPerScale: number;
+    /** Opening heat on the promo printing. A promo is scarce from birth. */
+    promoHeat: number;
   };
 
   /**

@@ -73,6 +73,13 @@ interface PrintingSpec {
   printQuantity: number;
   /** Copies in circulation at birth. NOT always `printQuantity` — see the callers. */
   sealed: number;
+  /**
+   * Copies already out of the wrapper at birth. Zero everywhere except an
+   * event promo, which is handed to a player rather than pulled from a pack:
+   * a promo that stayed sealed forever could never be graded, because the
+   * grading pool is opened copies.
+   */
+  opened?: number;
   pullRate: number;
   printQuality: PrintQualityTier;
   isReprintOf: PrintingId | null;
@@ -107,7 +114,7 @@ function mintPrinting(s: SimState, r: RngState, spec: PrintingSpec): PrintingId 
     printQuantity: spec.printQuantity, pullRate: spec.pullRate, printQuality: spec.printQuality,
     isReprintOf: spec.isReprintOf, error: err,
     truth: { chase: rollChase(s, r) },
-    population: { sealed: spec.sealed, opened: 0, destroyed: 0, graded: {} as never },
+    population: { sealed: spec.sealed, opened: spec.opened ?? 0, destroyed: 0, graded: {} as never },
     market: {
       rawPrice: C(cfg.value.baseCardPrice), gradedPrices: {} as never,
       heat: spec.heat, speculatorHeat: 0, nostalgia: 1,
@@ -953,6 +960,9 @@ function applyDecision(s: SimState, d: Decision): void {
     case 'hostPrerelease':
       hostPrerelease(s, d.payload.setId, d.payload.scale, d.payload.budget);
       break;
+    case 'hostEvent':
+      hostEvent(s, d.payload.setId, d.payload.scale, d.payload.budget);
+      break;
     case 'marketingSpend':
       marketingSpend(s, d.payload.setId, d.payload.amount);
       break;
@@ -1048,6 +1058,9 @@ export const api = {
   },
   hostPrerelease(s: SimState, setId: SetId, scale: number, budget: Cents): void {
     submit(s, { type: 'hostPrerelease', tick: s.tick, payload: { setId, scale, budget } });
+  },
+  hostEvent(s: SimState, setId: SetId, scale: number, budget: Cents): void {
+    submit(s, { type: 'hostEvent', tick: s.tick, payload: { setId, scale, budget } });
   },
   marketingSpend(s: SimState, setId: SetId, amount: Cents): void {
     submit(s, { type: 'marketingSpend', tick: s.tick, payload: { setId, amount } });
@@ -1600,6 +1613,81 @@ function hostPrerelease(s: SimState, setId: SetId, scale: number, budget: Cents)
   lgs.relationship = U(lgs.relationship + cfg.prereleaseRelationshipGain * actual);
   emit(s, 'communitySentiment', true, { setId: set.id, channelId: lgs.id, publisherId: pub.id },
     { kind: 'prerelease', scale: actual, cost, hype: set.hype.level });
+}
+
+/**
+ * An organised-play event for a set that has already shipped.
+ *
+ * The counterpart to `hostPrerelease`, and deliberately not the same lever. A
+ * prerelease sells a set that has not shipped and its whole payload is hype; an
+ * event is run on a set already on the shelf, so it cannot move the launch at
+ * all. What it buys is goodwill, a shop relationship, and one promo printing
+ * that was never in a pack.
+ *
+ * CALLED ONLY BY A DECISION. There is no automatic scheduler and there must
+ * not be one: an engine-initiated event would fire for every bot in the roster,
+ * change every bot's demand pool, and turn every gate in the suite into an
+ * event gate.
+ *
+ * The promo rolls on `s.eventRng`, not the main stream. A system that did not
+ * exist when the balance was fitted must not renumber the draws that were.
+ */
+function hostEvent(s: SimState, setId: SetId, scale: number, budget: Cents): void {
+  const set = s.sets[setId];
+  if (!set || set.status !== 'released') return;
+  const pub = s.publishers[set.publisherId];
+  const lgs = s.channels[CHANNEL_IDS.lgs];
+  if (!pub || !lgs || !lgs.unlocked) return;
+  if (!pub.unlocks.canHostEvents) return;
+  if (!pub.unlocks.channels.includes(lgs.id)) return;
+
+  const cfg = s.config.events;
+  // Bounded by whichever runs out first: the budget, the cash, or the cap.
+  const affordable = Math.min(budget, pub.cash) / Math.max(1, cfg.costPerScale);
+  const actual = Math.max(0, Math.min(scale, cfg.maxScale, affordable));
+  if (actual <= 0) return;
+
+  const cost = C(actual * cfg.costPerScale);
+  pub.cash = C(pub.cash - cost);
+  pub.ledger.push({ t: s.tick, amount: C(-cost), category: 'event', note: `event ${set.name}`, refId: set.id });
+
+  const homeSegs = segmentsIn(s, s.homeRegionId);
+  for (const g of SEGMENTS) {
+    const st = homeSegs[g];
+    st.goodwill = U(st.goodwill + cfg.goodwillGain * actual);
+  }
+  lgs.relationship = U(lgs.relationship + cfg.relationshipGain * actual);
+
+  // One promo, of a card the set already has. The card is picked on the event
+  // stream, and `printingByCard` deliberately still points at the pack
+  // printing — repointing it would make the set's sealed price track a promo
+  // that was never in a box, which is the Round 4a mistake in a new place.
+  let promoId: PrintingId | null = null;
+  const copies = Math.max(1, Math.round(cfg.promoCopiesPerScale * actual));
+  if (set.cardIds.length > 0) {
+    const pick = Math.min(set.cardIds.length - 1,
+      Math.floor(rand(s.eventRng) * set.cardIds.length));
+    const cardId = set.cardIds[pick]!;
+    const card = s.cards[cardId];
+    if (card) {
+      promoId = mintPrinting(s, s.eventRng, {
+        cardId, setId: set.id, regionId: s.homeRegionId,
+        printQuantity: copies,
+        // A promo is handed to a player at the table, not sold in a wrapper.
+        sealed: 0, opened: copies,
+        // Zero on purpose: a promo is not pulled from a pack, and the two
+        // consumers of `pullRate` both ask what a BOX holds.
+        pullRate: 0,
+        printQuality: set.printQuality,
+        isReprintOf: s.printingByCard[cardId] ?? null,
+        heat: s.config.events.promoHeat,
+      });
+    }
+  }
+
+  emit(s, 'eventHosted', true, { setId: set.id, channelId: lgs.id, publisherId: pub.id,
+    ...(promoId ? { printingId: promoId } : {}) },
+    { scale: actual, cost, copies });
 }
 
 /**
