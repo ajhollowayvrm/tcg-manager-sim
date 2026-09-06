@@ -1219,6 +1219,24 @@ export interface SimConfig {
     openingHeat: number;
     /** Liquidity a printing opens at. */
     openingLiquidity: number;
+    /**
+     * Liquidity: how easily one copy finds a buyer. It was written once at mint
+     * and read by nothing until Round 11 C9. It rises with price, with heat and
+     * with how recently the printing traded, and it falls as the tradeable pool
+     * grows, because a card in every binder is bulk. `realisableCardValue`
+     * reads it. See `tickPrices`.
+     */
+    liquidityFromPrice: number;
+    liquidityFromHeat: number;
+    liquidityFromRecency: number;
+    /** Raw price at which the price term saturates. */
+    liquidityPriceReference: number;
+    /** `heat - 1` at which the heat term saturates. */
+    liquidityHeatReference: number;
+    /** Weeks since the last trade at which the recency term is halved. */
+    liquidityStaleHalfLifeWeeks: number;
+    /** Liquidity is sticky in the same way a price is. */
+    liquidityLerp: number;
     /** What a reprint multiplies the original printing's nostalgia by. */
     reprintNostalgiaPenalty: number;
   };
@@ -1724,6 +1742,22 @@ export interface SimConfig {
     maxResellers: number;
     /** Singles-to-sealed value ratio at which ripping stops paying. */
     ripBreakEven: number;
+    /**
+     * How much of the buylist spread the ripper's return pays.
+     *
+     * Both consumers of "what a box holds" price every card at full retail
+     * across the whole set, most of which is bulk nobody buys at any price.
+     * `realisableCardValue` discounts a card toward what a shop would actually
+     * pay for it, and this weight says how far. 0 is exactly the old number.
+     *
+     * The two consumers MUST move together: `expectedSinglesValue` here and
+     * the sealed-contents loop in `tickSealed` are two representations of one
+     * quantity, and Round 4a already caught them disagreeing by four times.
+     */
+    buylistWeight: number;
+    /** Share of retail a shop pays for a card at liquidity 0 and at 1. */
+    buylistFloorShare: number;
+    buylistCeilingShare: number;
     /**
      * Units of sealed product one reseller can open per stride, scaled to the
      * market. The only place the population's absolute level is load-bearing.

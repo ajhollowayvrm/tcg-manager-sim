@@ -4,7 +4,7 @@
  */
 import type { SimState, RegionId } from '../src/sim/types.ts';
 import { setFit } from '../src/sim/regions.ts';
-import { collectorHeldShare } from '../src/sim/actors.ts';
+import { collectorHeldShare, realisableCardValue } from '../src/sim/actors.ts';
 import { globalAverages, engagedTotal, lapsedIn } from '../src/sim/audience.ts';
 
 export interface RunMetrics {
@@ -120,6 +120,16 @@ export interface RunMetrics {
   gradedShare: number | null;
   /** Share of all printings carrying a pop report. */
   gradedPrintingShare: number;
+  /**
+   * Mean `Printing.market.liquidity` at the end of the run: how easily an
+   * average copy finds a buyer. Live at every `actors.buylistWeight`.
+   */
+  meanLiquidity: number | null;
+  /**
+   * Mean share of retail a card does NOT realise on a sale. Reads exactly 0
+   * while `actors.buylistWeight` is 0, which is what makes C9 neutral.
+   */
+  buylistSpread: number | null;
   /** Share of graded copies that came back a 10. Print quality is what moves this. */
   gemRate: number | null;
   /**
@@ -637,6 +647,10 @@ export function computeMetrics(
   // Grading. Read off the pop reports rather than the event log: unlike drops,
   // a pop report is cumulative state that nothing prunes.
   let gradedCopies = 0, gems = 0, openedGraded = 0, printingsGraded = 0;
+  // Liquidity and the buylist spread (Round 11 C9). Plain means over every
+  // printing, deliberately: the question is what the WHOLE set realises, and a
+  // stock weighting would answer it only about the cards that still sell.
+  let liquiditySum = 0, spreadSum = 0, spreadSamples = 0;
   const gemPremiums: number[] = [];
   // Both splits — by print quality and by age — are read off
   // `market.gradingTally`, which counts at the moment of grading. Reading
@@ -654,6 +668,11 @@ export function computeMetrics(
       }
       const tenPrice = pr.market.gradedPrices[gid as keyof typeof pr.market.gradedPrices]?.['10'];
       if (tenPrice && pr.market.rawPrice > 0) gemPremiums.push(tenPrice / pr.market.rawPrice);
+    }
+    liquiditySum += pr.market.liquidity;
+    if (pr.market.rawPrice > 0) {
+      spreadSum += 1 - realisableCardValue(s, pr) / pr.market.rawPrice;
+      spreadSamples++;
     }
     gems += gemsOnThis;
     gradedCopies += onThis;
@@ -888,6 +907,8 @@ export function computeMetrics(
     gradedCopies,
     gradedShare: openedGraded > 0 ? gradedCopies / openedGraded : null,
     gradedPrintingShare: printings.length > 0 ? printingsGraded / printings.length : 0,
+    meanLiquidity: printings.length > 0 ? liquiditySum / printings.length : null,
+    buylistSpread: spreadSamples > 0 ? spreadSum / spreadSamples : null,
     gemRate: gradedCopies > 0 ? gems / gradedCopies : null,
     gemRateBudget: budgetGem,
     gemRateStandard: standardGem,

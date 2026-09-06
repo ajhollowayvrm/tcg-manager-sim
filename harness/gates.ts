@@ -688,6 +688,33 @@ export const GATES: Gate[] = [
     measure: c => guarded(c.roster, 'dropRunner', 'scalperShareOfDrops', 'dropsRun'),
   },
   {
+    id: 'sub.printingLiquidity', category: 'subsystem', band: [0.02, 0.60], expect: 'pass',
+    banked: null, bankedOn: DATE,
+    why: 'NEW [2026-09-06, round 11 C9]. `Printing.market.liquidity` was written once at '
+       + 'mint and read by nothing for eleven rounds. It is live now, so it needs a gate '
+       + 'that fails when it goes degenerate. The mean runs over every printing ever made, '
+       + 'most of which are bulk commons that never trade again, so a LOW number is the '
+       + 'correct answer and the floor is only there to catch it pinning at 0. The ceiling '
+       + 'catches the opposite failure: if the average dead common is liquid, the term '
+       + 'says nothing and the buylist spread it feeds cannot separate a chase card from '
+       + 'bulk.',
+    measure: c => medOf(c.roster, 'conservative', 'meanLiquidity'),
+  },
+  {
+    id: 'sub.buylistSpread', category: 'subsystem', band: [0.15, 0.70], expect: 'known-fail',
+    banked: null, bankedOn: DATE,
+    why: 'NEW [2026-09-06, round 11 C9]. Ships KNOWN-FAIL reading exactly 0, which is the '
+       + 'acceptance test for C9 rather than a defect: `actors.buylistWeight` is 0, so '
+       + '`realisableCardValue` returns the raw price and both consumers of "what a box '
+       + 'holds" keep the number they had. Round 12 raises the weight and this gate is how '
+       + 'it reads the result. The band is what a card shop pays: about 15% of retail for '
+       + 'bulk, about 70% for a card it can sell the same week, so the mean discount across '
+       + 'a whole set belongs between those. Raise the weight and `sub.scalperShare` moves '
+       + 'with it - both read the ripper\'s return - so fit them together and run --dist '
+       + 'DURING the sweep, not after.',
+    measure: c => medOf(c.roster, 'conservative', 'buylistSpread'),
+  },
+  {
     id: 'sub.marketingShare', category: 'subsystem', band: [0.003, 0.02], expect: 'pass',
     banked: 0.006911, bankedOn: DATE,
     why: 'Round 9\'s exit criterion, made a gate so it cannot drift away from the claim '

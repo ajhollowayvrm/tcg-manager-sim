@@ -629,8 +629,8 @@ mechanisms before tuning them; the shipped numbers under them have moved.
 
 ## Round 11 — Plan 1, IN PROGRESS (2026-09-06)
 
-**This round is not finished. C0 to C8 are committed and green; C9 to C13 are
-not started.** The suite reads **53 gates, 51 PASS, 0 FAIL, 2 KNOWN, 0 DRIFT**.
+**This round is not finished. C0 to C9 are committed and green; C10 to C13 are
+not started.** The suite reads **55 gates, 52 PASS, 0 FAIL, 3 KNOWN, 0 DRIFT**.
 
 **The plan lives outside the repo at
 `~/.claude/plans/alright-let-s-plan-on-zippy-waffle.md`.** It is two plans:
@@ -659,7 +659,7 @@ The column comparator for steps that ADD metrics (byte-identity no longer
 applies once a column is added) is at `/tmp/cmpcols.py` and is three lines of
 `csv.DictReader` — rewrite it rather than hunt for it.
 
-### What shipped, C0 to C8
+### What shipped, C0 to C9
 
 | Commit | Step | Acceptance |
 |---|---|---|
@@ -673,6 +673,7 @@ applies once a column is added) is at `/tmp/cmpcols.py` and is three lines of
 | `822e596` | C6 illustration chains | byte-identical |
 | `325048b` | C7 preorders | byte-identical |
 | `694bb69` | C8 per-tick `segmentMix` | byte-identical |
+| _this_ | C9 liquidity and the buylist spread | 126/126 existing columns identical |
 
 Banked baseline: `docs/tuning/bank/round-11a/`. **That bank is C0's, not
 HEAD's** — C4b and C5 moved rows after it was written. Rebank before relying on
@@ -727,23 +728,20 @@ field, then look at what it says.
   cheaper. `scalperPopulation` rises 1572 -> 1947, so the knob also feeds the
   known-fail `sub.scalperShare`. Fit it BEFORE C9's buylist weight, which
   reaches the same gate from the other side.
+- **The buylist spread deflates the ripper's return hard, and that is the
+  point.** `conservative`, 6 seeds over 25 years, `actors.buylistWeight` 0
+  against 0.8: `buylistSpread` 0 -> 0.510, `topSealedPrice` 29444 -> 21887,
+  `scalperPopulation` 1572 -> 793. `netWorth`, `peakDebt` and `medianCardPrice`
+  barely move, so the knob is priced into sealed product and the actors rather
+  than into the player's balance sheet. `meanLiquidity` reads 0.385 and does not
+  move with the weight, which is correct — liquidity is an input to the spread,
+  not an output of it.
 - **A 50-year save is 63.7 MB**, of which the event log is 36% (142,596 events).
   `serialize` takes an explicit, lossy `trimEventsBefore`; it is not the default
   because the harness reads drops and creator coverage off that log.
 
-### C9 to C13, not started
+### C10 to C13, not started
 
-- **C9 — liquidity and the buylist spread.** `Printing.market.liquidity` and
-  `lastTradeTick` are written and never read. **The exploit `HANDOFF.md` used to
-  describe is not live**: the publisher never holds singles, and `metrics.ts`
-  values inventory at `unitCogs`. The real mispricing is the RIPPER'S RETURN —
-  `expectedSinglesValue` and the sealed-contents loop both price a box at
-  `sum(rawPrice * pullRate) * packsPerUnit` at full retail across 280 cards,
-  most of them bulk. **Both consumers must move together** or Round 4a's 4x
-  disagreement comes back. Ships behind `actors.buylistWeight`, default 0, as a
-  BRANCH not an arithmetic blend. Largest blast radius in the round: it reaches
-  every `shape.*` gate through `tradeablePopulation`. Run `--dist` DURING the
-  sweep, not after. This owns the known-fail `sub.scalperShare`.
 - **C10 — event promos.** `hostEvent` beside `hostPrerelease`, gated on
   `canHostEvents` (C3 made it purchasable), minting one promo printing off
   `s.eventRng` (C2 exists for this). **No automatic scheduler** — an
@@ -778,7 +776,9 @@ field, then look at what it says.
 
 `struct.unlockTiersBought`, `sub.readingNarrows`, `sub.preorderShare` (ships
 `known-fail` — reads 0 until Plan 2 raises `conversionRate`),
-`sub.illustrationChainPays`, `sub.buylistSpread`, `sub.eventPromoPremium`. Plus
+`sub.illustrationChainPays`, `sub.eventPromoPremium`. C9 shipped
+`sub.printingLiquidity` (PASS, 0.389) and `sub.buylistSpread` (`known-fail`,
+reads exactly 0 until Plan 2 raises `buylistWeight`). Plus
 metrics for channels, creators, chains, per-segment audience and product mix,
 which have none.
 

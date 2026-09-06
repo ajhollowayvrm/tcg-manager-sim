@@ -76,6 +76,8 @@ line to flip — flipping it is what stops the next round undoing the work.
 | `sub.gemRateVintage` | subsystem | 0.15 – 0.45 | 0.3959 | pass |
 | `sub.scalperCycles` | subsystem | 3 – 35 | 5 | pass |
 | `sub.scalperShare` | subsystem | 0.1 – 0.5 | 0.0699 | known-fail |
+| `sub.printingLiquidity` | subsystem | 0.02 – 0.6 | — | pass |
+| `sub.buylistSpread` | subsystem | 0.15 – 0.7 | — | known-fail |
 | `sub.marketingShare` | subsystem | 0.003 – 0.02 | 0.0069 | pass |
 | `sub.houseArtShare` | subsystem | 0.02 – 0.2 | 0.0858 | pass |
 | `sub.channelHogLosesReach` | subsystem | 0.5 – 6 | 6 | pass |

@@ -228,6 +228,31 @@ export function aftermarketIndex(s: SimState, set: CardSet): number {
   return n > 0 ? sum / n : 0;
 }
 
+/**
+ * What one copy is worth to somebody who has to SELL it.
+ *
+ * The ripper's return was priced at full retail across every card in the set,
+ * and most of a 280-card set is bulk that no shop buys at any price. That is
+ * the mispricing `Printing.market.liquidity` exists to correct: a liquid chase
+ * card realises most of its sticker price, a dead common realises a fraction.
+ *
+ * At `actors.buylistWeight` 0 this returns the raw price unchanged, by an
+ * early return rather than by a multiplier, so the old arithmetic is not just
+ * equal but untouched.
+ *
+ * BOTH consumers of "what a box holds" must call this — `expectedSinglesValue`
+ * below and the sealed-contents loop in `tickSealed`. They are two
+ * representations of one quantity, and Round 4a caught them disagreeing by
+ * four times.
+ */
+export function realisableCardValue(s: SimState, pr: Printing): number {
+  const cfg = s.config.actors;
+  if (cfg.buylistWeight <= 0) return pr.market.rawPrice;
+  const share = cfg.buylistFloorShare
+    + (cfg.buylistCeilingShare - cfg.buylistFloorShare) * pr.market.liquidity;
+  return pr.market.rawPrice * (1 - cfg.buylistWeight * (1 - share));
+}
+
 /** Mean singles value inside one sealed unit. Cheap approximation, cached by caller. */
 function expectedSinglesValue(s: SimState, p: Product): number {
   const set = s.sets[p.setId];
@@ -241,7 +266,7 @@ function expectedSinglesValue(s: SimState, p: Product): number {
     // contents an order of magnitude under its own price, and ripping could
     // never pay for anybody. Because the pull rate carries the set size, this
     // sum holds steady as the set grows, which is what a fixed pack holds.
-    if (pr) sum += pr.market.rawPrice * pr.pullRate * p.packsPerUnit;
+    if (pr) sum += realisableCardValue(s, pr) * pr.pullRate * p.packsPerUnit;
   }
   return sum;
 }

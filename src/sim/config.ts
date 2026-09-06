@@ -112,6 +112,16 @@ export const defaultConfig: SimConfig = {
     // had, so this un-deads two paths and changes nothing.
     openingHeat: 1.6,
     openingLiquidity: 0.5,
+    // The three weights sum to 1, so liquidity before the supply term is a
+    // unit. First-guess numbers; nothing reads liquidity at `buylistWeight` 0,
+    // so Round 12 fits them against the spread rather than on their own.
+    liquidityFromPrice: 0.4,
+    liquidityFromHeat: 0.25,
+    liquidityFromRecency: 0.35,
+    liquidityPriceReference: 2000,
+    liquidityHeatReference: 0.5,
+    liquidityStaleHalfLifeWeeks: 26,
+    liquidityLerp: 0.2,
     // The measured average value drop from a reprint is about 27%, and the
     // older printing typically falls 20-50% on announcement
     // (05-real-world.md §2). This was 0.85, a 15% haircut, fitted by eye.
@@ -867,6 +877,13 @@ export const defaultConfig: SimConfig = {
     // strategy except a flooder. Below 1 is also the honest number: a streamer
     // earns on the stream and on the retail spread, not only on the pull.
     ripBreakEven: 0.5,
+    // Exactly 0 on purpose: `realisableCardValue` returns the raw price
+    // unchanged and both consumers keep the number they had. Round 12 fits it.
+    // A shop pays about 15% of retail for bulk and about 70% for a card it can
+    // sell the same week; those are the ends this interpolates between.
+    buylistWeight: 0,
+    buylistFloorShare: 0.15,
+    buylistCeilingShare: 0.7,
     ripPerReseller: 0.5,
     // Units one reseller opens per stride, scaled to the market. This is the
     // second consumer of the reseller population, and it is the reason the

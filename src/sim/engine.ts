@@ -20,6 +20,7 @@ import {
 } from './regions.ts';
 import {
   tickActors, tickCreators, tradeablePopulation, speculatorHeatDelta, speculatorCrowd, ripMultiplier,
+  realisableCardValue,
   aftermarketIndex,
 } from './actors.ts';
 import {
@@ -1344,6 +1345,24 @@ function tickPrices(s: SimState, printings: Printing[]): void {
       + Math.max(v.priceFloorCents, target) * v.priceLerp);
     writePoint(pr.market.rawHistory, s.tick, pr.market.rawPrice, writeThreshold);
 
+    // How easily this copy finds a buyer. Live at every weight, because Plan 2
+    // needs real staleness data to fit the spread against. Nothing reads it
+    // while `actors.buylistWeight` is 0 — see `realisableCardValue`.
+    const staleWeeks = pr.market.lastTradeTick === null
+      ? Infinity : s.tick - pr.market.lastTradeTick;
+    const recency = 1 / (1 + staleWeeks / v.liquidityStaleHalfLifeWeeks);
+    // The supply term, and the only one that can push liquidity to nothing: a
+    // card sitting in every binder is bulk however much heat the set has.
+    // `scarcity` is already the tradeable pool against the reference, so this
+    // reuses it rather than measuring the same population twice.
+    const liquidityTarget = Math.min(1,
+      v.liquidityFromPrice * Math.min(1, pr.market.rawPrice / v.liquidityPriceReference)
+      + v.liquidityFromHeat * Math.min(1, (pr.market.heat - 1) / v.liquidityHeatReference)
+      + v.liquidityFromRecency * recency)
+      * Math.min(1, scarcity);
+    pr.market.liquidity = U(Math.max(0, pr.market.liquidity
+      + (liquidityTarget - pr.market.liquidity) * v.liquidityLerp));
+
     // Vintage price growth feeds character resurgence. Every printing seeds
     // at a flat baseCardPrice regardless of rarity (see releaseSet), so the
     // baseline here matches that seed, not a rarity-scaled one.
@@ -1389,7 +1408,7 @@ function tickSealed(s: SimState, products: Product[]): void {
         // actors.ts already reads `pullRate`, so the sealed price and the
         // reseller model disagreed by exactly four times about what a box
         // holds. Ripping was priced off one number and valued off the other.
-        if (pr) contents += pr.market.rawPrice * pr.pullRate;
+        if (pr) contents += realisableCardValue(s, pr) * pr.pullRate;
       }
       contents *= p.packsPerUnit;
       h.contentsValue = contents;
@@ -1462,6 +1481,9 @@ function tickSealed(s: SimState, products: Product[]): void {
       const pulled = opened * p.packsPerUnit * pr.pullRate;
       pr.population.sealed = Math.max(0, pr.population.sealed - pulled);
       pr.population.opened += pulled;
+      // Copies coming out of packs are the trade this printing has. Read by
+      // the liquidity term in `tickPrices`; nothing else reads it yet.
+      if (pulled > 0) pr.market.lastTradeTick = s.tick;
     }
   }
 }
@@ -3024,6 +3046,9 @@ function tickGrading(s: SimState, printings: Printing[]): void {
         const wanted = pool * cfg.submitRatePerTick * appetite * s.config.strides.grading;
         const quantity = Math.floor(Math.min(wanted, room, pool));
         if (quantity >= 1) {
+          // A submission is a trade: somebody paid for this copy before they
+          // sent it in. Feeds the liquidity recency term in `tickPrices`.
+          pr.market.lastTradeTick = s.tick;
           s.market.gradingQueue.push({
             printingId: pr.id, graderId: grader.id, tierName: tier.name, quantity,
             submittedTick: s.tick, returnsTick: T(s.tick + tier.turnaroundWeeks),
