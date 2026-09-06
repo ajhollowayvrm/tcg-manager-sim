@@ -629,7 +629,7 @@ mechanisms before tuning them; the shipped numbers under them have moved.
 
 ## Round 11 — Plan 1, IN PROGRESS (2026-09-06)
 
-**This round is not finished. C0 to C10 are committed and green; C11 to C13 are
+**This round is not finished. C0 to C11 are committed and green; C12 and C13 are
 not started.** The suite reads **55 gates, 52 PASS, 0 FAIL, 3 KNOWN, 0 DRIFT**.
 
 **The plan lives outside the repo at
@@ -659,7 +659,7 @@ The column comparator for steps that ADD metrics (byte-identity no longer
 applies once a column is added) is at `/tmp/cmpcols.py` and is three lines of
 `csv.DictReader` — rewrite it rather than hunt for it.
 
-### What shipped, C0 to C10
+### What shipped, C0 to C11
 
 | Commit | Step | Acceptance |
 |---|---|---|
@@ -675,10 +675,10 @@ applies once a column is added) is at `/tmp/cmpcols.py` and is three lines of
 | `694bb69` | C8 per-tick `segmentMix` | byte-identical |
 | `4f4b59b` | C9 liquidity and the buylist spread | 126/126 existing columns identical |
 | `7510bf7` | C10 event promos | byte-identical |
+| _this_ | C11 the eight new bots | 400/400 existing rows identical; 5 gates rebanked |
 
-Banked baseline: `docs/tuning/bank/round-11a/`. **That bank is C0's, not
-HEAD's** — C4b and C5 moved rows after it was written. Rebank before relying on
-it for comparison.
+Banked baseline: `docs/tuning/bank/round-11b/`, written at C11 and current with
+HEAD. `round-11a/` is C0's and is now three roster changes stale.
 
 ### Four defects found by wiring dead fields
 
@@ -749,18 +749,8 @@ field, then look at what it says.
   `serialize` takes an explicit, lossy `trimEventsBefore`; it is not the default
   because the harness reads drops and creator coverage off that log.
 
-### C11 to C13, not started
+### C12 and C13, not started
 
-- **C11 — every new bot, in ONE commit.** `researcher`, `artChainWeaver`,
-  `eventHost`, `preSeller`, plus the reachability probes `budgetSurvivor`,
-  `archivist`, `reprinter` (`api.reprint` is implemented and called by no bot
-  ever) and `mixer` (unused set types and product kinds, including a premium
-  collection that also opens the direct store — what `drops.scalperAppealPremium`
-  needs). Every new `SetBotOptions` field is optional and its ABSENCE must mean
-  the branch is not evaluated. No new draw on the main stream inside
-  `makeSetBot`'s common path — the four draws at `bots.ts:38, 49, 50, 519` keep
-  their order. **This is the one step where gates are expected to move**, because
-  it changes roster-wide denominators. Rebank after it.
 - **C12 — the deletions.** Cut: `Card.serialized`, `Product.cardsPerPack`,
   `Product.market.hidden.heldByCollectors`, `Product.lineId`,
   `MarketState.indexes.*`, `IpEntity.relatedIps`, `isMascot`,
@@ -775,6 +765,33 @@ field, then look at what it says.
 - **C13 — the screens audit.** Six of seven CONCEPT.md §8 screens are feedable
   after C4. The two gaps were `Artist.reputationHistory` (added in C4) and the
   event log's growth (C1 measured it). Write the audit into `docs/`.
+
+### What the eight new bots measured
+
+The roster is 14 bots plus 8. Every one of the 400 existing (bot, seed) rows is
+byte-identical across all 128 columns, so every gate that moved moved on its
+DENOMINATOR. Five were rebanked, each with the reason in `gates.ts`.
+
+Three findings the new rows produced, all owed to Plan 2:
+
+1. **Buying reading tiers is currently a losing move.** `researcher` split-tested
+   over 6 seeds x 20 years: `ipPolicy: bestRead` alone survives 6/6 and earns
+   slightly MORE than `conservative`; `researchPolicy: buyTiers` alone survives
+   2/6. The tiers, not the readings, are what kills it — a permanent bill
+   (`analytics` charges every tick forever) paid years before a sharper reading
+   returns anything. The bot only survives at a reserve of **14 print runs**: at
+   2 it dies in 4 seeds of 6, and at 20 it never buys a tier at all. Plan 2 owns
+   `unlocks.*Cost` and `analyticsUpkeepPerTick`.
+2. **Print quality costs money and buys almost nothing the demand side notices.**
+   `budgetSurvivor` is `conservative` with ONE field changed —
+   `quality: 'budget'` — at the same $140 msrp, and it survives 6/6 and earns
+   MORE ($37.8M against $29.5M median liquid over 20 years). Meanwhile
+   `archival` at the same price dies in 6 seeds of 6, because it costs 2.86x
+   standard to print. The quality ladder is a pure cost today.
+3. **A 2.6x price is nearly free.** `archivist` needs msrp 36000 to live — that
+   is cost-plus parity with standard — and at that price it earns $78.8M, 2.7x
+   `conservative`. Demand barely resists the price move. Read this beside
+   finding 2: together they say the whole quality/price axis is unfitted.
 
 ### New gates still owed by Plan 1
 

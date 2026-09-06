@@ -14,6 +14,7 @@ import { api, collabOfferFactor } from '../src/sim/engine.ts';
 import { rand, pick, chance } from '../src/sim/rng.ts';
 import { REGION_US, IP_KINDS } from '../src/sim/world.ts';
 import { readRegion } from '../src/sim/regions.ts';
+import { readAffection } from '../src/sim/readings.ts';
 import { segmentsIn, audienceScale } from '../src/sim/audience.ts';
 import { CHANNEL_IDS, effectiveCapacity, unlockCost } from '../src/sim/channels.ts';
 
@@ -185,6 +186,80 @@ export interface SetBotOptions {
    */
   chainPolicy?: 'inSet' | 'acrossSets';
   chainLength?: number;
+
+  // --- Round 11 C11 ---------------------------------------------------------
+  // Every field below is OPTIONAL and its ABSENCE means the branch is not
+  // evaluated, rather than evaluated to zero. That is what keeps the fourteen
+  // bots that came before these unchanged: none of them sets any of these, so
+  // none of them reaches a line of the code they turn on, and no new draw
+  // lands on the main stream in `makeSetBot`'s common path.
+
+  /**
+   * Buys every reading tier it can afford — market research, community team
+   * and analytics. C3 made the tree purchasable and nothing bought from it.
+   */
+  researchPolicy?: 'buyTiers';
+  /**
+   * Print runs of cash the bot keeps back before it buys a reading tier.
+   *
+   * Load-bearing, and measured: at 2 runs the bot dies in 4 seeds of 6. A tier
+   * is a permanent cost — `analytics` bills every tick forever — bought years
+   * before the sharper reading pays anything back, so the reserve is what
+   * separates investing from spending the company.
+   */
+  researchReserveRuns?: number;
+  /**
+   * Which IP the next set is about. `bestRead` picks the IP whose READ
+   * affection is highest, which is the only strategy that spends a reading on
+   * a decision. The reading carries error in inverse proportion to the tiers
+   * bought, so this is a bet that gets sharper with money — read it beside
+   * `researchPolicy`, which is what pays for the sharpening.
+   */
+  ipPolicy?: 'bestRead';
+  /**
+   * Cards per illustration chain. Unset builds none.
+   *
+   * An illustration chain is the OTHER chain: `chainPolicy` builds an
+   * evolution line, which is a hedge on the subject. This one is a hedge on
+   * the art, and CONCEPT.md gives them different jobs.
+   */
+  illustrationChainLength?: number;
+  /**
+   * Scale of the organised-play event hosted on the newest released set. Unset
+   * hosts none, and the bot never buys `canHostEvents` either.
+   */
+  eventScale?: number;
+  /** Weeks between events. Ignored when `eventScale` is unset. */
+  eventCadenceWeeks?: number;
+  /**
+   * Share of the committed print run offered as preorders. Unset opens none.
+   *
+   * A preorder is demand brought forward, not demand created, so this cannot
+   * lift sell-through on its own — what it buys is cash before the print bill
+   * and a free unbiased read of demand.
+   */
+  preorderCapFraction?: number;
+  /**
+   * Reprints one card of an older set into every new set. `api.reprint` has
+   * been implemented since the engine was written and no bot ever called it.
+   */
+  reprintPolicy?: 'always';
+  /** Copies per reprint. Ignored when `reprintPolicy` is unset. */
+  reprintUnits?: number;
+  /**
+   * A print-quality tier the bot buys before it prints. `premium` and
+   * `archival` both sit behind a live distributor relationship, and `archival`
+   * has never been printed by any bot in any seed.
+   */
+  buyQualityTier?: PrintQualityTier;
+  /**
+   * Set types and product kinds rotated across releases, one per release, in
+   * order. Unset means the bot ships `setType` and `productKind` every time,
+   * which is what the whole roster did — leaving three set types and seven
+   * product kinds declared and never once printed.
+   */
+  setTypeCycle?: SetType[];
+  productKindCycle?: ProductKind[];
 }
 
 /**
@@ -393,6 +468,12 @@ export function makeSetBot(opts: SetBotOptions): Bot {
   // Chains this bot is still filling. An `acrossSets` chain keeps its slot open
   // into the next set, which is the only way `spansSets` ever becomes true.
   const openChains: Array<{ id: ChainId; filled: number; thisSet: number }> = [];
+  // Releases so far. Drives `setTypeCycle` and `productKindCycle`, and is a
+  // plain counter rather than a draw, so it renumbers no stream.
+  let releaseIndex = 0;
+  // What each set actually committed, so preorders can be capped at a share of
+  // the run rather than at a constant. Written at commit, read one tick later.
+  const committedBySet = new Map<SetId, number>();
   return {
     step(s: SimState) {
       const pub = s.publishers[s.playerId]!;
@@ -404,6 +485,14 @@ export function makeSetBot(opts: SetBotOptions): Bot {
         if (set.status !== 'committed' || campaigned.has(set.id)) continue;
         campaigned.add(set.id);
         submitCampaign(s, set.id, opts);
+        // Preorders open on the same pass, for the same reason: the reveal
+        // window is the only time a set can take them, and the window opens
+        // when the engine writes the release date.
+        if (opts.preorderCapFraction !== undefined) {
+          const run = committedBySet.get(set.id) ?? 0;
+          const cap = Math.floor(run * opts.preorderCapFraction);
+          if (cap > 0) api.openPreorders(s, set.id, cap);
+        }
       }
       // Buying channel access is a between-releases decision, so it is checked
       // every step rather than only on a release week. The reserve is one full
@@ -411,7 +500,12 @@ export function makeSetBot(opts: SetBotOptions): Bot {
       if (s.tick % 13 === 0) {
         maybeUnlock(s, printRunCost(s, opts), printRunUnits(s, opts), gateOrder(s, opts));
         maybeExpand(s, opts, printRunCost(s, opts));
+        if (opts.researchPolicy) {
+          maybeBuyReadingTiers(s, printRunCost(s, opts), opts.researchReserveRuns ?? 8);
+        }
+        if (opts.buyQualityTier) maybeBuyQualityTier(s, opts, printRunCost(s, opts));
       }
+      if (opts.eventScale !== undefined) maybeHostEvent(s, opts, printRunCost(s, opts));
       submitDrops(s, opts);
       submitMarketing(s, opts, marketingSpent);
       if (s.tick < nextRelease) return;
@@ -422,9 +516,16 @@ export function makeSetBot(opts: SetBotOptions): Bot {
       // calls shrink the allocation below the run that was actually printed.
       const runUnits = printRunUnits(s, opts);
 
-      const ipId = ensureIp(s, opts.label);
-      const setId = api.createSet(s, `${opts.label} Set W${s.tick}`, opts.setType, opts.cardsPerSet);
+      // `bestRead` replaces `ensureIp`'s two draws rather than adding to them.
+      const ipId = opts.ipPolicy === 'bestRead'
+        ? bestReadIp(s, opts.label)
+        : ensureIp(s, opts.label);
+      const setType = opts.setTypeCycle
+        ? opts.setTypeCycle[releaseIndex % opts.setTypeCycle.length]!
+        : opts.setType;
+      const setId = api.createSet(s, `${opts.label} Set W${s.tick}`, setType, opts.cardsPerSet);
       const signedCollab = maybeSignCollab(s, opts, setId);
+      maybeReprint(s, opts, setId);
 
       // Art is commissioned in the same batch as the design, which is the only
       // way it can land before the release 18 weeks later. A slow or unreliable
@@ -434,7 +535,8 @@ export function makeSetBot(opts: SetBotOptions): Bot {
         const artistId = chooseArtist(s, opts);
         if (!artistId) break;
         const cardId = api.designCard(s, setId, ipId, [], rarity, artistId,
-          chainLinkFor(s, opts, i, openChains));
+          chainLinkFor(s, opts, i, openChains),
+          illustrationLinkFor(opts, i));
         const artist = s.artists[artistId]!;
         const budget = Math.round(artist.rate * (opts.artBudgetMultiple ?? 1)) as Cents;
         api.commissionArt(s, cardId, artistId, { budget });
@@ -484,7 +586,10 @@ export function makeSetBot(opts: SetBotOptions): Bot {
         // to avoid, and `priceTolerance` is public where taste is not.
         const region = s.regions[regionId]!;
         const msrp = Math.round(opts.msrp * region.truth.priceTolerance);
-        const pid = api.defineProduct(s, setId, opts.productKind, regionId, opts.packsPerUnit, msrp);
+        const productKind = opts.productKindCycle
+          ? opts.productKindCycle[releaseIndex % opts.productKindCycle.length]!
+          : opts.productKind;
+        const pid = api.defineProduct(s, setId, productKind, regionId, opts.packsPerUnit, msrp);
         quantities[pid] = perRegion;
         unitsByProduct.set(pid, perRegion);
         productIds.push(pid);
@@ -495,8 +600,133 @@ export function makeSetBot(opts: SetBotOptions): Bot {
       for (const pid of productIds) {
         submitAllocation(s, pid, unitsByProduct.get(pid)!, opts);
       }
+      committedBySet.set(setId, committedUnits);
+      releaseIndex++;
     },
   };
+}
+
+/**
+ * Buys the reading tiers, cheapest first, one per step.
+ *
+ * C3 unblocked `purchaseUnlock` for the whole tree and no bot bought anything
+ * from it, so six declared systems stayed unreachable in every seed. One tier
+ * per step for the same reason `maybeUnlock` buys one gate per step: buying
+ * the whole tree in one tick is not a strategy.
+ */
+function maybeBuyReadingTiers(s: SimState, reserve: number, runs: number): void {
+  const pub = s.publishers[s.playerId]!;
+  if (pub.cash < reserve * runs) return;
+  const u = pub.unlocks;
+  const tiers: Array<[keyof typeof u, number]> = [
+    ['marketResearch', u.marketResearch],
+    ['communityTeam', u.communityTeam],
+    ['analytics', u.analytics],
+  ];
+  // The least-bought tier first, so the three stay level rather than the bot
+  // sinking everything into whichever one it happens to check first.
+  tiers.sort((a, b) => a[1] - b[1]);
+  for (const [name] of tiers) {
+    api.purchaseUnlock(s, name as 'marketResearch');
+    return;
+  }
+}
+
+/** Buys one print-quality tier. Both live tiers sit behind a distributor relationship. */
+function maybeBuyQualityTier(s: SimState, opts: SetBotOptions, reserve: number): void {
+  const tier = opts.buyQualityTier;
+  if (!tier) return;
+  const pub = s.publishers[s.playerId]!;
+  if (pub.unlocks.printQualityTiers.includes(tier)) return;
+  if (pub.cash < reserve * 2) return;
+  api.purchaseUnlock(s, 'printQualityTiers', tier);
+}
+
+/**
+ * Buys the right to host events, then hosts one on the newest released set.
+ *
+ * The engine never schedules an event by itself and must not, so a bot asking
+ * for one is the ONLY way `hostEvent` is ever reached.
+ */
+function maybeHostEvent(s: SimState, opts: SetBotOptions, reserve: number): void {
+  const scale = opts.eventScale;
+  if (scale === undefined) return;
+  const pub = s.publishers[s.playerId]!;
+  if (!pub.unlocks.canHostEvents) {
+    if (pub.cash > reserve * 2) api.purchaseUnlock(s, 'canHostEvents');
+    return;
+  }
+  if (s.tick % (opts.eventCadenceWeeks ?? 26) !== 0) return;
+  // The newest released set: an event is community play around what is on the
+  // shelf now, not an anniversary for the back catalogue.
+  let newest: SetId | null = null;
+  let newestTick = -1;
+  for (const set of Object.values(s.sets)) {
+    if (set.status !== 'released') continue;
+    const t = set.regionSchedule[0]?.releaseTick ?? -1;
+    if (t > newestTick) { newestTick = t; newest = set.id; }
+  }
+  if (!newest) return;
+  api.hostEvent(s, newest, scale, (scale * s.config.events.costPerScale) as Cents);
+}
+
+/**
+ * The subject of the next set, chosen off a reading rather than at random.
+ *
+ * `readAffection` is the vibe band: the truth wearing the error the studio has
+ * not paid to remove. A bot that sorts on it is making a bet, and the bet gets
+ * sharper as `researchPolicy` buys the tiers down.
+ *
+ * NO RNG. `ensureIp` draws twice on the main stream and this path replaces
+ * both draws rather than adding to them, which is why it is a branch on an
+ * absent field and not a weighting inside `ensureIp`.
+ */
+function bestReadIp(s: SimState, label: string): IpId {
+  const existing = Object.keys(s.ips) as IpId[];
+  // The world always seeds IPs, so this is the empty-world guard rather than a
+  // strategy. It picks a kind rather than drawing one, for the no-RNG rule.
+  if (existing.length === 0) return api.createIp(s, `${label} 1`, 'character');
+  let best = existing[0]!;
+  let bestValue = -Infinity;
+  for (const id of existing) {
+    const reading = readAffection(s, id);
+    const value = reading ? reading.value : 0;
+    if (value > bestValue) { bestValue = value; best = id; }
+  }
+  return best;
+}
+
+/**
+ * Which illustration chain the next card joins.
+ *
+ * Deliberately simpler than `chainLinkFor`: an illustration chain has no
+ * position, only membership, so there is nothing to carry across a set
+ * boundary and no half-filled slot to protect.
+ */
+function illustrationLinkFor(opts: SetBotOptions, index: number): ChainId | undefined {
+  const length = opts.illustrationChainLength;
+  if (length === undefined || length < 2) return undefined;
+  return `ichain_${Math.floor(index / length)}` as ChainId;
+}
+
+/**
+ * Reprints one card of an older set into the set being designed.
+ *
+ * `api.reprint` has been implemented since the engine was written and no bot
+ * has ever called it, so the nostalgia penalty it charges the original has
+ * never been paid by anybody.
+ */
+function maybeReprint(s: SimState, opts: SetBotOptions, intoSetId: SetId): void {
+  if (opts.reprintPolicy !== 'always') return;
+  const released = Object.values(s.sets)
+    .filter(set => set.status === 'released' && set.cardIds.length > 0)
+    .sort((a, b) => (a.regionSchedule[0]?.releaseTick ?? 0) - (b.regionSchedule[0]?.releaseTick ?? 0));
+  const oldest = released[0];
+  if (!oldest) return;
+  // The oldest set's first card, every time. A reprint is meant to make an
+  // out-of-print chase accessible again, and picking it at random would put a
+  // draw on the main stream for no strategic difference.
+  api.reprint(s, oldest.cardIds[0]!, intoSetId, opts.reprintUnits ?? 2000);
 }
 
 /**
@@ -957,6 +1187,113 @@ export const BOTS: Record<string, (t?: BotTuning) => Bot> = {
     // into, so the cap bound every tick and the studio died in 70% of seeds
     // while `allIn` at 0.95 sailed through. 0.6 leaves the cap as a safety
     // limit, which is what it should always have been.
+    unitsPolicy: 'market', bankrollFraction: 0.6,
+  }),
+
+  // --- Round 11 C11: the systems that had no bot -----------------------------
+  // The first four are `conservative` in every respect but one, which is the
+  // whole method: any difference in the two rows is that one mechanism.
+
+  // Buys every reading tier and then spends the readings — it picks each set's
+  // subject off `readAffection` rather than at random. The tiers and the
+  // consumer have to ship together: a tier nothing reads is money burned, and
+  // a reading nobody buys down is noise.
+  researcher: setBot({
+    label: 'Researcher', cadenceWeeks: 52, cardsPerSet: 280, setType: 'main',
+    quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000, productKind: 'boosterBox',
+    allocationPolicy: 'spread',
+    unitsPolicy: 'market', bankrollFraction: 0.6,
+    // 14 print runs of reserve, measured. At 2 it dies in 4 seeds of 6 and at
+    // 20 it never buys a tier at all, so the reserve is the bot.
+    researchPolicy: 'buyTiers', researchReserveRuns: 14, ipPolicy: 'bestRead',
+  }),
+
+  // Illustration chains, which are NOT the evolution lines `chainWeaver`
+  // builds. CONCEPT.md gives them different jobs: a progression chain hedges a
+  // weak subject, an illustration chain hedges weak art. Read this row against
+  // `chainWeaver`'s, not against `conservative`'s.
+  artChainWeaver: setBot({
+    label: 'ArtChainWeaver', cadenceWeeks: 52, cardsPerSet: 280, setType: 'main',
+    quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000, productKind: 'boosterBox',
+    allocationPolicy: 'spread',
+    unitsPolicy: 'market', bankrollFraction: 0.6,
+    illustrationChainLength: 6,
+  }),
+
+  // Buys `canHostEvents` and runs organised play every half year. The only bot
+  // that reaches `hostEvent`, which the engine will never call on its own.
+  eventHost: setBot({
+    label: 'EventHost', cadenceWeeks: 52, cardsPerSet: 280, setType: 'main',
+    quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000, productKind: 'boosterBox',
+    allocationPolicy: 'spread',
+    unitsPolicy: 'market', bankrollFraction: 0.6,
+    eventScale: 8, eventCadenceWeeks: 26,
+  }),
+
+  // Opens preorders on a third of every run. A preorder is demand brought
+  // forward rather than created, so what this row should show is cash timing
+  // and not a higher sell-through. If sell-through moves, the subtraction in
+  // `fillPreorders` has stopped working.
+  preSeller: setBot({
+    label: 'PreSeller', cadenceWeeks: 52, cardsPerSet: 280, setType: 'main',
+    quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000, productKind: 'boosterBox',
+    allocationPolicy: 'spread',
+    unitsPolicy: 'market', bankrollFraction: 0.6,
+    preorderCapFraction: 0.33,
+  }),
+
+  // --- the reachability probes -----------------------------------------------
+
+  // Budget quality on a run small enough to live. `flooder` is the only other
+  // bot that prints budget and it dies at a median year 0.75, so
+  // `printing.qualityGradeShift.budget` has never once been measured on a
+  // surviving studio. This bot exists to make that number readable.
+  budgetSurvivor: setBot({
+    label: 'BudgetSurvivor', cadenceWeeks: 52, cardsPerSet: 280, setType: 'main',
+    quality: 'budget', units: 8000, packsPerUnit: 24, msrp: 14000, productKind: 'boosterBox',
+    allocationPolicy: 'spread',
+    unitsPolicy: 'market', bankrollFraction: 0.6,
+  }),
+
+  // Buys the archival tier and prints it. Nothing in the roster has ever
+  // printed `archival` in any seed, so half of `printing.qualityGradeShift`
+  // was a table with unreachable rows.
+  archivist: setBot({
+    label: 'Archivist', cadenceWeeks: 52, cardsPerSet: 280, setType: 'main',
+    // The msrp is the ONE other parameter that moves, and it has to. Archival
+    // costs 2.86x standard to print, so at `conservative`'s $140 the box loses
+    // money by arithmetic and the bot dies of debt in 6 seeds of 6 — measured.
+    // 36000 is cost-plus parity: the same margin ratio standard runs on.
+    quality: 'archival', units: 8000, packsPerUnit: 24, msrp: 36000, productKind: 'boosterBox',
+    allocationPolicy: 'spread',
+    buyQualityTier: 'archival',
+    unitsPolicy: 'market', bankrollFraction: 0.6,
+  }),
+
+  // Reprints the oldest set's first card into every new set. `api.reprint` is
+  // implemented, tested by nothing, and called by no bot ever — so the
+  // nostalgia penalty a reprint charges the original has never been paid.
+  reprinter: setBot({
+    label: 'Reprinter', cadenceWeeks: 52, cardsPerSet: 280, setType: 'main',
+    quality: 'standard', units: 8000, packsPerUnit: 24, msrp: 14000, productKind: 'boosterBox',
+    allocationPolicy: 'spread',
+    unitsPolicy: 'market', bankrollFraction: 0.6,
+    reprintPolicy: 'always', reprintUnits: 2500,
+  }),
+
+  // The unused set types and product kinds, one per release. Three of five set
+  // types and seven of nine product kinds had never been printed. It also
+  // opens the direct store and runs drops, because a premium collection sold
+  // through drops is what `drops.scalperAppealPremium` needs to be reachable.
+  mixer: setBot({
+    label: 'Mixer', cadenceWeeks: 26, cardsPerSet: 120, setType: 'main',
+    quality: 'standard', units: 4000, packsPerUnit: 12, msrp: 9000,
+    productKind: 'boosterBox', allocationPolicy: 'spread',
+    setTypeCycle: ['main', 'subset', 'specialty', 'promo', 'collab'],
+    productKindCycle: ['boosterBox', 'etb', 'tin', 'premiumCollection', 'bundle',
+      'blister', 'collectionBox', 'surpriseBox', 'pack'],
+    unlockOrder: [CHANNEL_IDS.direct, CHANNEL_IDS.online, CHANNEL_IDS.distributor, CHANNEL_IDS.bigbox],
+    dropUnits: 1200, dropCadenceWeeks: 4,
     unitsPolicy: 'market', bankrollFraction: 0.6,
   }),
 };

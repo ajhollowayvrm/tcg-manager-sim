@@ -184,7 +184,7 @@ export const GATES: Gate[] = [
   },
   {
     id: 'struct.debtSpiralDeaths', category: 'structural', band: [0.0375, 0.225], expect: 'pass',
-    banked: 0.165, bankedOn: DATE,
+    banked: 0.120, bankedOn: DATE,
     why: 'Debt spiral needs the weeklyOverhead lines to bite. The idle bot contributes 20 '
        + 'of these by construction: it releases nothing and dies of the standing bill.'
        + ' [2026-09-06, round 10] 64 -> 83, and it is a RECLASSIFICATION, not a harder '
@@ -194,22 +194,25 @@ export const GATES: Gate[] = [
        + 'same change, and the two moves are the same 16 deaths. Watch the ceiling: 83 '
        + 'against 90 leaves one bad round of headroom, and the next change that shortens '
        + 'a failing studio\'s life will breach it.'
-       + ' [2026-09-06, round 11a] CONVERTED FROM A COUNT TO A RATE. The band was a statement about 400 runs with the denominator left implicit; Round 11 adds bots, which would have failed this on arithmetic rather than on mechanism. The band is the old one divided by 400 and the observed value did not move.',
+       + ' [2026-09-06, round 11a] CONVERTED FROM A COUNT TO A RATE. The band was a statement about 400 runs with the denominator left implicit; Round 11 adds bots, which would have failed this on arithmetic rather than on mechanism. The band is the old one divided by 400 and the observed value did not move.'
+       + ' [2026-09-06, round 11 C11] REBANKED, 0.165 -> 0.120. Round 11 C11 added eight bots to the roster and this gate reads across it, so the move is the DENOMINATOR and not a change in the world: every one of the 400 existing (bot, seed) rows is byte-identical across all 128 columns. Six of the eight new bots survive, so the death rate falls.',
     measure: c => deathRate(c.roster, 'debt_spiral'),
   },
   {
     id: 'struct.channelCollapseDeaths', category: 'structural', band: [0.02, 0.175], expect: 'pass',
-    banked: 0.0675, bankedOn: DATE,
+    banked: 0.050, bankedOn: DATE,
     why: 'Reached by channelHog and globalist. Guards the souring mechanism.'
        + ' [2026-09-06, round 10] 32 -> 16 on the revenue-gated borrow ceiling. Read it beside struct.debtSpiralDeaths, which rose by the same 16: a studio that loses its credit line sooner dies before it can lose its channels. The route is not quieter, the deaths are earlier.'
-       + ' [2026-09-06, round 11a] CONVERTED FROM A COUNT TO A RATE. The band was a statement about 400 runs with the denominator left implicit; Round 11 adds bots, which would have failed this on arithmetic rather than on mechanism. The band is the old one divided by 400 and the observed value did not move.',
+       + ' [2026-09-06, round 11a] CONVERTED FROM A COUNT TO A RATE. The band was a statement about 400 runs with the denominator left implicit; Round 11 adds bots, which would have failed this on arithmetic rather than on mechanism. The band is the old one divided by 400 and the observed value did not move.'
+       + ' [2026-09-06, round 11 C11] REBANKED, 0.0675 -> 0.050. Round 11 C11 added eight bots to the roster and this gate reads across it, so the move is the DENOMINATOR and not a change in the world: every one of the 400 existing (bot, seed) rows is byte-identical across all 128 columns. Same cause: more surviving bots under the same count of deaths.',
     measure: c => deathRate(c.roster, 'channel_collapse'),
   },
   {
     id: 'struct.attentionCollapseDeaths', category: 'structural', band: [0.02, 0.15], expect: 'pass',
-    banked: 0.05, bankedOn: DATE,
+    banked: 0.036, bankedOn: DATE,
     why: 'Reached by attentionBurner. The route nothing else touches until the finance round.'
-       + ' [2026-09-06, round 11a] CONVERTED FROM A COUNT TO A RATE. The band was a statement about 400 runs with the denominator left implicit; Round 11 adds bots, which would have failed this on arithmetic rather than on mechanism. The band is the old one divided by 400 and the observed value did not move.',
+       + ' [2026-09-06, round 11a] CONVERTED FROM A COUNT TO A RATE. The band was a statement about 400 runs with the denominator left implicit; Round 11 adds bots, which would have failed this on arithmetic rather than on mechanism. The band is the old one divided by 400 and the observed value did not move.'
+       + ' [2026-09-06, round 11 C11] REBANKED, 0.05 -> 0.036. Round 11 C11 added eight bots to the roster and this gate reads across it, so the move is the DENOMINATOR and not a change in the world: every one of the 400 existing (bot, seed) rows is byte-identical across all 128 columns. Same cause. `mixer` releases every 26 weeks and does NOT die of attention, which is worth watching: it is the only new bot on a fast cadence.',
     measure: c => deathRate(c.roster, 'attention_collapse'),
   },
   {
@@ -255,9 +258,10 @@ export const GATES: Gate[] = [
   },
   {
     id: 'struct.printRunVaries', category: 'structural', band: [4, 100], expect: 'pass',
-    banked: 18, bankedOn: DATE,
+    banked: 28, bankedOn: DATE,
     why: 'How much to print is the bet the whole game is about. If every bot converges on '
-       + 'one run size, the roster cannot measure the decision.',
+       + 'one run size, the roster cannot measure the decision.'
+       + ' [2026-09-06, round 11 C11] REBANKED, 18 -> 28. Round 11 C11 added eight bots to the roster and this gate reads across it, so the move is the DENOMINATOR and not a change in the world: every one of the 400 existing (bot, seed) rows is byte-identical across all 128 columns. `archivist` prints an expensive box and `mixer` prints nine product kinds at 120 cards a set, so the spread of print runs across the roster genuinely widened.',
     measure: c => {
       const all = medAll(c.roster, 'meanPrintRun');
       if (all === null || all === 0) return null;
@@ -271,7 +275,7 @@ export const GATES: Gate[] = [
   // ---- difficulty: the studio must be able to die ----
   {
     id: 'diff.botsAlwaysSurvive', category: 'difficulty', band: [3, 11], expect: 'pass',
-    banked: 5, bankedOn: DATE,
+    banked: 10, bankedOn: DATE,
     why: 'Not every strategy may survive, and not every strategy may die. Both ends of '
        + 'this band are failure states for the difficulty curve.'
        + ' [2026-09-05, round 3] Was 7, now 1: only scout always survives. A 280-card set '
@@ -283,7 +287,8 @@ export const GATES: Gate[] = [
        + 'The artist rates were the cause and Round 10 never had to touch it. The whole '
        + 'repair came from the newcomer rate defect: roster drift minted artists at a '
        + 'hundredth of the opening rate, so the fix was not a cheaper board but a '
-       + 'CONSISTENT one.',
+       + 'CONSISTENT one.'
+       + ' [2026-09-06, round 11 C11] REBANKED, 5 -> 10. Round 11 C11 added eight bots to the roster and this gate reads across it, so the move is the DENOMINATOR and not a change in the world: every one of the 400 existing (bot, seed) rows is byte-identical across all 128 columns. Five of the eight new bots survive every seed. Read this beside `diff.botsNeverSurvive`: the roster gained survivors, not safety.',
     measure: c => countWhere(
       bots(c.roster).map(b => ({ s: shareTrue(forBot(c.roster, b), 'survived') })) as unknown as Row[],
       r => Number(r.s) === 1,
