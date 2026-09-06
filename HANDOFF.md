@@ -1743,61 +1743,112 @@ horizon fixed.
 ## Suggested next session
 
 **Round 7 of the tuning run: art and storage.** The round plan lives outside the
-repo, at `~/.claude/plans/let-s-start-the-tuning-zesty-magpie.md`. Read it
-first, then the Round 6 section above, then run `npm run check`.
+repo, at `~/.claude/plans/let-s-start-the-tuning-zesty-magpie.md`. It holds the
+ordering and the reasoning for all twelve rounds, and its round-order table and
+per-round outcome notes are current to Round 6. Read it first, then the "Grading"
+section above, then run `npm run check`.
 
-Rounds 0 to 6 are done and banked. The suite stands at **45 PASS, 0 FAIL,
-5 KNOWN, 0 DRIFT** across 50 gates.
+Rounds 0 to 6 are done and banked under `docs/tuning/bank/`. The suite stands at
+**45 PASS, 0 FAIL, 5 KNOWN, 0 DRIFT** across 50 gates, and takes about two
+minutes.
 
-**Round 7 may be worth more than its position suggests.** The plan gives it the
-artist rates and a storage surcharge:
+### What Round 7 is for
+
+The plan gives it the artist rates and a storage surcharge:
 
 - `art.openingRateMin/Max` to 40,000/250,000 cents, and
   `art.newcomerRateMin/Max` 50/300 cents to the same band — the live defect in
   `02-hardcoded.md` §5.
 - `art.rateGrowthPerReputation` 2.5 to 0.0-0.2: the measured fee did not move in
-  27 years.
-- `finance.storagePerUnitPerTick` 1 to 5 cents, plus a new surcharge cliff, to
-  keep `overprint` a live death route once the growth arc makes cash plentiful.
+  27 years, and fame pays in the art aftermarket instead.
+- `finance.storagePerUnitPerTick` 1 to 5 cents, plus new
+  `storageSurchargeAfterTicks` and `storageSurchargeMultiple`, to keep
+  `overprint` a live death route once the growth arc makes cash plentiful.
 
-But read the Round 3 section first: art reaches 43% of the print bill on a
-`conservative` seed that dies, and `diff.botsAlwaysSurvive` fell from 7 to 1 in
-that round — only `scout`, which buys the cheapest artist, survives every seed.
-Three of the four open `diff.*` gates are assigned to Round 10, and Round 7 may
-fix them as a side effect. Check that before Round 10 does the work twice.
+**Check one hypothesis before Round 10 does the work twice.** Art reaches 43% of
+the print bill on a `conservative` seed that dies (see the Round 3 section), and
+`diff.botsAlwaysSurvive` fell from 7 to 1 in that round — only `scout`, which
+buys the cheapest artist, survives every seed. Three of the four open `diff.*`
+gates are assigned to Round 10. Round 7 may fix them as a side effect. Measure
+that before assuming it will not.
 
 Exit criteria: `artSpend` 3-9% of revenue for `conservative`, 20-35% for
 `safeHands`, 1-3% for `scout`, and `scout` still beats `safeHands` on top card
 in about half of seeds — the scouting bet must not leak.
 
-**The five remaining known-fails.** Four `diff.*` gates —
-`botsAlwaysSurvive`, `conservativeSurvives`, `allInSurvival`, `idleDies` —
-belong to Round 10, subject to the Round 7 note above. `shape.surpriseGrail`
-cannot be cleared by tuning at all: it needs the metric redefined per set, and
-that needs a band the research cannot supply. It is a design decision, not a
-round.
+### The five remaining known-fails
 
-**Three things the tuning run has learned to watch for, all found by measuring
-rather than by reading the code:**
+| Gate | Reads | Owner |
+|---|---|---|
+| `diff.botsAlwaysSurvive` | 1 against [3, 11] | Round 10, but see the Round 7 note |
+| `diff.conservativeSurvives` | 0.700 against [0.95, 1] | Round 10, same |
+| `diff.allInSurvival` | 0.050 against [0.1, 0.6] | Round 10 |
+| `diff.idleDies` | 12.019 against [2.5, 9] | Round 10 |
+| `shape.surpriseGrail` | 1 against [0.1, 0.6] | **nobody** |
 
-- **A knob the bot roster cannot reach has not been measured**, however
-  carefully it is fitted. Three so far: `drops.scalperAppealPremium` (no bot
-  drops an ETB), `printing.qualityGradeShift.budget` and `.archival` (no
-  surviving bot prints either quality). The fix is a bot, not a value.
-- **A cumulative state cannot answer a question about a moment.** The first
-  `gemRateVintage` read pop reports and understated the age penalty by a factor
-  of six. Count at the event, not off the ledger.
-- **Screen a block before declaring its round done.** Round 5c cost about
-  fifteen minutes and found that the two gates the round had just fixed sat at
-  the bottom of their band with five unswept neighbours able to push them out.
+`shape.surpriseGrail` cannot be cleared by tuning at any value: it is a
+scale-invariant ratio over the whole catalogue, so at 280 cards a set it asks
+whether any one of about 8,400 printings ever broke out over 30 years, and the
+answer is certain. Fixing it needs the metric redefined per set, and that needs
+a band `05-real-world.md` says the research cannot supply. **It is a design
+decision, not a round.**
 
-Before you touch the value engine again:
+### Five things this run has learned the hard way
+
+Each of these cost a round or a correction. They are in `04-workflow.md` as
+rules; this is the short form.
+
+1. **Run the decile ladder DURING a value sweep, not after it.** Round 4 fitted
+   the whole value block off the gate table and shipped a distribution with 40%
+   of every set pinned against the price floor. No gate measures concentration
+   at the floor.
+2. **Per-capita applies to what a population PUSHES, not only to what it earns
+   — and a population must not be paid with its own bid.** The speculator loop
+   broke both and detonated at year 40, silently, because nothing measured the
+   catalogue past the gated horizon.
+3. **A knob the bot roster cannot reach has not been measured**, however
+   carefully it is fitted. Three so far: `drops.scalperAppealPremium` (the only
+   bot that makes a premium collection never opens the direct store),
+   `printing.qualityGradeShift.budget` (`flooder` is the only budget bot and it
+   dies at a median year 0.75) and `.archival` (nothing prints it). The fix is a
+   bot, not a value.
+4. **A cumulative state cannot answer a question about a moment.** A gem rate
+   read off a pop report averages a printing's whole submission history. It
+   understated the age effect by nearly six times — and the same round shipped
+   the identical defect on the quality split one screen further down the same
+   file. When you find a defect of this shape, grep for its siblings before
+   closing the round.
+5. **Measure the claim you are about to write down.** This document has twice
+   recorded something as true of "every bot and every seed" that was measured on
+   three bots at one seed, and was wrong once. Round 5 declared collector
+   holding unfixable on that basis; Round 5b fixed it.
+
+### Before you touch the value engine again
 
 ```
 npm run check                                                   # all 50 gates
+npm run check -- --bank=7                                       # and bank it
 npm run sim -- --seeds=1 --years=25 --bot=conservative --dist   # the ladder
 ```
 
-Run the ladder **during** a value sweep and not after it. Round 4 fitted the
-whole block off the gate table, and the gates could not see that 40% of every
-set was pinned against the price floor. Only the step between deciles could.
+`harness/gates.ts` is the single source of truth for every band. `03-targets.md`
+holds a generated copy between comment markers and `static.bandsInSync` fails if
+they drift — so after editing a band or a banked value, regenerate it:
+
+```
+npx tsx harness/check.ts --print-bands
+```
+
+**Bank what the suite measures, not what a scratch probe measured.** Round 6
+banked two gates off the probe it fitted on; both sat under the drift threshold,
+so nothing flagged, and it quietly spent the next round's drift budget.
+
+### The scratch scripts are gone
+
+Rounds 5 and 6 leaned on throwaway scripts under `out/scratch/` — a config
+sensitivity screen, a drops sweep driver, a grading probe, a config-path
+auditor. **`out/` is gitignored, so none of them are in the repo.** They are
+cheap to rewrite and the method matters more than the code: each one builds
+`RunTask`s, calls `runBatch` from `harness/batch.ts` with 12 jobs, and reduces
+`RunMetrics` to a median per config point. If a later round wants the screen
+permanently, promote it into `harness/` rather than rebuilding it a third time.
