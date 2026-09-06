@@ -673,7 +673,7 @@ applies once a column is added) is at `/tmp/cmpcols.py` and is three lines of
 | `822e596` | C6 illustration chains | byte-identical |
 | `325048b` | C7 preorders | byte-identical |
 | `694bb69` | C8 per-tick `segmentMix` | byte-identical |
-| _this_ | C9 liquidity and the buylist spread | 126/126 existing columns identical |
+| `4f4b59b` | C9 liquidity and the buylist spread | 126/126 existing columns identical |
 
 Banked baseline: `docs/tuning/bank/round-11a/`. **That bank is C0's, not
 HEAD's** — C4b and C5 moved rows after it was written. Rebank before relying on
