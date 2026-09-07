@@ -142,11 +142,54 @@ pair moves. `communitySentiment` already exists to carry it. This must NOT mean
 real players sharing relation sets — that is a live service with moderation, and
 CONCEPT §12 says the sim never depends on the network.
 
-**The stacking risk.** `castDesire` is already `affection + resurgence + cameos
-+ chainDesire`. Relations and affiliation would make six modifiers on one
-number. **If they stack, every card gets every bonus and the baseline inflates
-until none of them is a decision.** They must compete — best bonus, not the sum
-— or the set carries a cap. Decide this before four rounds each add a term.
+### The desire budget — RESOLVED 2026-09-06
+
+`castDesire` is a plain sum: `affection + resurgence + cameos + chainDesire`.
+Relations, affiliation and variant groups would make **eight additive terms on
+one number**, and nothing stops one card qualifying for all of them. The optimal
+card becomes a checklist, every card becomes that card, and each mechanic stops
+being a decision.
+
+**AJ's requirement: every number must still count.** So the answer is a budget,
+not a cap, and no term is ever dropped or beaten by a `max()`:
+
+```
+desire = affection + resurgence x 0.3 x 100          <- who is on the card
+       + bonusBudget x SUM( w_i x signal_i )          <- what the card connects to
+                        where SUM(w) = 1, each signal in 0..1
+```
+
+All eight signals contribute on every card. What is bounded is the TOTAL: one
+knob sets what the whole bundle is worth, and the weights divide it.
+
+**This is already the house idiom.** `setFit` uses four weights of 0.25 each
+with the comment *"They should sum to 1."* C9's liquidity uses
+`0.4 + 0.25 + 0.35` with *"the three weights sum to 1, so liquidity before the
+supply term is a unit."* Desire is the one place that never got the pattern.
+
+**The property that solves the problem: a new mechanic can only take share.** It
+can never inflate the total. Adding a ninth term in two years forces a
+re-division of the weights, so the inflation becomes a decision somebody must
+defend. Same constraint shape as the pull-rate pool.
+
+**The budget is ADDED, never multiplied, and that is load-bearing.**
+`chainTerm` pays an illustration chain more when the subject is weak — CONCEPT
+calls it *"the hedge against a weak subject."* A multiplicative bundle scales
+with affection and would invert that. An additive budget preserves it for free:
+the same absolute bonus is worth far more at affection 4 than at 60.
+
+**Landing order, so a gate move stays attributable:**
+
+1. Restructure with the EXISTING terms only, weights fitted to reproduce
+   today's numbers. Cameos, progression, illustration.
+2. Add the new signals at **weight 0** — neutral by construction, the C11 rule
+   that held for fourteen steps.
+3. One sweep divides the budget across all eight and fits `bonusBudget`.
+
+Step 3 is a sweep, not a guess. One illustration chain currently produces a
+**349% price lift at affection 5**, and HANDOFF already flags it as *"right
+shape, first-guess size, may be too strong."* Whatever `bonusBudget` should be,
+it is smaller than what a single term does today.
 
 ## 3. Printing
 
