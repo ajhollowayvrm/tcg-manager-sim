@@ -1764,7 +1764,14 @@ function tickPrices(s: SimState, printings: Printing[]): void {
     const rawMultiplier = scarcity * (desire / v.desireReference) * art * pr.truth.chase
       * pr.market.heat * pr.market.nostalgia * climate * noise;
     const cappedMultiplier = softCap(rawMultiplier, v.priceCeilingMultiple);
-    const target = v.baseCardPrice * cappedMultiplier;
+    // What it was printed on. A raw price is the price of a TYPICAL, ungraded
+    // copy, and what a typical copy looks like after a few years in circulation
+    // depends on the stock it was printed on. This is the quality-to-demand
+    // link: before it, print quality reached only the misprint lottery and the
+    // grading roll, so it bought a better outcome on the 5.5% of printings that
+    // are ever graded and cost up to 2.86x on the entire print bill.
+    const quality = cfg.printing.qualityPriceMultiplier[pr.printQuality];
+    const target = v.baseCardPrice * cappedMultiplier * quality;
 
     // Prices are sticky; they drift toward target rather than snapping.
     pr.market.rawPrice = C(pr.market.rawPrice * (1 - lerp)
@@ -2207,7 +2214,7 @@ function fillPreorders(s: SimState, set: CardSet): void {
       p.unitsRemaining = Math.max(0, p.unitsRemaining - take);
       p.market.hidden.sealedRemaining = Math.max(0, p.market.hidden.sealedRemaining - take);
       owed -= take;
-      revenue += take * p.msrp * cfg.marginShare;
+      revenue += take * p.msrp * cfg.marginShare * qualityRevenue(s, p);
     }
   }
 
@@ -2321,6 +2328,73 @@ function setChase(s: SimState, set: CardSet): number {
 }
 
 /**
+ * What a box is worth to open, against what it costs.
+ *
+ * Reads `SealedMarket.hidden.contentsValue`, which the sealed pass already
+ * computes and holds deliberately stale — so this costs nothing and, more
+ * importantly, both consumers of "what a box holds" go on reading the SAME
+ * number. C9 forced `expectedSinglesValue` and the sealed-contents loop to move
+ * together after Round 4a caught them disagreeing by four times; a third
+ * consumer with its own copy would undo that.
+ *
+ * Hidden means hidden from the PLAYER, not from the model. What a box is worth
+ * to open is public knowledge in any real hobby — people publish the maths —
+ * so the engine is entitled to it, and `docs/screens-audit.md` rule 1 still
+ * forbids putting it on a screen.
+ *
+ * The response is self-correcting, which is why it is safe: demand raises
+ * sales, sales open packs, opened packs add singles supply, supply lowers
+ * singles prices, and the term comes back down.
+ */
+/**
+ * What the studio actually realises per unit, given what it printed on.
+ *
+ * The publisher's take was `sold x msrp x marginShare` and nothing else, so a
+ * budget box wholesaled for exactly what an archival one did and the cheap tier
+ * was free money. This is the per-unit penalty a strategy cannot dodge by
+ * printing fewer boxes.
+ */
+/**
+ * Whether the audience can afford this, given what a pack costs here.
+ *
+ * The price term the model did not have. `setFit` compared a region's
+ * `priceTolerance` against nothing at all, and the channel price response asks
+ * only whether a SHOP is marking up over MSRP — which street price tracks, so
+ * raising MSRP moved neither. Price was free.
+ *
+ * Measured per pack, so a bigger box is not punished for holding more, and
+ * scaled by the region's own tolerance: a market that bears 0.6 of what the
+ * home market pays walks away from a home-priced box.
+ */
+function affordability(s: SimState, p: Product): number {
+  const cfg = s.config.region;
+  if (cfg.affordabilityElasticity === 0) return 1;
+  const region = s.regions[p.regionId];
+  const tolerated = cfg.referencePackPrice * (region ? region.truth.priceTolerance : 1);
+  const perPack = p.msrp / Math.max(1, p.packsPerUnit);
+  if (perPack <= 0) return 1;
+  return Math.max(cfg.affordabilityFloor,
+    Math.min(1, Math.pow(tolerated / perPack, cfg.affordabilityElasticity)));
+}
+
+function qualityRevenue(s: SimState, p: Product): number {
+  const set = s.sets[p.setId];
+  return s.config.printing.qualityRevenueMultiplier[set ? set.printQuality : 'standard'];
+}
+
+function boxValueTerm(s: SimState, p: Product): number {
+  const cfg = s.config.attention;
+  if (cfg.boxValueWeight === 0) return 1;
+  const contents = p.market.hidden.contentsValue;
+  // Before the first sealed stride there is no reading yet, and a set nobody
+  // has priced must not be punished for it.
+  if (contents <= 0) return 1;
+  const ratio = contents / Math.max(1, p.msrp);
+  return Math.max(cfg.boxValueFloor, Math.min(cfg.boxValueCeiling,
+    Math.pow(ratio / Math.max(1e-9, cfg.boxValueReference), cfg.boxValueWeight)));
+}
+
+/**
  * One product's share of the demand its region has for its set.
  *
  * Two SKUs of the same set in the same region compete for one audience, so
@@ -2430,7 +2504,8 @@ function tickSales(s: SimState, products: Product[]): void {
       * cfg.attention.demandCoefficient * attention * fatigueTerm
       * goodwillTerm * (cfg.attention.brandDemandFloor + pub.brandStanding)
       * (cfg.attention.chaseDemandFloor + chase) * decay
-      * (1 + (set.hype?.level ?? 0)) * regionFactor * collabDemandFactor(s, set);
+      * (1 + (set.hype?.level ?? 0)) * regionFactor * collabDemandFactor(s, set)
+      * boxValueTerm(s, p) * affordability(s, p);
     // Below half a unit every channel's share rounds to zero, so the rest of
     // this pass cannot sell anything. Old sets sit here for decades: `decay` is
     // e^(-1.4 * years), so a five-year-old set is already three zeroes down.
@@ -2474,7 +2549,7 @@ function tickSales(s: SimState, products: Product[]): void {
 
       // The publisher is paid on MSRP, never on street price. A store that marks
       // up hot product keeps that upside — CONCEPT.md §4.
-      revenue += sold * p.msrp * ch.marginShare;
+      revenue += sold * p.msrp * ch.marginShare * qualityRevenue(s, p);
 
       if (a.unitsRemaining === 0 && a.soldOutTick === null) {
         a.soldOutTick = s.tick;
@@ -2605,7 +2680,7 @@ function resolveDrop(s: SimState, drop: Drop): void {
     p.unitsRemaining = Math.max(0, p.unitsRemaining - sold);
 
     // Full margin. The direct store is the point of owning one.
-    const revenue = sold * p.msrp * ch.marginShare;
+    const revenue = sold * p.msrp * ch.marginShare * qualityRevenue(s, p);
     pub.cash = C(pub.cash + revenue);
     pub.ledger.push({ t: s.tick, amount: C(revenue), category: 'sales', note: `drop ${p.kind}`, refId: p.id });
     if (set.performance) set.performance.revenue = C(set.performance.revenue + revenue);
@@ -3613,7 +3688,12 @@ function tickGrading(s: SimState, printings: Printing[]): void {
         // not the same card as the only one — CONCEPT.md §5's condition term.
         const scarcity = Math.max(cfg.popScarcityFloor, Math.min(cfg.popScarcityCeiling,
           Math.pow((cfg.popScarcityReference * audienceScale(s)) / count, cfg.popScarcityExponent)));
-        const target = raw * cfg.tierMultiplier[tier] * rep * scarcity;
+        // Divide the print-quality term back out. A grade is a STATEMENT about
+        // condition, so a 10 is a 10 whatever it was printed on — the stock has
+        // already been priced, by deciding how many copies reached this tier at
+        // all. Leaving it in would sell a budget 10 below a standard 10.
+        const neutral = raw / s.config.printing.qualityPriceMultiplier[pr.printQuality];
+        const target = neutral * cfg.tierMultiplier[tier] * rep * scarcity;
         const prev = prices[tier];
         const next = C(prev === undefined ? target : prev * (1 - cfg.priceLerp) + target * cfg.priceLerp);
         prices[tier] = next;

@@ -225,6 +225,59 @@ export const defaultConfig: SimConfig = {
     brandDemandFloor: 0.3,
     chaseDemandFloor: 0.5,
     demandCutoff: 0.5,
+    /**
+     * How hard box demand reads what the box is WORTH against what it costs.
+     *
+     * **This is the feedback the model was missing, and it is the root cause of
+     * all three of C11's findings.** Demand read chase, audience, attention,
+     * goodwill, brand, hype and region, plus a price response comparing street
+     * price to MSRP — which asks "is this shop gouging?", never "is this box
+     * worth opening?". So what a box actually held never entered the decision
+     * to buy one.
+     *
+     * Measured before this existed: cutting every raw card price by 30% moved
+     * `budgetSurvivor`'s net worth from $84.1M to $84.1M. The entire value
+     * engine — the most carefully tuned part of the model — barely reached the
+     * publisher's business at all.
+     *
+     * Three consequences follow from the one term:
+     *
+     * - **Print quality matters.** Quality moves the raw price, the raw price
+     *   moves expected contents, and contents now move demand. Before this,
+     *   budget stock EARNED MORE than standard.
+     * - **Price matters.** A 2.6x sticker with the same cards in the box is no
+     *   longer nearly free; it halves what the box is worth to open.
+     * - **Pull rates will matter**, which is what makes a player-set rarity
+     *   ladder a real decision rather than a cosmetic one.
+     *
+     * **Built, measured, and left OFF — the same verdict as the slow lane.**
+     * Switched on it destabilises the roster rather than differentiating it:
+     * the observed contents-to-price ratio runs p10 0.77, median 1.48, p90 5.53
+     * for `conservative`, so the term swings demand several-fold, and every bot
+     * sizes its print run off measured demand (`unitsPolicy: 'market'`). The
+     * result is over-printing into the storage cliff — `conservative` falls from
+     * 100% survival to 75% at weight 0.3 and 58% at 0.6, with unsold stock up
+     * half again.
+     *
+     * That is a joint fit with `unitsPolicy` and `finance.storageSurcharge*`,
+     * not a single knob, and HANDOFF's rule applies: a block like this is tuned
+     * as one unit. The contained fix for the finding it was meant to solve is
+     * `printing.qualityDemandMultiplier` below.
+     *
+     * 0 is exactly neutral (`pow(x, 0)` is 1), so it lands byte-identical.
+     */
+    boxValueWeight: 0,
+    /**
+     * The contents-to-price ratio at which the term is 1.
+     *
+     * Matched to `actors.ripBreakEven`, which is the ratio at which ripping
+     * stops paying. The two numbers are the same fact seen by two different
+     * populations — resellers and consumers — so they should agree.
+     */
+    boxValueReference: 0.5,
+    /** A box worth nothing still sells a little; a bargain does not sell forever. */
+    boxValueFloor: 0.35,
+    boxValueCeiling: 2.5,
   },
 
   printing: {
@@ -248,6 +301,55 @@ export const defaultConfig: SimConfig = {
     errorRate: { budget: 0.02, standard: 0.008, premium: 0.002, archival: 0.0005 },
     unitCost: { budget: C(80), standard: C(140), premium: C(240), archival: C(400) },
     errorDiscoveryChance: 0.01,
+    /**
+     * What print quality does to the RAW price of a typical copy.
+     *
+     * This is the quality-to-demand link, and before it existed print quality
+     * reached exactly two things: the misprint lottery, and the latent
+     * condition used for GRADING. Only 5.5% of printings are ever graded, so
+     * quality bought a better outcome on a twentieth of the catalogue and cost
+     * up to 2.86x on the whole print bill. Measured over 16 seeds x 30 years,
+     * `budgetSurvivor` finished on 2,727k against `conservative`'s 2,610k —
+     * the cheap tier earned MORE, which made the whole axis a false choice.
+     *
+     * The physical claim: a raw price is the price of a TYPICAL, ungraded copy,
+     * and what a typical copy looks like depends on what it was printed on.
+     * Budget stock curls, scuffs and wears at the edges, so the copies in
+     * circulation are worse and the market pays less for them.
+     *
+     * **A graded price divides this back out**, because a grade is a statement
+     * about condition and a 10 is a 10 whatever it was printed on. Without that,
+     * a budget PSA 10 would sell below a standard PSA 10, which is wrong.
+     */
+    qualityPriceMultiplier: { budget: 0.85, standard: 1, premium: 1.08, archival: 1.13 },
+    /**
+     * What print quality does to the WHOLESALE price the studio realises.
+     *
+     * This is the quality-to-demand link, and it sits here rather than on
+     * demand because of where the arithmetic actually lands. The publisher's
+     * take is `sold x msrp x marginShare` — quality-blind, so a budget box
+     * wholesaled for exactly what an archival one did.
+     *
+     * A demand penalty cannot fix that, and the measurement says so plainly:
+     * swept from 0.93 to 0.82, `budgetSurvivor`'s liquid net worth moved 0.75M
+     * to 0.73M against `conservative`'s 0.62M. Every bot sizes its run off
+     * measured demand, so cutting demand just makes it print fewer boxes at the
+     * same fat unit margin. **A per-unit penalty is the one a strategy cannot
+     * dodge by printing less.**
+     *
+     * Fitted from the trade it has to price. At MSRP 14000 and the LGS's 0.55
+     * share the studio takes $77 a box. Standard COGS is $18.48 and budget
+     * $10.56, so budget saves $7.92 — which is 10.3% of $77. A budget
+     * multiplier of 0.90 therefore cancels the saving almost exactly, which is
+     * what makes the tier a genuine operating point rather than free money.
+     *
+     * Premium and archival cannot repay their cost on this line alone: premium
+     * costs $13.20 more and 1.06 returns $4.62. The rest of their return is the
+     * grading ladder and the channel relationship — measured, budget loses 2.13
+     * channels over 30 years against archival's 0.31 — and this only stops them
+     * being strictly worse.
+     */
+    qualityRevenueMultiplier: { budget: 0.90, standard: 1, premium: 1.06, archival: 1.10 },
   },
 
   // First-guess numbers, wired for behaviour and NOT swept — the balance pass
@@ -814,6 +916,35 @@ export const defaultConfig: SimConfig = {
     knowledgeGainPerRelease: 0.02,
     knowledgeGainPerResearch: 0.05,
     mismatchPenalty: 0.25,
+    /**
+     * What a pack costs in a region that finds prices normal, in cents.
+     *
+     * The reference the affordability term measures a product against. 583 is
+     * the standard booster box the whole roster prints — 14000 over 24 packs —
+     * so a studio pricing at the reference sells at exactly the demand the
+     * model was tuned on.
+     *
+     * Measured per PACK rather than per unit, because a 36-pack box should cost
+     * more than a 24-pack box without being punished for it.
+     */
+    referencePackPrice: 583,
+    /**
+     * How hard demand responds to price. 0 disables the term entirely.
+     *
+     * **Before this, MSRP had NO effect on demand at all.** `setFit`'s price
+     * component read `Region.truth.priceTolerance` and compared it against
+     * nothing, and the only other price signal was
+     * `(msrp / streetPrice)^elasticity`, which asks whether a SHOP is marking
+     * up — and street price floats around MSRP, so raising MSRP moved neither
+     * term. A studio could charge anything.
+     *
+     * That is C11's "a 2.6x price is nearly free" finding, and it was literally
+     * true: `archivist` prices at 36000 against `conservative`'s 14000 and
+     * finished on 2.05M of liquid net worth against 0.62M.
+     */
+    affordabilityElasticity: 0,
+    /** Nobody is priced out entirely; a few collectors will pay anything. */
+    affordabilityFloor: 0.12,
     /**
      * Spread on a region reading at `knowledge` 0. Wide on purpose, for the
      * same reason `hype.signalNoiseSigma` is: a reading that is nearly right

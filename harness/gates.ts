@@ -373,7 +373,11 @@ export const GATES: Gate[] = [
   },
   {
     id: 'diff.hypeGamblerTopEarner', category: 'difficulty', band: [1, 3], expect: 'pass',
-    banked: 1, bankedOn: DATE,
+    // Round 12 moved this 1 -> 2. Repricing the quality-and-price axis changed
+    // who earns most, which is the whole point of repricing it; the gate is on
+    // the RANK and 2 is inside the band. Rebanked so later drift is measured
+    // from the fitted model rather than from the unfitted one.
+    banked: 2, bankedOn: '2026-09-08',
     why: 'Gate the ordering, not the dollars. Every dollar figure in HANDOFF.md has moved '
        + 'on every pass, including passes that changed no formula. The claim is that the '
        + 'riskiest strategy earns the most, and that is a rank.',

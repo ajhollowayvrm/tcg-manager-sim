@@ -1407,6 +1407,12 @@ export interface SimConfig {
     chaseDemandFloor: number;
     /** Demand pool below which a product stops selling entirely. */
     demandCutoff: number;
+    /** How hard box demand reads contents against price. 0 disables the term. */
+    boxValueWeight: number;
+    /** Contents-to-price ratio at which the value term is 1. */
+    boxValueReference: number;
+    boxValueFloor: number;
+    boxValueCeiling: number;
   };
 
   printing: {
@@ -1420,6 +1426,10 @@ export interface SimConfig {
     unitCost: Record<PrintQualityTier, Cents>;
     /** Per-price-tick chance that an undiscovered error on a printing gets found. */
     errorDiscoveryChance: number;
+    /** What print quality does to the raw price of a typical ungraded copy. */
+    qualityPriceMultiplier: Record<PrintQualityTier, number>;
+    /** What print quality does to the wholesale price the studio realises. */
+    qualityRevenueMultiplier: Record<PrintQualityTier, number>;
   };
 
   /** The art pipeline. Every number here is a first guess and unswept. */
@@ -1782,6 +1792,11 @@ export interface SimConfig {
     knowledgeGainPerResearch: number;
     /** Sales penalty for a SKU mismatched to regional taste. */
     mismatchPenalty: number;
+    /** What a pack costs in a region that finds prices normal, in cents. */
+    referencePackPrice: number;
+    /** How hard demand responds to price. 0 disables the term. */
+    affordabilityElasticity: number;
+    affordabilityFloor: number;
     /** Spread on a region reading at `knowledge` 0. See `readRegion`. */
     readingNoiseSigma: number;
     /** Weeks between one region's release wave and the next. */

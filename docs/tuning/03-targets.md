@@ -48,7 +48,7 @@ line to flip — flipping it is what stops the next round undoing the work.
 | `diff.licensorEarns` | difficulty | 1.3 – 2.5 | 1.487 | pass |
 | `diff.licensorSurvival` | difficulty | 0.75 – 0.95 | 0.9 | pass |
 | `diff.hypeGamblerSurvival` | difficulty | 0.4 – 0.85 | 0.65 | pass |
-| `diff.hypeGamblerTopEarner` | difficulty | 1 – 3 | 1 | pass |
+| `diff.hypeGamblerTopEarner` | difficulty | 1 – 3 | 2 | pass |
 | `diff.allInSurvival` | difficulty | 0.1 – 0.6 | 0.3 | pass |
 | `diff.flooderDiesEarly` | difficulty | 0.4 – 2.5 | 0.75 | pass |
 | `diff.attentionBurnerDies` | difficulty | 0.85 – 1 | 1 | pass |

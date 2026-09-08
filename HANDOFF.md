@@ -2693,6 +2693,86 @@ plan; it is now the most urgent.
 byte-identical to the pre-session baseline at every step. Nothing in this
 session moved a balance number.
 
+## Round 12: price and quality stop being free (2026-09-08)
+
+Two of C11's three findings had the same root cause, and it was not where any
+of us was looking.
+
+### MSRP had no effect on demand. None.
+
+`setFit`'s price component read `Region.truth.priceTolerance` and compared it
+against **nothing**. The only other price signal was
+`(msrp / streetPrice)^elasticity`, which asks whether a SHOP is marking up — and
+street price floats around MSRP, so raising MSRP moved neither term. A studio
+could charge anything it liked. "A 2.6x price is nearly free" was not an
+approximation; it was literally true.
+
+`region.affordabilityElasticity` fixes it. Demand now reads what a PACK costs
+against what the region will bear — per pack, so a bigger box is not punished
+for holding more, and scaled by the region's own tolerance.
+
+**Fitted to 1.2, and the property that picked it is that `conservative` does not
+move.** 0.62M of liquid net worth at every value in the sweep, because it prices
+at the reference. Only deviation is priced, so the knob leaves the strategy the
+rest of the model was tuned against exactly where it was.
+
+| `affordabilityElasticity` | 0 | 1.0 | **1.2** | 1.6 |
+|---|---|---|---|---|
+| `conservative` liquid | 0.62M | 0.62M | **0.62M** | 0.62M |
+| `archivist` liquid | 1.99M | 1.13M | **0.62M** | 0.24M |
+| `archivist` survival | 100% | 83% | **75%** | 75% |
+
+At 1.2 a 2.6x price buys parity with standard and a real chance of dying on
+unsold stock. At 1.6 it is a wall, not a decision.
+
+### A budget box wholesaled for what an archival one did
+
+The publisher's take was `sold x msrp x marginShare` — quality-blind. Print
+quality reached exactly two things, the misprint lottery and the grading roll,
+so it bought a better outcome on the 5.5% of printings that are ever graded and
+cost up to 2.86x on the entire print bill.
+
+**A demand penalty cannot fix this, and the measurement says so.** Swept from
+0.93 to 0.82, `budgetSurvivor`'s liquid moved 0.75M to 0.73M against
+`conservative`'s 0.62M — every bot sizes its run off measured demand, so cutting
+demand just makes it print fewer boxes at the same fat unit margin. A per-unit
+penalty is the one a strategy cannot dodge by printing less.
+
+`printing.qualityRevenueMultiplier` is that penalty, fitted from the arithmetic
+it has to price: at the LGS's 0.55 share the studio takes $77 a box, budget
+saves $7.92 of COGS, and 7.92/77 is 10.3% — so 0.90 cancels the saving almost
+exactly.
+
+`printing.qualityPriceMultiplier` is the other half: a raw price is the price of
+a TYPICAL ungraded copy, and budget stock wears. **A graded price divides it back
+out**, because a grade is a statement about condition and a 10 is a 10 whatever
+it was printed on.
+
+Standing after both: budget keeps an 8% cash edge and pays for it with 2.3x the
+dead stock and more channels lost; archival reaches parity with a 25% chance of
+ruin; standard is the safe middle. No tier dominates, which is the test.
+
+### Built, measured, and left OFF: the box value term
+
+Demand still does not read what a box is WORTH to open — only what it costs.
+`attention.boxValueWeight` implements that feedback and ships at 0.
+
+It was measured, not assumed. The observed contents-to-price ratio runs p10
+0.77, median 1.48, p90 5.53 for `conservative`, so the term swings demand
+several-fold, and every bot sizes its print run off measured demand. Switched
+on, `conservative` falls from 100% survival to 75% at weight 0.3 and 58% at 0.6,
+with unsold stock up half again. **It destabilises the roster rather than
+differentiating it**, and fitting it is a joint exercise with `unitsPolicy` and
+the storage cliff, not a single knob.
+
+Same verdict as the slow lane, reached the same way.
+
+### The one drift
+
+`diff.hypeGamblerTopEarner` moved 1 -> 2, inside its band. A ranking change is
+exactly what repricing the quality-and-price axis should cause. Banked at
+`docs/tuning/bank/round-12/`.
+
 ## Suggested next session
 
 **The UI is built. What remains is the sim work the design documents specify,
