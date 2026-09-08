@@ -56,15 +56,25 @@ export interface Meta {
    *
    * A real studio settles its rarity ladder once and reprints it for years,
    * so this is authored on its own screen and imported when a set is designed.
-   * The `rarity` field is the sim's enum and decides the pull odds; `name` is
-   * what the studio calls it, which the sim has no opinion about.
+   * `name` is what the studio calls the rung, which the sim has no opinion
+   * about.
+   *
+   * A format carries its `slots` as well as its rows, because the two are one
+   * decision: a ladder without the pack that draws from it has no odds at all.
+   * `slots[].odds` is keyed by `rows[].rowId`, so a format is imported with its
+   * ids INTACT — regenerating them would leave every slot pointing at rungs
+   * that no longer exist and silently produce a pack that draws nothing.
+   *
+   * Both new fields are optional so a format saved before the pack existed
+   * still loads; it simply arrives without slots.
    */
   formats: Array<{
     id: string;
     name: string;
     packsPerUnit: number;
     msrp: number;
-    rows: Array<{ rarity: string; name: string; count: number; advertised: boolean; finishes: string[] }>;
+    rows: Array<{ rowId?: string; rarity?: string; name: string; count: number; advertised: boolean; finishes: string[] }>;
+    slots?: Array<{ id: string; label: string; odds: Record<string, number> }>;
   }>;
 }
 

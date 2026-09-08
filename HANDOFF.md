@@ -2773,20 +2773,74 @@ Same verdict as the slow lane, reached the same way.
 exactly what repricing the quality-and-price axis should cause. Banked at
 `docs/tuning/bank/round-12/`.
 
+## The player builds the pack (2026-09-08)
+
+Player-set pull rates, which item 5 of the queue below had been holding. Asked
+for from the player's seat, not the tuner's: "each slot should have their own
+odds. The rarities are just what exists inside the pack."
+
+### The model is inverted, and the new way round is the right one
+
+`config.rarity.pull` is a global table: pick a tier, get that tier's odds. Pack
+size was then a DERIVED number the screen reported back at the player — "PACK
+SLOTS 17.5 · Fixed. You divide them."
+
+A pack is not a table of odds. It is a fixed number of slots, each drawing from
+its own pool, and the odds are what falls out. That is now the model:
+
+- A rung is a name, a card count, finishes, and advertised/secret. **No odds.**
+  Free text, duplicates allowed, one `+ Add a rung` button — the fixed menu of
+  eight one-shot tier buttons is gone, in the wizard and in `Formats`.
+- A `PackSlot` carries relative weights per rung. They normalise per slot, so
+  65/25/10 and 13/5/2 are the same slot.
+- `derivePulls` turns slots into copies-per-card. `referenceSetSize` exists to
+  fake exactly this; a real slot table does not need it.
+
+### It cost the sim one nullable field
+
+`Printing.pullRate` was ALREADY per-printing, and every consumer reads
+`pr.pullRate` rather than the table (`actors.ts:269`, `engine.ts:1845`,
+`engine.ts:1915`). `rarityPull` was only the default at mint time. So the whole
+feature is `Card.pullRate: number | null` plus `card.pullRate ?? rarityPull(…)`
+at the two mint sites.
+
+**Null is the neutral default and no bot ever sets it.** `runs.csv` is
+byte-identical to the pre-session baseline across three separate runs, at 53
+PASS / 3 KNOWN / 0 DRIFT.
+
+### Matching a derived rate against the table is wrong. Measured wrong
+
+The tier survives only because `config.rarity.weight` is keyed by it; it is the
+only thing `Card.rarity` is read for once the card carries its own rate.
+
+The first mapping picked the tier whose table pull was nearest. The table is
+written for a pack of about 17.5 cards, so a 9-card pack halves every rate and
+the whole ladder shifts up: an 80-card **common rung committed as `rare`**,
+which would have inflated demand for the commonest cards in the set.
+
+`tiersForLadder` assigns by RANK instead. Pack-size independent, and the rarest
+rung gets the rarest weight whatever the pack looks like.
+
+### The one thing left for AJ to decide
+
+Per-card pull, not rung order, is what the rank sorts on. In the default pack
+the common rung's cards are individually rarer than the uncommon rung's — 4.65
+draws over 80 cards against 3.25 over 45 — so the two swap tiers. Arithmetically
+honest, driven by the player's own card counts, and it reads oddly. Ranking on
+rung order instead is a one-line change in `tiersForLadder`.
+
+### Also fixed
+
+The stop dialog rendered `e.kind`, so a licensing offer reached the player as
+the string `collabOffered`. The copy existed; `Feed.tsx` just never exported it.
+One `say()` reader now serves both screens, which fixes the other 42 kinds too.
+
 ## Suggested next session
 
-**The UI is built. What remains is the sim work the design documents specify,
-and one urgent fit.**
+**The UI is built, and the player builds the pack. What remains is the sim work
+the design documents specify.**
 
-### Do this first: the quality-and-price axis
-
-`budgetSurvivor` earns more than `conservative` at the same price, a 2.6x price
-is nearly free, and buying a reading tier is a losing move. All three were
-findings before the UI; the UI has now put the first one in front of the player
-as a button. `printing.unitCost` for `budget` and `archival` is arithmetic, not
-measurement — no bot prints either tier, so nothing checks them.
-
-### Then the designed systems, in the order the documents ask for
+### The designed systems, in the order the documents ask for
 
 Each lands at an exactly-neutral default first, verified by byte-identity of
 `out/check/runs.csv`, and is turned on as a separate measured change.
@@ -2801,8 +2855,9 @@ Each lands at an exactly-neutral default first, verified by byte-identity of
    intended jumps and each needs its own rebank).
 4. **Eras** (`eras.md`). Boldness is derived from roster carry-forward, never a
    slider, and an era launch must NOT also clear fatigue.
-5. **Player-set pull rates**, **secret rares**, the **art director**, the **print
-   facility**, **stock transfer**, and the five zero-weight knobs.
+5. ~~Player-set pull rates~~ — DONE, see "The player builds the pack" above.
+   **Secret rares**, the **art director**, the **print facility**, **stock
+   transfer**, and the five zero-weight knobs.
 
 ### The rule that has paid for itself every time
 

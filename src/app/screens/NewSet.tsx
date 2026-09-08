@@ -1,7 +1,7 @@
 /**
  * The set wizard.
  *
- * Four steps, and the sim receives ONE commitment at the end: how much, where
+ * Five steps, and the sim receives ONE commitment at the end: how much, where
  * and through whom lock together, eighteen weeks before a box exists. See
  * `docs/design/sets-and-distribution.md` §4 — the player experiences a
  * sequence, the sim receives a single irreversible bet.
@@ -19,8 +19,9 @@ import {
 import { money, moneyExact, oddsText, pct } from '../format.ts';
 import { commit, getMeta, saveFormat, setSetEra } from '../store.ts';
 import {
-  ALL_RARITIES, DEFAULT_ROWS, perCardPull, finishText,
-  type Finish, type RarityRow,
+  DEFAULT_ROWS, DEFAULT_SLOTS, COMMON_ROW_ID, newRowId, newSlotId,
+  slotDraws, derivePulls, tiersForLadder, finishText,
+  type Finish, type RarityRow, type PackSlot,
 } from '../setdesign.ts';
 import { FinishPicker } from './FinishPicker.tsx';
 
@@ -31,7 +32,15 @@ function firstArtist(s: SimState): ArtistId | null {
   return any ? any.id : null;
 }
 
-interface Crafted { ipId: IpId; rarity: Rarity; finishes: Finish[] }
+/**
+ * A card the player made by hand.
+ *
+ * Keyed by RUNG, not by rarity tier. Two rungs may sit on the same tier now —
+ * a studio can print "Warden" and "Sigil Rare" both at rare odds — so a tier no
+ * longer identifies a row, and keying on one would merge two rungs into a
+ * single bucket and orphan the cards in it.
+ */
+interface Crafted { ipId: IpId; rowId: string; finishes: Finish[] }
 
 /**
  * Cards of the same character, grouped as a run collectors chase.
@@ -73,6 +82,7 @@ export function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void;
   const [eraChoice, setEraChoice] = useState<string>('none'); // 'none' | 'new' | era id
   const [newEra, setNewEra] = useState('');
   const [rows, setRows] = useState<RarityRow[]>(DEFAULT_ROWS);
+  const [slots, setSlots] = useState<PackSlot[]>(DEFAULT_SLOTS);
   const [crafted, setCrafted] = useState<Crafted[]>([]);
   const [quality, setQuality] = useState<PrintQualityTier>('standard');
   /**
@@ -99,21 +109,24 @@ export function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void;
   const short = Math.max(0, cost - cash);
   const ips = Object.values(s.ips).filter(ip => ip.publisherId === s.playerId);
   const artist = firstArtist(s);
-  const steps = ['SHAPE', 'RARITY', 'CARDS', 'PRINT'];
+  const steps = ['SHAPE', 'RARITY', 'PACK', 'CARDS', 'PRINT'];
   const openRegions = unlockedRegions(s, s.playerId);
   const tiers: PrintQualityTier[] = ['budget', 'standard', 'premium', 'archival'];
 
   const namedTotal = rows.reduce((n, r) => n + r.count, 0);
   const commons = Math.max(0, size - namedTotal);
   const allRows: RarityRow[] = [
-    { rarity: 'common', label: 'Common', count: commons, advertised: true, finishes: [] },
+    { id: COMMON_ROW_ID, label: 'Common', count: commons, advertised: true, finishes: [] },
     ...rows,
   ];
-  const slots = allRows.reduce((n, r) => n + perCardPull(s, r.rarity, size) * r.count, 0);
+  // Odds are no longer a property of a rung. They are what the pack's slots
+  // imply, so both of these are derived and neither is editable here.
+  const draws = slotDraws(slots);
+  const pulls = derivePulls(slots, rows, commons);
   const finished = allRows.filter(r => r.finishes.length > 0).reduce((n, r) => n + r.count, 0);
   const finishShare = size > 0 ? finished / size : 0;
 
-  const craftedAt = (r: Rarity) => crafted.filter(c => c.rarity === r).length;
+  const craftedAt = (rowId: string) => crafted.filter(c => c.rowId === rowId).length;
   const setRow = (i: number, patch: Partial<RarityRow>) =>
     setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
 
@@ -137,26 +150,39 @@ export function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void;
       // position is its place in the ladder — which is what makes the chain
       // ORDERED rather than a bag of cards.
       const groups = variantGroups(crafted);
-      const rank = (r: Rarity): number =>
-        ALL_RARITIES.findIndex(x => x[0] === r) + 1;
+      // The pack decides the odds, so a rung's scarcity is derived, and the
+      // sim tier is derived from THAT. The tier survives only because
+      // `config.rarity.weight` is keyed by it; nothing else reads it once the
+      // card carries its own `pullRate`.
+      const pullFor = (rowId: string): number => pulls[rowId] ?? 0;
+      const ladderTier = tiersForLadder(allRows, pulls);
+      const tierFor = (rowId: string): Rarity => ladderTier[rowId] ?? 'common';
+      // A variant run is ORDERED, and the order is scarcity: the rarer rung is
+      // further up the ladder. Rank by derived pull, not by a table position
+      // that no longer exists.
+      const ladder = [...allRows].sort((x, y) => pullFor(y.id) - pullFor(x.id));
+      const rank = (rowId: string): number =>
+        ladder.findIndex(r => r.id === rowId) + 1;
       crafted.forEach((c, i) => {
         const group = groups.get(String(c.ipId));
         const link = group && group.includes(i)
           ? {
               chainId: `chain_var_${madeSetId}_${String(c.ipId)}` as never,
-              position: rank(c.rarity),
+              position: rank(c.rowId),
               kind: 'variant' as const,
             }
           : undefined;
-        api.designCard(st, setId, c.ipId, [], c.rarity, a, link, undefined, c.finishes);
+        api.designCard(st, setId, c.ipId, [], tierFor(c.rowId), a, link, undefined,
+          c.finishes, pullFor(c.rowId));
       });
-      // The rest of the list, filling each rarity to the count the player set.
+      // The rest of the list, filling each rung to the count the player set.
       for (const row of allRows) {
-        const remaining = row.count - craftedAt(row.rarity);
+        const remaining = row.count - craftedAt(row.id);
         for (let i = 0; i < remaining; i++) {
           const subj = nextSubject();
           if (!subj) break;
-          api.designCard(st, setId, subj, [], row.rarity, a, undefined, undefined, row.finishes);
+          api.designCard(st, setId, subj, [], tierFor(row.id), a, undefined, undefined,
+            row.finishes, pullFor(row.id));
         }
       }
       // One commitment. The player experienced a sequence; the sim receives a
@@ -181,7 +207,7 @@ export function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void;
   return (
     <Screen>
       <Header title={name.trim().toUpperCase() || 'NEW SET'} onBack={step === 0 ? onBack : () => go(step - 1)}
-        right={<span style={{ ...micro }}>{step + 1} / 4</span>} />
+        right={<span style={{ ...micro }}>{step + 1} / {steps.length}</span>} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 1, background: C.rule, borderBottom: `1px solid ${C.rule}`, flexShrink: 0 }}>
         {steps.map((t, i) => (
           <button key={t} onClick={() => go(i)} style={{
@@ -272,7 +298,8 @@ export function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void;
                   fontSize: 20, fontWeight: 600, outline: 'none', width: '100%',
                 }} />
               <div style={{ fontSize: 11.5, lineHeight: 1.4, color: C.muted }}>
-                A pack still holds the same cardboard. A bigger set makes every card rarer — it does not put more in the box.
+How many cards exist in the set. It does not change what a pack holds — you build the pack
+                yourself, so a bigger set spreads the same slots over more cards and makes each one rarer.
               </div>
             </div>
           </div>
@@ -285,10 +312,17 @@ export function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void;
                 <span style={label}>IMPORT A FORMAT</span>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {meta.formats.map(f => (
-                    <button key={f.id} onClick={() => setRows(f.rows.map(r => ({
-                      rarity: r.rarity as Rarity, label: r.name, count: r.count,
-                      advertised: r.advertised, finishes: (r.finishes ?? []) as Finish[],
-                    })))} style={{
+                    <button key={f.id} onClick={() => {
+                      setRows(f.rows.map(r => ({
+                        // The stored id is reused, not regenerated: the
+                        // format's slots key their odds on it.
+                        id: r.rowId ?? newRowId(), label: r.name, count: r.count,
+                        advertised: r.advertised, finishes: (r.finishes ?? []) as Finish[],
+                      })));
+                      if (f.slots) setSlots(f.slots.map(sl => ({ ...sl, odds: { ...sl.odds } })));
+                      // Cards were crafted against the rungs being replaced.
+                      setCrafted([]);
+                    }} style={{
                       padding: '8px 12px', background: C.raised, border: `1px solid ${C.rule}`,
                       borderRadius: 2, color: C.ink, fontSize: 12, fontFamily: 'inherit', cursor: 'pointer',
                     }}>{f.name}</button>
@@ -298,9 +332,9 @@ export function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void;
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, background: C.rule, borderBottom: `1px solid ${C.rule}`, marginTop: 10 }}>
               <div style={{ padding: '10px 14px', background: C.panel }}>
-                <div style={micro}>PACK SLOTS</div>
-                <div style={{ ...num, fontSize: 15, fontWeight: 600 }}>{slots.toFixed(1)}</div>
-                <div style={{ fontSize: 10, color: C.dim, marginTop: 4 }}>Fixed. You divide them.</div>
+                <div style={micro}>RUNGS</div>
+                <div style={{ ...num, fontSize: 15, fontWeight: 600 }}>{rows.length + 1}</div>
+                <div style={{ fontSize: 10, color: C.dim, marginTop: 4 }}>Odds live in the pack.</div>
               </div>
               <div style={{ padding: '10px 14px', background: C.panel }}>
                 <div style={micro}>FINISHED</div>
@@ -311,14 +345,13 @@ export function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void;
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 52px 58px', gap: 7, padding: '9px 16px 5px', ...micro }}>
-              <div>RARITY · FINISH</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 52px', gap: 7, padding: '9px 16px 5px', ...micro }}>
+              <div>RUNG · FINISH</div>
               <div style={{ textAlign: 'right' }}>CARDS</div>
-              <div style={{ textAlign: 'right' }}>PULL</div>
             </div>
 
             <div style={{
-              display: 'grid', gridTemplateColumns: '1fr 52px 58px', gap: 7, alignItems: 'center',
+              display: 'grid', gridTemplateColumns: '1fr 52px', gap: 7, alignItems: 'center',
               padding: '9px 16px', borderTop: `1px solid ${C.rule}`, background: C.raised,
             }}>
               <div>
@@ -326,23 +359,17 @@ export function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void;
                 <div style={{ ...micro, color: C.dim }}>FILLS THE REST</div>
               </div>
               <div style={{ textAlign: 'right', ...num, fontSize: 13 }}>{commons}</div>
-              <div style={{ textAlign: 'right', ...num, fontSize: 10.5, color: C.muted }}>
-                {oddsText(perCardPull(s, 'common', size) * commons)}
-              </div>
             </div>
 
             {rows.map((r, i) => (
-              <div key={r.rarity} style={{ borderTop: `1px solid ${C.rule}`, background: C.panel, padding: '9px 16px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 52px 58px', gap: 7, alignItems: 'center' }}>
+              <div key={r.id} style={{ borderTop: `1px solid ${C.rule}`, background: C.panel, padding: '9px 16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 52px', gap: 7, alignItems: 'center' }}>
                   <input value={r.label} onChange={e => setRow(i, { label: e.target.value })}
-                    aria-label={`Name for ${r.rarity}`} style={{
+                    aria-label={`Name for rung ${i + 1}`} style={{
                       fontSize: 12.5, background: 'none', border: 'none', borderBottom: `1px dashed ${C.rule}`,
                       color: C.ink, fontFamily: 'inherit', padding: '2px 0', width: '100%', outline: 'none',
                     }} />
                   <div style={{ textAlign: 'right', ...num, fontSize: 13 }}>{r.count}</div>
-                  <div style={{ textAlign: 'right', ...num, fontSize: 10.5, color: C.muted }}>
-                    {oddsText(perCardPull(s, r.rarity, size) * r.count)}
-                  </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 7, flexWrap: 'wrap' }}>
                   <button onClick={() => setRow(i, { count: Math.max(0, r.count - 1) })} style={pillBtn}>−</button>
@@ -358,8 +385,14 @@ export function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void;
                   <button type="button" aria-label={`Remove ${r.label}`} onClick={() => {
                     // Cards crafted at this rung go with it — they have nowhere
                     // left to sit, and a silent orphan is worse than a visible
-                    // deletion.
-                    setCrafted(crafted.filter(c => c.rarity !== r.rarity));
+                    // deletion. The pack's slots lose it too, for the same
+                    // reason: a slot that can draw a rung that no longer exists
+                    // would quietly eat that share of the odds.
+                    setCrafted(crafted.filter(c => c.rowId !== r.id));
+                    setSlots(slots.map(sl => {
+                      const { [r.id]: _gone, ...rest } = sl.odds;
+                      return { ...sl, odds: rest };
+                    }));
                     setRows(rows.filter((_, j) => j !== i));
                   }} style={{ ...pillBtn, color: C.bad, marginLeft: 'auto' }}>×</button>
                 </div>
@@ -369,31 +402,28 @@ export function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void;
               </div>
             ))}
 
-            {ALL_RARITIES.filter(([r]) => !rows.some(x => x.rarity === r)).length > 0 && (
-              <div style={{ padding: '12px 16px 0', display: 'flex', flexDirection: 'column', gap: 7 }}>
-                <span style={label}>ADD A RUNG</span>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {ALL_RARITIES.filter(([r]) => !rows.some(x => x.rarity === r)).map(([r, lbl]) => (
-                    <button key={r} type="button" onClick={() => setRows([...rows, {
-                      rarity: r, label: lbl, count: 1, advertised: true, finishes: [],
-                    }].sort((a, b) => ALL_RARITIES.findIndex(x => x[0] === a.rarity)
-                                    - ALL_RARITIES.findIndex(x => x[0] === b.rarity)))} style={{
-                      height: 34, padding: '0 11px', background: 'transparent', color: C.ink,
-                      border: `1px dashed ${C.border}`, borderRadius: 2, fontSize: 12,
-                      fontFamily: 'inherit', cursor: 'pointer', touchAction: 'manipulation',
-                    }}>+ {lbl}</button>
-                  ))}
-                </div>
+            <div style={{ padding: '12px 16px 0' }}>
+              <button type="button" onClick={() => setRows([...rows, {
+                id: newRowId(), label: `Rung ${rows.length + 1}`, count: 1,
+                advertised: true, finishes: [],
+              }])} style={{
+                width: '100%', height: 40, background: 'transparent', color: C.ink,
+                border: `1px dashed ${C.border}`, borderRadius: 2, fontSize: 12.5,
+                fontFamily: 'inherit', cursor: 'pointer', touchAction: 'manipulation',
+              }}>+ Add a rung</button>
+              <div style={{ fontSize: 11, lineHeight: 1.4, color: C.dim, marginTop: 7 }}>
+                Name a rung whatever you like. How often it turns up is decided in the pack, not here.
               </div>
-            )}
+            </div>
 
             <div style={{ padding: '12px 16px 0' }}>
               <Button tone="quiet" onClick={() => {
-                const n = prompt('Save this rarity ladder as a format called:');
+                const n = prompt('Save this ladder and pack as a format called:');
                 if (!n || !n.trim()) return;
                 saveFormat({
                   id: `fmt_${Date.now().toString(36)}`, name: n.trim(), packsPerUnit: 24, msrp: 14000,
-                  rows: rows.map(r => ({ rarity: r.rarity, name: r.label, count: r.count, advertised: r.advertised, finishes: r.finishes })),
+                  rows: rows.map(r => ({ rowId: r.id, name: r.label, count: r.count, advertised: r.advertised, finishes: r.finishes })),
+                  slots: slots.map(sl => ({ id: sl.id, label: sl.label, odds: { ...sl.odds } })),
                 });
               }}>Save as a format</Button>
             </div>
@@ -407,10 +437,15 @@ export function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void;
         )}
 
         {step === 2 && (
-          <CardsStep s={s} rows={allRows} crafted={crafted} setCrafted={setCrafted} ips={ips} size={size} />
+          <PackStep s={s} rows={allRows} slots={slots} setSlots={setSlots}
+            draws={draws} pulls={pulls} />
         )}
 
         {step === 3 && (
+          <CardsStep s={s} rows={allRows} crafted={crafted} setCrafted={setCrafted} ips={ips} size={size} />
+        )}
+
+        {step === 4 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '15px 18px 0' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
               <span style={label}>PRINT QUALITY</span>
@@ -498,9 +533,9 @@ export function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void;
 
         </Pane>
         <div style={{ padding: '18px 18px 34px' }}>
-          {step < 3
+          {step < 4
             ? <Button onClick={() => go(step + 1)} disabled={!canNext}>
-                {['Rarities', 'Cards', 'Print run'][step]}
+                {['Rarities', 'The pack', 'Cards', 'Print run'][step]}
               </Button>
             : <Button onClick={doCommit} disabled={ips.length === 0 || !artist}>
                 {short > 0 ? `Borrow ${money(short)} and print` : 'Commit the print run'}
@@ -526,17 +561,148 @@ function Pane({ step, dir, children }: { step: number; dir: number; children: Re
 }
 
 
+/**
+ * Build the pack, slot by slot.
+ *
+ * The studio declares what each slot can draw and how often. Everything the
+ * old screen asked the player to accept — pull odds, pack size, the way set
+ * size changes rarity — is a CONSEQUENCE here, shown live and never typed.
+ *
+ * Weights are relative and normalised per slot, so 65/25/10 and 13/5/2 are the
+ * same slot. That is deliberate: it lets a studio think in percentages without
+ * the screen refusing to render until they sum to a hundred.
+ */
+function PackStep({ s, rows, slots, setSlots, draws, pulls }: {
+  s: SimState; rows: RarityRow[]; slots: PackSlot[];
+  setSlots: (v: PackSlot[]) => void;
+  draws: Record<string, number>; pulls: Record<string, number>;
+}) {
+  const labelOf = (id: string) => rows.find(r => r.id === id)?.label ?? '—';
+  const setSlot = (i: number, patch: Partial<PackSlot>) =>
+    setSlots(slots.map((sl, j) => (j === i ? { ...sl, ...patch } : sl)));
+
+  return (
+    <>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, background: C.rule, borderBottom: `1px solid ${C.rule}` }}>
+        <div style={{ padding: '10px 14px', background: C.panel }}>
+          <div style={micro}>CARDS PER PACK</div>
+          <div style={{ ...num, fontSize: 17, fontWeight: 600 }}>{slots.length}</div>
+          <div style={{ fontSize: 10, color: C.dim, marginTop: 4 }}>One slot, one card.</div>
+        </div>
+        <div style={{ padding: '10px 14px', background: C.panel }}>
+          <div style={micro}>RUNGS REACHED</div>
+          <div style={{ ...num, fontSize: 17, fontWeight: 600, color: Object.keys(draws).length < rows.length ? C.bad : C.note }}>
+            {Object.keys(draws).length} / {rows.length}
+          </div>
+          <div style={{ fontSize: 10, color: C.dim, marginTop: 4 }}>
+            {Object.keys(draws).length < rows.length ? 'A rung no slot draws is unpullable.' : 'Every rung is reachable.'}
+          </div>
+        </div>
+      </div>
+
+      {slots.map((sl, i) => {
+        const total = Object.values(sl.odds).reduce((n, w) => n + Math.max(0, w), 0);
+        return (
+          <div key={sl.id} style={{ borderTop: `1px solid ${C.rule}`, background: C.panel, padding: '10px 16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ ...micro, color: C.dim, minWidth: 28 }}>{String(i + 1).padStart(2, '0')}</span>
+              <input value={sl.label} onChange={e => setSlot(i, { label: e.target.value })}
+                aria-label={`Name for slot ${i + 1}`} style={{
+                  flex: 1, fontSize: 12.5, background: 'none', border: 'none',
+                  borderBottom: `1px dashed ${C.rule}`, color: C.ink,
+                  fontFamily: 'inherit', padding: '2px 0', outline: 'none',
+                }} />
+              <button type="button" aria-label={`Remove slot ${i + 1}`}
+                onClick={() => setSlots(slots.filter((_, j) => j !== i))}
+                style={{ ...pillBtn, color: C.bad }}>×</button>
+            </div>
+
+            {rows.map(r => {
+              const w = sl.odds[r.id] ?? 0;
+              const share = total > 0 ? w / total : 0;
+              return (
+                <div key={r.id} style={{
+                  display: 'grid', gridTemplateColumns: '1fr 62px 52px', gap: 8,
+                  alignItems: 'center', marginTop: 6,
+                }}>
+                  <div style={{ fontSize: 12, color: w > 0 ? C.ink : C.dimmer, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {r.label}
+                  </div>
+                  <input inputMode="decimal" value={w === 0 ? '' : String(w)} placeholder="0"
+                    aria-label={`${r.label} weight in slot ${i + 1}`}
+                    onChange={e => {
+                      const v = Math.max(0, parseFloat(e.target.value.replace(/[^0-9.]/g, '')) || 0);
+                      const next = { ...sl.odds };
+                      if (v <= 0) delete next[r.id]; else next[r.id] = v;
+                      setSlot(i, { odds: next });
+                    }}
+                    style={{
+                      height: 30, padding: '0 7px', background: C.ground, color: C.ink,
+                      border: `1px solid ${w > 0 ? C.border : C.rule}`, borderRadius: 2,
+                      ...num, fontSize: 12.5, outline: 'none', width: '100%', textAlign: 'right',
+                    }} />
+                  <div style={{ ...num, fontSize: 11, color: C.muted, textAlign: 'right' }}>
+                    {share > 0 ? pct(share) : '—'}
+                  </div>
+                </div>
+              );
+            })}
+            {total <= 0 && (
+              <div style={{ ...micro, color: C.bad, marginTop: 7 }}>THIS SLOT DRAWS NOTHING</div>
+            )}
+          </div>
+        );
+      })}
+
+      <div style={{ padding: '12px 16px 0' }}>
+        <button type="button" onClick={() => setSlots([...slots, {
+          id: newSlotId(), label: `Slot ${slots.length + 1}`, odds: { [COMMON_ROW_ID]: 100 },
+        }])} style={{
+          width: '100%', height: 40, background: 'transparent', color: C.ink,
+          border: `1px dashed ${C.border}`, borderRadius: 2, fontSize: 12.5,
+          fontFamily: 'inherit', cursor: 'pointer', touchAction: 'manipulation',
+        }}>+ Add a slot</button>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 66px 74px', gap: 7, padding: '18px 16px 5px', ...micro }}>
+        <div>WHAT A PACK HOLDS</div>
+        <div style={{ textAlign: 'right' }}>PER PACK</div>
+        <div style={{ textAlign: 'right' }}>ONE CARD</div>
+      </div>
+      {rows.map(r => (
+        <div key={r.id} style={{
+          display: 'grid', gridTemplateColumns: '1fr 66px 74px', gap: 7, alignItems: 'center',
+          padding: '8px 16px', borderTop: `1px solid ${C.rule}`, background: C.ground,
+        }}>
+          <div style={{ fontSize: 12, color: draws[r.id] ? C.ink : C.dimmer }}>{r.label}</div>
+          <div style={{ ...num, fontSize: 11.5, textAlign: 'right', color: C.muted }}>
+            {draws[r.id] ? draws[r.id]!.toFixed(2) : '—'}
+          </div>
+          <div style={{ ...num, fontSize: 11.5, textAlign: 'right', color: pulls[r.id] ? C.note : C.dimmer }}>
+            {pulls[r.id] ? oddsText(pulls[r.id]!) : '—'}
+          </div>
+        </div>
+      ))}
+      <div style={{ padding: '12px 16px 0', fontSize: 11, lineHeight: 1.42, color: C.muted }}>
+        PER PACK is how many cards of that rung a pack holds on average. ONE CARD is the odds of
+        pulling a NAMED card from it — the rung's draws split across every card in it, which is why
+        a bigger rung makes each of its cards rarer. You set the pack; the odds follow.
+      </div>
+    </>
+  );
+}
+
 /** Craft individual cards: pick a character, a rarity, and a finish. */
 function CardsStep({ s, rows, crafted, setCrafted, ips, size }: {
   s: SimState; rows: RarityRow[]; crafted: Crafted[];
   setCrafted: (c: Crafted[]) => void; ips: IpEntity[]; size: number;
 }) {
   const [pickIp, setPickIp] = useState<string>(ips[0] ? String(ips[0]!.id) : '');
-  const [pickRarity, setPickRarity] = useState<Rarity>('rare');
+  const [pickRow, setPickRow] = useState<string>(rows[1] ? rows[1]!.id : COMMON_ROW_ID);
   const [pickFinish, setPickFinish] = useState<Finish[]>(['holo']);
   const nameOf = (id: string) => Object.values(s.ips).find(i => String(i.id) === id)?.name ?? id;
-  const roomAt = (r: Rarity) =>
-    (rows.find(x => x.rarity === r)?.count ?? 0) - crafted.filter(c => c.rarity === r).length;
+  const roomAt = (rowId: string) =>
+    (rows.find(x => x.id === rowId)?.count ?? 0) - crafted.filter(c => c.rowId === rowId).length;
 
   return (
     <>
@@ -563,7 +729,7 @@ function CardsStep({ s, rows, crafted, setCrafted, ips, size }: {
             <div style={{ ...micro, letterSpacing: '0.07em' }}>{finishText(c.finishes).toUpperCase()}</div>
           </div>
           <div style={{ fontSize: 11.5, color: C.ink3 }}>
-            {rows.find(r => r.rarity === c.rarity)?.label ?? c.rarity}
+            {rows.find(r => r.id === c.rowId)?.label ?? '\u2014'}
           </div>
           <button onClick={() => setCrafted(crafted.filter((_, j) => j !== i))} style={{
             ...pillBtn, width: 30, height: 30, color: C.bad, borderColor: C.rule,
@@ -576,21 +742,21 @@ function CardsStep({ s, rows, crafted, setCrafted, ips, size }: {
         <select value={pickIp} onChange={e => setPickIp(e.target.value)} style={selectStyle}>
           {ips.map(ip => <option key={String(ip.id)} value={String(ip.id)}>{ip.name}</option>)}
         </select>
-        <select value={pickRarity} onChange={e => {
-          const r = e.target.value as Rarity;
-          setPickRarity(r);
+        <select value={pickRow} onChange={e => {
+          const id = e.target.value;
+          setPickRow(id);
           // Start from what that rung already prints; the card can then differ.
-          setPickFinish(rows.find(x => x.rarity === r)?.finishes ?? []);
+          setPickFinish(rows.find(x => x.id === id)?.finishes ?? []);
         }} style={selectStyle}>
           {rows.map(r => (
-            <option key={r.rarity} value={r.rarity} disabled={roomAt(r.rarity) <= 0}>
-              {r.label} ({roomAt(r.rarity)} left)
+            <option key={r.id} value={r.id} disabled={roomAt(r.id) <= 0}>
+              {r.label} ({roomAt(r.id)} left)
             </option>
           ))}
         </select>
         <FinishPicker value={pickFinish} onChange={setPickFinish} />
-        <Button tone="quiet" disabled={!pickIp || roomAt(pickRarity) <= 0} onClick={() =>
-          setCrafted([...crafted, { ipId: pickIp as IpId, rarity: pickRarity, finishes: pickFinish }])}>
+        <Button tone="quiet" disabled={!pickIp || roomAt(pickRow) <= 0} onClick={() =>
+          setCrafted([...crafted, { ipId: pickIp as IpId, rowId: pickRow, finishes: pickFinish }])}>
           Add card
         </Button>
         <div style={{ fontSize: 11, lineHeight: 1.42, color: C.muted }}>

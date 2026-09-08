@@ -217,6 +217,8 @@ interface CardOverrides {
    * card, which is exactly when the subject is not.
    */
   illustrationLink?: ChainId;
+  /** Copies per pack, when the studio authored the pack. See `Card.pullRate`. */
+  pullRate?: number | null;
 }
 
 function designCard(
@@ -235,6 +237,7 @@ function designCard(
     name: overrides.name ?? `${s.ips[subjectIp]!.name} ${rarity}`,
     createdTick: s.tick,
     subjectIp, cameos, rarity,
+    pullRate: overrides.pullRate ?? null,
     treatments: overrides.treatments ?? (rarity === 'common' ? [] : ['holo']),
     artistId,
     artBrief: { mood: 'neutral', composition: 'portrait', budget: artist.rate, notes: '', ...overrides.artBrief },
@@ -497,7 +500,7 @@ function reprint(s: SimState, cardId: CardId, intoSetId: SetId, quantity: number
     cardId, setId: intoSetId, regionId: 'reg_us' as RegionId,
     printQuantity: Math.max(1, quantity),
     sealed: Math.max(1, quantity),
-    pullRate: rarityPull(s, card.rarity, set.cardIds.length),
+    pullRate: card.pullRate ?? rarityPull(s, card.rarity, set.cardIds.length),
     printQuality: set.printQuality,
     isReprintOf: originalId,
     heat: cfg.value.openingHeat,
@@ -1126,6 +1129,7 @@ function applyDecision(s: SimState, d: Decision): void {
           artBrief: d.payload.artBrief, flavorText: d.payload.flavorText,
           progressionLink: d.payload.progressionLink,
           illustrationLink: d.payload.illustrationLink,
+          pullRate: d.payload.pullRate,
         });
       break;
     case 'defineProduct':
@@ -1246,11 +1250,12 @@ export const api = {
     progressionLink?: { chainId: ChainId; position: number; kind?: ChainKind },
     illustrationLink?: ChainId,
     treatments?: Treatment[],
+    pullRate?: number | null,
   ): CardId {
     const id = nextId(s, 'card') as CardId;
     submit(s, {
       type: 'designCard', tick: s.tick,
-      payload: { id, setId, subjectIp, cameos, rarity, artistId, progressionLink, illustrationLink, treatments },
+      payload: { id, setId, subjectIp, cameos, rarity, artistId, progressionLink, illustrationLink, treatments, pullRate },
     });
     return id;
   },
@@ -1385,7 +1390,9 @@ function releaseSet(s: SimState, setId: SetId, regionId: RegionId): void {
       const p = s.products[pid]!;
       return n + p.unitsPrinted * p.packsPerUnit;
     }, 0);
-    const pullRate = rarityPull(s, card.rarity, set.cardIds.length);
+    // A studio that authored its own pack carries the rate the slots imply.
+    // Null is the neutral default, so a bot set still reads the global table.
+    const pullRate = card.pullRate ?? rarityPull(s, card.rarity, set.cardIds.length);
     const id = mintPrinting(s, s.rng, {
       cardId, setId, regionId,
       printQuantity: Math.max(1, Math.round(totalPacks * pullRate)),

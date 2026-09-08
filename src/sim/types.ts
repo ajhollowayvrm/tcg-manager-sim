@@ -370,6 +370,20 @@ export interface Card {
   cameos: IpId[];
 
   rarity: Rarity;
+  /**
+   * Copies of THIS card printed per pack, when the studio built the pack itself.
+   *
+   * `config.rarity.pull` is a global table: pick a tier, get that tier's odds.
+   * A studio that authors its own pack slot by slot is not choosing from that
+   * table — it is declaring what each slot draws and at what probability, and
+   * the per-card rate falls out of the slots (see `setdesign.ts`). This carries
+   * that derived rate to `mintPrinting`.
+   *
+   * **Null means "use the table", and that is the neutral default.** Every bot
+   * and every harness run leaves it null, so `rarityPull` still decides and the
+   * balance suite is byte-identical. Only a set built in the wizard sets it.
+   */
+  pullRate: number | null;
   /** Finishes on this card. Empty for a plain one. They stack. */
   treatments: Treatment[];
 
@@ -1152,6 +1166,12 @@ export type Decision =
         progressionLink?: { chainId: ChainId; position: number; kind?: ChainKind };
         /** The art-subset chain. CONCEPT.md §4's hedge against a weak character. */
         illustrationLink?: ChainId;
+        /**
+         * Copies per pack, when the studio authored its own pack. Omitted by
+         * every bot, so a replay of a harness run is unchanged. See
+         * `Card.pullRate`.
+         */
+        pullRate?: number | null;
       };
     }
   | { type: 'commissionArt'; tick: Tick; payload: { cardId: CardId; artistId: ArtistId; brief: ArtBrief } }

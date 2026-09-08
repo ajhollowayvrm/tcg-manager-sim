@@ -7,7 +7,7 @@
 import { useState } from 'react';
 import { C, MONO, num, label, micro, Button, Stepper, Empty, pillBtn } from '../ui.tsx';
 import { getMeta, saveFormat, deleteFormat } from '../store.ts';
-import { ALL_RARITIES, DEFAULT_ROWS, type Finish } from '../setdesign.ts';
+import { DEFAULT_ROWS, DEFAULT_SLOTS, newRowId, type Finish } from '../setdesign.ts';
 import { FinishPicker } from './FinishPicker.tsx';
 
 // --- studio: formats -------------------------------------------------------
@@ -35,14 +35,14 @@ export function Formats() {
           }}>Done</button>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 46px', gap: 7, padding: '4px 16px 6px', ...micro }}>
-          <div>NAME · TIER · FINISH</div>
+          <div>NAME · FINISH</div>
           <div style={{ textAlign: 'right' }}>CARDS</div>
         </div>
         {f.rows.map((r, i) => (
           <div key={i} style={{ borderTop: `1px solid ${C.rule}`, background: C.panel, padding: '9px 16px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 46px', gap: 7, alignItems: 'center' }}>
               <input value={r.name} onChange={e => setRow(i, { name: e.target.value })}
-                aria-label={`Name for ${r.rarity}`} style={{
+                aria-label={`Name for rung ${i + 1}`} style={{
                   fontSize: 13, background: 'none', border: 'none', borderBottom: `1px dashed ${C.rule}`,
                   color: C.ink, fontFamily: 'inherit', padding: '2px 0', width: '100%', outline: 'none',
                 }} />
@@ -51,7 +51,6 @@ export function Formats() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 7, flexWrap: 'wrap' }}>
               <button onClick={() => setRow(i, { count: Math.max(0, r.count - 1) })} style={pillBtn}>−</button>
               <button onClick={() => setRow(i, { count: r.count + 1 })} style={pillBtn}>+</button>
-              <span style={{ ...micro, color: C.dimmer }}>{r.rarity}</span>
               <button type="button" onClick={() => setRow(i, { advertised: !r.advertised })} style={{
                 ...pillBtn, width: 'auto', padding: '0 10px',
                 color: r.advertised ? C.muted : C.bad, borderColor: r.advertised ? C.rule : C.bad,
@@ -66,25 +65,23 @@ export function Formats() {
             </div>
           </div>
         ))}
-        {ALL_RARITIES.filter(([r]) => !f.rows.some(x => x.rarity === r)).length > 0 && (
-          <div style={{ padding: '14px 16px 0', display: 'flex', flexDirection: 'column', gap: 7 }}>
-            <span style={label}>ADD A RUNG</span>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {ALL_RARITIES.filter(([r]) => !f.rows.some(x => x.rarity === r)).map(([r, lbl]) => (
-                <button key={r} type="button" onClick={() => saveFormat({
-                  ...f,
-                  rows: [...f.rows, { rarity: r, name: lbl, count: 1, advertised: true, finishes: [] }]
-                    .sort((a, b) => ALL_RARITIES.findIndex(x => x[0] === a.rarity)
-                                  - ALL_RARITIES.findIndex(x => x[0] === b.rarity)),
-                })} style={{
-                  height: 34, padding: '0 11px', background: 'transparent', color: C.ink,
-                  border: `1px dashed ${C.border}`, borderRadius: 2, fontSize: 12,
-                  fontFamily: 'inherit', cursor: 'pointer', touchAction: 'manipulation',
-                }}>+ {lbl}</button>
-              ))}
-            </div>
+        <div style={{ padding: '14px 16px 0' }}>
+          <button type="button" onClick={() => saveFormat({
+            ...f,
+            rows: [...f.rows, {
+              rowId: newRowId(), name: `Rung ${f.rows.length + 1}`,
+              count: 1, advertised: true, finishes: [],
+            }],
+          })} style={{
+            width: '100%', height: 40, background: 'transparent', color: C.ink,
+            border: `1px dashed ${C.border}`, borderRadius: 2, fontSize: 12.5,
+            fontFamily: 'inherit', cursor: 'pointer', touchAction: 'manipulation',
+          }}>+ Add a rung</button>
+          <div style={{ fontSize: 11, lineHeight: 1.4, color: C.dim, marginTop: 7 }}>
+            A rung is a name and a card count. How often it turns up is decided by the pack, in the
+            set wizard — a rung added here reaches no slot until you give it one there.
           </div>
-        )}
+        </div>
         <div style={{ padding: '14px 16px 6px', display: 'flex', flexDirection: 'column', gap: 7 }}>
           <span style={label}>PACKS PER BOX</span>
           <Stepper value={f.packsPerUnit} onChange={v => saveFormat({ ...f, packsPerUnit: v })} min={1} max={60} />
@@ -127,9 +124,12 @@ export function Formats() {
           saveFormat({
             id, name: n.trim(), packsPerUnit: 24, msrp: 14000,
             rows: DEFAULT_ROWS.map(r => ({
-              rarity: r.rarity, name: r.label, count: r.count,
+              rowId: r.id, name: r.label, count: r.count,
               advertised: r.advertised, finishes: r.finishes,
             })),
+            // The pack rides with the ladder: the slots key their odds on
+            // these row ids, and a ladder with no pack has no odds at all.
+            slots: DEFAULT_SLOTS.map(sl => ({ id: sl.id, label: sl.label, odds: { ...sl.odds } })),
           });
           setEditing(id);
         }}>New format</Button>

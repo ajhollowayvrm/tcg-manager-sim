@@ -57,17 +57,138 @@ export const finishText = (f: Finish[]): string =>
  * studio calls it — the sim has no opinion about the word, and every real TCG
  * invents its own.
  */
-export interface RarityRow { rarity: Rarity; label: string; count: number; advertised: boolean; finishes: Finish[] }
+export interface RarityRow { id: string; label: string; count: number; advertised: boolean; finishes: Finish[] }
+
+/** The common rung is not in the list — it fills whatever the others leave. */
+export const COMMON_ROW_ID = 'row_common';
+
+let rowSeq = 0;
+export const newRowId = (): string => `row_${Date.now().toString(36)}_${rowSeq++}`;
 
 export const DEFAULT_ROWS: RarityRow[] = [
-  { rarity: 'uncommon', label: 'Uncommon', count: 45, advertised: true, finishes: [] },
-  { rarity: 'rare', label: 'Rare', count: 25, advertised: true, finishes: ['holo'] },
-  { rarity: 'doubleRare', label: 'Double rare', count: 13, advertised: true, finishes: ['holo'] },
-  { rarity: 'ultraRare', label: 'Ultra rare', count: 7, advertised: true, finishes: ['fullArt', 'holo'] },
-  { rarity: 'illustrationRare', label: 'Illustration rare', count: 5, advertised: true, finishes: ['extendedArt', 'textured'] },
-  { rarity: 'specialIllustrationRare', label: 'Special illustration', count: 3, advertised: true, finishes: ['fullArt', 'etched', 'textured'] },
-  { rarity: 'hyperRare', label: 'Hyper rare', count: 2, advertised: false, finishes: ['borderless', 'rainbowFoil', 'embossed'] },
+  { id: 'row_d1', label: 'Uncommon', count: 45, advertised: true, finishes: [] },
+  { id: 'row_d2', label: 'Rare', count: 25, advertised: true, finishes: ['holo'] },
+  { id: 'row_d3', label: 'Double rare', count: 13, advertised: true, finishes: ['holo'] },
+  { id: 'row_d4', label: 'Ultra rare', count: 7, advertised: true, finishes: ['fullArt', 'holo'] },
+  { id: 'row_d5', label: 'Illustration rare', count: 5, advertised: true, finishes: ['extendedArt', 'textured'] },
+  { id: 'row_d6', label: 'Special illustration', count: 3, advertised: true, finishes: ['fullArt', 'etched', 'textured'] },
+  { id: 'row_d7', label: 'Hyper rare', count: 2, advertised: false, finishes: ['borderless', 'rainbowFoil', 'embossed'] },
 ];
+
+/**
+ * One slot in the pack, and what it can draw.
+ *
+ * This is the object the studio actually authors. A real pack is not a table of
+ * odds per rarity — it is a fixed number of slots, and each slot draws from its
+ * own pool. Four commons, three uncommons, one slot that is usually a rare and
+ * occasionally something better. The per-card pull rate is what FALLS OUT of
+ * that (`derivePulls`), which is the opposite of how `config.rarity.pull`
+ * works, and it is the right way round: the studio decides the pack, and the
+ * odds are a consequence.
+ *
+ * `odds` maps a rung id to a relative weight. Weights are normalised, so they
+ * can be typed as percentages, as 1-in-N, or as any numbers at all — a slot
+ * whose weights sum to 50 behaves exactly like one that sums to 100.
+ */
+export interface PackSlot { id: string; label: string; odds: Record<string, number> }
+
+let slotSeq = 0;
+export const newSlotId = (): string => `slot_${Date.now().toString(36)}_${slotSeq++}`;
+
+/** A plain modern pack, as a starting point the studio can tear up. */
+export const DEFAULT_SLOTS: PackSlot[] = [
+  { id: 'slot_d1', label: 'Commons', odds: { [COMMON_ROW_ID]: 100 } },
+  { id: 'slot_d2', label: 'Commons', odds: { [COMMON_ROW_ID]: 100 } },
+  { id: 'slot_d3', label: 'Commons', odds: { [COMMON_ROW_ID]: 100 } },
+  { id: 'slot_d4', label: 'Commons', odds: { [COMMON_ROW_ID]: 100 } },
+  { id: 'slot_d5', label: 'Uncommons', odds: { row_d1: 100 } },
+  { id: 'slot_d6', label: 'Uncommons', odds: { row_d1: 100 } },
+  { id: 'slot_d7', label: 'Uncommons', odds: { row_d1: 100 } },
+  { id: 'slot_d8', label: 'Reverse slot', odds: { [COMMON_ROW_ID]: 65, row_d1: 25, row_d2: 10 } },
+  { id: 'slot_d9', label: 'The hit', odds: { row_d2: 62, row_d3: 22, row_d4: 10, row_d5: 4, row_d6: 1.6, row_d7: 0.4 } },
+];
+
+/**
+ * Expected draws of each rung per pack, from the slots alone.
+ *
+ * Each slot contributes its normalised share to whichever rungs it can draw. A
+ * slot with no weights contributes nothing rather than throwing — a half-built
+ * pack must still render.
+ */
+export function slotDraws(slots: PackSlot[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const slot of slots) {
+    const total = Object.values(slot.odds).reduce((n, w) => n + Math.max(0, w), 0);
+    if (total <= 0) continue;
+    for (const [rowId, w] of Object.entries(slot.odds)) {
+      if (w <= 0) continue;
+      out[rowId] = (out[rowId] ?? 0) + w / total;
+    }
+  }
+  return out;
+}
+
+/**
+ * Copies of ONE card per pack, per rung — the number `Card.pullRate` wants.
+ *
+ * A rung drawn 0.4 times a pack and holding 8 cards puts each of those cards in
+ * one pack in twenty. Spreading the rung's draws across its own cards is the
+ * whole reason set size changes rarity: `config.rarity.referenceSetSize` exists
+ * to fake this, and a real slot table does not need it.
+ *
+ * A rung with no cards returns nothing rather than dividing by zero.
+ */
+export function derivePulls(slots: PackSlot[], rows: RarityRow[], commons: number): Record<string, number> {
+  const draws = slotDraws(slots);
+  const counts: Record<string, number> = { [COMMON_ROW_ID]: commons };
+  for (const r of rows) counts[r.id] = r.count;
+  const out: Record<string, number> = {};
+  for (const [rowId, drawn] of Object.entries(draws)) {
+    const n = counts[rowId] ?? 0;
+    if (n > 0) out[rowId] = drawn / n;
+  }
+  return out;
+}
+
+/**
+ * The tier ladder, commonest first. `promo` is deliberately absent: it is a
+ * product route, not a step on a rarity ladder, and its pull sits between
+ * `rare` and `doubleRare` where it would corrupt any ordering.
+ */
+const TIER_LADDER: Rarity[] = [
+  'common', 'uncommon', 'rare', 'doubleRare', 'ultraRare',
+  'illustrationRare', 'specialIllustrationRare', 'hyperRare',
+];
+
+/**
+ * A sim tier for every rung, assigned by RANK rather than by absolute pull.
+ *
+ * The studio never picks a tier — it builds a pack, and the pack implies one.
+ * A tier is still needed because `config.rarity.weight` is a demand-side signal
+ * keyed by it (`engine.ts` `castDesire` and the reveal term), and it is the
+ * ONLY thing `Card.rarity` is read for once `pullRate` is carried directly.
+ *
+ * **Matching on absolute pull is wrong, and it was measured wrong.** The config
+ * table is written for a pack of about 17.5 cards; a studio that builds a
+ * 9-card pack halves every rate, so a nearest-value match shifted the whole
+ * ladder up and called an 80-card common rung `rare` — which would have
+ * inflated demand for the commonest cards in the set.
+ *
+ * Rank has neither problem. The rarest rung gets the rarest weight whatever
+ * size the pack is, which is what the studio actually meant. With more rungs
+ * than tiers the top ones share `hyperRare`; a ladder that deep has no finer
+ * distinction for the weight table to express anyway.
+ */
+export function tiersForLadder(rows: RarityRow[], pulls: Record<string, number>): Record<string, Rarity> {
+  // Commonest first. A rung no slot draws sorts to the rare end, where a rung
+  // nobody can pull belongs.
+  const ordered = [...rows].sort((a, b) => (pulls[b.id] ?? 0) - (pulls[a.id] ?? 0));
+  const out: Record<string, Rarity> = {};
+  ordered.forEach((r, i) => {
+    out[r.id] = TIER_LADDER[Math.min(i, TIER_LADDER.length - 1)]!;
+  });
+  return out;
+}
 
 /**
  * Copies through the same arithmetic `rarityPull` uses in the engine, reading
