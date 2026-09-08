@@ -151,21 +151,61 @@ export function derivePulls(slots: PackSlot[], rows: RarityRow[], commons: numbe
 }
 
 /**
+ * A slot share, with enough places to still say something when it is tiny.
+ *
+ * A chase rung at one in ten thousand is a 0.01% share. Fixed to whole percent
+ * that renders as `0%`, which tells the studio its number did not take — so the
+ * places have to follow the magnitude.
+ */
+export function shareText(share: number): string {
+  if (share <= 0) return '—';
+  const places = share >= 0.1 ? 0 : share >= 0.01 ? 1 : share >= 0.001 ? 2 : 3;
+  return `${(share * 100).toFixed(places)}%`;
+}
+
+/**
+ * The chance a pack holds AT LEAST ONE of each rung.
+ *
+ * **Not the sum of the draws, and the difference is a wrong answer rather than
+ * a rounding one.** Expected draws add; probabilities do not. A rung sitting in
+ * three slots at 80/67/30 sums to 1.77 draws, which reads as a guarantee — but
+ * all three slots miss 4.7% of the time, so one pack in 21 contains none of it.
+ *
+ * Slots are independent, so the chance of missing everywhere is the product of
+ * the per-slot misses, and this is one minus that.
+ *
+ * `slotDraws` is still the right measure for the pull rate, which is expected
+ * COPIES per pack. These two answer different questions and both are needed.
+ */
+export function packOdds(slots: PackSlot[]): Record<string, number> {
+  const miss: Record<string, number> = {};
+  for (const slot of slots) {
+    const total = Object.values(slot.odds).reduce((n, w) => n + Math.max(0, w), 0);
+    if (total <= 0) continue;
+    for (const [rowId, w] of Object.entries(slot.odds)) {
+      if (w <= 0) continue;
+      miss[rowId] = (miss[rowId] ?? 1) * (1 - w / total);
+    }
+  }
+  const out: Record<string, number> = {};
+  for (const [rowId, m] of Object.entries(miss)) out[rowId] = 1 - m;
+  return out;
+}
+
+/**
  * How often a pack holds one of a rung, in words.
  *
- * The decimal alone misreads. A rung drawn 4.3 times a pack IS "every pack",
- * but shown as `4.30` next to a `1 in 18` column it invites the player to read
- * the wrong number as the answer to "how often do I see one of these".
- *
- * At one draw or more a pack always holds at least one, and that is the whole
- * answer — "every pack" does not become more true at 4.3 than at 1.0, so the
- * count is not shown. Below one the pack does NOT always hold one, and the
- * interval is the fact worth reading.
+ * Three bands, because one phrasing cannot carry the whole range. A near-
+ * certainty is not usefully "1 pack in 1.0" — that rounds a 95% rung and a
+ * guaranteed one onto the same string, which is the bug this replaced. A rare
+ * one is not usefully "5% of packs" either; the interval is how a pull rate is
+ * read and quoted.
  */
-export function packFrequency(draws: number): string {
-  if (draws <= 0) return 'Never';
-  if (draws >= 1) return 'Every pack';
-  const every = 1 / draws;
+export function packFrequency(p: number): string {
+  if (p <= 0) return 'Never';
+  if (p >= 0.999) return 'Every pack';
+  if (p >= 0.5) return `${Math.round(p * 100)}% of packs`;
+  const every = 1 / p;
   return every < 10 ? `1 pack in ${every.toFixed(1)}` : `1 pack in ${Math.round(every)}`;
 }
 

@@ -2829,6 +2829,32 @@ draws over 80 cards against 3.25 over 45 — so the two swap tiers. Arithmetical
 honest, driven by the player's own card counts, and it reads oddly. Ranking on
 rung order instead is a one-line change in `tiersForLadder`.
 
+### Four defects the screen found once it was drivable
+
+Every one of these was found by AJ building a real pack, not by reading code.
+
+- **The summary reported expected DRAWS as if it were a probability.** They add;
+  probabilities do not. A rung in three slots at 80/67/30 sums to 1.77 and read
+  as "every pack", but all three miss 4.7% of the time. `packOdds` computes
+  `1 - PROD(1 - p)`. `slotDraws` stays, because the pull rate genuinely is
+  expected copies — the two answer different questions and both are needed.
+- **The weight field could not hold a decimal.** `parseFloat('0.')` is 0, a zero
+  weight deletes the rung, and the field re-rendered empty — so the dot was
+  swallowed and no weight below 1 was reachable. A chase rung bottomed out near
+  one in three hundred. A raw-text draft per field fixes it; one in ten thousand
+  is now typeable.
+- **`pct` rounded to whole percent**, so a 0.01% share rendered `0%` and looked
+  like the number had not taken. `shareText` follows the magnitude.
+- **The first card of every set shipped plain holo.** `pickFinish` was seeded
+  from a hard-coded `['holo']` and only resynced when the dropdown CHANGED.
+  `Crafted.finishes` is now `Finish[] | null`, null meaning "follow the rung",
+  and the inheritance resolves at commit — so a rung edited afterwards reaches
+  the cards already made on it.
+
+Ten slots each listing seven rungs was a screen and a half of scrolling, so the
+slots are a tile grid now, with the weight editor opening under it for the one
+slot being worked on.
+
 ### Also fixed
 
 The stop dialog rendered `e.kind`, so a licensing offer reached the player as

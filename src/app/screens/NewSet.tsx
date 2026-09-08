@@ -20,7 +20,7 @@ import { money, moneyExact, pct } from '../format.ts';
 import { commit, getMeta, saveFormat, setSetEra } from '../store.ts';
 import {
   DEFAULT_ROWS, DEFAULT_SLOTS, COMMON_ROW_ID, newRowId, newSlotId,
-  slotDraws, derivePulls, tiersForLadder, packFrequency, finishText,
+  slotDraws, derivePulls, tiersForLadder, packOdds, packFrequency, shareText, finishText,
   type Finish, type RarityRow, type PackSlot,
 } from '../setdesign.ts';
 import { FinishPicker } from './FinishPicker.tsx';
@@ -40,7 +40,21 @@ function firstArtist(s: SimState): ArtistId | null {
  * longer identifies a row, and keying on one would merge two rungs into a
  * single bucket and orphan the cards in it.
  */
-interface Crafted { ipId: IpId; rowId: string; finishes: Finish[] }
+interface Crafted {
+  ipId: IpId; rowId: string;
+  /**
+   * NULL means "whatever the rung prints", and that is the default.
+   *
+   * A rung already carries its finishes — that is what makes it a rung rather
+   * than a label — so a card on it should print like it without being told.
+   * Storing the inheritance rather than a copy means editing the rung on the
+   * previous step updates its cards, instead of leaving the ones already made
+   * behind at whatever the rung printed when they were added.
+   *
+   * An array is a deliberate override for this one card.
+   */
+  finishes: Finish[] | null;
+}
 
 /**
  * Cards of the same character, grouped as a run collectors chase.
@@ -122,6 +136,10 @@ export function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void;
   // Odds are no longer a property of a rung. They are what the pack's slots
   // imply, so both of these are derived and neither is editable here.
   const draws = slotDraws(slots);
+  // Two different questions. `draws` is expected COPIES, which is what a pull
+  // rate is; `odds` is the chance a pack holds at least one, which is what the
+  // summary reports. Summing draws to answer the second one overstates it.
+  const odds = packOdds(slots);
   const pulls = derivePulls(slots, rows, commons);
   const finished = allRows.filter(r => r.finishes.length > 0).reduce((n, r) => n + r.count, 0);
   const finishShare = size > 0 ? finished / size : 0;
@@ -172,8 +190,12 @@ export function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void;
               kind: 'variant' as const,
             }
           : undefined;
+        // A null finish means the card follows its rung, so the inheritance is
+        // resolved HERE rather than copied when the card was added — a rung
+        // edited afterwards still reaches the cards already made on it.
+        const rungOf = allRows.find(r => r.id === c.rowId);
         api.designCard(st, setId, c.ipId, [], tierFor(c.rowId), a, link, undefined,
-          c.finishes, pullFor(c.rowId));
+          c.finishes ?? rungOf?.finishes ?? [], pullFor(c.rowId));
       });
       // The rest of the list, filling each rung to the count the player set.
       for (const row of allRows) {
@@ -438,7 +460,7 @@ How many cards exist in the set. It does not change what a pack holds — you bu
 
         {step === 2 && (
           <PackStep rows={allRows} slots={slots} setSlots={setSlots}
-            draws={draws} />
+            draws={draws} odds={odds} />
         )}
 
         {step === 3 && (
@@ -572,11 +594,24 @@ function Pane({ step, dir, children }: { step: number; dir: number; children: Re
  * same slot. That is deliberate: it lets a studio think in percentages without
  * the screen refusing to render until they sum to a hundred.
  */
-function PackStep({ rows, slots, setSlots, draws }: {
+function PackStep({ rows, slots, setSlots, draws, odds }: {
   rows: RarityRow[]; slots: PackSlot[];
   setSlots: (v: PackSlot[]) => void;
-  draws: Record<string, number>;
+  draws: Record<string, number>; odds: Record<string, number>;
 }) {
+  const [openSlot, setOpenSlot] = useState<string | null>(null);
+  /**
+   * What the studio is TYPING, per weight field, before it parses.
+   *
+   * The field cannot be driven by the parsed number alone. `parseFloat('0.')`
+   * is 0, a zero weight removes the rung from the slot, and the field then
+   * re-renders empty — so the dot is swallowed and no weight below 1 can ever
+   * be entered. That is the whole reason a chase rung bottomed out around one
+   * in three hundred. The draft holds the raw text until it parses to
+   * something, and is dropped on blur so the field returns to the real value.
+   */
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const labelOf = (id: string) => rows.find(r => r.id === id)?.label ?? '\u2014';
   const setSlot = (i: number, patch: Partial<PackSlot>) =>
     setSlots(slots.map((sl, j) => (j === i ? { ...sl, ...patch } : sl)));
 
@@ -599,12 +634,70 @@ function PackStep({ rows, slots, setSlots, draws }: {
         </div>
       </div>
 
+      {/*
+        A grid of tiles, not a stack of panels. Ten slots each listing seven
+        rungs is a screen and a half of scrolling to see a pack that is one
+        object; the tile carries only what a slot actually draws, and the full
+        weight editor opens under the grid for the one slot being worked on.
+        `auto-fill` rather than a fixed count, so a phone gets two across and a
+        desktop five without a second layout.
+      */}
+      <div style={{
+        display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(148px, 1fr))',
+        gap: 7, padding: '10px 16px 0',
+      }}>
+        {slots.map((sl, i) => {
+          const total = Object.values(sl.odds).reduce((n, w) => n + Math.max(0, w), 0);
+          const drawn = Object.entries(sl.odds).filter(([, w]) => w > 0)
+            .sort((a, b) => b[1] - a[1]);
+          const open = openSlot === sl.id;
+          return (
+            <button key={sl.id} type="button" onClick={() => setOpenSlot(open ? null : sl.id)}
+              style={{
+                textAlign: 'left', padding: '7px 8px 8px', borderRadius: 2, cursor: 'pointer',
+                fontFamily: 'inherit', color: C.ink, touchAction: 'manipulation',
+                background: open ? C.raised : C.panel,
+                border: `1px solid ${open ? C.go : total <= 0 ? C.bad : C.rule}`,
+              }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
+                <span style={{ ...micro, color: C.dim }}>{String(i + 1).padStart(2, '0')}</span>
+                <span style={{
+                  fontSize: 11.5, fontWeight: 600, minWidth: 0, overflow: 'hidden',
+                  textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>{sl.label}</span>
+              </div>
+              {total <= 0
+                ? <div style={{ ...micro, color: C.bad, marginTop: 5 }}>DRAWS NOTHING</div>
+                : drawn.slice(0, 4).map(([rowId, w]) => (
+                    <div key={rowId} style={{
+                      display: 'flex', justifyContent: 'space-between', gap: 5, marginTop: 3,
+                      fontSize: 10.5, color: C.muted,
+                    }}>
+                      <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {labelOf(rowId)}
+                      </span>
+                      <span style={{ ...num, color: C.ink3 }}>{shareText(w / total)}</span>
+                    </div>
+                  ))}
+              {total > 0 && drawn.length > 4 && (
+                <div style={{ ...micro, color: C.dimmer, marginTop: 3 }}>+{drawn.length - 4} MORE</div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* The one slot being worked on. Full weights, one row per rung. */}
       {slots.map((sl, i) => {
+        if (sl.id !== openSlot) return null;
         const total = Object.values(sl.odds).reduce((n, w) => n + Math.max(0, w), 0);
         return (
-          <div key={sl.id} style={{ borderTop: `1px solid ${C.rule}`, background: C.panel, padding: '10px 16px' }}>
+          <div key={sl.id} style={{
+            margin: '10px 16px 0', padding: '10px 12px 12px',
+            background: C.raised, border: `1px solid ${C.go}`, borderRadius: 2,
+          }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ ...micro, color: C.dim, minWidth: 28 }}>{String(i + 1).padStart(2, '0')}</span>
+              <span style={{ ...micro, color: C.dim, minWidth: 22 }}>{String(i + 1).padStart(2, '0')}</span>
               <input value={sl.label} onChange={e => setSlot(i, { label: e.target.value })}
                 aria-label={`Name for slot ${i + 1}`} style={{
                   flex: 1, fontSize: 12.5, background: 'none', border: 'none',
@@ -612,8 +705,10 @@ function PackStep({ rows, slots, setSlots, draws }: {
                   fontFamily: 'inherit', padding: '2px 0', outline: 'none',
                 }} />
               <button type="button" aria-label={`Remove slot ${i + 1}`}
-                onClick={() => setSlots(slots.filter((_, j) => j !== i))}
+                onClick={() => { setOpenSlot(null); setSlots(slots.filter((_, j) => j !== i)); }}
                 style={{ ...pillBtn, color: C.bad }}>×</button>
+              <button type="button" aria-label="Close slot" onClick={() => setOpenSlot(null)}
+                style={{ ...pillBtn, width: 'auto', padding: '0 10px', fontSize: 11 }}>Done</button>
             </div>
 
             {rows.map(r => {
@@ -621,16 +716,26 @@ function PackStep({ rows, slots, setSlots, draws }: {
               const share = total > 0 ? w / total : 0;
               return (
                 <div key={r.id} style={{
-                  display: 'grid', gridTemplateColumns: '1fr 62px 52px', gap: 8,
+                  display: 'grid', gridTemplateColumns: '1fr 66px 60px', gap: 8,
                   alignItems: 'center', marginTop: 6,
                 }}>
-                  <div style={{ fontSize: 12, color: w > 0 ? C.ink : C.dimmer, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {r.label}
-                  </div>
-                  <input inputMode="decimal" value={w === 0 ? '' : String(w)} placeholder="0"
+                  <div style={{
+                    fontSize: 12, color: w > 0 ? C.ink : C.dimmer, minWidth: 0,
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>{r.label}</div>
+                  <input inputMode="decimal" placeholder="0"
+                    value={draft[`${sl.id}:${r.id}`] ?? (w === 0 ? '' : String(w))}
                     aria-label={`${r.label} weight in slot ${i + 1}`}
+                    onBlur={() => setDraft(d => {
+                      const { [`${sl.id}:${r.id}`]: _done, ...rest } = d;
+                      return rest;
+                    })}
                     onChange={e => {
-                      const v = Math.max(0, parseFloat(e.target.value.replace(/[^0-9.]/g, '')) || 0);
+                      // One leading number and at most one dot. Keep the raw
+                      // text so `0.`, `0.0` and `0.01` are all typeable.
+                      const raw = e.target.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1');
+                      setDraft(d => ({ ...d, [`${sl.id}:${r.id}`]: raw }));
+                      const v = Math.max(0, parseFloat(raw) || 0);
                       const next = { ...sl.odds };
                       if (v <= 0) delete next[r.id]; else next[r.id] = v;
                       setSlot(i, { odds: next });
@@ -641,7 +746,7 @@ function PackStep({ rows, slots, setSlots, draws }: {
                       ...num, fontSize: 12.5, outline: 'none', width: '100%', textAlign: 'right',
                     }} />
                   <div style={{ ...num, fontSize: 11, color: C.muted, textAlign: 'right' }}>
-                    {share > 0 ? pct(share) : '—'}
+                    {shareText(share)}
                   </div>
                 </div>
               );
@@ -654,9 +759,12 @@ function PackStep({ rows, slots, setSlots, draws }: {
       })}
 
       <div style={{ padding: '12px 16px 0' }}>
-        <button type="button" onClick={() => setSlots([...slots, {
-          id: newSlotId(), label: `Slot ${slots.length + 1}`, odds: { [COMMON_ROW_ID]: 100 },
-        }])} style={{
+        <button type="button" onClick={() => {
+          const id = newSlotId();
+          setSlots([...slots, { id, label: `Slot ${slots.length + 1}`, odds: { [COMMON_ROW_ID]: 100 } }]);
+          // A new slot is always the one you want to edit next.
+          setOpenSlot(id);
+        }} style={{
           width: '100%', height: 40, background: 'transparent', color: C.ink,
           border: `1px dashed ${C.border}`, borderRadius: 2, fontSize: 12.5,
           fontFamily: 'inherit', cursor: 'pointer', touchAction: 'manipulation',
@@ -675,16 +783,17 @@ function PackStep({ rows, slots, setSlots, draws }: {
           <div style={{ fontSize: 12, color: draws[r.id] ? C.ink : C.dimmer }}>{r.label}</div>
           <div style={{
             ...num, fontSize: 11.5, textAlign: 'right',
-            color: (draws[r.id] ?? 0) >= 1 ? C.note : C.muted,
+            color: (odds[r.id] ?? 0) >= 0.999 ? C.note : C.muted,
           }}>
-            {packFrequency(draws[r.id] ?? 0)}
+            {packFrequency(odds[r.id] ?? 0)}
           </div>
         </div>
       ))}
       <div style={{ padding: '12px 16px 0', fontSize: 11, lineHeight: 1.42, color: C.muted }}>
-        HOW OFTEN is whether a pack holds one of that rung at all. The odds of any ONE card still
-        fall as you add cards to a rung — the same draws split further — so a rung's size is a real
-        lever even though it does not change the line above. You set the pack; the odds follow.
+        HOW OFTEN is the chance a pack holds at least one of that rung, across every slot that can
+        draw it. A rung in three slots is not guaranteed just because its slots average more than
+        one — they can all miss. The odds of any ONE card fall further as you add cards to a rung,
+        so a rung's size is a real lever even though it does not move the line above.
       </div>
     </>
   );
@@ -697,10 +806,17 @@ function CardsStep({ s, rows, crafted, setCrafted, ips, size }: {
 }) {
   const [pickIp, setPickIp] = useState<string>(ips[0] ? String(ips[0]!.id) : '');
   const [pickRow, setPickRow] = useState<string>(rows[1] ? rows[1]!.id : COMMON_ROW_ID);
-  const [pickFinish, setPickFinish] = useState<Finish[]>(['holo']);
+  // Null follows the rung. It is not seeded from a hard-coded finish, which is
+  // what made the FIRST card of every set ship plain holo no matter which rung
+  // it sat on — the old seed only resynced when the dropdown changed.
+  const [pickFinish, setPickFinish] = useState<Finish[] | null>(null);
   const nameOf = (id: string) => Object.values(s.ips).find(i => String(i.id) === id)?.name ?? id;
   const roomAt = (rowId: string) =>
     (rows.find(x => x.id === rowId)?.count ?? 0) - crafted.filter(c => c.rowId === rowId).length;
+  const rungFinishes = (rowId: string): Finish[] => rows.find(x => x.id === rowId)?.finishes ?? [];
+  /** What a crafted card actually prints: its override, else its rung's. */
+  const finishesOf = (c: Crafted): Finish[] => c.finishes ?? rungFinishes(c.rowId);
+  const pickEffective = pickFinish ?? rungFinishes(pickRow);
 
   return (
     <>
@@ -724,7 +840,7 @@ function CardsStep({ s, rows, crafted, setCrafted, ips, size }: {
         }}>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontFamily: MONO, fontWeight: 600, fontSize: 15 }}>{nameOf(String(c.ipId))}</div>
-            <div style={{ ...micro, letterSpacing: '0.07em' }}>{finishText(c.finishes).toUpperCase()}</div>
+            <div style={{ ...micro, letterSpacing: '0.07em' }}>{finishText(finishesOf(c)).toUpperCase()}</div>
           </div>
           <div style={{ fontSize: 11.5, color: C.ink3 }}>
             {rows.find(r => r.id === c.rowId)?.label ?? '\u2014'}
@@ -741,10 +857,10 @@ function CardsStep({ s, rows, crafted, setCrafted, ips, size }: {
           {ips.map(ip => <option key={String(ip.id)} value={String(ip.id)}>{ip.name}</option>)}
         </select>
         <select value={pickRow} onChange={e => {
-          const id = e.target.value;
-          setPickRow(id);
-          // Start from what that rung already prints; the card can then differ.
-          setPickFinish(rows.find(x => x.id === id)?.finishes ?? []);
+          setPickRow(e.target.value);
+          // Back to following the new rung. An override belongs to the card the
+          // player was building, not to the next one.
+          setPickFinish(null);
         }} style={selectStyle}>
           {rows.map(r => (
             <option key={r.id} value={r.id} disabled={roomAt(r.id) <= 0}>
@@ -752,7 +868,17 @@ function CardsStep({ s, rows, crafted, setCrafted, ips, size }: {
             </option>
           ))}
         </select>
-        <FinishPicker value={pickFinish} onChange={setPickFinish} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ ...micro, color: pickFinish === null ? C.note : C.muted }}>
+            {pickFinish === null ? 'PRINTS LIKE ITS RUNG' : 'CUSTOM PRINTING'}
+          </span>
+          {pickFinish !== null && (
+            <button type="button" onClick={() => setPickFinish(null)} style={{
+              ...pillBtn, width: 'auto', padding: '0 10px', fontSize: 11, marginLeft: 'auto',
+            }}>Follow the rung</button>
+          )}
+        </div>
+        <FinishPicker value={pickEffective} onChange={setPickFinish} />
         <Button tone="quiet" disabled={!pickIp || roomAt(pickRow) <= 0} onClick={() =>
           setCrafted([...crafted, { ipId: pickIp as IpId, rowId: pickRow, finishes: pickFinish }])}>
           Add card
