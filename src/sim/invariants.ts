@@ -260,5 +260,15 @@ export function checkInvariants(s: SimState): string[] {
 
   if (!Number.isFinite(s.market.climate)) bad.push('market climate not finite');
 
+  // The desire weights must sum to 1, because that is the entire property the
+  // budget buys: a new signal can only take SHARE, never inflate the total. If
+  // they drift apart, adding a mechanism quietly starts adding desire again and
+  // the checklist card comes back — which is the failure the budget replaced.
+  const w = s.config.desire.weights;
+  const sum = Object.values(w).reduce((n, x) => n + x, 0);
+  if (Math.abs(sum - 1) > 1e-9) {
+    bad.push(`desire weights sum to ${sum}, not 1 — the budget is not a budget`);
+  }
+
   return bad;
 }

@@ -1491,14 +1491,67 @@ function treatmentDesire(s: SimState, card: Card, setId: SetId | null): number {
 function castDesire(s: SimState, card: Card): number {
   const cfg = s.config;
   const subj = s.ips[card.subjectIp]!;
-  let d = subj.affection + subj.resurgence * cfg.affection.resurgenceToModernDemand * 100;
-  for (const cid of card.cameos) d += s.ips[cid]!.affection * cfg.value.cameoWeight;
-  d += chainDesire(s, card);
-  // A finish is a reason to want the card. Weight 0 until the sweep fits it.
-  if (cfg.treatments.desirePerFinish !== 0) {
-    d += treatmentDesire(s, card, setOfCard(s, card.id));
+  // Who is ON the card. This half is never budgeted — a loved character is
+  // worth what they are worth, and the budget bounds what the card CONNECTS to.
+  const base = subj.affection + subj.resurgence * cfg.affection.resurgenceToModernDemand * 100;
+
+  if (cfg.desire.bonusBudget <= 0) {
+    // The legacy additive sum. Every connection term unbounded and independent,
+    // which is exactly the shape §2 says stops scaling past four terms. Kept as
+    // the default so the restructure lands byte-identical.
+    let d = base;
+    for (const cid of card.cameos) d += s.ips[cid]!.affection * cfg.value.cameoWeight;
+    d += chainDesire(s, card);
+    if (cfg.treatments.desirePerFinish !== 0) {
+      d += treatmentDesire(s, card, setOfCard(s, card.id));
+    }
+    return Math.max(1, d);
   }
-  return Math.max(1, d);
+
+  // The budgeted bundle. Every signal contributes on every card; only the TOTAL
+  // is bounded, so a new mechanic can take share and can never inflate.
+  const w = cfg.desire.weights;
+  let bundle = 0;
+  for (const [k, sig] of Object.entries(desireSignals(s, card))) {
+    bundle += (w as Record<string, number>)[k]! * sig;
+  }
+  return Math.max(1, base + cfg.desire.bonusBudget * bundle);
+}
+
+/**
+ * Every connection signal a card carries, each normalised to 0..1.
+ *
+ * Normalisation is what makes the weights comparable, and it is the only place
+ * a signal's own scale lives. Four of the eight are 0 because the mechanism
+ * behind them is not built — landing a signal at 0 rather than omitting it is
+ * the C11 rule, and it means the weight table already shows the whole design.
+ */
+function desireSignals(s: SimState, card: Card): Record<string, number> {
+  const cfg = s.config;
+  const unit = (x: number): number => Math.max(0, Math.min(1, x));
+
+  let cameo = 0;
+  for (const cid of card.cameos) cameo += s.ips[cid]?.affection ?? 0;
+
+  const links = cfg.chains.maxCountedLinks;
+  const progression = card.progressionLink
+    ? unit((s.chains[card.progressionLink.chainId]?.cardIds.length ?? 0) / links) : 0;
+  const illustration = card.illustrationLink
+    ? unit((s.chains[card.illustrationLink]?.cardIds.length ?? 0) / links) : 0;
+
+  return {
+    cameo: unit(cameo / Math.max(1, cfg.desire.cameoReference)),
+    progression,
+    illustration,
+    // A finish is a connection to the set's own gimmick. `treatmentDesire`
+    // already carries the saturation rule, so this only rescales it.
+    treatment: unit(treatmentDesire(s, card, setOfCard(s, card.id))
+      / Math.max(1e-9, cfg.treatments.desirePerFinish * 3)),
+    relation: 0,
+    affiliation: 0,
+    variantGroup: 0,
+    community: 0,
+  };
 }
 
 /**

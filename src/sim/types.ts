@@ -1994,6 +1994,17 @@ export interface SimConfig {
     exposureShare: number;
   };
 
+  desire: {
+    /** Total the connection bundle is worth. 0 keeps the legacy additive sum. */
+    bonusBudget: number;
+    /** How the budget divides. Must sum to 1. */
+    weights: {
+      cameo: number; progression: number; illustration: number; treatment: number;
+      relation: number; affiliation: number; variantGroup: number; community: number;
+    };
+    /** Cameo affection at which the cameo signal saturates. */
+    cameoReference: number;
+  };
   treatments: {
     /** Extra print cost per finish, as a share of the pack unit cost. */
     costPerFinish: number;

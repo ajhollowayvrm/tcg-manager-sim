@@ -1196,6 +1196,66 @@ export const defaultConfig: SimConfig = {
    * while it is RARE. Past `saturationShare` of the set it stops reading as a
    * special card and the premium falls away, while the bill does not.
    */
+  /**
+   * The desire budget.
+   *
+   * `castDesire` is a plain sum: affection, resurgence, cameos, chains. Four
+   * more signals are specified — character relations, affiliation, variant
+   * groups, and the pairings the community invents — and
+   * `docs/design/sets-and-distribution.md` §2 settles what happens if they are
+   * simply added: eight additive terms on one number, nothing stopping a card
+   * qualifying for all eight, so the optimal card becomes a checklist, every
+   * card becomes that card, and each mechanic stops being a decision.
+   *
+   * The answer is a BUDGET, not a cap. No term is ever dropped or beaten by a
+   * `max()`. Every signal contributes on every card; what is bounded is the
+   * total:
+   *
+   *     desire = affection + resurgence                  <- who is on the card
+   *            + bonusBudget x SUM(w_i x signal_i)       <- what it connects to
+   *
+   * with SUM(w) = 1 and each signal in 0..1. **The property that solves the
+   * problem is that a new mechanic can only take share** — it can never inflate
+   * the total, so adding a ninth signal forces a re-division somebody has to
+   * defend.
+   *
+   * **The budget is ADDED, never multiplied, and that is load-bearing.**
+   * `chainTerm` pays an illustration chain MORE when the subject is weak — the
+   * hedge against a weak subject. A multiplicative bundle scales with affection
+   * and would invert that; an additive one preserves it for free, because the
+   * same absolute bonus is worth far more at affection 4 than at 60.
+   *
+   * **`bonusBudget` 0 means the legacy path**, and that is deliberate: the
+   * restructure lands byte-identical, and dividing the budget is one measured
+   * sweep afterwards. HANDOFF already flags that a single illustration chain
+   * produces a 349% price lift at affection 5 and may be too strong, so
+   * whatever the budget should be, it is smaller than what one term does today.
+   */
+  desire: {
+    /** Total the connection bundle is worth. 0 keeps the old additive sum. */
+    bonusBudget: 0,
+    /**
+     * How the budget divides. **These must sum to 1.** The four zeros are the
+     * signals that do not exist yet; landing each at 0 is the C11 rule.
+     */
+    weights: {
+      cameo: 0.25,
+      progression: 0.3,
+      illustration: 0.3,
+      treatment: 0.15,
+      /** Character relation graph — `characters.md`. Not built. */
+      relation: 0,
+      /** Faction affiliation — `characters.md` §3. Not built. */
+      affiliation: 0,
+      /** A complete variant run, the third chain kind. Not built. */
+      variantGroup: 0,
+      /** Pairings the in-game audience invented — `communitySentiment`. Not built. */
+      community: 0,
+    },
+    /** Cameo affection at which the cameo signal saturates. */
+    cameoReference: 120,
+  },
+
   treatments: {
     /**
      * Extra print cost per treated card, as a share of the pack's unit cost,
