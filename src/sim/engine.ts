@@ -972,14 +972,23 @@ function applyDecision(s: SimState, d: Decision): void {
       break;
     case 'borrow': {
       const pub = s.publishers[s.playerId]!;
-      pub.cash = C(pub.cash + d.payload.amount);
-      pub.debt = C(pub.debt + d.payload.amount);
+      // The lender has a limit, and this handler did not know about it: it took
+      // any amount and booked it. Nothing called it, so the hole never opened,
+      // but the moment a UI does, an unclamped loan is infinite money.
+      const room = Math.max(0, borrowCeiling(s, pub) - pub.debt);
+      const amt = Math.round(Math.min(d.payload.amount, room));
+      if (amt <= 0) break;
+      pub.cash = C(pub.cash + amt);
+      pub.debt = C(pub.debt + amt);
+      pub.ledger.push({ t: s.tick, amount: C(amt), category: 'principal', note: 'drew on the loan' });
       break;
     }
     case 'repay': {
       const pub = s.publishers[s.playerId]!;
-      const amt = Math.min(pub.cash, pub.debt, d.payload.amount);
+      const amt = Math.round(Math.min(pub.cash, pub.debt, d.payload.amount));
+      if (amt <= 0) break;
       pub.cash = C(pub.cash - amt); pub.debt = C(pub.debt - amt);
+      pub.ledger.push({ t: s.tick, amount: C(-amt), category: 'principal', note: 'paid down the loan' });
       break;
     }
     case 'commissionArt': {
@@ -990,8 +999,8 @@ function applyDecision(s: SimState, d: Decision): void {
       hireArtist(s, d.payload.artistId, d.payload.terms);
       break;
     }
-    // Not simulated yet: signCollab, unlockRegion, advance. `purchaseUnlock`
-    // handles its channel branch only.
+    // `advance` is deliberately a no-op here: it exists so a decision log can
+    // record a skip, and the exported `advance()` does the work.
     default: break;
   }
 }
@@ -1090,6 +1099,24 @@ export const api = {
   },
   hireArtist(s: SimState, artistId: ArtistId, terms: ArtistTerms): void {
     submit(s, { type: 'hireArtist', tick: s.tick, payload: { artistId, terms } });
+  },
+  /**
+   * Draw on the loan, on purpose.
+   *
+   * The `borrow` decision and its handler have existed since the engine was
+   * written and nothing ever called them, so every loan in the game was the
+   * automatic overdraft in `tickFinance` firing after cash had already gone
+   * negative. That makes borrowing a consequence. This makes it a decision.
+   *
+   * The amount is clamped to what the lender will still extend — see
+   * `borrowCeiling`.
+   */
+  borrow(s: SimState, amount: Cents): void {
+    submit(s, { type: 'borrow', tick: s.tick, payload: { amount } });
+  },
+  /** Pay debt down early. Clamped to cash and to what is owed. */
+  repay(s: SimState, amount: Cents): void {
+    submit(s, { type: 'repay', tick: s.tick, payload: { amount } });
   },
   scheduleDrop(s: SimState, productId: ProductId, channelId: ChannelId, atTick: Tick, units: number): DropId {
     const id = nextId(s, 'drop') as DropId;
@@ -2592,6 +2619,39 @@ function overprintUnitsThreshold(s: SimState): number {
   return Math.max(s.config.finance.overprintDeathUnits, meanRun * 2.5);
 }
 
+/**
+ * What the bank will lend this publisher, in total, right now.
+ *
+ * Extracted from `tickFinance` so two callers can share it: the automatic
+ * overdraft that fires when cash goes negative, and `api.borrow`, which had no
+ * ceiling of its own and would happily have lent past it.
+ *
+ * **Pure, and it draws nothing.** The ledger screen renders this every repaint,
+ * and screens-audit rule 2 says reading the world must not change it.
+ */
+export function borrowCeiling(s: SimState, pub: Publisher): number {
+  const cfg = s.config.finance;
+  // What the studio has sold lately, annualised. The ledger is append-only and
+  // ordered, so this walks back from the end and stops at the window edge
+  // rather than reading thirty years of entries every tick.
+  let recent = 0;
+  const from = s.tick - cfg.borrowCeilingRevenueWeeks;
+  for (let i = pub.ledger.length - 1; i >= 0; i--) {
+    const e = pub.ledger[i]!;
+    if (e.t < from) break;
+    if (e.category === 'sales') recent += e.amount;
+  }
+  const annualised = recent * (52 / Math.max(1, cfg.borrowCeilingRevenueWeeks));
+  // A lender lends against the business. A studio with no sales gets the floor
+  // and nothing more, which is what stops "do nothing" being funded by the bank
+  // for four years after the cash runs out.
+  const lendable = s.tick < cfg.borrowCeilingGraceTicks ? 1
+    : cfg.borrowCeilingIdleFloor + (1 - cfg.borrowCeilingIdleFloor)
+      * Math.min(1, annualised / Math.max(1, cfg.borrowCeilingRevenueReference));
+  return cfg.borrowCeilingBase * cfg.borrowCeilingMultiple
+    * (0.3 + pub.credit) * lendable;
+}
+
 function tickFinance(s: SimState): void {
   const cfg = s.config.finance;
   const pub = s.publishers[s.playerId]!;
@@ -2662,25 +2722,7 @@ function tickFinance(s: SimState): void {
     if (interest > 0) pub.ledger.push({ t: s.tick, amount: C(-interest), category: 'interest', note: 'debt service' });
   }
 
-  // What the studio has sold lately, annualised. The ledger is append-only and
-  // ordered, so this walks back from the end and stops at the window edge
-  // rather than reading thirty years of entries every tick.
-  let recent = 0;
-  const from = s.tick - cfg.borrowCeilingRevenueWeeks;
-  for (let i = pub.ledger.length - 1; i >= 0; i--) {
-    const e = pub.ledger[i]!;
-    if (e.t < from) break;
-    if (e.category === 'sales') recent += e.amount;
-  }
-  const annualised = recent * (52 / Math.max(1, cfg.borrowCeilingRevenueWeeks));
-  // A lender lends against the business. A studio with no sales gets the floor
-  // and nothing more, which is what stops "do nothing" being funded by the bank
-  // for four years after the cash runs out.
-  const lendable = s.tick < cfg.borrowCeilingGraceTicks ? 1
-    : cfg.borrowCeilingIdleFloor + (1 - cfg.borrowCeilingIdleFloor)
-      * Math.min(1, annualised / Math.max(1, cfg.borrowCeilingRevenueReference));
-  const ceiling = cfg.borrowCeilingBase * cfg.borrowCeilingMultiple
-    * (0.3 + pub.credit) * lendable;
+  const ceiling = borrowCeiling(s, pub);
   if (pub.cash < 0) {
     const need = -pub.cash;
     if (pub.debt + need <= ceiling) {

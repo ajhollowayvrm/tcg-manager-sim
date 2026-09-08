@@ -386,3 +386,15 @@ export function Legend({ items }: { items: Array<{ label: string; color: string;
     </div>
   );
 }
+
+/** A small square control: a stepper nub, a remove cross, a toggle chip. */
+export const pillBtn = {
+  width: 32, height: 32, background: C.raised, color: C.ink, border: `1px solid ${C.rule}`,
+  borderRadius: 2, fontSize: 14, fontFamily: 'inherit', cursor: 'pointer', padding: 0,
+} as const;
+
+/** A native select, sized for a thumb. */
+export const selectStyle = {
+  height: 44, background: C.panel, color: C.ink, border: `1px solid ${C.rule}`,
+  borderRadius: 2, fontSize: 13, fontFamily: 'inherit', padding: '0 10px', width: '100%',
+} as const;
