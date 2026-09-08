@@ -1153,6 +1153,24 @@ export const defaultConfig: SimConfig = {
     illustrationSpansSetsBonus: 2.0,
     illustrationWeakSubjectFloor: 0.25,
     subjectReference: 60,
+    /**
+     * What one link of a VARIANT run is worth.
+     *
+     * Three cards, all the same character, at three rarities. Collectors chase
+     * the complete run, which is pull demand — the shape `chainTerm` already
+     * models. Starts equal to `desirePerLink`, so a variant chain behaves like
+     * a progression chain until somebody separates them deliberately.
+     */
+    variantDesirePerLink: 6,
+    /**
+     * What printing a progression chain IN ORDER is worth, as a multiplier on
+     * the chain term.
+     *
+     * **0 until fitted.** `progressionLink.position` had no reader at all, so a
+     * chain was an unordered set and shipping the middle of an evolution line
+     * first cost nothing.
+     */
+    orderBonus: 0,
   },
 
   creators: {

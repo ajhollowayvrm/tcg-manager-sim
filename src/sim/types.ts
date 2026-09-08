@@ -292,6 +292,24 @@ export interface IpEntity {
    */
   archetype: Archetype;
   /**
+   * The faction this character belongs to, if any.
+   *
+   * `relatedIps` was declared, read by nothing, and CUT in C12 on 2026-09-06.
+   * This brings the idea back with a reader this time, which is the only reason
+   * to re-add a struck field — `docs/design/characters.md` §3, and CONCEPT.md
+   * §13 must be edited when the weight comes off 0.
+   *
+   * `IpKind` already includes `faction`, so an affiliation is a link from a
+   * character IP to a faction IP. No new entity type. A faction accrues from
+   * every member's appearances and each member borrows a share back, so a
+   * stable of characters beats one hero and the roster becomes a portfolio.
+   *
+   * **It must stay weaker than a card chain**, or chains stop mattering.
+   *
+   * Optional, and its absence means the branch is not evaluated — the C11 rule.
+   */
+  affiliation: IpId | null;
+  /**
    * How old the character was when they debuted.
    *
    * Stored now, read when `characters.md` §2 lands: the age-cohort part of
@@ -371,7 +389,14 @@ export interface Card {
    */
   artSource: 'pending' | 'commissioned' | 'house';
 
-  progressionLink: { chainId: ChainId; position: number } | null;
+  /**
+   * Where this card sits in its chain, and which story the chain tells.
+   *
+   * `position` was declared and read by NOTHING, so a chain was an unordered
+   * set: Charmander, Charmeleon and Charizard paid the same in any print order.
+   * "Evolves into" is directional, and this is the field declared for it.
+   */
+  progressionLink: { chainId: ChainId; position: number; kind?: ChainKind } | null;
   illustrationLink: ChainId | null;
 
   flavorText: string;
@@ -385,7 +410,15 @@ export interface ArtBrief {
   notes: string;
 }
 
-export type ChainKind = 'progression' | 'illustration';
+/**
+ * What kind of pull a chain models.
+ *
+ * `variant` is the third kind, and it is the one AJ's own example asks for:
+ * three cards, all Aryla, at three rarities. Collectors chase the complete run,
+ * which is pull demand — exactly the shape `chainTerm` already models, so a
+ * variant group reuses it rather than inventing a mechanism.
+ */
+export type ChainKind = 'progression' | 'illustration' | 'variant';
 
 /**
  * A collectible chain. Incomplete chains create pull demand; chains spanning
@@ -1103,7 +1136,7 @@ export interface GradingSubmission {
  * ids in the decision log itself so a replay reconstructs identical entities.
  */
 export type Decision =
-  | { type: 'createIp'; tick: Tick; payload: { id: IpId; name: string; kind: IpKind; archetype?: Archetype; baseAge?: number } }
+  | { type: 'createIp'; tick: Tick; payload: { id: IpId; name: string; kind: IpKind; archetype?: Archetype; baseAge?: number; affiliation?: IpId | null } }
   | { type: 'createSet'; tick: Tick; payload: { id: SetId; name: string; setType: SetType; targetSize: number } }
   | {
       type: 'designCard'; tick: Tick; payload: {
@@ -1116,7 +1149,7 @@ export type Decision =
          * Puts this card in a collectible chain. The engine mints the chain the
          * first time one is named, so a caller does not have to create it first.
          */
-        progressionLink?: { chainId: ChainId; position: number };
+        progressionLink?: { chainId: ChainId; position: number; kind?: ChainKind };
         /** The art-subset chain. CONCEPT.md §4's hedge against a weak character. */
         illustrationLink?: ChainId;
       };
@@ -1985,6 +2018,10 @@ export interface SimConfig {
     illustrationWeakSubjectFloor: Unit;
     /** Affection at which a subject counts as fully carrying the card itself. */
     subjectReference: number;
+    /** What one link of a variant run is worth. */
+    variantDesirePerLink: number;
+    /** Multiplier for printing a progression chain in its declared order. */
+    orderBonus: number;
   };
 
   collabs: {

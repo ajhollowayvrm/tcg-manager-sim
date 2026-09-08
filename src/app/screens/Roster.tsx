@@ -6,11 +6,12 @@
  * the same contract in one place for every screen.
  */
 import { useState } from 'react';
-import type { SimState, IpId, Archetype } from '../../sim/types.ts';
+import type { SimState, IpId, IpKind, Archetype } from '../../sim/types.ts';
 import { api } from '../../sim/engine.ts';
 import { readAffection, displayTier } from '../../sim/readings.ts';
 import {
   C, MONO, num, label, micro, Screen, Scroll, Header, Button, Field, Stepper, Note, Empty,
+  selectStyle,
 } from '../ui.tsx';
 import { yearOf } from '../format.ts';
 import { commit, forgetCharacter } from '../store.ts';
@@ -110,6 +111,13 @@ export function NewCharacter({ s, onDone, onBack }: { s: SimState; onDone: () =>
   const [name, setName] = useState('');
   const [age, setAge] = useState(17);
   const [arch, setArch] = useState('Rival');
+  const [kind, setKind] = useState<IpKind>('character');
+  const [affiliation, setAffiliation] = useState<string>('');
+  // A faction is an IP like any other, so the roster can make one and a
+  // character can then belong to it. `IpKind` already had `faction`; nothing
+  // could create one.
+  const factions = Object.values(s.ips)
+    .filter(ip => ip.publisherId === s.playerId && ip.kind === 'faction');
   const willReach = age < 13 ? 'kids' : age < 20 ? 'teens' : 'adults';
   const adultYear = yearOf(s, s.tick) + Math.max(0, 20 - age);
   return (
@@ -118,16 +126,48 @@ export function NewCharacter({ s, onDone, onBack }: { s: SimState; onDone: () =>
       <Scroll>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 15, padding: '15px 18px 0' }}>
           <Field label="Name" value={name} onChange={setName} placeholder="Bram Kestrel" />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+          {kind === 'character' && <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
             <span style={label}>AGE AT DEBUT</span>
             <Stepper value={age} onChange={setAge} min={1} max={90} />
-          </div>
-          <Note>
+          </div>}
+          {kind === 'character' && <Note>
             Reaches <strong>{willReach}</strong> now
             {age < 20 && <> · <strong>adults</strong> from <span style={{ ...num }}>{adultYear}</span></>}
-          </Note>
+          </Note>}
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+            <span style={label}>WHAT IT IS</span>
+            <div style={{ display: 'flex', background: C.raised, border: `1px solid ${C.rule}`, borderRadius: 2, overflow: 'hidden' }}>
+              {(['character', 'faction', 'location', 'concept', 'event'] as IpKind[]).map(k => (
+                <button key={k} onClick={() => setKind(k)} style={{
+                  flexGrow: 1, height: 44, border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+                  background: kind === k ? C.ink : 'transparent',
+                  color: kind === k ? C.onAccent : C.muted,
+                  fontSize: 10.5, fontWeight: kind === k ? 600 : 400, textTransform: 'capitalize',
+                }}>{k}</button>
+              ))}
+            </div>
+            <div style={{ fontSize: 11, lineHeight: 1.4, color: C.dim }}>
+              A region has its own taste per kind, and only a character carries an archetype
+              or an age. A faction is what other characters can belong to.
+            </div>
+          </div>
+
+          {kind === 'character' && factions.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+              <span style={label}>BELONGS TO</span>
+              <select value={affiliation} onChange={e => setAffiliation(e.target.value)} style={selectStyle}>
+                <option value="">Nobody</option>
+                {factions.map(f => <option key={f.id} value={String(f.id)}>{f.name}</option>)}
+              </select>
+              <div style={{ fontSize: 11, lineHeight: 1.4, color: C.dim }}>
+                A faction gathers what its members earn and lends a share back, so a stable of
+                characters beats one hero. It is deliberately weaker than a card chain.
+              </div>
+            </div>
+          )}
+
+          {kind === 'character' && <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
               <span style={label}>ARCHETYPE</span>
               <span style={{ ...micro, color: C.dimmer }}>WHO THEY ARE / WHAT THEY SELL</span>
@@ -153,14 +193,16 @@ export function NewCharacter({ s, onDone, onBack }: { s: SimState; onDone: () =>
               distribution, never the result. The six ranges are identical until the table is
               fitted, so today the bet is the same shape whichever you pick.
             </div>
-          </div>
+          </div>}
         </div>
         <div style={{ padding: '16px 18px 34px' }}>
           <Button disabled={!name.trim()} onClick={() => {
             commit(st => {
-              api.createIp(st, name.trim(), 'character', {
-                archetype: arch.toLowerCase() as Archetype, baseAge: age,
-              });
+              api.createIp(st, name.trim(), kind, kind === 'character' ? {
+                archetype: arch.toLowerCase() as Archetype,
+                baseAge: age,
+                affiliation: (affiliation || null) as IpId | null,
+              } : {});
             });
             onDone();
           }}>Create {name.trim() || 'character'}</Button>

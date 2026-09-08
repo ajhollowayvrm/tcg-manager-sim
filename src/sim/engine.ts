@@ -4,7 +4,7 @@ import type {
   Printing, SimEvent, EventId, SetType, Rarity, ProductKind, PrintQualityTier,
   Treatment, ArtBrief, UnlockState, ChannelAllocation, Channel, SetPerformance,
   Drop, DropId, Grader, GradeTier, GradingSubmission, Collab, CollabId, AudienceSegment, ChainId,
-  Artist, Publisher, PublisherId, Commission, CommissionId, ArtistTerms, Archetype,
+  Artist, Publisher, PublisherId, Commission, CommissionId, ArtistTerms, Archetype, Chain,
 } from './types.ts';
 import { rand, randRange, randInt, pick, chance, gauss } from './rng.ts';
 import {
@@ -150,7 +150,7 @@ export function submit(s: SimState, d: Decision): void { s.inbox.push(d); }
 
 function createIp(
   s: SimState, id: IpId, name: string, kind: IpEntity['kind'],
-  archetype: Archetype = 'none', baseAge = 0,
+  archetype: Archetype = 'none', baseAge = 0, affiliation: IpId | null = null,
 ): void {
   const r = s.rng;
   const af = s.config.affection;
@@ -162,6 +162,8 @@ function createIp(
   s.ips[id] = {
     id, publisherId: s.playerId, name, kind, createdTick: s.tick,
     archetype: arch, baseAge,
+    // Only a faction can be an affiliation, and nothing may affiliate to itself.
+    affiliation: affiliation && s.ips[affiliation]?.kind === 'faction' ? affiliation : null,
     truth: {
       // The whole game lives in this roll. High variance is deliberate, and the
       // archetype changes the RANGE, never the number of draws — one extra
@@ -207,7 +209,7 @@ interface CardOverrides {
   treatments?: Treatment[];
   artBrief?: Partial<ArtBrief>;
   flavorText?: string;
-  progressionLink?: { chainId: ChainId; position: number };
+  progressionLink?: { chainId: ChainId; position: number; kind?: ChainKind };
   /**
    * The art-subset chain. CONCEPT.md §4 calls it "the hedge against a weak
    * character": a progression chain pays because collectors chase complete
@@ -254,7 +256,10 @@ function designCard(
   // `kind` used to be hardcoded `'progression'`, which is what made
   // `ChainKind`'s other variant unreachable and `Card.illustrationLink` a field
   // that was written `null` and read by nothing.
-  registerChainLink(s, id, setId, overrides.progressionLink?.chainId, 'progression');
+  // A variant run and an evolution line share the slot and the arithmetic; the
+  // caller says which story it is, and the kind is fixed when the chain mints.
+  registerChainLink(s, id, setId, overrides.progressionLink?.chainId,
+    overrides.progressionLink?.kind ?? 'progression');
   registerChainLink(s, id, setId, overrides.illustrationLink, 'illustration');
 }
 
@@ -283,7 +288,11 @@ function registerChainLink(
  * inside one set.
  */
 function chainDesire(s: SimState, card: Card): number {
-  return chainTerm(s, card, card.progressionLink?.chainId, 'progression')
+  const link = card.progressionLink?.chainId;
+  // A variant run and an evolution line are the same shape and different
+  // stories, so they share `chainTerm` and differ only in what a link pays.
+  const kind = link && s.chains[link]?.kind === 'variant' ? 'variant' : 'progression';
+  return chainTerm(s, card, link, kind)
     + chainTerm(s, card, card.illustrationLink ?? undefined, 'illustration');
 }
 
@@ -301,6 +310,33 @@ function chainDesire(s: SimState, card: Card): number {
  * least need it is not a hedge. A studio that built a set around a character
  * nobody bonded with still has the art, and the art is what carries it.
  */
+/**
+ * How much of a progression chain has been printed in its declared order, 0..1.
+ *
+ * `progressionLink.position` says where a card sits in the chain. A studio that
+ * ships the middle of an evolution line first has printed the same cards and
+ * told a worse story, and this is the number that says so.
+ *
+ * Only PRINTED members count, for the same reason `chainTerm` counts only
+ * printed ones: an announced chain must not be a free bonus.
+ */
+function printedInOrder(s: SimState, chain: Chain): number {
+  const printed: Array<{ pos: number; tick: number }> = [];
+  for (const cid of chain.cardIds) {
+    const pid = s.printingByCard[cid];
+    const card = s.cards[cid];
+    if (!pid || !card?.progressionLink) continue;
+    printed.push({ pos: card.progressionLink.position, tick: s.printings[pid]!.releaseTick });
+  }
+  if (printed.length < 2) return 0;
+  printed.sort((a, b) => a.tick - b.tick);
+  let inOrder = 0;
+  for (let i = 1; i < printed.length; i++) {
+    if (printed[i]!.pos > printed[i - 1]!.pos) inOrder++;
+  }
+  return inOrder / (printed.length - 1);
+}
+
 function chainTerm(s: SimState, card: Card, chainId: ChainId | undefined, kind: ChainKind): number {
   if (!chainId) return 0;
   const chain = s.chains[chainId];
@@ -316,8 +352,18 @@ function chainTerm(s: SimState, card: Card, chainId: ChainId | undefined, kind: 
   const links = Math.min(cfg.maxCountedLinks, printed);
   if (links <= 0) return 0;
 
-  if (kind === 'progression') {
-    return links * cfg.desirePerLink * (chain.spansSets ? cfg.spansSetsBonus : 1);
+  if (kind === 'progression' || kind === 'variant') {
+    // `progressionLink.position` was declared and read by nothing, so a chain
+    // was an unordered set: Charmander, Charmeleon and Charizard paid the same
+    // in any print order. "Evolves into" is DIRECTIONAL, and this is the field
+    // declared for exactly that.
+    //
+    // A chain printed in order is worth more than the same cards scattered.
+    // `orderBonus` is 0 until fitted, so today this multiplies by 1.
+    const ordered = chain.kind === 'progression' ? printedInOrder(s, chain) : 1;
+    const order = 1 + cfg.orderBonus * ordered;
+    const perLink = kind === 'variant' ? cfg.variantDesirePerLink : cfg.desirePerLink;
+    return links * perLink * (chain.spansSets ? cfg.spansSetsBonus : 1) * order;
   }
 
   const subject = s.ips[card.subjectIp];
@@ -1070,7 +1116,7 @@ function applyDecision(s: SimState, d: Decision): void {
   switch (d.type) {
     case 'createIp':
       createIp(s, d.payload.id, d.payload.name, d.payload.kind,
-        d.payload.archetype, d.payload.baseAge);
+        d.payload.archetype, d.payload.baseAge, d.payload.affiliation ?? null);
       break;
     case 'createSet': createSet(s, d.payload.id, d.payload.name, d.payload.setType, d.payload.targetSize); break;
     case 'designCard':
@@ -1171,12 +1217,15 @@ export const api = {
    */
   createIp(
     s: SimState, name: string, kind: IpEntity['kind'],
-    opts: { archetype?: Archetype; baseAge?: number } = {},
+    opts: { archetype?: Archetype; baseAge?: number; affiliation?: IpId | null } = {},
   ): IpId {
     const id = nextId(s, 'ip') as IpId;
     submit(s, {
       type: 'createIp', tick: s.tick,
-      payload: { id, name, kind, archetype: opts.archetype, baseAge: opts.baseAge },
+      payload: {
+        id, name, kind, archetype: opts.archetype, baseAge: opts.baseAge,
+        affiliation: opts.affiliation ?? null,
+      },
     });
     return id;
   },
@@ -1194,7 +1243,7 @@ export const api = {
    */
   designCard(
     s: SimState, setId: SetId, subjectIp: IpId, cameos: IpId[], rarity: Rarity, artistId: ArtistId,
-    progressionLink?: { chainId: ChainId; position: number },
+    progressionLink?: { chainId: ChainId; position: number; kind?: ChainKind },
     illustrationLink?: ChainId,
     treatments?: Treatment[],
   ): CardId {
@@ -1578,8 +1627,18 @@ function desireSignals(s: SimState, card: Card): Record<string, number> {
     treatment: unit(treatmentDesire(s, card, setOfCard(s, card.id))
       / Math.max(1e-9, cfg.treatments.desirePerFinish * 3)),
     relation: 0,
-    affiliation: 0,
-    variantGroup: 0,
+    // A faction lends its members a share of what it has earned. Weight 0 until
+    // fitted, and it must stay weaker than a chain or chains stop mattering.
+    affiliation: (() => {
+      const fac = s.ips[card.subjectIp]?.affiliation;
+      if (!fac) return 0;
+      return unit((s.ips[fac]?.affection ?? 0) / Math.max(1, cfg.desire.cameoReference));
+    })(),
+    variantGroup: (() => {
+      const link = card.progressionLink?.chainId;
+      if (!link || s.chains[link]?.kind !== 'variant') return 0;
+      return unit((s.chains[link]?.cardIds.length ?? 0) / links);
+    })(),
     community: 0,
   };
 }

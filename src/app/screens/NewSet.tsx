@@ -33,6 +33,23 @@ function firstArtist(s: SimState): ArtistId | null {
 
 interface Crafted { ipId: IpId; rarity: Rarity; finishes: Finish[] }
 
+/**
+ * Cards of the same character, grouped as a run collectors chase.
+ *
+ * AJ's own example: three cards, all Aryla, at three rarities. That is pull
+ * demand, which is the shape `chainTerm` already models — so a variant group is
+ * a third chain kind rather than a new mechanism.
+ */
+function variantGroups(crafted: Crafted[]): Map<string, number[]> {
+  const by = new Map<string, number[]>();
+  crafted.forEach((c, i) => {
+    const k = String(c.ipId);
+    by.set(k, [...(by.get(k) ?? []), i]);
+  });
+  for (const [k, idx] of by) if (idx.length < 2) by.delete(k);
+  return by;
+}
+
 /** One SKU of the run: a form, a market, a price and a quantity. */
 interface Sku {
   kind: ProductKind; regionId: RegionId; packsPerUnit: number; msrp: number; units: number;
@@ -116,9 +133,23 @@ export function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void;
       };
       // The cards the player actually made, at exactly the rarity and finish
       // they chose.
-      for (const c of crafted) {
-        api.designCard(st, setId, c.ipId, [], c.rarity, a, undefined, undefined, c.finishes);
-      }
+      // A character crafted more than once in one set is a variant run, and the
+      // position is its place in the ladder — which is what makes the chain
+      // ORDERED rather than a bag of cards.
+      const groups = variantGroups(crafted);
+      const rank = (r: Rarity): number =>
+        ALL_RARITIES.findIndex(x => x[0] === r) + 1;
+      crafted.forEach((c, i) => {
+        const group = groups.get(String(c.ipId));
+        const link = group && group.includes(i)
+          ? {
+              chainId: `chain_var_${madeSetId}_${String(c.ipId)}` as never,
+              position: rank(c.rarity),
+              kind: 'variant' as const,
+            }
+          : undefined;
+        api.designCard(st, setId, c.ipId, [], c.rarity, a, link, undefined, c.finishes);
+      });
       // The rest of the list, filling each rarity to the count the player set.
       for (const row of allRows) {
         const remaining = row.count - craftedAt(row.rarity);
@@ -566,6 +597,11 @@ function CardsStep({ s, rows, crafted, setCrafted, ips, size }: {
           Make the same character more than once. Four Arylas at four rarities is a variant run, and
           collectors chase the complete set of them.
         </div>
+        {[...variantGroups(crafted).entries()].map(([ipId, idx]) => (
+          <div key={ipId} style={{ ...micro, color: C.note }}>
+            VARIANT RUN · {nameOf(ipId).toUpperCase()} · {idx.length} CARDS
+          </div>
+        ))}
       </div>
     </>
   );
