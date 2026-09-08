@@ -56,7 +56,7 @@ export interface Meta {
     name: string;
     packsPerUnit: number;
     msrp: number;
-    rows: Array<{ rarity: string; name: string; count: number; advertised: boolean; finish: string }>;
+    rows: Array<{ rarity: string; name: string; count: number; advertised: boolean; finishes: string[] }>;
   }>;
 }
 

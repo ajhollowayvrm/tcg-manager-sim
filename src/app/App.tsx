@@ -11,7 +11,7 @@
  * UI where they appear.
  */
 import React, { useEffect, useState, useSyncExternalStore } from 'react';
-import type { SimState, IpId, IpEntity, Rarity, SetType, ArtistId } from '../sim/types.ts';
+import type { SimState, IpId, IpEntity, Rarity, SetType, ArtistId, Treatment } from '../sim/types.ts';
 import { api } from '../sim/engine.ts';
 import { readAffection, displayTier } from '../sim/readings.ts';
 import { REGION_US } from '../sim/world.ts';
@@ -329,13 +329,53 @@ function Sets({ s, onNew }: { s: SimState; onNew: () => void }) {
 
 const UNIT_COST_PER_BOX = 140 * 24 * 0.55; // cents; printing.unitCost.standard
 
-type Finish = 'none' | 'holo' | 'reverseHolo' | 'textured' | 'goldFoil' | 'etched' | 'fullArt' | 'jumbo';
+type Finish = Treatment;
 
-const FINISHES: Finish[] = ['none', 'holo', 'reverseHolo', 'textured', 'etched', 'fullArt', 'goldFoil', 'jumbo'];
+/** Grouped so the picker reads like a print shop's menu, not a flat list. */
+const FINISH_GROUPS: Array<[string, Finish[]]> = [
+  ['Surface', ['holo', 'reverseHolo', 'rainbowFoil', 'goldFoil', 'coldFoil']],
+  ['Texture', ['textured', 'etched', 'embossed']],
+  ['Frame', ['fullArt', 'extendedArt', 'borderless', 'alternateArt']],
+  ['Extra', ['jumbo', 'signed']],
+];
+const FINISHES: Finish[] = FINISH_GROUPS.flatMap(([, f]) => f);
 const FINISH_LABEL: Record<Finish, string> = {
-  none: '—', holo: 'Holo', reverseHolo: 'Rev holo', textured: 'Textured',
-  etched: 'Etched', fullArt: 'Full art', goldFoil: 'Gold foil', jumbo: 'Jumbo',
+  holo: 'Holo', reverseHolo: 'Reverse holo', rainbowFoil: 'Rainbow foil',
+  goldFoil: 'Gold foil', coldFoil: 'Cold foil', textured: 'Textured',
+  etched: 'Etched', embossed: 'Embossed', fullArt: 'Full art',
+  extendedArt: 'Extended art', borderless: 'Borderless', alternateArt: 'Alternate art',
+  jumbo: 'Jumbo', signed: 'Signed',
 };
+
+const finishText = (f: Finish[]): string =>
+  f.length === 0 ? '\u2014' : f.map(x => FINISH_LABEL[x]).join(' + ');
+
+/** A chip row: tap to add or drop a finish. Finishes stack. */
+function FinishPicker({ value, onChange }: { value: Finish[]; onChange: (f: Finish[]) => void }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {FINISH_GROUPS.map(([group, list]) => (
+        <div key={group} style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <span style={{ ...micro, width: 46, flexShrink: 0 }}>{group.toUpperCase()}</span>
+          {list.map(f => {
+            const on = value.includes(f);
+            return (
+              <button key={f} type="button" onClick={() =>
+                onChange(on ? value.filter(x => x !== f) : [...value, f])} style={{
+                  height: 30, padding: '0 9px', borderRadius: 2, cursor: 'pointer',
+                  fontFamily: 'inherit', fontSize: 11, touchAction: 'manipulation',
+                  background: on ? C.go : 'transparent',
+                  color: on ? C.onAccent : C.muted,
+                  border: `1px solid ${on ? C.go : C.rule}`,
+                  fontWeight: on ? 600 : 400,
+                }}>{FINISH_LABEL[f]}</button>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 /**
  * One rung of the studio's rarity ladder.
@@ -344,16 +384,16 @@ const FINISH_LABEL: Record<Finish, string> = {
  * studio calls it — the sim has no opinion about the word, and every real TCG
  * invents its own.
  */
-interface RarityRow { rarity: Rarity; label: string; count: number; advertised: boolean; finish: Finish }
+interface RarityRow { rarity: Rarity; label: string; count: number; advertised: boolean; finishes: Finish[] }
 
 const DEFAULT_ROWS: RarityRow[] = [
-  { rarity: 'uncommon', label: 'Uncommon', count: 45, advertised: true, finish: 'none' },
-  { rarity: 'rare', label: 'Rare', count: 25, advertised: true, finish: 'holo' },
-  { rarity: 'doubleRare', label: 'Double rare', count: 13, advertised: true, finish: 'holo' },
-  { rarity: 'ultraRare', label: 'Ultra rare', count: 7, advertised: true, finish: 'fullArt' },
-  { rarity: 'illustrationRare', label: 'Illustration rare', count: 5, advertised: true, finish: 'fullArt' },
-  { rarity: 'specialIllustrationRare', label: 'Special illustration', count: 3, advertised: true, finish: 'etched' },
-  { rarity: 'hyperRare', label: 'Hyper rare', count: 2, advertised: false, finish: 'goldFoil' },
+  { rarity: 'uncommon', label: 'Uncommon', count: 45, advertised: true, finishes: [] },
+  { rarity: 'rare', label: 'Rare', count: 25, advertised: true, finishes: ['holo'] },
+  { rarity: 'doubleRare', label: 'Double rare', count: 13, advertised: true, finishes: ['holo'] },
+  { rarity: 'ultraRare', label: 'Ultra rare', count: 7, advertised: true, finishes: ['fullArt', 'holo'] },
+  { rarity: 'illustrationRare', label: 'Illustration rare', count: 5, advertised: true, finishes: ['extendedArt', 'textured'] },
+  { rarity: 'specialIllustrationRare', label: 'Special illustration', count: 3, advertised: true, finishes: ['fullArt', 'etched', 'textured'] },
+  { rarity: 'hyperRare', label: 'Hyper rare', count: 2, advertised: false, finishes: ['borderless', 'rainbowFoil', 'embossed'] },
 ];
 
 /**
@@ -372,7 +412,7 @@ function oddsText(perPack: number): string {
   return `1 in ${Math.round(1 / perPack).toLocaleString()}`;
 }
 
-interface Crafted { ipId: IpId; rarity: Rarity; finish: Finish }
+interface Crafted { ipId: IpId; rarity: Rarity; finishes: Finish[] }
 
 function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void; onBack: () => void }) {
   const [step, setStep] = useState(0);
@@ -402,11 +442,11 @@ function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void; onBack
   const namedTotal = rows.reduce((n, r) => n + r.count, 0);
   const commons = Math.max(0, size - namedTotal);
   const allRows: RarityRow[] = [
-    { rarity: 'common', label: 'Common', count: commons, advertised: true, finish: 'none' },
+    { rarity: 'common', label: 'Common', count: commons, advertised: true, finishes: [] },
     ...rows,
   ];
   const slots = allRows.reduce((n, r) => n + perCardPull(s, r.rarity, size) * r.count, 0);
-  const finished = allRows.filter(r => r.finish !== 'none').reduce((n, r) => n + r.count, 0);
+  const finished = allRows.filter(r => r.finishes.length > 0).reduce((n, r) => n + r.count, 0);
   const finishShare = size > 0 ? finished / size : 0;
 
   const craftedAt = (r: Rarity) => crafted.filter(c => c.rarity === r).length;
@@ -430,8 +470,7 @@ function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void; onBack
       // The cards the player actually made, at exactly the rarity and finish
       // they chose.
       for (const c of crafted) {
-        api.designCard(st, setId, c.ipId, [], c.rarity, a, undefined, undefined,
-          c.finish === 'none' ? undefined : c.finish);
+        api.designCard(st, setId, c.ipId, [], c.rarity, a, undefined, undefined, c.finishes);
       }
       // The rest of the list, filling each rarity to the count the player set.
       for (const row of allRows) {
@@ -439,8 +478,7 @@ function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void; onBack
         for (let i = 0; i < remaining; i++) {
           const subj = nextSubject();
           if (!subj) break;
-          api.designCard(st, setId, subj, [], row.rarity, a, undefined, undefined,
-            row.finish === 'none' ? undefined : row.finish);
+          api.designCard(st, setId, subj, [], row.rarity, a, undefined, undefined, row.finishes);
         }
       }
       const pid = api.defineProduct(st, setId, 'boosterBox', REGION_US, 24, msrp);
@@ -564,7 +602,7 @@ function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void; onBack
                   {meta.formats.map(f => (
                     <button key={f.id} onClick={() => setRows(f.rows.map(r => ({
                       rarity: r.rarity as Rarity, label: r.name, count: r.count,
-                      advertised: r.advertised, finish: r.finish as Finish,
+                      advertised: r.advertised, finishes: (r.finishes ?? []) as Finish[],
                     })))} style={{
                       padding: '8px 12px', background: C.raised, border: `1px solid ${C.rule}`,
                       borderRadius: 2, color: C.ink, fontSize: 12, fontFamily: 'inherit', cursor: 'pointer',
@@ -624,18 +662,17 @@ function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void; onBack
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 7, flexWrap: 'wrap' }}>
                   <button onClick={() => setRow(i, { count: Math.max(0, r.count - 1) })} style={pillBtn}>−</button>
                   <button onClick={() => setRow(i, { count: r.count + 1 })} style={pillBtn}>+</button>
-                  <select value={r.finish} onChange={e => setRow(i, { finish: e.target.value as Finish })}
-                    style={{
-                      height: 32, background: C.raised, color: C.ink, border: `1px solid ${C.rule}`,
-                      borderRadius: 2, fontSize: 11.5, fontFamily: 'inherit', padding: '0 6px',
-                    }}>
-                    {FINISHES.map(f => <option key={f} value={f}>{FINISH_LABEL[f]}</option>)}
-                  </select>
-                  <button onClick={() => setRow(i, { advertised: !r.advertised })} style={{
+                  <button type="button" onClick={() => setRow(i, { advertised: !r.advertised })} style={{
                     ...pillBtn, width: 'auto', padding: '0 10px',
                     color: r.advertised ? C.muted : C.bad,
                     borderColor: r.advertised ? C.rule : C.bad,
                   }}>{r.advertised ? 'Advertised' : 'Secret'}</button>
+                  <span style={{ ...micro, color: r.finishes.length ? C.note : C.dimmer }}>
+                    {finishText(r.finishes).toUpperCase()}
+                  </span>
+                </div>
+                <div style={{ marginTop: 8 }}>
+                  <FinishPicker value={r.finishes} onChange={f => setRow(i, { finishes: f })} />
                 </div>
               </div>
             ))}
@@ -646,7 +683,7 @@ function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void; onBack
                 if (!n || !n.trim()) return;
                 saveFormat({
                   id: `fmt_${Date.now().toString(36)}`, name: n.trim(), packsPerUnit: 24, msrp: 14000,
-                  rows: rows.map(r => ({ rarity: r.rarity, name: r.label, count: r.count, advertised: r.advertised, finish: r.finish })),
+                  rows: rows.map(r => ({ rarity: r.rarity, name: r.label, count: r.count, advertised: r.advertised, finishes: r.finishes })),
                 });
               }}>Save as a format</Button>
             </div>
@@ -729,7 +766,7 @@ function CardsStep({ s, rows, crafted, setCrafted, ips, size }: {
 }) {
   const [pickIp, setPickIp] = useState<string>(ips[0] ? String(ips[0]!.id) : '');
   const [pickRarity, setPickRarity] = useState<Rarity>('rare');
-  const [pickFinish, setPickFinish] = useState<Finish>('holo');
+  const [pickFinish, setPickFinish] = useState<Finish[]>(['holo']);
   const nameOf = (id: string) => Object.values(s.ips).find(i => String(i.id) === id)?.name ?? id;
   const roomAt = (r: Rarity) =>
     (rows.find(x => x.rarity === r)?.count ?? 0) - crafted.filter(c => c.rarity === r).length;
@@ -756,7 +793,7 @@ function CardsStep({ s, rows, crafted, setCrafted, ips, size }: {
         }}>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontFamily: MONO, fontWeight: 600, fontSize: 15 }}>{nameOf(String(c.ipId))}</div>
-            <div style={{ ...micro, letterSpacing: '0.07em' }}>{FINISH_LABEL[c.finish].toUpperCase()}</div>
+            <div style={{ ...micro, letterSpacing: '0.07em' }}>{finishText(c.finishes).toUpperCase()}</div>
           </div>
           <div style={{ fontSize: 11.5, color: C.ink3 }}>
             {rows.find(r => r.rarity === c.rarity)?.label ?? c.rarity}
@@ -772,20 +809,21 @@ function CardsStep({ s, rows, crafted, setCrafted, ips, size }: {
         <select value={pickIp} onChange={e => setPickIp(e.target.value)} style={selectStyle}>
           {ips.map(ip => <option key={String(ip.id)} value={String(ip.id)}>{ip.name}</option>)}
         </select>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <select value={pickRarity} onChange={e => setPickRarity(e.target.value as Rarity)} style={{ ...selectStyle, flexGrow: 1 }}>
-            {rows.map(r => (
-              <option key={r.rarity} value={r.rarity} disabled={roomAt(r.rarity) <= 0}>
-                {r.label} ({roomAt(r.rarity)} left)
-              </option>
-            ))}
-          </select>
-          <select value={pickFinish} onChange={e => setPickFinish(e.target.value as Finish)} style={{ ...selectStyle, flexGrow: 1 }}>
-            {FINISHES.map(f => <option key={f} value={f}>{FINISH_LABEL[f]}</option>)}
-          </select>
-        </div>
+        <select value={pickRarity} onChange={e => {
+          const r = e.target.value as Rarity;
+          setPickRarity(r);
+          // Start from what that rung already prints; the card can then differ.
+          setPickFinish(rows.find(x => x.rarity === r)?.finishes ?? []);
+        }} style={selectStyle}>
+          {rows.map(r => (
+            <option key={r.rarity} value={r.rarity} disabled={roomAt(r.rarity) <= 0}>
+              {r.label} ({roomAt(r.rarity)} left)
+            </option>
+          ))}
+        </select>
+        <FinishPicker value={pickFinish} onChange={setPickFinish} />
         <Button tone="quiet" disabled={!pickIp || roomAt(pickRarity) <= 0} onClick={() =>
-          setCrafted([...crafted, { ipId: pickIp as IpId, rarity: pickRarity, finish: pickFinish }])}>
+          setCrafted([...crafted, { ipId: pickIp as IpId, rarity: pickRarity, finishes: pickFinish }])}>
           Add card
         </Button>
         <div style={{ fontSize: 11, lineHeight: 1.42, color: C.muted }}>
@@ -845,16 +883,14 @@ function Formats() {
               <button onClick={() => setRow(i, { count: Math.max(0, r.count - 1) })} style={pillBtn}>−</button>
               <button onClick={() => setRow(i, { count: r.count + 1 })} style={pillBtn}>+</button>
               <span style={{ ...micro, color: C.dimmer }}>{r.rarity}</span>
-              <select value={r.finish} onChange={e => setRow(i, { finish: e.target.value })} style={{
-                height: 32, background: C.raised, color: C.ink, border: `1px solid ${C.rule}`,
-                borderRadius: 2, fontSize: 11.5, fontFamily: 'inherit', padding: '0 6px',
-              }}>
-                {FINISHES.map(x => <option key={x} value={x}>{FINISH_LABEL[x]}</option>)}
-              </select>
-              <button onClick={() => setRow(i, { advertised: !r.advertised })} style={{
+              <button type="button" onClick={() => setRow(i, { advertised: !r.advertised })} style={{
                 ...pillBtn, width: 'auto', padding: '0 10px',
                 color: r.advertised ? C.muted : C.bad, borderColor: r.advertised ? C.rule : C.bad,
               }}>{r.advertised ? 'Advertised' : 'Secret'}</button>
+            </div>
+            <div style={{ marginTop: 8 }}>
+              <FinishPicker value={(r.finishes ?? []) as Finish[]}
+                onChange={f => setRow(i, { finishes: f })} />
             </div>
           </div>
         ))}
@@ -901,7 +937,7 @@ function Formats() {
             id, name: n.trim(), packsPerUnit: 24, msrp: 14000,
             rows: DEFAULT_ROWS.map(r => ({
               rarity: r.rarity, name: r.label, count: r.count,
-              advertised: r.advertised, finish: r.finish,
+              advertised: r.advertised, finishes: r.finishes,
             })),
           });
           setEditing(id);

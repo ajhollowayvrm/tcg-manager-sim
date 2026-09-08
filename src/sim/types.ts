@@ -295,9 +295,19 @@ export type Rarity =
   | 'ultraRare' | 'illustrationRare' | 'specialIllustrationRare'
   | 'hyperRare' | 'promo';
 
+/**
+ * A print finish. A card carries a LIST of them, because real finishes stack —
+ * a special illustration rare is routinely extended-art AND textured AND foiled.
+ *
+ * There is no `none`: a card with no finish has an empty list. A `none` member
+ * would be a second way to say the same thing, and this project has been bitten
+ * by second representations before (Round 4a, and the C12 deletions).
+ */
 export type Treatment =
-  | 'none' | 'holo' | 'reverseHolo' | 'textured'
-  | 'goldFoil' | 'etched' | 'fullArt' | 'jumbo';
+  | 'holo' | 'reverseHolo' | 'textured' | 'etched' | 'embossed'
+  | 'goldFoil' | 'rainbowFoil' | 'coldFoil'
+  | 'fullArt' | 'extendedArt' | 'borderless' | 'alternateArt'
+  | 'jumbo' | 'signed';
 
 export interface Card {
   id: CardId;
@@ -310,7 +320,8 @@ export interface Card {
   cameos: IpId[];
 
   rarity: Rarity;
-  treatment: Treatment;
+  /** Finishes on this card. Empty for a plain one. They stack. */
+  treatments: Treatment[];
 
   artistId: ArtistId;
   artBrief: ArtBrief;
@@ -1058,7 +1069,7 @@ export type Decision =
         id: CardId; setId: SetId; subjectIp: IpId; cameos: IpId[];
         rarity: Rarity; artistId: ArtistId;
         /** Optional. The engine derives each of these when not supplied. */
-        name?: string; treatment?: Treatment;
+        name?: string; treatments?: Treatment[];
         artBrief?: Partial<ArtBrief>; flavorText?: string;
         /**
          * Puts this card in a collectible chain. The engine mints the chain the

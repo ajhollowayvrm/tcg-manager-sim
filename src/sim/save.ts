@@ -37,7 +37,9 @@ import type { SimConfig, SimState, Tick } from './types.ts';
  * This is what `SimState.schemaVersion` is for; it was written once at world
  * creation and read by nothing until this file existed.
  */
-export const SAVE_SCHEMA_VERSION = 1;
+// 2: `Card.treatment: Treatment` became `Card.treatments: Treatment[]`,
+//    because finishes stack. Older saves cannot be read.
+export const SAVE_SCHEMA_VERSION = 2;
 
 export interface SaveFile {
   schemaVersion: number;

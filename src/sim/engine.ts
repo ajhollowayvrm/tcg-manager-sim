@@ -191,7 +191,7 @@ function createSet(s: SimState, id: SetId, name: string, type: SetType, size: nu
 /** The fields the engine derives when a decision doesn't spell them out. */
 interface CardOverrides {
   name?: string;
-  treatment?: Treatment;
+  treatments?: Treatment[];
   artBrief?: Partial<ArtBrief>;
   flavorText?: string;
   progressionLink?: { chainId: ChainId; position: number };
@@ -220,7 +220,7 @@ function designCard(
     name: overrides.name ?? `${s.ips[subjectIp]!.name} ${rarity}`,
     createdTick: s.tick,
     subjectIp, cameos, rarity,
-    treatment: overrides.treatment ?? (rarity === 'common' ? 'none' : 'holo'),
+    treatments: overrides.treatments ?? (rarity === 'common' ? [] : ['holo']),
     artistId,
     artBrief: { mood: 'neutral', composition: 'portrait', budget: artist.rate, notes: '', ...overrides.artBrief },
     // A designed card has no art yet. It carries the house floor until a
@@ -926,7 +926,7 @@ function applyDecision(s: SimState, d: Decision): void {
     case 'designCard':
       designCard(s, d.payload.id, d.payload.setId, d.payload.subjectIp, d.payload.cameos,
         d.payload.rarity, d.payload.artistId, {
-          name: d.payload.name, treatment: d.payload.treatment,
+          name: d.payload.name, treatments: d.payload.treatments,
           artBrief: d.payload.artBrief, flavorText: d.payload.flavorText,
           progressionLink: d.payload.progressionLink,
           illustrationLink: d.payload.illustrationLink,
@@ -1013,22 +1013,22 @@ export const api = {
     return id;
   },
   /**
-   * `treatment` was reachable through the decision payload and the handler
+   * `treatments` was reachable through the decision payload and the handler
    * since the engine was written, and no caller could set it: the parameter
-   * simply was not on this function. Exposing it is additive — an omitted
-   * treatment still derives from the rarity exactly as before — and it is what
-   * lets a player choose a set's finishes. See `docs/design/sets-and-distribution.md`.
+   * simply was not on this function. Omitting it still derives the finish from
+   * the rarity exactly as before. Finishes STACK, so this takes a list — see
+   * `docs/design/sets-and-distribution.md`.
    */
   designCard(
     s: SimState, setId: SetId, subjectIp: IpId, cameos: IpId[], rarity: Rarity, artistId: ArtistId,
     progressionLink?: { chainId: ChainId; position: number },
     illustrationLink?: ChainId,
-    treatment?: Treatment,
+    treatments?: Treatment[],
   ): CardId {
     const id = nextId(s, 'card') as CardId;
     submit(s, {
       type: 'designCard', tick: s.tick,
-      payload: { id, setId, subjectIp, cameos, rarity, artistId, progressionLink, illustrationLink, treatment },
+      payload: { id, setId, subjectIp, cameos, rarity, artistId, progressionLink, illustrationLink, treatments },
     });
     return id;
   },
