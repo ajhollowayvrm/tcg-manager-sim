@@ -5,7 +5,7 @@
  */
 import type {
   SimState, SimConfig, Tick, Cents, PublisherId, RegionId, ArtistId, GraderId,
-  AudienceSegment, Rarity, ArtistPersonality, ArtistSpecialty, IpKind, ProductKind,
+  AudienceSegment, Rarity, ArtistPersonality, ArtistSpecialty, IpKind, BuiltinProductKind,
   Channel, ChannelId, Unit, CreatorId, SegmentState,
 } from './types.ts';
 import { seedRng, rand, randRange, pick } from './rng.ts';
@@ -178,7 +178,14 @@ export function createWorld(seed: string, config: SimConfig): SimState {
       tasteBias: { ...w.homeTasteBias },
       rarityAppetite: Object.fromEntries(RARITIES.map(
         r => [r, randRange(rng, w.rarityAppetiteMin, w.rarityAppetiteMax)])) as Record<Rarity, number>,
-      productPreference,
+      // CLONED, not aliased. The shorthand `productPreference,` made the home
+      // region's truth the very same object as `config.world.productPreference`
+      // — every other field here already copies. Nothing writes to it today, so
+      // this is inert; the moment anything does, it would mutate the config the
+      // run is using, and `check.ts` builds two worlds from the un-cloned
+      // `defaultConfig` singleton. `serialize` de-aliases, so the divergence
+      // would appear only AFTER a save, which is the worst place to find it.
+      productPreference: { ...productPreference },
       priceTolerance: usSeed.priceTolerance,
       readingNoiseSeed: rand(rng),
     },
@@ -206,11 +213,15 @@ export function createWorld(seed: string, config: SimConfig): SimState {
           k => [k, randRange(rrng, w.tasteBiasMin, w.tasteBiasMax)])) as Record<IpKind, number>,
         rarityAppetite: Object.fromEntries(RARITIES.map(
           r => [r, randRange(rrng, w.rarityAppetiteMin, w.rarityAppetiteMax)])) as Record<Rarity, number>,
+        // ONE DRAW PER KEY, and the key set is the nine built-ins forever.
+        // Adding or removing one renumbers every later roll on `regionRng` and
+        // moves every balance number (04-workflow.md rule 3). A studio-invented
+        // form is deliberately absent: its appetite is derived, not drawn.
         productPreference: Object.fromEntries(
           Object.keys(productPreference).map(
-            k => [k, productPreference[k as ProductKind]!
+            k => [k, productPreference[k as BuiltinProductKind]!
               * randRange(rrng, w.productPreferenceJitterMin, w.productPreferenceJitterMax)],
-          )) as Record<ProductKind, number>,
+          )) as Record<string, number>,
         priceTolerance: rs.priceTolerance,
         readingNoiseSeed: rand(rrng),
       },

@@ -6,7 +6,7 @@
  * decision log — the same path a UI would drive.
  */
 import type {
-  SimState, IpId, ArtistId, Rarity, PrintQualityTier, ProductKind, SetType, ProductId, IpKind,
+  SimState, IpId, ArtistId, Rarity, PrintQualityTier, BuiltinProductKind, SetType, ProductId, IpKind,
   ChannelId, Channel, Tick, SetId, Cents, Artist, ArtistTerms, RegionId,
   Collab, CollabId, AudienceSegment, ChainId,
 } from '../src/sim/types.ts';
@@ -98,7 +98,7 @@ export interface SetBotOptions {
   bankrollRunGrowth?: number;
   packsPerUnit: number;
   msrp: number;
-  productKind: ProductKind;
+  productKind: BuiltinProductKind;
   allocationPolicy: AllocationPolicy;
   /** Channel `hog` dumps into. Ignored by the other policies. */
   hogChannel?: ChannelId;
@@ -259,7 +259,7 @@ export interface SetBotOptions {
    * product kinds declared and never once printed.
    */
   setTypeCycle?: SetType[];
-  productKindCycle?: ProductKind[];
+  productKindCycle?: BuiltinProductKind[];
 }
 
 /**

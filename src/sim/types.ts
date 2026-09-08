@@ -588,9 +588,34 @@ export interface SetPerformance {
 
 export type PrintQualityTier = 'budget' | 'standard' | 'premium' | 'archival';
 
-export type ProductKind =
-  | 'pack' | 'boosterBox' | 'etb' | 'collectionBox' | 'tin'
-  | 'premiumCollection' | 'bundle' | 'blister' | 'surpriseBox';
+/**
+ * The nine forms the world is tuned for. They are TEMPLATES, not the whole
+ * space: `config.world.productPreference` carries a fitted appetite for each,
+ * and a studio starts with all nine in its catalogue.
+ */
+export const BUILTIN_PRODUCT_KINDS = [
+  'pack', 'boosterBox', 'etb', 'collectionBox', 'tin',
+  'premiumCollection', 'bundle', 'blister', 'surpriseBox',
+] as const;
+export type BuiltinProductKind = typeof BUILTIN_PRODUCT_KINDS[number];
+
+/**
+ * A product form.
+ *
+ * Open, because a studio invents its own — a checklane blister, a hanger, a
+ * thing nobody has named yet. It is a plain string on the wire and always was,
+ * so widening the TYPE changes no bytes and every existing decision log
+ * replays unchanged.
+ *
+ * The nine built-ins keep their reserved keys and their fitted appetite. A key
+ * the world was not built with gets a hidden roll instead — see
+ * `productPreferenceFor` in `regions.ts`. Custom keys are namespaced by the UI
+ * so they can never collide with a reserved one.
+ *
+ * Where the set of values IS enumerable — the config table, the bot roster —
+ * use `BuiltinProductKind` and keep the typo checking.
+ */
+export type ProductKind = string;
 
 /**
  * A SKU as printed for one region. A region can get a different mix, a
@@ -792,7 +817,14 @@ export interface Region {
     segmentMix: Record<AudienceSegment, Unit>;
     tasteBias: Record<IpKind, number>;
     rarityAppetite: Record<Rarity, number>;
-    productPreference: Record<ProductKind, number>;
+    /**
+     * Keyed by string, not by the built-in union: a region can hold an
+     * appetite for a form the studio invented. Only the nine built-ins are
+     * ever PRESENT here — a custom form's appetite is derived on demand and
+     * stored nowhere, because writing one in would need a draw per key at
+     * world creation and renumber every later roll.
+     */
+    productPreference: Record<string, number>;
     priceTolerance: number;
     readingNoiseSeed: number;
   };
@@ -2295,8 +2327,15 @@ export interface SimConfig {
       priceTolerance: number;
       knowledge: number;
     }>;
-    /** Per-product-kind preference, before each region jitters it. */
-    productPreference: Record<ProductKind, number>;
+    /**
+     * Per-product-kind preference, before each region jitters it.
+     *
+     * Keyed by the BUILT-IN union on purpose. These nine are a fitted table and
+     * the key set is fixed forever: `world.ts` draws one jitter per key, so
+     * adding or removing one renumbers every later roll. A studio-invented form
+     * is not in here — it rolls its own appetite.
+     */
+    productPreference: Record<BuiltinProductKind, number>;
     /** Range a region's per-segment mix is rolled in. */
     segmentMixMin: number;
     segmentMixMax: number;
