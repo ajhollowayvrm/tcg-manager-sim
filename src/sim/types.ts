@@ -1994,6 +1994,14 @@ export interface SimConfig {
     exposureShare: number;
   };
 
+  treatments: {
+    /** Extra print cost per finish, as a share of the pack unit cost. */
+    costPerFinish: number;
+    /** Desire a finish adds per finish, before saturation. */
+    desirePerFinish: number;
+    /** Share of a set that may carry a finish before it stops reading as one. */
+    saturationShare: number;
+  };
   history: {
     /** Weeks kept at full resolution before downsampling. ~520 = 10 years. */
     weeklyRetentionTicks: number;

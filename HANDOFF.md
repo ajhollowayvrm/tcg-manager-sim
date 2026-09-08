@@ -2613,48 +2613,119 @@ horizon fixed.
   subset, so their remainders sum to at most `unitsRemaining` — never exactly it.
   Unallocated stock, and stock stranded by a lost channel, is the difference
 
+## The UI build (2026-09-08)
+
+**The game is playable end to end.** Found a studio, make characters, design a
+set through four steps, commit the blind bet, work the reveal window, allocate
+to channels, advance to release, and read the market it made. Every screen
+CONCEPT.md §8 names is built.
+
+**Decision coverage went from 6 of 22 to 24 of 24.** Thirteen `api.*` calls had
+no control at all — `allocate`, `purchaseUnlock`, `unlockRegion`, `signCollab`,
+`reprint`, `scheduleReveal`, `marketingSpend`, `openPreorders`,
+`hostPrerelease`, `hostEvent`, `commissionArt`, `hireArtist`, `scheduleDrop` —
+and `borrow`/`repay` had no `api` wrapper at all.
+
+### What wiring the dead paths found
+
+The Round 11 lesson held again: five defects, none of which a green suite could
+show.
+
+- **`api.borrow` had no ceiling.** The handler took any amount and booked it,
+  eight lines below the ceiling `tickFinance` computes. Nothing had ever called
+  it. `borrowCeiling` is a shared pure function now and the handler clamps.
+- **`forecastPrice` diverged.** It read drift off the last TWO points of a
+  compacted series and compounded that per-week rate over the horizon: a card at
+  $122.71 forecast $1.15 to $8.49 a year out. Windowed and bounded now. Nothing
+  in the value engine reads it, so no gate moved.
+- **A save could not survive a new config knob.** A save carries its whole
+  config, so one written before a knob existed came back missing it — and
+  `undefined` turns the first arithmetic into `NaN`. `deserialize` backfills
+  from `defaultConfig`, adding only what is missing.
+- **The interrupt modal nested a button in a button.** A real hit-target bug on
+  iOS.
+- **Three dead symbols in the app**, cut: `MIXES`, a module-level `pickRarity`
+  that only read as live because a local variable shares its name, and
+  `FINISHES`.
+
+### The forever fix was not where the design said it was
+
+`docs/design/running-forever.md` names `tickPrices` as the hot loop and
+prescribes a slow lane for old printings as the performance fix. **That premise
+is wrong by a factor of four, and it was measured rather than argued.**
+
+The slow lane is built, correct, and ships OFF (`history.slowLaneAfterYears` 0).
+100 years, one seed, `conservative`: 36.4s, against 34.0s with the ENTIRE
+catalogue in the slow lane — which is the upper bound the lever can ever buy.
+6.5%.
+
+Profiled instead. `tickPrices` is 6.9%. The real costs were **`segmentAffinity`
+at 16.1%** and **`compact` at 11.0%**.
+
+- `segmentAffinity` recomputed weekly a number that cannot change: it reads only
+  `set.cardIds` (only ever appended to) and `ip.truth.affinities` (rolled once,
+  read by one line). Cached across ticks in a `WeakMap` off the state.
+  **Base-age-derived affinities will invalidate that cache by design** — an
+  affinity that follows a character's age changes every tick, so `characters.md`
+  §2 must key it on the tick too. That warning is written at the cache.
+- `compact` rebuilt the whole points array and allocated a `Map` every call,
+  mostly to rediscover that already-bucketed points were still bucketed. Points
+  are ascending, so the expired prefix is a binary search.
+
+**36.4s → 27.1s, and the regression suite with it: 237s → 198s.** Byte-identical.
+
+### The print step stopped pretending
+
+MSRP, packs per unit, region, product kind and print quality were constants
+behind a step that looked like a decision, and `UNIT_COST_PER_BOX` was a frozen
+copy of a config product. The step defines SKUs now, several across regions, and
+quality is a real fork priced from config: standard 18.48 a unit, budget 10.56,
+which on the opening bankroll is the difference between borrowing and not.
+
+**That makes an unfitted axis exploitable.** `budgetSurvivor` is `conservative`
+with one field changed and it EARNS MORE, so budget is currently the correct
+choice. The quality-to-demand link was already the highest-value item in the
+plan; it is now the most urgent.
+
+### Standing at the end of the UI build
+
+52 PASS, 0 FAIL, 3 KNOWN, 0 DRIFT across 55 gates, and `out/check/runs.csv`
+byte-identical to the pre-session baseline at every step. Nothing in this
+session moved a balance number.
+
 ## Suggested next session
 
-**Plan 1 is done. The next session is either Plan 2 or the UI, and they are
-independent.**
+**The UI is built. What remains is the sim work the design documents specify,
+and one urgent fit.**
 
-### If you are designing UI
+### Do this first: the quality-and-price axis
 
-Read `docs/screens-audit.md`. It is the contract: per CONCEPT.md §8 screen,
-which field feeds which element, and the three rules a UI must not break —
-never render `truth.*`, never draw RNG on a read path, and drive the sim
-through `api.*` only. All seven screens are feedable today.
+`budgetSurvivor` earns more than `conservative` at the same price, a 2.6x price
+is nearly free, and buying a reading tier is a losing move. All three were
+findings before the UI; the UI has now put the first one in front of the player
+as a button. `printing.unitCost` for `budget` and `archival` is arithmetic, not
+measurement — no bot prints either tier, so nothing checks them.
 
-Two things to know before you draw. There is **no price index** — C12 cut
-`MarketState.indexes` because it was written once at world creation and never
-updated, so compute one from `rawHistory` when a screen asks. And a **50-year
-save is 63.7 MB**, of which the event log is 36%, so the feed needs a windowed
-query rather than rendering the array.
+### Then the designed systems, in the order the documents ask for
 
-### If you are running Plan 2
+Each lands at an exactly-neutral default first, verified by byte-identity of
+`out/check/runs.csv`, and is turned on as a separate measured change.
 
-The plan is `~/.claude/plans/alright-let-s-plan-on-zippy-waffle.md`. Start with:
+1. **`Card.treatments`** — landed neutral this session (`config.treatments`, both
+   weights 0). It has a cost consumer and a desire consumer and needs a fit.
+2. **The desire budget** (`sets-and-distribution.md` §2) — restructure with the
+   existing terms before adding any of the four new ones, or eight additive
+   terms turn the optimal card into a checklist.
+3. **Archetypes**, then **base age**, then **affiliation**, then the
+   **goodwill link** (`characters.md`, in that order — steps 2 and 4 are the two
+   intended jumps and each needs its own rebank).
+4. **Eras** (`eras.md`). Boldness is derived from roster carry-forward, never a
+   slider, and an era launch must NOT also clear fatigue.
+5. **Player-set pull rates**, **secret rares**, the **art director**, the **print
+   facility**, **stock transfer**, and the five zero-weight knobs.
 
-```
-npm run check && cp out/check/runs.csv out/baseline.csv   # the acceptance test
-```
+### The rule that has paid for itself every time
 
-`out/` is gitignored, so that baseline does not survive a session. Regenerate
-it first or the byte-identity check — the thing that caught every leak in
-Round 11 — is not available.
-
-**Do the three C11 findings before the five knobs.** The knobs are five
-mechanisms landed at exactly 0 and waiting for a value. The findings say the
-quality-and-price axis is unfitted, that buying a reading tier is a losing
-move, and that budget quality earns more than standard at the same price.
-Those are not tuning nits; they are the model telling you which of its own
-decisions do not yet cost anything.
-
-**Fit `segmentMixAcquisitionWeight` and `buylistWeight` together.** Both reach
-the known-fail `sub.scalperShare` from opposite directions. Run `--dist`
-DURING that sweep, not after.
-
-Ship the five owed gates with the sweep, not after it: `struct.unlockTiersBought`,
-`sub.readingNarrows`, `sub.preorderShare`, `sub.illustrationChainPays`,
-`sub.eventPromoPremium`. Every one is measurable now, because C11 added the bot
-that reaches it.
+Wire the dead field. Round 11 found five defects that way and this session found
+five more. A field that is declared and unread is not inert — it is a defect
+that has not been observed yet.

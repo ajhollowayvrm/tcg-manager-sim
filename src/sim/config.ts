@@ -1179,6 +1179,42 @@ export const defaultConfig: SimConfig = {
     relationshipConvergence: 0.05,
   },
 
+  /**
+   * Finishes: what a treated card costs to print, and what it buys.
+   *
+   * `Card.treatments` has been declared, defaulted and read by NOTHING since
+   * the engine was written — one of the four dead fields in
+   * `docs/screens-audit.md`. The set wizard has been letting players choose
+   * finishes per rarity for several commits, and the choice reached the
+   * decision payload and then stopped.
+   *
+   * **Both weights ship at 0, which is exactly neutral**, so this lands
+   * byte-identical and the fit is a separate, measured change.
+   *
+   * The shape, from `docs/design/sets-and-distribution.md` §1.2: a finish costs
+   * money on the print bill and buys desire on the card, and it only works
+   * while it is RARE. Past `saturationShare` of the set it stops reading as a
+   * special card and the premium falls away, while the bill does not.
+   */
+  treatments: {
+    /**
+     * Extra print cost per treated card, as a share of the pack's unit cost,
+     * per finish on that card. Finishes stack, so three finishes cost three
+     * times one.
+     */
+    costPerFinish: 0,
+    /**
+     * Desire a finish adds to a card, per finish, before saturation.
+     * Additive, never multiplicative — the same rule the chain hedge follows.
+     */
+    desirePerFinish: 0,
+    /**
+     * The share of a set that can carry a finish before it stops reading as
+     * one. Past this the desire term decays toward zero; the cost does not.
+     */
+    saturationShare: 0.34,
+  },
+
   history: {
     weeklyRetentionTicks: 520,
     writeThreshold: 0.03,

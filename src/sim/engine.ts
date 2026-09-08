@@ -353,8 +353,11 @@ function commitPrintRun(s: SimState, setId: SetId, quantities: Record<ProductId,
     p.unitsPrinted = qty;
     p.unitsRemaining = qty;
     p.printedTick = s.tick;
+    // Finishes are a real line on the print bill. `costPerFinish` is 0 until
+    // fitted, so today this multiplies by exactly 1.
+    const finishLoad = 1 + s.config.treatments.costPerFinish * finishesPerCard(s, set);
     p.unitCogs = C(s.config.printing.unitCost[quality] * p.packsPerUnit
-      * s.config.printing.cogsCoefficient);
+      * s.config.printing.cogsCoefficient * finishLoad);
     p.market.hidden.sealedRemaining = qty;
     cost += p.unitCogs * qty;
   }
@@ -1426,12 +1429,75 @@ function fatigueResponse(s: SimState, fatigue: number): number {
   return Math.max(0, 1 - cfg.fatigueBite * Math.pow(f, cfg.fatigueExponent));
 }
 
+/**
+ * How much of a set carries a finish, 0..1.
+ *
+ * A finish only works while it is rare. This is the denominator of that rule,
+ * and it is measured over the set the card belongs to rather than globally —
+ * a studio that gilds one set has not devalued the finish in every other.
+ */
+/**
+ * Which set a card belongs to.
+ *
+ * `Card` carries no `setId` — the set owns the list — so this is a search. It
+ * runs only when `treatments.desirePerFinish` is non-zero, which is why the
+ * neutral default costs nothing at all.
+ */
+function setOfCard(s: SimState, cardId: CardId): SetId | null {
+  for (const set of Object.values(s.sets)) {
+    if (set.cardIds.includes(cardId)) return set.id;
+  }
+  return null;
+}
+
+/** Mean finishes per card across a set. Two finishes on half the cards is 1. */
+function finishesPerCard(s: SimState, set: CardSet): number {
+  if (set.cardIds.length === 0) return 0;
+  let n = 0;
+  for (const cid of set.cardIds) n += s.cards[cid]?.treatments.length ?? 0;
+  return n / set.cardIds.length;
+}
+
+function finishShareOfSet(s: SimState, setId: SetId): number {
+  const set = s.sets[setId];
+  if (!set || set.cardIds.length === 0) return 0;
+  let treated = 0;
+  for (const cid of set.cardIds) {
+    if ((s.cards[cid]?.treatments.length ?? 0) > 0) treated++;
+  }
+  return treated / set.cardIds.length;
+}
+
+/**
+ * What a card's finishes add to its desire.
+ *
+ * Additive, never multiplicative. The same rule the chain hedge follows and for
+ * the same reason: a multiplicative bonus scales with affection and would pay
+ * most on the card that needed it least.
+ *
+ * Past `saturationShare` the term decays toward zero while the print bill does
+ * not — which is the trade the design asks for, stated as arithmetic rather
+ * than as a warning in the UI.
+ */
+function treatmentDesire(s: SimState, card: Card, setId: SetId | null): number {
+  const cfg = s.config.treatments;
+  if (cfg.desirePerFinish === 0 || card.treatments.length === 0) return 0;
+  const share = setId ? finishShareOfSet(s, setId) : 0;
+  const saturation = share <= cfg.saturationShare ? 1
+    : Math.max(0, 1 - (share - cfg.saturationShare) / Math.max(1e-9, 1 - cfg.saturationShare));
+  return cfg.desirePerFinish * card.treatments.length * saturation;
+}
+
 function castDesire(s: SimState, card: Card): number {
   const cfg = s.config;
   const subj = s.ips[card.subjectIp]!;
   let d = subj.affection + subj.resurgence * cfg.affection.resurgenceToModernDemand * 100;
   for (const cid of card.cameos) d += s.ips[cid]!.affection * cfg.value.cameoWeight;
   d += chainDesire(s, card);
+  // A finish is a reason to want the card. Weight 0 until the sweep fits it.
+  if (cfg.treatments.desirePerFinish !== 0) {
+    d += treatmentDesire(s, card, setOfCard(s, card.id));
+  }
   return Math.max(1, d);
 }
 
