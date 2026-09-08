@@ -33,10 +33,20 @@ export interface Meta {
   studioName: string;
   gameName: string;
   characters: Record<string, { archetype: string; baseAge: number; affiliation?: string }>;
+  /**
+   * Eras, and which set belongs to which.
+   *
+   * `docs/design/eras.md` specifies an era as a named arc spanning several
+   * sets. Nothing in the model spans sets — `nostalgia` and `resurgence` attach
+   * to printings and characters — so an era is recorded here until the sim
+   * gains one. Only a MAIN set may open an era; any set type may join one.
+   */
+  eras: Array<{ id: string; name: string; openedBy: string }>;
+  setEra: Record<string, string>;
 }
 
 let state: SimState | null = null;
-let meta: Meta = { studioName: '', gameName: '', characters: {} };
+let meta: Meta = { studioName: '', gameName: '', characters: {}, eras: [], setEra: {} };
 const listeners = new Set<() => void>();
 
 function notify(): void { for (const fn of listeners) fn(); }
@@ -73,6 +83,8 @@ export function loadSaved(): boolean {
         studioName: parsed.studioName ?? '',
         gameName: parsed.gameName ?? '',
         characters: parsed.characters ?? {},
+        eras: parsed.eras ?? [],
+        setEra: parsed.setEra ?? {},
       };
     }
     notify();
@@ -104,14 +116,14 @@ export function newGame(studioName: string, gameName: string): void {
   const pub = s.publishers[s.playerId];
   if (pub) pub.name = studioName || pub.name;
   state = s;
-  meta = { studioName, gameName, characters: {} };
+  meta = { studioName, gameName, characters: {}, eras: [], setEra: {} };
   persist();
   notify();
 }
 
 export function abandonGame(): void {
   state = null;
-  meta = { studioName: '', gameName: '', characters: {} };
+  meta = { studioName: '', gameName: '', characters: {}, eras: [], setEra: {} };
   try { localStorage.removeItem(SAVE_KEY); localStorage.removeItem(META_KEY); } catch { /* ignore */ }
   notify();
 }
@@ -127,6 +139,19 @@ export function commit(fn: (s: SimState) => void): void {
 
 export function setCharacterMeta(id: IpId, m: Meta['characters'][string]): void {
   meta.characters[id as string] = m;
+  persist();
+  notify();
+}
+
+/** Records a set's era, opening a new one when `newEraName` is given. */
+export function setSetEra(setId: string, eraId: string | null, newEraName?: string): void {
+  if (newEraName) {
+    const id = `era_${meta.eras.length + 1}_${Date.now().toString(36)}`;
+    meta.eras.push({ id, name: newEraName, openedBy: setId });
+    meta.setEra[setId] = id;
+  } else if (eraId) {
+    meta.setEra[setId] = eraId;
+  }
   persist();
   notify();
 }

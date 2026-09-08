@@ -11,13 +11,13 @@
  * UI where they appear.
  */
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import type { SimState, IpId, Rarity, SetType, ArtistId } from '../sim/types.ts';
+import type { SimState, IpId, IpEntity, Rarity, SetType, ArtistId } from '../sim/types.ts';
 import { api } from '../sim/engine.ts';
 import { readAffection, displayTier } from '../sim/readings.ts';
 import { REGION_US } from '../sim/world.ts';
 import {
   subscribe, getState, getMeta, newGame, loadSaved, commit, advance,
-  setCharacterMeta, abandonGame, type AdvanceResult,
+  setCharacterMeta, setSetEra, abandonGame, type AdvanceResult,
 } from './store.ts';
 import {
   C, MONO, num, label, micro, Screen, Scroll, Header, Button, Field,
@@ -314,15 +314,57 @@ function Sets({ s, onNew }: { s: SimState; onNew: () => void }) {
 
 const UNIT_COST_PER_BOX = 140 * 24 * 0.55; // cents; printing.unitCost.standard
 
+type Finish = 'none' | 'holo' | 'reverseHolo' | 'textured' | 'goldFoil' | 'etched' | 'fullArt' | 'jumbo';
+
+const FINISHES: Finish[] = ['none', 'holo', 'reverseHolo', 'textured', 'etched', 'fullArt', 'goldFoil', 'jumbo'];
+const FINISH_LABEL: Record<Finish, string> = {
+  none: '—', holo: 'Holo', reverseHolo: 'Rev holo', textured: 'Textured',
+  etched: 'Etched', fullArt: 'Full art', goldFoil: 'Gold foil', jumbo: 'Jumbo',
+};
+
+interface RarityRow { rarity: Rarity; label: string; count: number; advertised: boolean; finish: Finish }
+
+const DEFAULT_ROWS: RarityRow[] = [
+  { rarity: 'uncommon', label: 'Uncommon', count: 45, advertised: true, finish: 'none' },
+  { rarity: 'rare', label: 'Rare', count: 25, advertised: true, finish: 'holo' },
+  { rarity: 'doubleRare', label: 'Double rare', count: 13, advertised: true, finish: 'holo' },
+  { rarity: 'ultraRare', label: 'Ultra rare', count: 7, advertised: true, finish: 'fullArt' },
+  { rarity: 'illustrationRare', label: 'Illustration rare', count: 5, advertised: true, finish: 'fullArt' },
+  { rarity: 'specialIllustrationRare', label: 'Special illustration', count: 3, advertised: true, finish: 'etched' },
+  { rarity: 'hyperRare', label: 'Hyper rare', count: 2, advertised: false, finish: 'goldFoil' },
+];
+
+/**
+ * Copies through the same arithmetic `rarityPull` uses in the engine, reading
+ * the same config: copies of ONE card per pack, scaled so a pack holds the same
+ * cardboard whatever the set size.
+ */
+function perCardPull(s: SimState, r: Rarity, size: number): number {
+  const cfg = s.config.rarity;
+  return (cfg.pull[r] / cfg.pullDivisor) * (cfg.referenceSetSize / Math.max(1, size));
+}
+
+function oddsText(perPack: number): string {
+  if (perPack <= 0) return '—';
+  if (perPack >= 1) return `${perPack.toFixed(1)}/pk`;
+  return `1 in ${Math.round(1 / perPack).toLocaleString()}`;
+}
+
+interface Crafted { ipId: IpId; rarity: Rarity; finish: Finish }
+
 function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void; onBack: () => void }) {
   const [step, setStep] = useState(0);
   const [name, setName] = useState('');
   const [type, setType] = useState<SetType>('main');
   const [size, setSize] = useState(180);
-  const [mix, setMix] = useState('Balanced');
+  const [eraChoice, setEraChoice] = useState<string>('none'); // 'none' | 'new' | era id
+  const [newEra, setNewEra] = useState('');
+  const [rows, setRows] = useState<RarityRow[]>(DEFAULT_ROWS);
+  const [crafted, setCrafted] = useState<Crafted[]>([]);
   const [units, setUnits] = useState(8000);
-  const [msrp] = useState(14000);
+  const msrp = 14000;
 
+  const meta = getMeta();
   const pub = s.publishers[s.playerId];
   const cash = pub ? pub.cash : 0;
   const cost = Math.round(units * UNIT_COST_PER_BOX);
@@ -331,22 +373,61 @@ function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void; onBack
   const artist = firstArtist(s);
   const steps = ['SHAPE', 'RARITY', 'CARDS', 'PRINT'];
 
+  const namedTotal = rows.reduce((n, r) => n + r.count, 0);
+  const commons = Math.max(0, size - namedTotal);
+  const allRows: RarityRow[] = [
+    { rarity: 'common', label: 'Common', count: commons, advertised: true, finish: 'none' },
+    ...rows,
+  ];
+  const slots = allRows.reduce((n, r) => n + perCardPull(s, r.rarity, size) * r.count, 0);
+  const finished = allRows.filter(r => r.finish !== 'none').reduce((n, r) => n + r.count, 0);
+  const finishShare = size > 0 ? finished / size : 0;
+
+  const craftedAt = (r: Rarity) => crafted.filter(c => c.rarity === r).length;
+  const setRow = (i: number, patch: Partial<RarityRow>) =>
+    setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+
   const doCommit = () => {
+    let madeSetId = '';
     commit(st => {
       const setId = api.createSet(st, name.trim() || 'Untitled', type, size);
+      madeSetId = setId as string;
       const a = firstArtist(st);
-      if (a) {
-        for (let i = 0; i < size; i++) {
-          const subject = ips[i % Math.max(1, ips.length)];
-          if (!subject) break;
-          api.designCard(st, setId, subject.id, [], pickRarity(mix, i), a);
+      if (!a) return;
+      let subjectAt = 0;
+      const nextSubject = (): IpId | null => {
+        const list = Object.values(st.ips).filter(ip => ip.publisherId === st.playerId);
+        const pick = list[subjectAt % Math.max(1, list.length)];
+        subjectAt++;
+        return pick ? pick.id : null;
+      };
+      // The cards the player actually made, at exactly the rarity and finish
+      // they chose.
+      for (const c of crafted) {
+        api.designCard(st, setId, c.ipId, [], c.rarity, a, undefined, undefined,
+          c.finish === 'none' ? undefined : c.finish);
+      }
+      // The rest of the list, filling each rarity to the count the player set.
+      for (const row of allRows) {
+        const remaining = row.count - craftedAt(row.rarity);
+        for (let i = 0; i < remaining; i++) {
+          const subj = nextSubject();
+          if (!subj) break;
+          api.designCard(st, setId, subj, [], row.rarity, a, undefined, undefined,
+            row.finish === 'none' ? undefined : row.finish);
         }
       }
       const pid = api.defineProduct(st, setId, 'boosterBox', REGION_US, 24, msrp);
       api.commitPrintRun(st, setId, { [pid]: units }, 'standard');
     });
+    if (madeSetId) {
+      if (eraChoice === 'new' && newEra.trim()) setSetEra(madeSetId, null, newEra.trim());
+      else if (eraChoice !== 'none' && eraChoice !== 'new') setSetEra(madeSetId, eraChoice);
+    }
     onDone();
   };
+
+  const canNext = step === 0 ? !!name.trim() && size > 0 && !(eraChoice === 'new' && !newEra.trim()) : true;
 
   return (
     <Screen>
@@ -367,11 +448,15 @@ function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void; onBack
         {step === 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 15, padding: '15px 18px 0' }}>
             <Field label="Set name" value={name} onChange={setName} placeholder="Ashfall" />
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
               <span style={label}>TYPE</span>
               <div style={{ display: 'flex', background: C.raised, border: `1px solid ${C.rule}`, borderRadius: 2, overflow: 'hidden' }}>
                 {(['main', 'specialty', 'subset', 'promo', 'collab'] as SetType[]).map(t => (
-                  <button key={t} onClick={() => setType(t)} style={{
+                  <button key={t} onClick={() => {
+                    setType(t);
+                    if (t !== 'main' && eraChoice === 'new') setEraChoice('none');
+                  }} style={{
                     flexGrow: 1, height: 44, border: 'none', cursor: 'pointer', fontFamily: 'inherit',
                     background: type === t ? C.ink : 'transparent',
                     color: type === t ? C.onAccent : C.muted,
@@ -380,9 +465,61 @@ function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void; onBack
                 ))}
               </div>
             </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+              <span style={label}>ERA</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                {type === 'main' && (
+                  <button onClick={() => setEraChoice('new')} style={{
+                    display: 'flex', flexDirection: 'column', gap: 3, padding: '10px 12px', textAlign: 'left',
+                    background: C.panel, border: eraChoice === 'new' ? `2px solid ${C.go}` : `1px solid ${C.rule}`,
+                    borderRadius: 2, color: C.ink, cursor: 'pointer', fontFamily: 'inherit',
+                  }}>
+                    <span style={{ fontSize: 13.5, fontWeight: 600 }}>Open a new era</span>
+                    <span style={{ fontSize: 11, lineHeight: 1.35, color: C.muted }}>
+                      <span style={{ color: C.note }}>Reaches people who never played.</span>{' '}
+                      <span style={{ color: C.bad }}>Costs you the ones who did.</span>
+                    </span>
+                  </button>
+                )}
+                {eraChoice === 'new' && (
+                  <Field label="Era name" value={newEra} onChange={setNewEra} placeholder="First Light" />
+                )}
+                {meta.eras.map(e => (
+                  <button key={e.id} onClick={() => setEraChoice(e.id)} style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10,
+                    padding: '10px 12px', textAlign: 'left', background: C.panel,
+                    border: eraChoice === e.id ? `2px solid ${C.go}` : `1px solid ${C.rule}`,
+                    borderRadius: 2, color: C.ink, cursor: 'pointer', fontFamily: 'inherit',
+                  }}>
+                    <span style={{ fontSize: 13.5, fontWeight: 600 }}>Part of {e.name}</span>
+                    <span style={{ ...micro }}>
+                      {Object.values(meta.setEra).filter(x => x === e.id).length} SETS
+                    </span>
+                  </button>
+                ))}
+                <button onClick={() => setEraChoice('none')} style={{
+                  padding: '10px 12px', textAlign: 'left', background: C.panel,
+                  border: eraChoice === 'none' ? `2px solid ${C.go}` : `1px solid ${C.rule}`,
+                  borderRadius: 2, color: C.ink, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5,
+                }}>Stands alone</button>
+              </div>
+              {type !== 'main' && (
+                <div style={{ fontSize: 11, lineHeight: 1.4, color: C.dim }}>
+                  Only a main set can open an era. A {type} set can join one, or stand alone.
+                </div>
+              )}
+            </div>
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
               <span style={label}>HOW MANY CARDS</span>
-              <Stepper value={size} onChange={setSize} step={10} min={20} max={400} />
+              <input inputMode="numeric" value={String(size)}
+                onChange={e => setSize(Math.max(0, Math.min(999, parseInt(e.target.value.replace(/\D/g, ''), 10) || 0)))}
+                style={{
+                  height: 50, padding: '0 13px', background: C.panel, color: C.ink,
+                  border: `1px solid ${C.ink}`, borderRadius: 2, ...num,
+                  fontSize: 20, fontWeight: 600, outline: 'none', width: '100%',
+                }} />
               <div style={{ fontSize: 11.5, lineHeight: 1.4, color: C.muted }}>
                 A pack still holds the same cardboard. A bigger set makes every card rarer — it does not put more in the box.
               </div>
@@ -391,44 +528,80 @@ function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void; onBack
         )}
 
         {step === 1 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '15px 18px 0' }}>
-            <span style={label}>WHERE THE PACK SLOTS GO</span>
-            {Object.entries(MIXES).map(([k, v]) => (
-              <button key={k} onClick={() => setMix(k)} style={{
-                display: 'flex', flexDirection: 'column', gap: 3, padding: '12px 12px', textAlign: 'left',
-                background: C.panel, border: mix === k ? `2px solid ${C.go}` : `1px solid ${C.rule}`,
-                borderRadius: 2, color: C.ink, cursor: 'pointer', fontFamily: 'inherit',
-              }}>
-                <span style={{ fontSize: 14, fontWeight: 600 }}>{k}</span>
-                <span style={{ fontSize: 11.5, lineHeight: 1.35, color: C.muted }}>{v.blurb}</span>
-              </button>
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, background: C.rule, borderBottom: `1px solid ${C.rule}` }}>
+              <div style={{ padding: '10px 14px', background: C.panel }}>
+                <div style={micro}>PACK SLOTS</div>
+                <div style={{ ...num, fontSize: 15, fontWeight: 600 }}>{slots.toFixed(1)}</div>
+                <div style={{ fontSize: 10, color: C.dim, marginTop: 4 }}>Fixed. You divide them.</div>
+              </div>
+              <div style={{ padding: '10px 14px', background: C.panel }}>
+                <div style={micro}>FINISHED</div>
+                <div style={{ ...num, fontSize: 15, fontWeight: 600, color: finishShare > 0.34 ? C.bad : C.note }}>
+                  {Math.round(finishShare * 100)}%
+                </div>
+                <div style={{ fontSize: 10, color: C.dim, marginTop: 4 }}>{finished} of {size}</div>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 52px 58px', gap: 7, padding: '9px 16px 5px', ...micro }}>
+              <div>RARITY · FINISH</div>
+              <div style={{ textAlign: 'right' }}>CARDS</div>
+              <div style={{ textAlign: 'right' }}>PULL</div>
+            </div>
+
+            <div style={{
+              display: 'grid', gridTemplateColumns: '1fr 52px 58px', gap: 7, alignItems: 'center',
+              padding: '9px 16px', borderTop: `1px solid ${C.rule}`, background: C.raised,
+            }}>
+              <div>
+                <div style={{ fontSize: 12.5 }}>Common</div>
+                <div style={{ ...micro, color: C.dim }}>FILLS THE REST</div>
+              </div>
+              <div style={{ textAlign: 'right', ...num, fontSize: 13 }}>{commons}</div>
+              <div style={{ textAlign: 'right', ...num, fontSize: 10.5, color: C.muted }}>
+                {oddsText(perCardPull(s, 'common', size) * commons)}
+              </div>
+            </div>
+
+            {rows.map((r, i) => (
+              <div key={r.rarity} style={{ borderTop: `1px solid ${C.rule}`, background: C.panel, padding: '9px 16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 52px 58px', gap: 7, alignItems: 'center' }}>
+                  <div style={{ fontSize: 12.5 }}>{r.label}</div>
+                  <div style={{ textAlign: 'right', ...num, fontSize: 13 }}>{r.count}</div>
+                  <div style={{ textAlign: 'right', ...num, fontSize: 10.5, color: C.muted }}>
+                    {oddsText(perCardPull(s, r.rarity, size) * r.count)}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 7, flexWrap: 'wrap' }}>
+                  <button onClick={() => setRow(i, { count: Math.max(0, r.count - 1) })} style={pillBtn}>−</button>
+                  <button onClick={() => setRow(i, { count: r.count + 1 })} style={pillBtn}>+</button>
+                  <select value={r.finish} onChange={e => setRow(i, { finish: e.target.value as Finish })}
+                    style={{
+                      height: 32, background: C.raised, color: C.ink, border: `1px solid ${C.rule}`,
+                      borderRadius: 2, fontSize: 11.5, fontFamily: 'inherit', padding: '0 6px',
+                    }}>
+                    {FINISHES.map(f => <option key={f} value={f}>{FINISH_LABEL[f]}</option>)}
+                  </select>
+                  <button onClick={() => setRow(i, { advertised: !r.advertised })} style={{
+                    ...pillBtn, width: 'auto', padding: '0 10px',
+                    color: r.advertised ? C.muted : C.bad,
+                    borderColor: r.advertised ? C.rule : C.bad,
+                  }}>{r.advertised ? 'Advertised' : 'Secret'}</button>
+                </div>
+              </div>
             ))}
-            <Note>
-              A pack holds a fixed number of cards, so this divides them and never adds. Rarity buys a better story and a worse box.
-            </Note>
-          </div>
+
+            <div style={{ padding: '12px 16px 0', fontSize: 11, lineHeight: 1.42, color: C.muted }}>
+              A finish only works while it is rare. Past a third of the set it stops reading as one,
+              and the print bill climbs faster than the chase does. A secret rarity is on no rarity
+              sheet — the market finds it after release or not at all.
+            </div>
+          </>
         )}
 
         {step === 2 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '15px 18px 0' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, background: C.rule }}>
-              <div style={{ padding: '9px 12px', background: C.ground }}>
-                <div style={micro}>CHARACTERS</div>
-                <div style={{ ...num, fontSize: 17, fontWeight: 600 }}>{ips.length}</div>
-              </div>
-              <div style={{ padding: '9px 12px', background: C.ground }}>
-                <div style={micro}>CARDS IN SET</div>
-                <div style={{ ...num, fontSize: 17, fontWeight: 600 }}>{size}</div>
-              </div>
-            </div>
-            {ips.length === 0
-              ? <Note tone="bad">You have no characters. Go back to the roster and make one — a set needs somebody on the cards.</Note>
-              : <div style={{ fontSize: 12, lineHeight: 1.45, color: C.muted }}>
-                  Your {ips.length} character{ips.length === 1 ? '' : 's'} are spread across all {size} cards, and the
-                  studio fills the rest at house quality. Choosing which card is which character is not built yet.
-                </div>}
-            {!artist && <Note tone="bad">No artist is available to take the briefs.</Note>}
-          </div>
+          <CardsStep s={s} rows={allRows} crafted={crafted} setCrafted={setCrafted} ips={ips} size={size} />
         )}
 
         {step === 3 && (
@@ -453,17 +626,13 @@ function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void; onBack
               The run cannot move once committed, and where it ships locks with it — eighteen weeks
               before a single box exists, and long before anyone tells you whether this is any good.
             </Note>
-            {short > 0 && <div style={{ fontSize: 11, lineHeight: 1.4, color: C.dim }}>
-              The sim currently lends automatically when cash runs out. An explicit loan is
-              specced but not wired — `api.borrow` exists and nothing calls it.
-            </div>}
           </div>
         )}
 
         <div style={{ padding: '18px 18px 34px' }}>
           {step < 3
-            ? <Button onClick={() => setStep(step + 1)} disabled={step === 0 && !name.trim()}>
-                {steps[step + 1] ? steps[step + 1]!.charAt(0) + steps[step + 1]!.slice(1).toLowerCase() : 'Next'}
+            ? <Button onClick={() => setStep(step + 1)} disabled={!canNext}>
+                {['Rarities', 'Cards', 'Print run'][step]}
               </Button>
             : <Button onClick={doCommit} disabled={ips.length === 0 || !artist}>
                 {short > 0 ? `Borrow ${money(short)} and print` : 'Commit the print run'}
@@ -473,6 +642,92 @@ function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void; onBack
     </Screen>
   );
 }
+
+const pillBtn = {
+  width: 32, height: 32, background: C.raised, color: C.ink, border: `1px solid ${C.rule}`,
+  borderRadius: 2, fontSize: 14, fontFamily: 'inherit', cursor: 'pointer', padding: 0,
+} as const;
+
+/** Craft individual cards: pick a character, a rarity, and a finish. */
+function CardsStep({ s, rows, crafted, setCrafted, ips, size }: {
+  s: SimState; rows: RarityRow[]; crafted: Crafted[];
+  setCrafted: (c: Crafted[]) => void; ips: IpEntity[]; size: number;
+}) {
+  const [pickIp, setPickIp] = useState<string>(ips[0] ? String(ips[0]!.id) : '');
+  const [pickRarity, setPickRarity] = useState<Rarity>('rare');
+  const [pickFinish, setPickFinish] = useState<Finish>('holo');
+  const nameOf = (id: string) => Object.values(s.ips).find(i => String(i.id) === id)?.name ?? id;
+  const roomAt = (r: Rarity) =>
+    (rows.find(x => x.rarity === r)?.count ?? 0) - crafted.filter(c => c.rarity === r).length;
+
+  return (
+    <>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, background: C.rule, borderBottom: `1px solid ${C.rule}` }}>
+        <div style={{ padding: '9px 16px', background: C.ground }}>
+          <div style={micro}>YOU MADE</div>
+          <div style={{ ...num, fontSize: 17, fontWeight: 600 }}>{crafted.length}</div>
+        </div>
+        <div style={{ padding: '9px 16px', background: C.ground }}>
+          <div style={micro}>THE STUDIO FILLS</div>
+          <div style={{ ...num, fontSize: 17, fontWeight: 600, color: C.dim }}>{Math.max(0, size - crafted.length)}</div>
+        </div>
+      </div>
+
+      {crafted.length === 0 && <Empty>No cards of your own yet. The studio will fill every slot with house work.</Empty>}
+
+      {crafted.map((c, i) => (
+        <div key={i} style={{
+          display: 'grid', gridTemplateColumns: '1fr auto 34px', gap: 8, alignItems: 'center',
+          padding: '9px 16px', borderTop: `1px solid ${C.rule}`, background: C.panel,
+        }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontFamily: MONO, fontWeight: 600, fontSize: 15 }}>{nameOf(String(c.ipId))}</div>
+            <div style={{ ...micro, letterSpacing: '0.07em' }}>{FINISH_LABEL[c.finish].toUpperCase()}</div>
+          </div>
+          <div style={{ fontSize: 11.5, color: C.ink3 }}>
+            {rows.find(r => r.rarity === c.rarity)?.label ?? c.rarity}
+          </div>
+          <button onClick={() => setCrafted(crafted.filter((_, j) => j !== i))} style={{
+            ...pillBtn, width: 30, height: 30, color: C.bad, borderColor: C.rule,
+          }}>×</button>
+        </div>
+      ))}
+
+      <div style={{ padding: '14px 16px 0', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <span style={label}>ADD A CARD</span>
+        <select value={pickIp} onChange={e => setPickIp(e.target.value)} style={selectStyle}>
+          {ips.map(ip => <option key={String(ip.id)} value={String(ip.id)}>{ip.name}</option>)}
+        </select>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <select value={pickRarity} onChange={e => setPickRarity(e.target.value as Rarity)} style={{ ...selectStyle, flexGrow: 1 }}>
+            {rows.map(r => (
+              <option key={r.rarity} value={r.rarity} disabled={roomAt(r.rarity) <= 0}>
+                {r.label} ({roomAt(r.rarity)} left)
+              </option>
+            ))}
+          </select>
+          <select value={pickFinish} onChange={e => setPickFinish(e.target.value as Finish)} style={{ ...selectStyle, flexGrow: 1 }}>
+            {FINISHES.map(f => <option key={f} value={f}>{FINISH_LABEL[f]}</option>)}
+          </select>
+        </div>
+        <Button tone="quiet" disabled={!pickIp || roomAt(pickRarity) <= 0} onClick={() =>
+          setCrafted([...crafted, { ipId: pickIp as IpId, rarity: pickRarity, finish: pickFinish }])}>
+          Add card
+        </Button>
+        <div style={{ fontSize: 11, lineHeight: 1.42, color: C.muted }}>
+          Make the same character more than once. Four Arylas at four rarities is a variant run, and
+          collectors chase the complete set of them.
+        </div>
+      </div>
+    </>
+  );
+}
+
+const selectStyle = {
+  height: 44, background: C.panel, color: C.ink, border: `1px solid ${C.rule}`,
+  borderRadius: 2, fontSize: 13, fontFamily: 'inherit', padding: '0 10px', width: '100%',
+} as const;
+
 
 // --- studio: ledger --------------------------------------------------------
 

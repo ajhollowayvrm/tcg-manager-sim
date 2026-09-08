@@ -1011,15 +1011,23 @@ export const api = {
     submit(s, { type: 'createSet', tick: s.tick, payload: { id, name, setType, targetSize } });
     return id;
   },
+  /**
+   * `treatment` was reachable through the decision payload and the handler
+   * since the engine was written, and no caller could set it: the parameter
+   * simply was not on this function. Exposing it is additive — an omitted
+   * treatment still derives from the rarity exactly as before — and it is what
+   * lets a player choose a set's finishes. See `docs/design/sets-and-distribution.md`.
+   */
   designCard(
     s: SimState, setId: SetId, subjectIp: IpId, cameos: IpId[], rarity: Rarity, artistId: ArtistId,
     progressionLink?: { chainId: ChainId; position: number },
     illustrationLink?: ChainId,
+    treatment?: Treatment,
   ): CardId {
     const id = nextId(s, 'card') as CardId;
     submit(s, {
       type: 'designCard', tick: s.tick,
-      payload: { id, setId, subjectIp, cameos, rarity, artistId, progressionLink, illustrationLink },
+      payload: { id, setId, subjectIp, cameos, rarity, artistId, progressionLink, illustrationLink, treatment },
     });
     return id;
   },
