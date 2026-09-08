@@ -22,8 +22,6 @@ export const ARCHETYPES: Array<{ name: string; lore: string; sells: string }> = 
   { name: 'Legend', lore: 'Half-remembered. Rarely shown at all.', sells: 'Collectors and investors, not children.' },
   { name: 'Upstart', lore: 'New, loud, everywhere for one year.', sells: 'Cheap reach with kids. Gone in a decade.' },
 ];
-export const UNIT_COST_PER_BOX = 140 * 24 * 0.55; // cents; printing.unitCost.standard
-
 export type Finish = Treatment;
 
 /** Grouped so the picker reads like a print shop's menu, not a flat list. */

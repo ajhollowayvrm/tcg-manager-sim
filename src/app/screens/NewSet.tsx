@@ -7,17 +7,19 @@
  * sequence, the sim receives a single irreversible bet.
  */
 import React, { useEffect, useState } from 'react';
-import type { SimState, IpId, IpEntity, Rarity, SetType, ArtistId } from '../../sim/types.ts';
+import type {
+  SimState, IpId, IpEntity, Rarity, SetType, ArtistId, ProductKind, PrintQualityTier, RegionId,
+} from '../../sim/types.ts';
 import { api } from '../../sim/engine.ts';
-import { REGION_US } from '../../sim/world.ts';
+import { unlockedRegions } from '../../sim/regions.ts';
 import {
   C, MONO, num, label, micro, Screen, Scroll, Header, Button, Field, Stepper, Row, Note, Empty,
   pillBtn, selectStyle,
 } from '../ui.tsx';
-import { money, oddsText } from '../format.ts';
+import { money, moneyExact, oddsText, pct } from '../format.ts';
 import { commit, getMeta, saveFormat, setSetEra } from '../store.ts';
 import {
-  UNIT_COST_PER_BOX, ALL_RARITIES, DEFAULT_ROWS, perCardPull, finishText,
+  ALL_RARITIES, DEFAULT_ROWS, perCardPull, finishText,
   type Finish, type RarityRow,
 } from '../setdesign.ts';
 import { FinishPicker } from './FinishPicker.tsx';
@@ -30,6 +32,16 @@ function firstArtist(s: SimState): ArtistId | null {
 }
 
 interface Crafted { ipId: IpId; rarity: Rarity; finishes: Finish[] }
+
+/** One SKU of the run: a form, a market, a price and a quantity. */
+interface Sku {
+  kind: ProductKind; regionId: RegionId; packsPerUnit: number; msrp: number; units: number;
+}
+
+const PRODUCT_KINDS: ProductKind[] = [
+  'boosterBox', 'pack', 'etb', 'collectionBox', 'tin', 'premiumCollection',
+  'bundle', 'blister', 'surpriseBox',
+];
 
 
 export function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void; onBack: () => void }) {
@@ -45,17 +57,34 @@ export function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void;
   const [newEra, setNewEra] = useState('');
   const [rows, setRows] = useState<RarityRow[]>(DEFAULT_ROWS);
   const [crafted, setCrafted] = useState<Crafted[]>([]);
-  const [units, setUnits] = useState(8000);
-  const msrp = 14000;
+  const [quality, setQuality] = useState<PrintQualityTier>('standard');
+  /**
+   * The SKUs this run prints.
+   *
+   * A `Product` is region-scoped, so "how much, where, and in what form" is one
+   * decision, not three. Several SKUs in ONE region split that region's demand;
+   * SKUs in different regions do not — which is the whole reason to open a
+   * region, and it is invisible unless the player can define more than one.
+   */
+  const [skus, setSkus] = useState<Sku[]>([
+    { kind: 'boosterBox', regionId: s.homeRegionId, packsPerUnit: 24, msrp: 14000, units: 8000 },
+  ]);
 
   const meta = getMeta();
   const pub = s.publishers[s.playerId];
   const cash = pub ? pub.cash : 0;
-  const cost = Math.round(units * UNIT_COST_PER_BOX);
+  // The real cost formula, not a frozen constant: `unitCost[quality]` times the
+  // packs in the unit times `cogsCoefficient`. The old screen hardcoded the
+  // standard-quality booster box and could not have shown a quality choice.
+  const unitCogs = (k: Sku): number =>
+    s.config.printing.unitCost[quality] * k.packsPerUnit * s.config.printing.cogsCoefficient;
+  const cost = Math.round(skus.reduce((n, k) => n + unitCogs(k) * k.units, 0));
   const short = Math.max(0, cost - cash);
   const ips = Object.values(s.ips).filter(ip => ip.publisherId === s.playerId);
   const artist = firstArtist(s);
   const steps = ['SHAPE', 'RARITY', 'CARDS', 'PRINT'];
+  const openRegions = unlockedRegions(s, s.playerId);
+  const tiers: PrintQualityTier[] = ['budget', 'standard', 'premium', 'archival'];
 
   const namedTotal = rows.reduce((n, r) => n + r.count, 0);
   const commons = Math.max(0, size - namedTotal);
@@ -99,8 +128,15 @@ export function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void;
           api.designCard(st, setId, subj, [], row.rarity, a, undefined, undefined, row.finishes);
         }
       }
-      const pid = api.defineProduct(st, setId, 'boosterBox', REGION_US, 24, msrp);
-      api.commitPrintRun(st, setId, { [pid]: units }, 'standard');
+      // One commitment. The player experienced a sequence; the sim receives a
+      // single irreversible bet — how much, where and in what form, together.
+      const quantities: Record<string, number> = {};
+      for (const k of skus) {
+        if (k.units <= 0) continue;
+        const pid = api.defineProduct(st, setId, k.kind, k.regionId, k.packsPerUnit, k.msrp);
+        quantities[pid as string] = k.units;
+      }
+      api.commitPrintRun(st, setId, quantities as never, quality);
     });
     if (madeSetId) {
       if (eraChoice === 'new' && newEra.trim()) setSetEra(madeSetId, null, newEra.trim());
@@ -344,13 +380,73 @@ export function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void;
         )}
 
         {step === 3 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 13, padding: '15px 18px 0' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '15px 18px 0' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-              <span style={label}>HOW MANY BOXES</span>
-              <Stepper value={units} onChange={setUnits} step={500} min={500} max={60000} />
+              <span style={label}>PRINT QUALITY</span>
+              <div style={{ display: 'flex', background: C.raised, border: `1px solid ${C.rule}`, borderRadius: 2, overflow: 'hidden' }}>
+                {tiers.map(t => {
+                  const owned = t === 'budget' || t === 'standard' || pub?.unlocks.printQualityTiers.includes(t);
+                  return (
+                    <button key={t} disabled={!owned} onClick={() => setQuality(t)} style={{
+                      flexGrow: 1, height: 46, border: 'none', cursor: owned ? 'pointer' : 'default',
+                      fontFamily: 'inherit', textTransform: 'capitalize', fontSize: 11,
+                      background: quality === t ? C.ink : 'transparent',
+                      color: quality === t ? C.onAccent : owned ? C.muted : C.dimmer,
+                      fontWeight: quality === t ? 600 : 400,
+                    }}>{t}</button>
+                  );
+                })}
+              </div>
+              <div style={{ ...micro, color: C.dim }}>
+                {moneyExact(s.config.printing.unitCost[quality])} A PACK ·{' '}
+                {pct(s.config.printing.errorRate[quality], 2)} ERROR RATE ·{' '}
+                GRADES {s.config.printing.qualityGradeShift[quality] >= 0 ? '+' : ''}
+                {s.config.printing.qualityGradeShift[quality].toFixed(2)}
+              </div>
             </div>
+
+            <div style={{ ...label }}>WHAT YOU PRINT, AND WHERE</div>
+            {skus.map((k, i) => (
+              <div key={i} style={{ border: `1px solid ${C.rule}`, background: C.panel, padding: '10px 12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                  <span style={{ ...micro }}>SKU {i + 1}</span>
+                  {skus.length > 1 && (
+                    <button onClick={() => setSkus(skus.filter((_, j) => j !== i))}
+                      style={{ ...pillBtn, color: C.bad }}>×</button>
+                  )}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+                  <select value={k.kind} style={selectStyle}
+                    onChange={e => setSkus(skus.map((x, j) => j === i ? { ...x, kind: e.target.value as ProductKind } : x))}>
+                    {PRODUCT_KINDS.map(pk => <option key={pk} value={pk}>{pk}</option>)}
+                  </select>
+                  <select value={k.regionId} style={selectStyle}
+                    onChange={e => setSkus(skus.map((x, j) => j === i ? { ...x, regionId: e.target.value as never } : x))}>
+                    {openRegions.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                  </select>
+                  <div style={{ ...micro }}>PACKS IN THE UNIT</div>
+                  <Stepper value={k.packsPerUnit} min={1} max={60}
+                    onChange={v => setSkus(skus.map((x, j) => j === i ? { ...x, packsPerUnit: v } : x))} />
+                  <div style={{ ...micro }}>STICKER PRICE, IN CENTS</div>
+                  <Stepper value={k.msrp} step={500} min={500} max={100000}
+                    onChange={v => setSkus(skus.map((x, j) => j === i ? { ...x, msrp: v } : x))} />
+                  <div style={{ ...micro }}>HOW MANY</div>
+                  <Stepper value={k.units} step={500} min={0} max={200000}
+                    onChange={v => setSkus(skus.map((x, j) => j === i ? { ...x, units: v } : x))} />
+                </div>
+                <div style={{ ...micro, color: C.dim, marginTop: 8 }}>
+                  {moneyExact(unitCogs(k))} A UNIT · {money(Math.round(unitCogs(k) * k.units))} TOTAL
+                </div>
+              </div>
+            ))}
+            {openRegions.length > 0 && (
+              <Button tone="quiet" onClick={() => setSkus([...skus, {
+                kind: 'boosterBox', regionId: openRegions[0]!.id, packsPerUnit: 24, msrp: 14000, units: 2000,
+              }])}>Add another SKU</Button>
+            )}
+
             <div style={{ border: `1px solid ${C.rule}`, background: C.panel }}>
-              <Row left={`${units.toLocaleString()} boxes at 18.48`} right={money(cost)} strong />
+              <Row left={`${skus.reduce((n, k) => n + k.units, 0).toLocaleString()} units`} right={money(cost)} strong />
               <div style={{ height: 1, background: C.ruleSoft, margin: '0 12px' }} />
               <Row left="Cash on hand" right={money(cash)} />
               {short > 0 && <>
@@ -364,6 +460,7 @@ export function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void;
             <Note tone="bad">
               The run cannot move once committed, and where it ships locks with it — eighteen weeks
               before a single box exists, and long before anyone tells you whether this is any good.
+              You choose the channels under World · Channels; stock you never place cannot sell.
             </Note>
           </div>
         )}
