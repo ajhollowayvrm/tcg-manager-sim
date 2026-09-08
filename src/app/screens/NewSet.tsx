@@ -16,7 +16,7 @@ import {
   C, MONO, num, label, micro, Screen, Scroll, Header, Button, Field, Stepper, Row, Note, Empty,
   pillBtn, selectStyle,
 } from '../ui.tsx';
-import { money, moneyExact, oddsText, pct } from '../format.ts';
+import { money, moneyExact, pct } from '../format.ts';
 import { commit, getMeta, saveFormat, setSetEra } from '../store.ts';
 import {
   DEFAULT_ROWS, DEFAULT_SLOTS, COMMON_ROW_ID, newRowId, newSlotId,
@@ -437,8 +437,8 @@ How many cards exist in the set. It does not change what a pack holds — you bu
         )}
 
         {step === 2 && (
-          <PackStep s={s} rows={allRows} slots={slots} setSlots={setSlots}
-            draws={draws} pulls={pulls} />
+          <PackStep rows={allRows} slots={slots} setSlots={setSlots}
+            draws={draws} />
         )}
 
         {step === 3 && (
@@ -572,12 +572,11 @@ function Pane({ step, dir, children }: { step: number; dir: number; children: Re
  * same slot. That is deliberate: it lets a studio think in percentages without
  * the screen refusing to render until they sum to a hundred.
  */
-function PackStep({ s, rows, slots, setSlots, draws, pulls }: {
-  s: SimState; rows: RarityRow[]; slots: PackSlot[];
+function PackStep({ rows, slots, setSlots, draws }: {
+  rows: RarityRow[]; slots: PackSlot[];
   setSlots: (v: PackSlot[]) => void;
-  draws: Record<string, number>; pulls: Record<string, number>;
+  draws: Record<string, number>;
 }) {
-  const labelOf = (id: string) => rows.find(r => r.id === id)?.label ?? '—';
   const setSlot = (i: number, patch: Partial<PackSlot>) =>
     setSlots(slots.map((sl, j) => (j === i ? { ...sl, ...patch } : sl)));
 
@@ -664,14 +663,13 @@ function PackStep({ s, rows, slots, setSlots, draws, pulls }: {
         }}>+ Add a slot</button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 108px 74px', gap: 7, padding: '18px 16px 5px', ...micro }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 116px', gap: 7, padding: '18px 16px 5px', ...micro }}>
         <div>WHAT A PACK HOLDS</div>
         <div style={{ textAlign: 'right' }}>HOW OFTEN</div>
-        <div style={{ textAlign: 'right' }}>A NAMED CARD</div>
       </div>
       {rows.map(r => (
         <div key={r.id} style={{
-          display: 'grid', gridTemplateColumns: '1fr 108px 74px', gap: 7, alignItems: 'center',
+          display: 'grid', gridTemplateColumns: '1fr 116px', gap: 7, alignItems: 'center',
           padding: '8px 16px', borderTop: `1px solid ${C.rule}`, background: C.ground,
         }}>
           <div style={{ fontSize: 12, color: draws[r.id] ? C.ink : C.dimmer }}>{r.label}</div>
@@ -681,16 +679,12 @@ function PackStep({ s, rows, slots, setSlots, draws, pulls }: {
           }}>
             {packFrequency(draws[r.id] ?? 0)}
           </div>
-          <div style={{ ...num, fontSize: 11.5, textAlign: 'right', color: pulls[r.id] ? C.note : C.dimmer }}>
-            {pulls[r.id] ? oddsText(pulls[r.id]!) : '—'}
-          </div>
         </div>
       ))}
       <div style={{ padding: '12px 16px 0', fontSize: 11, lineHeight: 1.42, color: C.muted }}>
-        HOW OFTEN is whether a pack holds one of that rung at all. A NAMED CARD is the odds of
-        pulling one PARTICULAR card from it — the rung's draws split across every card in it, which
-        is why adding cards to a rung makes each one rarer without changing how often the rung shows
-        up. You set the pack; both follow.
+        HOW OFTEN is whether a pack holds one of that rung at all. The odds of any ONE card still
+        fall as you add cards to a rung — the same draws split further — so a rung's size is a real
+        lever even though it does not change the line above. You set the pack; the odds follow.
       </div>
     </>
   );
