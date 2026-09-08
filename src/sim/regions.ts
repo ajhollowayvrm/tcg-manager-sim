@@ -25,6 +25,7 @@ import type {
   SimState, Region, RegionId, CardSet, Product, IpKind, Rarity, AudienceSegment,
 } from './types.ts';
 import { regionReadingNoise } from './readings.ts';
+import { seedRng, randRange } from './rng.ts';
 
 /** A reading of a region's taste. Every field carries error; none is the truth. */
 export interface RegionReading {
@@ -45,6 +46,44 @@ export interface RegionReading {
  * on top, because a region that likes your characters can still balk at what a
  * booster box costs there.
  */
+/**
+ * A region's appetite for one product form.
+ *
+ * The nine built-in forms are a fitted table. Anything the studio invents is a
+ * HIDDEN ROLL it only learns by shipping — `CONCEPT.md` §Product SKU: "regional
+ * taste is hidden until earned through research and release history".
+ *
+ * **The roll is DERIVED, never drawn.** `seedRng` hashes its own string and
+ * warms its own state, so this costs nothing on `regionRng` and cannot
+ * renumber a run (04-workflow.md rule 3). Storing it in `Region.truth` instead
+ * would need a draw per key at world creation, which is exactly the thing that
+ * moves every balance number. Deriving also means a form invented in year 12
+ * has an appetite that was always true of this world, rather than one that
+ * depends on when the studio got around to inventing it.
+ *
+ * The shape mirrors the built-ins deliberately — one base per form, jittered
+ * per foreign region, home un-jittered — because a custom form that behaved
+ * uniformly across regions would be a different KIND of thing to a built-in,
+ * and the player has no way to know that.
+ *
+ * **This replaced `?? 1`, which was not the neutral fallback it looked like.**
+ * At `productFitDivisor` 1.5 an unknown form scored 1/1.5 = 0.667, tying `pack`
+ * — the best built-in — and beating the other eight. Every invented product
+ * would have been a free upgrade.
+ */
+export function productPreferenceFor(s: SimState, region: Region, kind: string): number {
+  const known = region.truth.productPreference[kind];
+  if (known !== undefined) return known;
+
+  const w = s.config.world;
+  const base = randRange(seedRng(`${s.seed}:productline:${kind}`),
+    w.customLinePreferenceMin, w.customLinePreferenceMax);
+  // The home market is the un-jittered baseline, as it is for the built-ins.
+  if (region.id === s.homeRegionId) return base;
+  return base * randRange(seedRng(`${s.seed}:productline:${kind}:${region.id}`),
+    w.productPreferenceJitterMin, w.productPreferenceJitterMax);
+}
+
 export function setFit(s: SimState, region: Region, set: CardSet, p: Product): number {
   const t = region.truth;
 
@@ -70,7 +109,7 @@ export function setFit(s: SimState, region: Region, set: CardSet, p: Product): n
   const cfg = s.config.region;
   const tasteFit = clamp01(cfg.tasteFitCentre + taste);
   const appetiteFit = clamp01(appetite / cfg.appetiteFitDivisor);
-  const productFit = clamp01((t.productPreference[p.kind] ?? 1) / cfg.productFitDivisor);
+  const productFit = clamp01(productPreferenceFor(s, region, p.kind) / cfg.productFitDivisor);
 
   // Price tolerance is a ratio, not a preference: a region that tolerates 0.6
   // of what the US will pay walks away from a US-priced booster box.

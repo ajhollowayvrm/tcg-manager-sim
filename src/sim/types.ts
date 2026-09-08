@@ -1211,6 +1211,12 @@ export type Decision =
       type: 'defineProduct'; tick: Tick; payload: {
         id: ProductId; setId: SetId; kind: ProductKind; regionId: RegionId;
         packsPerUnit: number; msrp: Cents;
+        /**
+         * Reseller appetite for this SKU, when the studio authored the form.
+         * Omitted by every bot, so a replay of a harness run is unchanged. See
+         * `Product.scalperAppeal`.
+         */
+        scalperAppeal?: number | null;
       };
     }
   | { type: 'commitPrintRun'; tick: Tick; payload: { setId: SetId; quantities: Record<ProductId, number>; quality: PrintQualityTier } }
@@ -2348,6 +2354,12 @@ export interface SimConfig {
     /** Range a foreign region jitters `productPreference` by. */
     productPreferenceJitterMin: number;
     productPreferenceJitterMax: number;
+    /**
+     * Span a studio-invented form's hidden appetite is rolled from. Matches the
+     * span of the built-in table, so a new form is a gamble, not an upgrade.
+     */
+    customLinePreferenceMin: number;
+    customLinePreferenceMax: number;
     /** The home market's taste bias, which is a literal rather than a roll. */
     homeTasteBias: Record<IpKind, number>;
     /** Capacity scale applied to a foreign region's channels. */

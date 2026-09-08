@@ -1610,6 +1610,13 @@ export const defaultConfig: SimConfig = {
     rarityAppetiteMax: 1.5,
     productPreferenceJitterMin: 0.6,
     productPreferenceJitterMax: 1.4,
+    // The span a studio-invented product form is rolled from. Set to the exact
+    // span of the nine-form table above — `surpriseBox` 0.2 to `pack` 1.0 — so
+    // inventing a form is a genuine gamble against the built-in distribution
+    // rather than a buff or a trap. The old `?? 1` fallback scored an unknown
+    // form 1.0, tying the BEST built-in and beating the other eight.
+    customLinePreferenceMin: 0.2,
+    customLinePreferenceMax: 1,
     homeTasteBias: { character: 0.2, location: -0.1, faction: 0.05, concept: -0.2, event: 0 },
     foreignChannelScale: 1,
   },

@@ -380,7 +380,7 @@ function chainTerm(s: SimState, card: Card, chainId: ChainId | undefined, kind: 
 
 function defineProduct(
   s: SimState, id: ProductId, setId: SetId, kind: ProductKind,
-  regionId: RegionId, packs: number, msrp: number,
+  regionId: RegionId, packs: number, msrp: number, scalperAppeal?: number | null,
 ): void {
   bumpRoster(s);
   s.products[id] = {
@@ -388,8 +388,12 @@ function defineProduct(
     packsPerUnit: packs,
     msrp: C(msrp), unitCogs: C(0),
     unitsPrinted: 0, unitsRemaining: 0, printedTick: null, allocations: {},
-    scalperAppeal: U(kind === 'etb' || kind === 'premiumCollection'
-      ? s.config.drops.scalperAppealPremium : s.config.drops.scalperAppealDefault),
+    // A studio-invented form carries its own appeal, because the literal branch
+    // below can only speak about forms the union named. Undefined falls back to
+    // it, so every bot is unchanged and `mixer` still reaches
+    // `scalperAppealPremium` through the ETB and premium-collection legs.
+    scalperAppeal: U(scalperAppeal ?? (kind === 'etb' || kind === 'premiumCollection'
+      ? s.config.drops.scalperAppealPremium : s.config.drops.scalperAppealDefault)),
     market: {
       price: C(msrp), heat: 1, nostalgia: 1, history: emptySeries(s.tick),
       hidden: {
@@ -1134,7 +1138,7 @@ function applyDecision(s: SimState, d: Decision): void {
       break;
     case 'defineProduct':
       defineProduct(s, d.payload.id, d.payload.setId, d.payload.kind, d.payload.regionId,
-        d.payload.packsPerUnit, d.payload.msrp);
+        d.payload.packsPerUnit, d.payload.msrp, d.payload.scalperAppeal);
       break;
     case 'commitPrintRun':
       commitPrintRun(s, d.payload.setId, d.payload.quantities, d.payload.quality);
@@ -1259,11 +1263,14 @@ export const api = {
     });
     return id;
   },
-  defineProduct(s: SimState, setId: SetId, kind: ProductKind, regionId: RegionId, packs: number, msrp: number): ProductId {
+  defineProduct(
+    s: SimState, setId: SetId, kind: ProductKind, regionId: RegionId,
+    packs: number, msrp: number, scalperAppeal?: number | null,
+  ): ProductId {
     const id = nextId(s, 'prod') as ProductId;
     submit(s, {
       type: 'defineProduct', tick: s.tick,
-      payload: { id, setId, kind, regionId, packsPerUnit: packs, msrp: C(msrp) },
+      payload: { id, setId, kind, regionId, packsPerUnit: packs, msrp: C(msrp), scalperAppeal },
     });
     return id;
   },

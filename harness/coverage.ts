@@ -85,7 +85,12 @@ export const MANIFEST: Record<string, Classification> = {
   'channels.seeds': { how: 'decision', by: 'allocate + purchaseUnlock(channels)' },
   'channels.unlockCost': { how: 'decision', by: 'purchaseUnlock(channels)' },
   'world.regions': { how: 'decision', by: 'unlockRegion — the region menu' },
-  'world.productPreference': { how: 'decision', by: 'defineProduct(kind) — nine SKU forms' },
+  'world.productPreference': { how: 'decision', by: 'defineProduct(kind) — the nine template forms; a studio-invented one rolls its own' },
+  // Classified explicitly. Longest-prefix matching would otherwise file these
+  // under the block-level `world: constant` and the gate would pass on a false
+  // clean — they are read by an authored decision, not by the bootstrap.
+  'world.customLinePreferenceMin': { how: 'decision', by: 'defineProduct(kind) — the span a studio-invented form is rolled from' },
+  'world.customLinePreferenceMax': { how: 'decision', by: 'defineProduct(kind) — the span a studio-invented form is rolled from' },
   'hype.defaultLeadWeeks': { how: 'decision', by: 'scheduleReveal(startTick)' },
   'hype.defaultCadenceWeeks': { how: 'decision', by: 'scheduleReveal(cadence)' },
   'hype.marketingReference': { how: 'decision', by: 'marketingSpend — where the log curve bends' },
