@@ -109,7 +109,7 @@ function Onboarding() {
   return (
     <Screen>
       <Scroll>
-        <div style={{ padding: '54px 26px 0 26px' }}>
+        <div style={{ padding: '30px 26px 0 26px' }}>
           <div style={{ ...micro, color: C.go, letterSpacing: '0.16em' }}>FOUNDED 2026</div>
           <div style={{ fontSize: 38, lineHeight: 1.05, marginTop: 10, fontWeight: 700, textWrap: 'pretty' }}>
             Every studio<br />starts with<br />a name.
@@ -701,7 +701,7 @@ export default function App() {
 
       <div style={{
         display: 'flex', background: C.panel, borderTop: `1px solid ${C.rule}`,
-        paddingBottom: 'env(safe-area-inset-bottom, 6px)', flexShrink: 0,
+        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 6px)', flexShrink: 0,
       }}>
         {TABS.map(t => (
           <button key={t} onClick={() => setTab(t)} style={{

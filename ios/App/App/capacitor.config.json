@@ -1,0 +1,6 @@
+{
+	"appId": "com.ajholloway.tcgmanager",
+	"appName": "TCG Manager",
+	"webDir": "dist",
+	"packageClassList": []
+}

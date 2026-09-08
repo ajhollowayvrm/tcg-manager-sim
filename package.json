@@ -8,18 +8,22 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "ios:build": "npm run build && npm run ios:project",
-    "ios:project": "cd ios && xcodegen generate",
+    "ios:build": "npm run build && npx cap sync ios",
     "sim": "tsx harness/run.ts",
     "sim:quick": "tsx harness/run.ts --seeds=5 --years=15 --bot=all",
     "typecheck": "tsc --noEmit",
-    "check": "tsx harness/check.ts"
+    "check": "tsx harness/check.ts",
+    "ios:open": "npm run ios:build && npx cap open ios",
+    "ios:sim": "npm run ios:build && npx cap run ios --target \"iPhone 17 Pro\""
   },
   "dependencies": {
+    "@capacitor/core": "^8.5.1",
+    "@capacitor/ios": "^8.5.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@capacitor/cli": "^7.6.9",
     "@types/node": "^22.20.1",
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",

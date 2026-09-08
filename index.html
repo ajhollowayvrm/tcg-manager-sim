@@ -10,8 +10,14 @@
     <title>TCG Manager Simulator</title>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" />
     <style>
+      *, *::before, *::after { box-sizing: border-box; }
       html, body { margin: 0; height: 100%; background: oklch(0.20 0.012 250); }
-      #root { min-height: 100%; display: flex; flex-direction: column; }
+      /* The webview runs under the status bar and the home indicator, so the
+         app owns those insets rather than the OS. */
+      #root {
+        min-height: 100%; display: flex; flex-direction: column;
+        padding-top: env(safe-area-inset-top, 0px);
+      }
       * { -webkit-tap-highlight-color: transparent; }
       button { -webkit-appearance: none; appearance: none; }
     </style>
