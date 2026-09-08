@@ -12,6 +12,7 @@
  * `commit` submits and then advances one week. Founding a character costing a
  * week is honest; the sim measures fifty years of them.
  */
+import { BUILTIN_PRODUCT_KINDS } from '../sim/types.ts';
 import type { SimState, IpId } from '../sim/types.ts';
 import { createWorld } from '../sim/world.ts';
 import { defaultConfig, withOverrides } from '../sim/config.ts';
@@ -76,10 +77,75 @@ export interface Meta {
     rows: Array<{ rowId?: string; rarity?: string; name: string; count: number; advertised: boolean; finishes: string[] }>;
     slots?: Array<{ id: string; label: string; odds: Record<string, number> }>;
   }>;
+  /**
+   * The SKU forms this studio can print. Its catalogue, not the sim's.
+   *
+   * `defineProduct` already takes a `kind` string and a `packsPerUnit` number,
+   * so a product line is nothing more than a saved pairing of those with a
+   * name. That is why it lives here and not in `SimState`: the sim never needs
+   * the catalogue, only the key stamped on each product it is handed.
+   *
+   * **`key` is immutable; `name` is not.** The key is what ships, what the
+   * ledger records, and what the region's appetite is derived from. Renaming
+   * the ETB template must leave it on the tuned `etb: 0.6` — if a rename moved
+   * the key, the studio would silently lose a fitted appetite and land on a
+   * hidden roll with nothing on screen to say so.
+   *
+   * **A custom key is namespaced `x:`** so it can never collide with one of the
+   * nine reserved built-ins. Deriving the appetite from the key rather than
+   * from a mint counter also means deleting a line that flopped and
+   * re-creating it does NOT buy a fresh roll.
+   *
+   * Nothing here can be enforced by a gate — `Meta` is not in `SimState`, so
+   * the harness never sees it. These two rules are UI discipline only.
+   */
+  productLines: Array<{ key: string; name: string; packsPerUnit: number }>;
+}
+
+/**
+ * Display names and default pack counts for the nine built-in forms.
+ *
+ * The keys are reserved: they are what `config.world.productPreference` is
+ * fitted against, so they must be spelled exactly. The names and pack counts
+ * are just a sensible opening — the studio can edit both.
+ */
+const BUILTIN_LINES: Record<string, { name: string; packsPerUnit: number }> = {
+  pack: { name: 'Booster Pack', packsPerUnit: 1 },
+  boosterBox: { name: 'Booster Box', packsPerUnit: 24 },
+  etb: { name: 'Elite Trainer Box', packsPerUnit: 8 },
+  collectionBox: { name: 'Collection Box', packsPerUnit: 4 },
+  tin: { name: 'Tin', packsPerUnit: 3 },
+  premiumCollection: { name: 'Premium Collection', packsPerUnit: 10 },
+  bundle: { name: 'Bundle', packsPerUnit: 6 },
+  blister: { name: 'Blister', packsPerUnit: 3 },
+  surpriseBox: { name: 'Surprise Box', packsPerUnit: 5 },
+};
+
+/** A new studio opens with the nine built-in forms already in its catalogue. */
+export function defaultProductLines(): Meta['productLines'] {
+  return BUILTIN_PRODUCT_KINDS.map(key => ({
+    key, name: BUILTIN_LINES[key]!.name, packsPerUnit: BUILTIN_LINES[key]!.packsPerUnit,
+  }));
+}
+
+/** True for one of the nine reserved keys, which carry a fitted appetite. */
+export function isBuiltinLine(key: string): boolean {
+  return (BUILTIN_PRODUCT_KINDS as readonly string[]).includes(key);
+}
+
+/**
+ * A key for a studio-invented form, from its name.
+ *
+ * Namespaced so it can never collide with a reserved key, and derived from the
+ * NAME rather than a counter so deleting a flop and re-creating it returns the
+ * same hidden appetite instead of buying a reroll.
+ */
+export function productLineKey(name: string): string {
+  return `x:${name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'line'}`;
 }
 
 let state: SimState | null = null;
-let meta: Meta = { studioName: '', gameName: '', characters: {}, eras: [], setEra: {}, formats: [] };
+let meta: Meta = { studioName: '', gameName: '', characters: {}, eras: [], setEra: {}, formats: [], productLines: [] };
 const listeners = new Set<() => void>();
 
 function notify(): void { for (const fn of listeners) fn(); }
@@ -140,6 +206,9 @@ export function loadSaved(): boolean {
         eras: parsed.eras ?? [],
         setEra: parsed.setEra ?? {},
         formats: parsed.formats ?? [],
+        // A save written before the catalogue existed comes back without one,
+        // and a studio with no product lines cannot print anything.
+        productLines: parsed.productLines?.length ? parsed.productLines : defaultProductLines(),
       };
     }
     notify();
@@ -171,14 +240,14 @@ export function newGame(studioName: string, gameName: string): void {
   const pub = s.publishers[s.playerId];
   if (pub) pub.name = studioName || pub.name;
   state = s;
-  meta = { studioName, gameName, characters: {}, eras: [], setEra: {}, formats: [] };
+  meta = { studioName, gameName, characters: {}, eras: [], setEra: {}, formats: [], productLines: defaultProductLines() };
   persist();
   notify();
 }
 
 export function abandonGame(): void {
   state = null;
-  meta = { studioName: '', gameName: '', characters: {}, eras: [], setEra: {}, formats: [] };
+  meta = { studioName: '', gameName: '', characters: {}, eras: [], setEra: {}, formats: [], productLines: [] };
   try { localStorage.removeItem(SAVE_KEY); localStorage.removeItem(META_KEY); } catch { /* ignore */ }
   notify();
 }
@@ -202,6 +271,26 @@ export function saveFormat(f: Meta['formats'][number]): void {
 
 export function deleteFormat(id: string): void {
   meta.formats = meta.formats.filter(f => f.id !== id);
+  persist();
+  notify();
+}
+
+export function saveProductLine(line: Meta['productLines'][number]): void {
+  const i = meta.productLines.findIndex(x => x.key === line.key);
+  if (i >= 0) meta.productLines[i] = line; else meta.productLines.push(line);
+  persist();
+  notify();
+}
+
+/**
+ * Drops a line from the catalogue.
+ *
+ * Products already printed on it keep their key and keep working — the sim
+ * never read the catalogue. They just render by raw key from here on, which is
+ * why every display does a lookup with a fallback rather than assuming a name.
+ */
+export function deleteProductLine(key: string): void {
+  meta.productLines = meta.productLines.filter(l => l.key !== key);
   persist();
   notify();
 }

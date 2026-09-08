@@ -23,6 +23,7 @@ import { Roster, NewCharacter } from './screens/Roster.tsx';
 import { Sets } from './screens/Sets.tsx';
 import { NewSet } from './screens/NewSet.tsx';
 import { Formats } from './screens/Formats.tsx';
+import { Products } from './screens/Products.tsx';
 import { Ledger } from './screens/Ledger.tsx';
 import { Growth } from './screens/Growth.tsx';
 import { Feed, say } from './screens/Feed.tsx';
@@ -41,7 +42,7 @@ const TABS = ['Studio', 'Partners', 'World', 'Market', 'Community'] as const;
  * fill its sub-navigation does not get one.
  */
 const SUBTABS: Record<string, readonly string[]> = {
-  Studio: ['Roster', 'Sets', 'Formats', 'Store', 'Growth', 'Ledger'],
+  Studio: ['Roster', 'Sets', 'Formats', 'Products', 'Store', 'Growth', 'Ledger'],
   Partners: ['Artists', 'Licensing', 'Creators'],
   World: ['Regions', 'Channels'],
   Market: [],
@@ -133,6 +134,7 @@ export default function App() {
           {tab === 'Studio' && sub === 'Roster' && <Roster s={s} onNew={() => setRoute('newChar')} />}
           {tab === 'Studio' && sub === 'Sets' && <Sets s={s} onNew={() => setRoute('newSet')} onOpen={setOpenSet} />}
           {tab === 'Studio' && sub === 'Formats' && <Formats />}
+          {tab === 'Studio' && sub === 'Products' && <Products />}
           {tab === 'Studio' && sub === 'Store' && <Store s={s} />}
           {tab === 'Studio' && sub === 'Growth' && <Growth s={s} />}
           {tab === 'Studio' && sub === 'Ledger' && <>

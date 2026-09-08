@@ -25,7 +25,8 @@ import {
   AllocationBar, Legend, seriesColor,
 } from '../ui.tsx';
 import { money, stamp, pct } from '../format.ts';
-import { commit } from '../store.ts';
+import { commit, getMeta } from '../store.ts';
+import { productLineName } from '../setdesign.ts';
 
 const KINDS: IpKind[] = ['character', 'location', 'faction', 'concept', 'event'];
 const APPETITE: Rarity[] = ['common', 'rare', 'ultraRare', 'hyperRare'];
@@ -152,7 +153,7 @@ export function Channels({ s }: { s: SimState }) {
               }}>
                 <div>
                   <div style={{ fontFamily: MONO, fontSize: 14, fontWeight: 600 }}>{set.name}</div>
-                  <div style={micro}>{p.kind.toUpperCase()} · {s.regions[p.regionId]?.name.toUpperCase()}</div>
+                  <div style={micro}>{productLineName(getMeta().productLines, p.kind).toUpperCase()} · {s.regions[p.regionId]?.name.toUpperCase()}</div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ ...num, fontSize: 14, color: C.note }}>{left.toLocaleString()}</div>

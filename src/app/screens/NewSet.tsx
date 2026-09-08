@@ -78,10 +78,10 @@ interface Sku {
   kind: ProductKind; regionId: RegionId; packsPerUnit: number; msrp: number; units: number;
 }
 
-const PRODUCT_KINDS: ProductKind[] = [
-  'boosterBox', 'pack', 'etb', 'collectionBox', 'tin', 'premiumCollection',
-  'bundle', 'blister', 'surpriseBox',
-];
+// The SKU forms come from the studio's own catalogue now (Studio -> Products),
+// not from a list this file keeps. A studio that invented a checklane blister
+// prints one from here without this screen knowing the word.
+
 
 
 export function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void; onBack: () => void }) {
@@ -112,6 +112,7 @@ export function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void;
   ]);
 
   const meta = getMeta();
+  const lines = meta.productLines;
   const pub = s.publishers[s.playerId];
   const cash = pub ? pub.cash : 0;
   // The real cost formula, not a frozen constant: `unitCost[quality]` times the
@@ -505,8 +506,23 @@ How many cards exist in the set. It does not change what a pack holds — you bu
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
                   <select value={k.kind} style={selectStyle}
-                    onChange={e => setSkus(skus.map((x, j) => j === i ? { ...x, kind: e.target.value as ProductKind } : x))}>
-                    {PRODUCT_KINDS.map(pk => <option key={pk} value={pk}>{pk}</option>)}
+                    onChange={e => {
+                      // Picking a line adopts its SHAPE. Price, region and
+                      // quantity stay with the set, because a studio charges
+                      // what a release will bear, not what a form is worth in
+                      // the abstract.
+                      const picked = lines.find(l => l.key === e.target.value);
+                      setSkus(skus.map((x, j) => j === i
+                        ? { ...x, kind: e.target.value, packsPerUnit: picked?.packsPerUnit ?? x.packsPerUnit }
+                        : x));
+                    }}>
+                    {lines.map(l => <option key={l.key} value={l.key}>{l.name}</option>)}
+                    {/* A line deleted after this SKU was added still has to be
+                        selectable, or the select would silently jump to the
+                        first option and reprice the run. */}
+                    {!lines.some(l => l.key === k.kind) && (
+                      <option value={k.kind}>{k.kind} (deleted line)</option>
+                    )}
                   </select>
                   <select value={k.regionId} style={selectStyle}
                     onChange={e => setSkus(skus.map((x, j) => j === i ? { ...x, regionId: e.target.value as never } : x))}>
@@ -529,7 +545,8 @@ How many cards exist in the set. It does not change what a pack holds — you bu
             ))}
             {openRegions.length > 0 && (
               <Button tone="quiet" onClick={() => setSkus([...skus, {
-                kind: 'boosterBox', regionId: openRegions[0]!.id, packsPerUnit: 24, msrp: 14000, units: 2000,
+                kind: lines[0]?.key ?? 'boosterBox', regionId: openRegions[0]!.id,
+                packsPerUnit: lines[0]?.packsPerUnit ?? 24, msrp: 14000, units: 2000,
               }])}>Add another SKU</Button>
             )}
 

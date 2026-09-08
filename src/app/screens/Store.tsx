@@ -24,7 +24,8 @@ import {
   C, MONO, num, label, micro, Button, Note, Empty, Sheet, Slider, Stat, StatRow, Row,
 } from '../ui.tsx';
 import { money, stamp, untilText, pct } from '../format.ts';
-import { commit } from '../store.ts';
+import { commit, getMeta } from '../store.ts';
+import { productLineName } from '../setdesign.ts';
 
 export function Store({ s }: { s: SimState }) {
   const pub = s.publishers[s.playerId];
@@ -111,7 +112,7 @@ export function Store({ s }: { s: SimState }) {
             }}>
             <div>
               <div style={{ fontFamily: MONO, fontSize: 14, fontWeight: 600 }}>{set?.name}</div>
-              <div style={micro}>{p.kind.toUpperCase()} · MSRP {money(p.msrp)} · APPEAL {p.scalperAppeal.toFixed(2)}</div>
+              <div style={micro}>{productLineName(getMeta().productLines, p.kind).toUpperCase()} · MSRP {money(p.msrp)} · APPEAL {p.scalperAppeal.toFixed(2)}</div>
             </div>
             <div style={{ textAlign: 'right' }}>
               <div style={{ ...num, fontSize: 13 }}>{a.unitsRemaining.toLocaleString()}</div>

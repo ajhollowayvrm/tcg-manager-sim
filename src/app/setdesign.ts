@@ -258,3 +258,14 @@ export function perCardPull(s: SimState, r: Rarity, size: number): number {
   const cfg = s.config.rarity;
   return (cfg.pull[r] / cfg.pullDivisor) * (cfg.referenceSetSize / Math.max(1, size));
 }
+
+/**
+ * The studio's name for a product form, falling back to the raw key.
+ *
+ * The fallback is load-bearing: a line can be deleted from the catalogue while
+ * product printed on it is still selling, and the sim never read the catalogue
+ * anyway. A product whose line is gone renders by key rather than vanishing.
+ */
+export function productLineName(lines: Array<{ key: string; name: string }>, kind: string): string {
+  return lines.find(l => l.key === kind)?.name ?? kind;
+}
