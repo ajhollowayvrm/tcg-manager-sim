@@ -4,7 +4,7 @@ import type {
   Printing, SimEvent, EventId, SetType, Rarity, ProductKind, PrintQualityTier,
   Treatment, ArtBrief, UnlockState, ChannelAllocation, Channel, SetPerformance,
   Drop, DropId, Grader, GradeTier, GradingSubmission, Collab, CollabId, AudienceSegment, ChainId,
-  Artist, Publisher, Commission, CommissionId, ArtistTerms,
+  Artist, Publisher, PublisherId, Commission, CommissionId, ArtistTerms,
 } from './types.ts';
 import { rand, randRange, randInt, pick, chance, gauss } from './rng.ts';
 import {
@@ -118,7 +118,7 @@ function mintPrinting(s: SimState, r: RngState, spec: PrintingSpec): PrintingId 
     market: {
       rawPrice: C(cfg.value.baseCardPrice), gradedPrices: {} as never,
       heat: spec.heat, speculatorHeat: 0, nostalgia: 1,
-      liquidity: U(cfg.value.openingLiquidity), lastTradeTick: s.tick,
+      liquidity: U(cfg.value.openingLiquidity), lastTradeTick: s.tick, lastPricedTick: null,
       rawHistory: emptySeries(s.tick), gradedHistory: {} as never,
     },
   };
@@ -505,6 +505,137 @@ function tierCost(base: number, multiple: number, ownedLevels: number): number {
  * adding this changed no existing measurement: no bot in the roster had ever
  * submitted a `purchaseUnlock` for anything but a channel.
  */
+/** One row of the growth shop: what it costs, and what still blocks it. */
+export interface UnlockOffer {
+  unlock: keyof UnlockState;
+  detail?: string;
+  name: string;
+  blurb: string;
+  cost: Cents;
+  /** Bought out: a one-shot already owned, or a tier at `maxLevel`. */
+  owned: boolean;
+  level: number;
+  maxLevel: number;
+  /** Weekly bill this adds. Upkeep is what stops a tier being bought on sight. */
+  upkeepPerTick: Cents;
+  /** Every requirement, met or not, as the pair of numbers it really is. */
+  gates: Array<{ label: string; have: number; need: number; met: boolean }>;
+  affordable: boolean;
+}
+
+/**
+ * The growth shop, computed from the same gates `purchaseTier` enforces.
+ *
+ * A screen must not restate these conditions. There are eleven of them across
+ * six unlocks, three read a live relationship or a shipped-set count rather
+ * than a stored number, and a UI copy of that logic drifts silently the first
+ * time a gate moves. So the engine answers the question and the screen renders
+ * the answer.
+ *
+ * **Pure, and it draws nothing** — screens-audit rule 2.
+ */
+export function unlockOffers(s: SimState, publisherId: PublisherId): UnlockOffer[] {
+  const pub = s.publishers[publisherId];
+  if (!pub) return [];
+  const cfg = s.config.unlocks;
+  const u = pub.unlocks;
+  const scale = audienceScale(s);
+  const out: UnlockOffer[] = [];
+
+  const push = (
+    o: Omit<UnlockOffer, 'affordable' | 'gates'> & { gates?: UnlockOffer['gates'] },
+  ): void => {
+    const gates = o.gates ?? [];
+    out.push({
+      ...o,
+      gates: [...gates, { label: 'Cash', have: pub.cash, need: o.cost, met: pub.cash >= o.cost }],
+      affordable: pub.cash >= o.cost && gates.every(g => g.met) && !o.owned,
+    });
+  };
+
+  push({
+    unlock: 'marketResearch', name: 'Market research', level: u.marketResearch, maxLevel: cfg.maxLevel,
+    blurb: 'Narrows what a reading of a character can hide. Bought per project.',
+    cost: C(tierCost(cfg.marketResearchCost, cfg.marketResearchCostLevelMultiple, u.marketResearch)),
+    owned: u.marketResearch >= cfg.maxLevel, upkeepPerTick: C(0),
+  });
+
+  push({
+    unlock: 'communityTeam', name: 'Community team', level: u.communityTeam, maxLevel: cfg.maxLevel,
+    blurb: 'Reads the audience across the whole roster. Carries a weekly bill.',
+    cost: C(tierCost(cfg.communityTeamCost, cfg.communityTeamCostLevelMultiple, u.communityTeam)),
+    owned: u.communityTeam >= cfg.maxLevel,
+    upkeepPerTick: C(cfg.communityTeamUpkeepPerTick),
+    gates: [{
+      label: 'Audience scale', have: scale, need: cfg.communityTeamAudienceGate,
+      met: scale >= cfg.communityTeamAudienceGate,
+    }],
+  });
+
+  push({
+    unlock: 'analytics', name: 'Analytics', level: u.analytics, maxLevel: cfg.maxLevel,
+    blurb: 'Sharpens the market read and the price forecast. Never the surprise.',
+    cost: C(tierCost(cfg.analyticsCost, cfg.analyticsCostLevelMultiple, u.analytics)),
+    owned: u.analytics >= cfg.maxLevel,
+    upkeepPerTick: C(cfg.analyticsUpkeepPerTick),
+    gates: [{
+      label: 'Brand standing', have: pub.brandStanding, need: cfg.analyticsBrandGate,
+      met: pub.brandStanding >= cfg.analyticsBrandGate,
+    }],
+  });
+
+  // The print tiers gate on a LIVE distributor relationship, not on a number
+  // that time alone reaches.
+  const dist = Object.values(s.channels).find(
+    ch => ch.kind === 'distributor' && ch.unlocked
+      && ch.relationship >= cfg.printQualityRelationshipGate);
+  const bestDist = Object.values(s.channels)
+    .filter(ch => ch.kind === 'distributor' && ch.unlocked)
+    .reduce((n, ch) => Math.max(n, ch.relationship), 0);
+  for (const tier of ['premium', 'archival'] as const) {
+    push({
+      unlock: 'printQualityTiers', detail: tier, name: `${tier[0]!.toUpperCase()}${tier.slice(1)} printing`,
+      blurb: tier === 'premium'
+        ? 'A better card stock. Fewer errors, and it grades higher.'
+        : 'The best stock money buys. Almost no errors at all.',
+      cost: C(tier === 'premium' ? cfg.premiumTierCost : cfg.archivalTierCost),
+      owned: u.printQualityTiers.includes(tier),
+      level: u.printQualityTiers.includes(tier) ? 1 : 0, maxLevel: 1, upkeepPerTick: C(0),
+      gates: [{
+        label: 'Distributor relationship', have: bestDist,
+        need: cfg.printQualityRelationshipGate, met: !!dist,
+      }],
+    });
+  }
+
+  const shipped = Object.values(s.sets).filter(
+    set => set.publisherId === pub.id && set.status === 'released'
+      && set.performance !== null && set.performance.revenue >= set.actualCost).length;
+  const needShipped = (u.specialtySetSlots + 1) * cfg.specialtySlotSetsPerSlot;
+  push({
+    unlock: 'specialtySetSlots', name: 'Specialty slot', level: u.specialtySetSlots, maxLevel: 99,
+    blurb: 'One more specialty set in flight. A slot is a production line, not a receipt.',
+    cost: C(tierCost(cfg.specialtySlotCost, cfg.specialtySlotCostMultiple, u.specialtySetSlots)),
+    owned: false, upkeepPerTick: C(0),
+    gates: [{
+      label: 'Sets that made their cost back', have: shipped, need: needShipped,
+      met: shipped >= needShipped,
+    }],
+  });
+
+  push({
+    unlock: 'canHostEvents', name: 'Self-hosted events', level: u.canHostEvents ? 1 : 0, maxLevel: 1,
+    blurb: 'Run organised play on a shipped set. Buys goodwill and a promo printing.',
+    cost: C(cfg.eventsCost), owned: u.canHostEvents, upkeepPerTick: C(0),
+    gates: [{
+      label: 'Audience scale', have: scale, need: cfg.eventsAudienceGate,
+      met: scale >= cfg.eventsAudienceGate,
+    }],
+  });
+
+  return out;
+}
+
 function purchaseTier(s: SimState, unlock: keyof UnlockState, detail?: string): void {
   const pub = s.publishers[s.playerId];
   if (!pub) return;
@@ -1325,8 +1456,29 @@ function tickPrices(s: SimState, printings: Printing[]): void {
   const writeThreshold = cfg.history.writeThreshold;
   const climate = s.market.climate;
   const crowd = speculatorCrowd(s, printings.length);
-  for (let i = phase; i < printings.length; i += s.config.strides.price) {
+  const stride = s.config.strides.price;
+  const slowYears = cfg.history.slowLaneAfterYears;
+  // Slots spread the slow lane's yearly visits across the year instead of
+  // piling every old printing onto one tick, which would trade a flat cost for
+  // an annual stall.
+  const slowSlots = Math.max(1, Math.round(52 / stride));
+  const slowStride = slowSlots * stride;
+  for (let i = phase; i < printings.length; i += stride) {
     const pr = printings[i]!;
+
+    // How long since this printing was last priced. On the fast lane it is
+    // always exactly `stride`, which is what keeps the lane's arithmetic
+    // identical to the arithmetic before it existed.
+    let elapsed = stride;
+    if (slowYears > 0
+      && (s.tick - pr.releaseTick) / 52 > slowYears
+      && pr.market.heat <= cfg.history.slowLaneHeatFloor) {
+      if (Math.floor(s.tick / stride) % slowSlots !== i % slowSlots) continue;
+      const last = pr.market.lastPricedTick;
+      elapsed = last === null ? slowStride : Math.max(stride, s.tick - last);
+    }
+    pr.market.lastPricedTick = s.tick;
+
     const card = s.cards[pr.cardId]!;
     const artist = s.artists[card.artistId]!;
 
@@ -1347,10 +1499,16 @@ function tickPrices(s: SimState, printings: Printing[]): void {
       (v.referencePopulation * scale) / surviving, v.scarcityExponent);
     const art = 1 + card.artQuality * artist.reputation * v.artMultiplierWeight;
 
-    pr.market.heat = Math.min(v.heatCeiling, 1 + (pr.market.heat - 1) * heatKeep);
+    // Every rate below is per-visit, so the slow lane has to compound it over
+    // the time it actually skipped. When `elapsed === stride` each of these is
+    // the same expression it was before the lane existed.
+    const keep = elapsed === stride ? heatKeep : Math.pow(1 - v.heatDecayPerTick, elapsed);
+    const years = elapsed === stride ? yearFrac : elapsed / 52;
+    const lerp = elapsed === stride ? v.priceLerp : 1 - Math.pow(1 - v.priceLerp, elapsed / stride);
+    pr.market.heat = Math.min(v.heatCeiling, 1 + (pr.market.heat - 1) * keep);
     // Their own contribution decays on the same clock, so it stays a share of
     // the heat that is still standing rather than a running total.
-    pr.market.speculatorHeat *= heatKeep;
+    pr.market.speculatorHeat *= keep;
     // Speculators amplify what is already moving, in whichever direction it is
     // already moving. They cannot start a run on a printing sitting at 1.
     const before = pr.market.heat;
@@ -1372,12 +1530,12 @@ function tickPrices(s: SimState, printings: Printing[]): void {
     const nostalgiaRate = v.nostalgiaRatePerYear * gate * brand
       - v.nostalgiaDecayPerYear * (1 - gate);
     pr.market.nostalgia = Math.max(v.nostalgiaFloor, Math.min(v.nostalgiaCeiling,
-      pr.market.nostalgia * (1 + nostalgiaRate * yearFrac)));
+      pr.market.nostalgia * (1 + nostalgiaRate * years)));
 
     // A visible speculation event. The hidden chase roll weights it, so the
     // cards that spike are the cards the market quietly wanted — CONCEPT.md
     // §5, "random commons should occasionally take off".
-    const shockChance = shockRate * pr.truth.chase
+    const shockChance = shockRate * (elapsed / stride) * pr.truth.chase
       * Math.min(2, desire / v.nostalgiaDesireReference);
     if (chance(s.rng, shockChance)) {
       pr.market.heat = Math.min(v.heatCeiling, pr.market.heat + v.shockGain);
@@ -1401,8 +1559,8 @@ function tickPrices(s: SimState, printings: Printing[]): void {
     const target = v.baseCardPrice * cappedMultiplier;
 
     // Prices are sticky; they drift toward target rather than snapping.
-    pr.market.rawPrice = C(pr.market.rawPrice * (1 - v.priceLerp)
-      + Math.max(v.priceFloorCents, target) * v.priceLerp);
+    pr.market.rawPrice = C(pr.market.rawPrice * (1 - lerp)
+      + Math.max(v.priceFloorCents, target) * lerp);
     writePoint(pr.market.rawHistory, s.tick, pr.market.rawPrice, writeThreshold);
 
     // How easily this copy finds a buyer. Live at every weight, because Plan 2
@@ -1427,7 +1585,8 @@ function tickPrices(s: SimState, printings: Printing[]): void {
     // at a flat baseCardPrice regardless of rarity (see releaseSet), so the
     // baseline here matches that seed, not a rarity-scaled one.
     const ageYears = (s.tick - pr.releaseTick) / 52;
-    if (ageYears > cfg.affection.resurgenceMinAgeYears && chance(s.rng, resurgenceChance)) {
+    if (ageYears > cfg.affection.resurgenceMinAgeYears
+      && chance(s.rng, resurgenceChance * (elapsed / stride))) {
       const ip = s.ips[card.subjectIp]!;
       const growth = pr.market.rawPrice / Math.max(1, v.baseCardPrice);
       if (growth > cfg.affection.resurgenceMinGrowth) {

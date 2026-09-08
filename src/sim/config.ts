@@ -1168,6 +1168,30 @@ export const defaultConfig: SimConfig = {
   history: {
     weeklyRetentionTicks: 520,
     writeThreshold: 0.03,
+    /**
+     * Age, in years, past which a quiet printing reprices yearly instead of
+     * every `strides.price` weeks.
+     *
+     * **Ships at 0, which is off, and the harness leaves it off.** Skipping a
+     * repricing skips its shock and resurgence draws, so switching this on
+     * renumbers the run — it is a measured change, never a free one.
+     *
+     * `docs/design/running-forever.md` is why it exists: a 150-year run holds
+     * 42,000 printings and reprices every one on a 4-week rotation forever, so
+     * the per-year cost grows 33x between the first 25 years and the last. A
+     * hundred-year-old card does not need weekly repricing, which is exactly
+     * what its nostalgia says about it. With this on, cost grows with how much
+     * of the catalogue is MOVING rather than with how big it is.
+     */
+    slowLaneAfterYears: 0,
+    /**
+     * Heat above which an old printing is pulled back into the fast lane.
+     *
+     * The slow lane is for the quiet back catalogue. A vintage card whose price
+     * is running is the single thing a player is most likely to be watching, so
+     * a heat spike must promote it back immediately.
+     */
+    slowLaneHeatFloor: 1.15,
   },
 
   // The rarity model, moved here from two constant tables in engine.ts.

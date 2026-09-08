@@ -75,10 +75,31 @@ export function getState(): SimState | null { return state; }
 export function getMeta(): Meta { return meta; }
 export function hasGame(): boolean { return state !== null; }
 
+/**
+ * How much event history a SAVE keeps, in weeks.
+ *
+ * The game trims; the harness must not. `docs/design/running-forever.md`
+ * measured the cost of not trimming: 142,596 events at year 50 are 36% of a
+ * 63.7 MB save, and by year 150 the log alone is roughly 300 MB — and the rate
+ * is still accelerating, because the event rate rises with the number of
+ * printings. `localStorage` gives us a few megabytes, so untrimmed the game
+ * stops being able to save itself somewhere around year 20.
+ *
+ * `serialize` keeps every interrupting event whatever this says, so the trim
+ * loses the scrolling feed's deep history and never loses a stop. Ten years is
+ * far more than any screen reads.
+ *
+ * The harness reads drop and creator coverage off the FULL log, which is why
+ * this lives here rather than becoming a default in `save.ts`.
+ */
+const KEEP_EVENT_WEEKS = 52 * 10;
+
 function persist(): void {
   if (!state) return;
   try {
-    localStorage.setItem(SAVE_KEY, serialize(state));
+    localStorage.setItem(SAVE_KEY, serialize(state, {
+      trimEventsBefore: Math.max(0, state.tick - KEEP_EVENT_WEEKS) as SimState['tick'],
+    }));
     localStorage.setItem(META_KEY, JSON.stringify(meta));
   } catch {
     // A full or blocked store must never take the run down. The in-memory

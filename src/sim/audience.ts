@@ -131,9 +131,44 @@ export function audienceScale(s: SimState): number {
  * finally makes `IpEntity.truth.affinities` load-bearing: before this it was
  * rolled per IP and then averaged away.
  */
+/**
+ * Cached per (set, card count), which is sound only while both inputs are
+ * immutable — and both are, today:
+ *
+ * - `set.cardIds` is created empty and only ever APPENDED to (`designCard`).
+ *   Nothing removes a card, so the length is a complete version stamp.
+ * - `ip.truth.affinities` is rolled once at IP creation and read by exactly one
+ *   line — the one below. Nothing in the engine writes it.
+ *
+ * **The moment either stops being true, this cache is wrong.** Base-age-derived
+ * affinities (`docs/design/characters.md` §2) make the second one false by
+ * design: an affinity that follows a character's current age changes every
+ * tick. Whoever lands that must key this on the tick as well, or a whole roster
+ * will age without the demand pool noticing.
+ *
+ * Held outside `SimState` in a `WeakMap`, per the rule that no cache may live
+ * on the state: a revived save simply gets a fresh one.
+ */
+const affinityCache = new WeakMap<object, Map<string, number>>();
+
+/**
+ * How well a set's cast suits one audience segment, 0..1.
+ *
+ * Measured at 16% of a 100-year run before the cache — the single largest cost
+ * in the engine. `tickSales` already memoised it per tick, but it was still
+ * walking every card of every set in the catalogue once a week to recompute a
+ * number that had not changed since the set was designed.
+ */
 export function segmentAffinity(s: SimState, setId: string, seg: AudienceSegment): number {
   const set = s.sets[setId as never];
   if (!set) return 0.5;
+
+  let cache = affinityCache.get(s);
+  if (!cache) { cache = new Map(); affinityCache.set(s, cache); }
+  const key = `${setId}:${seg}:${set.cardIds.length}`;
+  const hit = cache.get(key);
+  if (hit !== undefined) return hit;
+
   let sum = 0, n = 0;
   for (const cardId of set.cardIds) {
     const card = s.cards[cardId];
@@ -146,7 +181,9 @@ export function segmentAffinity(s: SimState, setId: string, seg: AudienceSegment
   if (n === 0) return 0.5;
   // Affinities run about -0.8..0.9, so fold onto 0..1 with 0.5 as indifference.
   const mean = sum / n;
-  return Math.max(0, Math.min(1, 0.5 + mean * 0.5));
+  const out = Math.max(0, Math.min(1, 0.5 + mean * 0.5));
+  cache.set(key, out);
+  return out;
 }
 
 /**

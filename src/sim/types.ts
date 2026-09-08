@@ -679,6 +679,15 @@ export interface PrintingMarket {
   nostalgia: number;
   liquidity: Unit;
   lastTradeTick: Tick | null;
+  /**
+   * When this printing was last repriced.
+   *
+   * Only the slow lane reads it: a printing repriced yearly must scale every
+   * per-visit rate — heat decay, the nostalgia climb, the price lerp, the shock
+   * and resurgence odds — by how long it has actually been, or a card that
+   * graduates to the slow lane silently stops appreciating.
+   */
+  lastPricedTick: Tick | null;
   rawHistory: SparseSeries;
   gradedHistory: Record<GraderId, Partial<Record<GradeTier, SparseSeries>>>;
 }
@@ -1984,6 +1993,10 @@ export interface SimConfig {
   history: {
     /** Weeks kept at full resolution before downsampling. ~520 = 10 years. */
     weeklyRetentionTicks: number;
+    /** Years past which a quiet printing reprices yearly. 0 disables the lane. */
+    slowLaneAfterYears: number;
+    /** Heat that pulls an old printing back onto the fast rotation. */
+    slowLaneHeatFloor: number;
     /** Minimum fractional price move required to write a point. */
     writeThreshold: number;
   };
