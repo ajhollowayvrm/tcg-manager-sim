@@ -10,14 +10,15 @@
  * `docs/design/characters.md`), and per-rarity finishes. Those are marked in the
  * UI where they appear.
  */
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import React, { useEffect, useState, useSyncExternalStore } from 'react';
 import type { SimState, IpId, IpEntity, Rarity, SetType, ArtistId } from '../sim/types.ts';
 import { api } from '../sim/engine.ts';
 import { readAffection, displayTier } from '../sim/readings.ts';
 import { REGION_US } from '../sim/world.ts';
 import {
   subscribe, getState, getMeta, newGame, loadSaved, commit, advance,
-  setCharacterMeta, setSetEra, abandonGame, type AdvanceResult,
+  setCharacterMeta, setSetEra, saveFormat, deleteFormat, forgetCharacter,
+  abandonGame, type AdvanceResult,
 } from './store.ts';
 import {
   C, MONO, num, label, micro, Screen, Scroll, Header, Button, Field,
@@ -159,17 +160,18 @@ function Roster({ s, onNew }: { s: SimState; onNew: () => void }) {
     s.publishers[s.playerId]?.unlocks.communityTeam ?? 0));
   return (
     <>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 46px 44px', gap: 8, padding: '9px 18px 6px', ...micro }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 42px 40px 30px', gap: 8, padding: '9px 18px 6px', ...micro }}>
         <div>NAME · ARCHETYPE · READING</div>
         <div style={{ textAlign: 'right' }}>CARDS</div>
         <div style={{ textAlign: 'right' }}>SINCE</div>
+        <div />
       </div>
       {ips.length === 0 && <Empty>No characters yet. A set needs somebody on the cards.</Empty>}
       {ips.map(ip => {
         const m = meta.characters[ip.id as string];
         return (
           <div key={ip.id} style={{
-            display: 'grid', gridTemplateColumns: '1fr 46px 44px', gap: 8, alignItems: 'center',
+            display: 'grid', gridTemplateColumns: '1fr 42px 40px 30px', gap: 8, alignItems: 'center',
             padding: '9px 18px', borderTop: `1px solid ${C.rule}`, background: C.panel,
           }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
@@ -181,12 +183,25 @@ function Roster({ s, onNew }: { s: SimState; onNew: () => void }) {
             </div>
             <div style={{ textAlign: 'right', ...num, fontSize: 13 }}>{ip.appearanceCount}</div>
             <div style={{ textAlign: 'right', ...num, fontSize: 11, color: C.dim }}>{yearOf(s, ip.createdTick)}</div>
+            {ip.appearanceCount === 0
+              ? <button aria-label={`Delete ${ip.name}`} onClick={() => {
+                  commit(st => { api.deleteIp(st, ip.id); });
+                  forgetCharacter(ip.id as string);
+                }} style={{
+                  width: 30, height: 30, background: 'none', border: `1px solid ${C.rule}`,
+                  color: C.bad, borderRadius: 2, cursor: 'pointer', fontFamily: 'inherit',
+                  fontSize: 15, padding: 0, justifySelf: 'end',
+                }}>×</button>
+              : <span aria-label="Printed" title="On a printed card — cannot be removed" style={{
+                  ...micro, color: C.dimmer, justifySelf: 'end',
+                }}>—</span>}
           </div>
         );
       })}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '12px 18px' }}>
         <div style={{ fontSize: 11, lineHeight: 1.4, color: C.muted }}>
           {tier === 'prose' ? 'Readings are prose at research tier 0. Buy research for bands.' : `Reading sharpness: ${tier}.`}
+          {' '}A character on a printed card cannot be removed.
         </div>
         <button onClick={onNew} style={{
           display: 'flex', alignItems: 'center', gap: 5, height: 34, padding: '0 12px',
@@ -322,6 +337,13 @@ const FINISH_LABEL: Record<Finish, string> = {
   etched: 'Etched', fullArt: 'Full art', goldFoil: 'Gold foil', jumbo: 'Jumbo',
 };
 
+/**
+ * One rung of the studio's rarity ladder.
+ *
+ * `rarity` is the sim's enum and decides the pull odds. `label` is whatever the
+ * studio calls it — the sim has no opinion about the word, and every real TCG
+ * invents its own.
+ */
 interface RarityRow { rarity: Rarity; label: string; count: number; advertised: boolean; finish: Finish }
 
 const DEFAULT_ROWS: RarityRow[] = [
@@ -354,6 +376,10 @@ interface Crafted { ipId: IpId; rarity: Rarity; finish: Finish }
 
 function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void; onBack: () => void }) {
   const [step, setStep] = useState(0);
+  // Which way the next pane should slide in from. Set before the step changes
+  // so the incoming pane starts on the correct side.
+  const [dir, setDir] = useState(1);
+  const go = (next: number) => { setDir(next >= step ? 1 : -1); setStep(next); };
   const [name, setName] = useState('');
   const [type, setType] = useState<SetType>('main');
   const [size, setSize] = useState(180);
@@ -431,20 +457,22 @@ function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void; onBack
 
   return (
     <Screen>
-      <Header title={name.trim().toUpperCase() || 'NEW SET'} onBack={step === 0 ? onBack : () => setStep(step - 1)}
+      <Header title={name.trim().toUpperCase() || 'NEW SET'} onBack={step === 0 ? onBack : () => go(step - 1)}
         right={<span style={{ ...micro }}>{step + 1} / 4</span>} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 1, background: C.rule, borderBottom: `1px solid ${C.rule}`, flexShrink: 0 }}>
         {steps.map((t, i) => (
-          <div key={t} style={{
-            padding: '7px 6px', textAlign: 'center', ...micro,
-            background: i === step ? C.raised : C.ground,
+          <button key={t} onClick={() => go(i)} style={{
+            padding: '9px 6px', textAlign: 'center', ...micro, border: 'none', cursor: 'pointer',
+            fontFamily: MONO, background: i === step ? C.raised : C.ground,
             color: i === step ? C.ink : C.dim, fontWeight: i === step ? 600 : 400,
-            borderBottom: i === step ? `2px solid ${C.go}` : 'none',
-          }}>{t}</div>
+            borderBottom: i === step ? `2px solid ${C.go}` : '2px solid transparent',
+            transition: 'color 180ms ease, background 180ms ease',
+          }}>{t}</button>
         ))}
       </div>
 
       <Scroll>
+        <Pane step={step} dir={dir}>
         {step === 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 15, padding: '15px 18px 0' }}>
             <Field label="Set name" value={name} onChange={setName} placeholder="Ashfall" />
@@ -529,7 +557,23 @@ function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void; onBack
 
         {step === 1 && (
           <>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, background: C.rule, borderBottom: `1px solid ${C.rule}` }}>
+            {meta.formats.length > 0 && (
+              <div style={{ padding: '12px 16px 4px', display: 'flex', flexDirection: 'column', gap: 7 }}>
+                <span style={label}>IMPORT A FORMAT</span>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {meta.formats.map(f => (
+                    <button key={f.id} onClick={() => setRows(f.rows.map(r => ({
+                      rarity: r.rarity as Rarity, label: r.name, count: r.count,
+                      advertised: r.advertised, finish: r.finish as Finish,
+                    })))} style={{
+                      padding: '8px 12px', background: C.raised, border: `1px solid ${C.rule}`,
+                      borderRadius: 2, color: C.ink, fontSize: 12, fontFamily: 'inherit', cursor: 'pointer',
+                    }}>{f.name}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, background: C.rule, borderBottom: `1px solid ${C.rule}`, marginTop: 10 }}>
               <div style={{ padding: '10px 14px', background: C.panel }}>
                 <div style={micro}>PACK SLOTS</div>
                 <div style={{ ...num, fontSize: 15, fontWeight: 600 }}>{slots.toFixed(1)}</div>
@@ -567,7 +611,11 @@ function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void; onBack
             {rows.map((r, i) => (
               <div key={r.rarity} style={{ borderTop: `1px solid ${C.rule}`, background: C.panel, padding: '9px 16px' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 52px 58px', gap: 7, alignItems: 'center' }}>
-                  <div style={{ fontSize: 12.5 }}>{r.label}</div>
+                  <input value={r.label} onChange={e => setRow(i, { label: e.target.value })}
+                    aria-label={`Name for ${r.rarity}`} style={{
+                      fontSize: 12.5, background: 'none', border: 'none', borderBottom: `1px dashed ${C.rule}`,
+                      color: C.ink, fontFamily: 'inherit', padding: '2px 0', width: '100%', outline: 'none',
+                    }} />
                   <div style={{ textAlign: 'right', ...num, fontSize: 13 }}>{r.count}</div>
                   <div style={{ textAlign: 'right', ...num, fontSize: 10.5, color: C.muted }}>
                     {oddsText(perCardPull(s, r.rarity, size) * r.count)}
@@ -591,6 +639,17 @@ function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void; onBack
                 </div>
               </div>
             ))}
+
+            <div style={{ padding: '12px 16px 0' }}>
+              <Button tone="quiet" onClick={() => {
+                const n = prompt('Save this rarity ladder as a format called:');
+                if (!n || !n.trim()) return;
+                saveFormat({
+                  id: `fmt_${Date.now().toString(36)}`, name: n.trim(), packsPerUnit: 24, msrp: 14000,
+                  rows: rows.map(r => ({ rarity: r.rarity, name: r.label, count: r.count, advertised: r.advertised, finish: r.finish })),
+                });
+              }}>Save as a format</Button>
+            </div>
 
             <div style={{ padding: '12px 16px 0', fontSize: 11, lineHeight: 1.42, color: C.muted }}>
               A finish only works while it is rare. Past a third of the set it stops reading as one,
@@ -629,9 +688,10 @@ function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void; onBack
           </div>
         )}
 
+        </Pane>
         <div style={{ padding: '18px 18px 34px' }}>
           {step < 3
-            ? <Button onClick={() => setStep(step + 1)} disabled={!canNext}>
+            ? <Button onClick={() => go(step + 1)} disabled={!canNext}>
                 {['Rarities', 'Cards', 'Print run'][step]}
               </Button>
             : <Button onClick={doCommit} disabled={ips.length === 0 || !artist}>
@@ -640,6 +700,20 @@ function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void; onBack
         </div>
       </Scroll>
     </Screen>
+  );
+}
+
+/** Slides a step in from the side it came from. CSS only, no library. */
+function Pane({ step, dir, children }: { step: number; dir: number; children: React.ReactNode }) {
+  const [shown, setShown] = useState(false);
+  useEffect(() => { setShown(false); const id = requestAnimationFrame(() => setShown(true)); return () => cancelAnimationFrame(id); }, [step]);
+  return (
+    <div style={{
+      transform: shown ? 'translateX(0)' : `translateX(${dir * 26}px)`,
+      opacity: shown ? 1 : 0,
+      transition: 'transform 220ms cubic-bezier(0.22, 0.61, 0.36, 1), opacity 180ms ease',
+      willChange: 'transform, opacity',
+    }}>{children}</div>
   );
 }
 
@@ -728,6 +802,114 @@ const selectStyle = {
   borderRadius: 2, fontSize: 13, fontFamily: 'inherit', padding: '0 10px', width: '100%',
 } as const;
 
+
+// --- studio: formats -------------------------------------------------------
+
+/**
+ * The rarity ladders and pack configurations a studio reuses.
+ *
+ * Authored here, imported when a set is designed. A real studio settles this
+ * once and reprints it for years, so it does not belong inside a set wizard.
+ */
+function Formats() {
+  const meta = getMeta();
+  const [editing, setEditing] = useState<string | null>(null);
+  const f = meta.formats.find(x => x.id === editing);
+
+  if (f) {
+    const setRow = (i: number, patch: Partial<typeof f.rows[number]>) =>
+      saveFormat({ ...f, rows: f.rows.map((r, j) => (j === i ? { ...r, ...patch } : r)) });
+    return (
+      <>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '12px 18px' }}>
+          <span style={{ fontFamily: MONO, fontWeight: 600, fontSize: 16 }}>{f.name}</span>
+          <button onClick={() => setEditing(null)} style={{
+            ...pillBtn, width: 'auto', padding: '0 12px', fontSize: 12,
+          }}>Done</button>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 46px', gap: 7, padding: '4px 16px 6px', ...micro }}>
+          <div>NAME · TIER · FINISH</div>
+          <div style={{ textAlign: 'right' }}>CARDS</div>
+        </div>
+        {f.rows.map((r, i) => (
+          <div key={i} style={{ borderTop: `1px solid ${C.rule}`, background: C.panel, padding: '9px 16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 46px', gap: 7, alignItems: 'center' }}>
+              <input value={r.name} onChange={e => setRow(i, { name: e.target.value })}
+                aria-label={`Name for ${r.rarity}`} style={{
+                  fontSize: 13, background: 'none', border: 'none', borderBottom: `1px dashed ${C.rule}`,
+                  color: C.ink, fontFamily: 'inherit', padding: '2px 0', width: '100%', outline: 'none',
+                }} />
+              <div style={{ textAlign: 'right', ...num, fontSize: 13 }}>{r.count}</div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 7, flexWrap: 'wrap' }}>
+              <button onClick={() => setRow(i, { count: Math.max(0, r.count - 1) })} style={pillBtn}>−</button>
+              <button onClick={() => setRow(i, { count: r.count + 1 })} style={pillBtn}>+</button>
+              <span style={{ ...micro, color: C.dimmer }}>{r.rarity}</span>
+              <select value={r.finish} onChange={e => setRow(i, { finish: e.target.value })} style={{
+                height: 32, background: C.raised, color: C.ink, border: `1px solid ${C.rule}`,
+                borderRadius: 2, fontSize: 11.5, fontFamily: 'inherit', padding: '0 6px',
+              }}>
+                {FINISHES.map(x => <option key={x} value={x}>{FINISH_LABEL[x]}</option>)}
+              </select>
+              <button onClick={() => setRow(i, { advertised: !r.advertised })} style={{
+                ...pillBtn, width: 'auto', padding: '0 10px',
+                color: r.advertised ? C.muted : C.bad, borderColor: r.advertised ? C.rule : C.bad,
+              }}>{r.advertised ? 'Advertised' : 'Secret'}</button>
+            </div>
+          </div>
+        ))}
+        <div style={{ padding: '14px 16px 6px', display: 'flex', flexDirection: 'column', gap: 7 }}>
+          <span style={label}>PACKS PER BOX</span>
+          <Stepper value={f.packsPerUnit} onChange={v => saveFormat({ ...f, packsPerUnit: v })} min={1} max={60} />
+          <span style={{ ...label, marginTop: 8 }}>BOX PRICE, IN CENTS</span>
+          <Stepper value={f.msrp} onChange={v => saveFormat({ ...f, msrp: v })} step={500} min={500} max={100000} />
+        </div>
+        <div style={{ padding: '16px 16px 24px' }}>
+          <Button tone="quiet" onClick={() => { deleteFormat(f.id); setEditing(null); }}>Delete this format</Button>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      {meta.formats.length === 0 && (
+        <Empty>No formats yet. A format is a rarity ladder and a pack configuration you reuse — settle it once, import it into every set.</Empty>
+      )}
+      {meta.formats.map(x => (
+        <button key={x.id} onClick={() => setEditing(x.id)} style={{
+          display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+          padding: '12px 18px', borderTop: `1px solid ${C.rule}`, background: C.panel,
+          border: 'none', borderTopStyle: 'solid', color: C.ink, cursor: 'pointer',
+          fontFamily: 'inherit', textAlign: 'left',
+        }}>
+          <div>
+            <div style={{ fontFamily: MONO, fontWeight: 600, fontSize: 15 }}>{x.name}</div>
+            <div style={{ ...micro, letterSpacing: '0.07em' }}>
+              {x.rows.length} TIERS · {x.rows.reduce((n, r) => n + r.count, 0)} NAMED CARDS · {x.packsPerUnit} PACKS
+            </div>
+          </div>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={C.dim} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>
+        </button>
+      ))}
+      <div style={{ padding: '14px 18px 24px' }}>
+        <Button tone="quiet" onClick={() => {
+          const n = prompt('Name this format:');
+          if (!n || !n.trim()) return;
+          const id = `fmt_${Date.now().toString(36)}`;
+          saveFormat({
+            id, name: n.trim(), packsPerUnit: 24, msrp: 14000,
+            rows: DEFAULT_ROWS.map(r => ({
+              rarity: r.rarity, name: r.label, count: r.count,
+              advertised: r.advertised, finish: r.finish,
+            })),
+          });
+          setEditing(id);
+        }}>New format</Button>
+      </div>
+    </>
+  );
+}
 
 // --- studio: ledger --------------------------------------------------------
 
@@ -831,7 +1013,7 @@ function Feed({ s }: { s: SimState }) {
 // --- shell -----------------------------------------------------------------
 
 const TABS = ['Studio', 'Partners', 'World', 'Market', 'Community'] as const;
-const SUBTABS = ['Sets', 'Roster', 'Store', 'Growth', 'Ledger'] as const;
+const SUBTABS = ['Roster', 'Sets', 'Formats', 'Store', 'Growth', 'Ledger'] as const;
 
 function TabIcon({ name, active }: { name: string; active: boolean }) {
   const col = active ? C.go : C.dim;
@@ -905,7 +1087,8 @@ export default function App() {
           {SUBTABS.map(t => (
             <button key={t} onClick={() => setSub(t)} style={{
               flexGrow: 1, height: 42, border: 'none', background: 'none', cursor: 'pointer',
-              fontFamily: 'inherit', fontSize: 12,
+              fontFamily: 'inherit', fontSize: 11, padding: 0,
+              transition: 'color 160ms ease',
               color: sub === t ? C.ink : C.dim, fontWeight: sub === t ? 600 : 400,
               borderBottom: sub === t ? `2px solid ${C.go}` : '2px solid transparent',
             }}>{t}</button>
@@ -920,6 +1103,7 @@ export default function App() {
         </Note>}
         {tab === 'Studio' && sub === 'Roster' && <Roster s={s} onNew={() => setRoute('newChar')} />}
         {tab === 'Studio' && sub === 'Sets' && <Sets s={s} onNew={() => setRoute('newSet')} />}
+        {tab === 'Studio' && sub === 'Formats' && <Formats />}
         {tab === 'Studio' && sub === 'Ledger' && <Ledger s={s} />}
         {tab === 'Studio' && sub === 'Growth' && <Growth s={s} />}
         {tab === 'Studio' && sub === 'Store' && <Empty>The direct store is not built yet. It is the one shelf you own.</Empty>}

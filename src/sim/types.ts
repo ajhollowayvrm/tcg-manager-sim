@@ -1081,6 +1081,7 @@ export type Decision =
   | { type: 'scheduleReveal'; tick: Tick; payload: { setId: SetId; startTick: Tick; cadence: number } }
   | { type: 'hostPrerelease'; tick: Tick; payload: { setId: SetId; scale: number; budget: Cents } }
   | { type: 'hostEvent'; tick: Tick; payload: { setId: SetId; scale: number; budget: Cents } }
+  | { type: 'deleteIp'; tick: Tick; payload: { ipId: IpId } }
   | { type: 'openPreorders'; tick: Tick; payload: { setId: SetId; unitsCap: number } }
   | { type: 'reprint'; tick: Tick; payload: { cardId: CardId; intoSetId: SetId; quantity: number } }
   | { type: 'hireArtist'; tick: Tick; payload: { artistId: ArtistId; terms: 'perCard' | 'retainer' | 'exclusive' } }

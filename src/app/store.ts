@@ -43,10 +43,25 @@ export interface Meta {
    */
   eras: Array<{ id: string; name: string; openedBy: string }>;
   setEra: Record<string, string>;
+  /**
+   * Saved rarity tables and pack configurations, reusable across sets.
+   *
+   * A real studio settles its rarity ladder once and reprints it for years,
+   * so this is authored on its own screen and imported when a set is designed.
+   * The `rarity` field is the sim's enum and decides the pull odds; `name` is
+   * what the studio calls it, which the sim has no opinion about.
+   */
+  formats: Array<{
+    id: string;
+    name: string;
+    packsPerUnit: number;
+    msrp: number;
+    rows: Array<{ rarity: string; name: string; count: number; advertised: boolean; finish: string }>;
+  }>;
 }
 
 let state: SimState | null = null;
-let meta: Meta = { studioName: '', gameName: '', characters: {}, eras: [], setEra: {} };
+let meta: Meta = { studioName: '', gameName: '', characters: {}, eras: [], setEra: {}, formats: [] };
 const listeners = new Set<() => void>();
 
 function notify(): void { for (const fn of listeners) fn(); }
@@ -85,6 +100,7 @@ export function loadSaved(): boolean {
         characters: parsed.characters ?? {},
         eras: parsed.eras ?? [],
         setEra: parsed.setEra ?? {},
+        formats: parsed.formats ?? [],
       };
     }
     notify();
@@ -116,14 +132,14 @@ export function newGame(studioName: string, gameName: string): void {
   const pub = s.publishers[s.playerId];
   if (pub) pub.name = studioName || pub.name;
   state = s;
-  meta = { studioName, gameName, characters: {}, eras: [], setEra: {} };
+  meta = { studioName, gameName, characters: {}, eras: [], setEra: {}, formats: [] };
   persist();
   notify();
 }
 
 export function abandonGame(): void {
   state = null;
-  meta = { studioName: '', gameName: '', characters: {}, eras: [], setEra: {} };
+  meta = { studioName: '', gameName: '', characters: {}, eras: [], setEra: {}, formats: [] };
   try { localStorage.removeItem(SAVE_KEY); localStorage.removeItem(META_KEY); } catch { /* ignore */ }
   notify();
 }
@@ -139,6 +155,25 @@ export function commit(fn: (s: SimState) => void): void {
 
 export function setCharacterMeta(id: IpId, m: Meta['characters'][string]): void {
   meta.characters[id as string] = m;
+  persist();
+  notify();
+}
+
+export function saveFormat(f: Meta['formats'][number]): void {
+  const i = meta.formats.findIndex(x => x.id === f.id);
+  if (i >= 0) meta.formats[i] = f; else meta.formats.push(f);
+  persist();
+  notify();
+}
+
+export function deleteFormat(id: string): void {
+  meta.formats = meta.formats.filter(f => f.id !== id);
+  persist();
+  notify();
+}
+
+export function forgetCharacter(id: string): void {
+  delete meta.characters[id];
   persist();
   notify();
 }

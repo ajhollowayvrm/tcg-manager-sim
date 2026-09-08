@@ -962,6 +962,7 @@ function applyDecision(s: SimState, d: Decision): void {
     case 'hostEvent':
       hostEvent(s, d.payload.setId, d.payload.scale, d.payload.budget);
       break;
+    case 'deleteIp': deleteIp(s, d.payload.ipId); break;
     case 'marketingSpend':
       marketingSpend(s, d.payload.setId, d.payload.amount);
       break;
@@ -1068,6 +1069,9 @@ export const api = {
   },
   hostEvent(s: SimState, setId: SetId, scale: number, budget: Cents): void {
     submit(s, { type: 'hostEvent', tick: s.tick, payload: { setId, scale, budget } });
+  },
+  deleteIp(s: SimState, ipId: IpId): void {
+    submit(s, { type: 'deleteIp', tick: s.tick, payload: { ipId } });
   },
   marketingSpend(s: SimState, setId: SetId, amount: Cents): void {
     submit(s, { type: 'marketingSpend', tick: s.tick, payload: { setId, amount } });
@@ -1629,6 +1633,26 @@ function hostPrerelease(s: SimState, setId: SetId, scale: number, budget: Cents)
   lgs.relationship = U(lgs.relationship + cfg.prereleaseRelationshipGain * actual);
   emit(s, 'communitySentiment', true, { setId: set.id, channelId: lgs.id, publisherId: pub.id },
     { kind: 'prerelease', scale: actual, cost, hype: set.hype.level });
+}
+
+/**
+ * Removes a character nobody has seen.
+ *
+ * REFUSES if any card names them as its subject or a cameo. A character who
+ * has been printed cannot be un-made — the market has met them, the cards are
+ * in circulation, and `castDesire` reads the IP live off every one of them.
+ * Deleting a referenced IP would leave those cards pointing at nothing.
+ *
+ * So this is an eraser for a mistake, never a way out of a bad character.
+ */
+function deleteIp(s: SimState, ipId: IpId): void {
+  if (!s.ips[ipId]) return;
+  for (const card of Object.values(s.cards)) {
+    if (card.subjectIp === ipId) return;
+    if (card.cameos.includes(ipId)) return;
+  }
+  delete s.ips[ipId];
+  bumpRoster(s);
 }
 
 /**
