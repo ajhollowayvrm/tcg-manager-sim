@@ -24,6 +24,7 @@ import { serialize, deserialize } from '../src/sim/save.ts';
 import type { SimState } from '../src/sim/types.ts';
 import { parseCsv, type Row } from './aggregate.ts';
 import { GATES, bandTable, type Gate, type GateContext, type Category } from './gates.ts';
+import { coverage, report as coverageReport } from './coverage.ts';
 
 const args = Object.fromEntries(process.argv.slice(2).map(a => {
   const [k, ...rest] = a.replace(/^--/, '').split('=');
@@ -242,6 +243,13 @@ const ctx: GateContext = {
   parallelIdentical: identical,
   saveRoundTrips: saveOk,
   bandsInSync: bandsInSync(),
+  uiCoverageGaps: (() => {
+    const c = coverage();
+    // The report is regenerated every run, so it cannot drift from the code the
+    // way a hand-written table would.
+    writeFileSync('./docs/ui-coverage.md', coverageReport(c));
+    return c.unreachableDecisions.length + c.wrapperlessKinds.length + c.unclassified.length;
+  })(),
 };
 
 const results = GATES.map(g => judge(g, ctx));

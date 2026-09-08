@@ -52,6 +52,11 @@ export interface GateContext {
   /** null when the sweep was read from a bank rather than run. */
   saveRoundTrips: boolean | null;
   bandsInSync: boolean;
+  /**
+   * Decisions with no control, decision kinds with no wrapper, and config
+   * leaves the coverage manifest does not classify — summed.
+   */
+  uiCoverageGaps: number;
 }
 
 export interface Gate {
@@ -161,6 +166,19 @@ export const GATES: Gate[] = [
   },
 
   // ---- structural: the mechanisms must still exist ----
+  {
+    id: 'static.uiCoverage', category: 'static', band: [0, 0], expect: 'pass',
+    banked: 0, bankedOn: DATE,
+    why: 'Every `api.*` decision must have a control somewhere in src/app, every '
+       + '`Decision` kind must have an api wrapper, and every config leaf must be '
+       + 'classified once — as something a decision selects, something the player is '
+       + 'shown, or a balance constant with a reason. A leaf that is none of those is '
+       + 'a finding: it gets a consumer or it gets cut. This is what stops the next '
+       + 'knob landing unreachable, the way `borrow` sat wrapper-less for months and '
+       + 'thirteen decisions sat without a screen.',
+    measure: c => c.uiCoverageGaps,
+  },
+
   {
     id: 'struct.deathRoutes', category: 'structural', band: [4, 4], expect: 'pass',
     banked: 4, bankedOn: DATE,
