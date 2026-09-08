@@ -18,7 +18,7 @@
  */
 import type { ReactNode } from 'react';
 import type { Reading } from '../sim/readings.ts';
-import { C, MONO, num } from './ui.tsx';
+import { C, MONO, num, RADIUS_SM } from './ui.tsx';
 
 /** Words for each rung of a 0..100 reading. Supplied per subject. */
 export interface Prose {
@@ -108,7 +108,7 @@ export function Confidence({ reading }: { reading: Reading | null }) {
   if (!reading) return null;
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-      <div style={{ width: 40, height: 3, background: C.rule, borderRadius: 2, overflow: 'hidden' }}>
+      <div style={{ width: 40, height: 3, background: C.rule, borderRadius: RADIUS_SM, overflow: 'hidden' }}>
         <div style={{ width: `${reading.confidence * 100}%`, height: '100%', background: C.note }} />
       </div>
       <span style={{ fontFamily: MONO, fontSize: 8.5, letterSpacing: '0.1em', color: C.dim }}>

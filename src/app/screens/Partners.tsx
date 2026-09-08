@@ -15,7 +15,7 @@ import type { SimState, ArtistId, CardId, ArtistTerms, SetId } from '../../sim/t
 import { api, collabOfferFactor } from '../../sim/engine.ts';
 import {
   C, MONO, num, label, micro, Button, Note, Empty, Sheet, Slider, Stat, StatRow,
-  Row, Tabs, selectStyle, pillBtn,
+  Row, Tabs, selectStyle, pillBtn, RADIUS,
 } from '../ui.tsx';
 import { Sparkline } from '../chart.tsx';
 import { money, stamp, untilText, pct } from '../format.ts';
@@ -74,7 +74,7 @@ export function Artists({ s }: { s: SimState }) {
       {roster.map(a => {
         const r = pub.retainers[a.id];
         return (
-          <button key={a.id} onClick={() => { setOpen(a.id); setBudget(a.rate); setCard(''); }} style={{
+          <button className="pressable" key={a.id} onClick={() => { setOpen(a.id); setBudget(a.rate); setCard(''); }} style={{
             display: 'grid', width: '100%', gridTemplateColumns: '1fr 62px auto', gap: 9,
             alignItems: 'center', padding: '10px 16px', borderTop: `1px solid ${C.rule}`,
             background: C.panel, border: 'none', borderTopStyle: 'solid', color: C.ink,
@@ -125,10 +125,10 @@ export function Artists({ s }: { s: SimState }) {
                 const weekly = t.t === 'perCard' ? 0
                   : artist.rate * (t.t === 'exclusive' ? cfg.exclusiveWeeklyMultiple : cfg.retainerWeeklyMultiple);
                 return (
-                  <button key={t.t} onClick={() => commit(st => { api.hireArtist(st, artist.id, t.t); })}
+                  <button className="pressable" key={t.t} onClick={() => commit(st => { api.hireArtist(st, artist.id, t.t); })}
                     style={{
                       display: 'flex', flexDirection: 'column', gap: 2, padding: '9px 11px',
-                      textAlign: 'left', background: C.panel, borderRadius: 2, cursor: 'pointer',
+                      textAlign: 'left', background: C.panel, borderRadius: RADIUS, cursor: 'pointer',
                       border: on ? `2px solid ${C.go}` : `1px solid ${C.rule}`,
                       color: C.ink, fontFamily: 'inherit',
                     }}>
@@ -219,7 +219,7 @@ export function Licensing({ s }: { s: SimState }) {
       {offers.map(c => {
         const met = pub.brandStanding >= c.requiredBrandStanding;
         return (
-          <button key={c.id} onClick={() => { setOpen(c.id); setTarget(designSets[0]?.id ?? ''); }} style={{
+          <button className="pressable" key={c.id} onClick={() => { setOpen(c.id); setTarget(designSets[0]?.id ?? ''); }} style={{
             display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center', gap: 10,
             padding: '11px 16px', borderTop: `1px solid ${C.rule}`, background: C.panel,
             border: 'none', borderTopStyle: 'solid', color: C.ink, cursor: 'pointer',

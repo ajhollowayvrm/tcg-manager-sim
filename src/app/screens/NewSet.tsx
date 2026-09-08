@@ -14,7 +14,7 @@ import { api } from '../../sim/engine.ts';
 import { unlockedRegions } from '../../sim/regions.ts';
 import {
   C, MONO, num, label, micro, Screen, Scroll, Header, Button, Field, Stepper, Row, Note, Empty,
-  pillBtn, selectStyle,
+  pillBtn, selectStyle, RADIUS,
 } from '../ui.tsx';
 import { money, moneyExact, pct } from '../format.ts';
 import { commit, getMeta, saveFormat, setSetEra } from '../store.ts';
@@ -233,7 +233,7 @@ export function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void;
         right={<span style={{ ...micro }}>{step + 1} / {steps.length}</span>} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 1, background: C.rule, borderBottom: `1px solid ${C.rule}`, flexShrink: 0 }}>
         {steps.map((t, i) => (
-          <button key={t} onClick={() => go(i)} style={{
+          <button className="pressable" key={t} onClick={() => go(i)} style={{
             padding: '9px 6px', textAlign: 'center', ...micro, border: 'none', cursor: 'pointer',
             fontFamily: MONO, background: i === step ? C.raised : C.ground,
             color: i === step ? C.ink : C.dim, fontWeight: i === step ? 600 : 400,
@@ -251,9 +251,9 @@ export function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void;
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
               <span style={label}>TYPE</span>
-              <div style={{ display: 'flex', background: C.raised, border: `1px solid ${C.rule}`, borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{ display: 'flex', background: C.raised, border: `1px solid ${C.rule}`, borderRadius: RADIUS, overflow: 'hidden' }}>
                 {(['main', 'specialty', 'subset', 'promo', 'collab'] as SetType[]).map(t => (
-                  <button key={t} onClick={() => {
+                  <button className="pressable" key={t} onClick={() => {
                     setType(t);
                     if (t !== 'main' && eraChoice === 'new') setEraChoice('none');
                   }} style={{
@@ -270,10 +270,10 @@ export function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void;
               <span style={label}>ERA</span>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                 {type === 'main' && (
-                  <button onClick={() => setEraChoice('new')} style={{
+                  <button className="pressable" onClick={() => setEraChoice('new')} style={{
                     display: 'flex', flexDirection: 'column', gap: 3, padding: '10px 12px', textAlign: 'left',
                     background: C.panel, border: eraChoice === 'new' ? `2px solid ${C.go}` : `1px solid ${C.rule}`,
-                    borderRadius: 2, color: C.ink, cursor: 'pointer', fontFamily: 'inherit',
+                    borderRadius: RADIUS, color: C.ink, cursor: 'pointer', fontFamily: 'inherit',
                   }}>
                     <span style={{ fontSize: 13.5, fontWeight: 600 }}>Open a new era</span>
                     <span style={{ fontSize: 11, lineHeight: 1.35, color: C.muted }}>
@@ -286,11 +286,11 @@ export function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void;
                   <Field label="Era name" value={newEra} onChange={setNewEra} placeholder="First Light" />
                 )}
                 {meta.eras.map(e => (
-                  <button key={e.id} onClick={() => setEraChoice(e.id)} style={{
+                  <button className="pressable" key={e.id} onClick={() => setEraChoice(e.id)} style={{
                     display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10,
                     padding: '10px 12px', textAlign: 'left', background: C.panel,
                     border: eraChoice === e.id ? `2px solid ${C.go}` : `1px solid ${C.rule}`,
-                    borderRadius: 2, color: C.ink, cursor: 'pointer', fontFamily: 'inherit',
+                    borderRadius: RADIUS, color: C.ink, cursor: 'pointer', fontFamily: 'inherit',
                   }}>
                     <span style={{ fontSize: 13.5, fontWeight: 600 }}>Part of {e.name}</span>
                     <span style={{ ...micro }}>
@@ -298,10 +298,10 @@ export function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void;
                     </span>
                   </button>
                 ))}
-                <button onClick={() => setEraChoice('none')} style={{
+                <button className="pressable" onClick={() => setEraChoice('none')} style={{
                   padding: '10px 12px', textAlign: 'left', background: C.panel,
                   border: eraChoice === 'none' ? `2px solid ${C.go}` : `1px solid ${C.rule}`,
-                  borderRadius: 2, color: C.ink, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5,
+                  borderRadius: RADIUS, color: C.ink, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5,
                 }}>Stands alone</button>
               </div>
               {type !== 'main' && (
@@ -317,7 +317,7 @@ export function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void;
                 onChange={e => setSize(Math.max(0, Math.min(999, parseInt(e.target.value.replace(/\D/g, ''), 10) || 0)))}
                 style={{
                   height: 50, padding: '0 13px', background: C.panel, color: C.ink,
-                  border: `1px solid ${C.ink}`, borderRadius: 2, ...num,
+                  border: `1px solid ${C.ink}`, borderRadius: RADIUS, ...num,
                   fontSize: 20, fontWeight: 600, outline: 'none', width: '100%',
                 }} />
               <div style={{ fontSize: 11.5, lineHeight: 1.4, color: C.muted }}>
@@ -335,7 +335,7 @@ How many cards exist in the set. It does not change what a pack holds — you bu
                 <span style={label}>IMPORT A FORMAT</span>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {meta.formats.map(f => (
-                    <button key={f.id} onClick={() => {
+                    <button className="pressable" key={f.id} onClick={() => {
                       setRows(f.rows.map(r => ({
                         // The stored id is reused, not regenerated: the
                         // format's slots key their odds on it.
@@ -347,7 +347,7 @@ How many cards exist in the set. It does not change what a pack holds — you bu
                       setCrafted([]);
                     }} style={{
                       padding: '8px 12px', background: C.raised, border: `1px solid ${C.rule}`,
-                      borderRadius: 2, color: C.ink, fontSize: 12, fontFamily: 'inherit', cursor: 'pointer',
+                      borderRadius: RADIUS, color: C.ink, fontSize: 12, fontFamily: 'inherit', cursor: 'pointer',
                     }}>{f.name}</button>
                   ))}
                 </div>
@@ -395,9 +395,9 @@ How many cards exist in the set. It does not change what a pack holds — you bu
                   <div style={{ textAlign: 'right', ...num, fontSize: 13 }}>{r.count}</div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 7, flexWrap: 'wrap' }}>
-                  <button onClick={() => setRow(i, { count: Math.max(0, r.count - 1) })} style={pillBtn}>−</button>
-                  <button onClick={() => setRow(i, { count: r.count + 1 })} style={pillBtn}>+</button>
-                  <button type="button" onClick={() => setRow(i, { advertised: !r.advertised })} style={{
+                  <button className="pressable" onClick={() => setRow(i, { count: Math.max(0, r.count - 1) })} style={pillBtn}>−</button>
+                  <button className="pressable" onClick={() => setRow(i, { count: r.count + 1 })} style={pillBtn}>+</button>
+                  <button className="pressable" type="button" onClick={() => setRow(i, { advertised: !r.advertised })} style={{
                     ...pillBtn, width: 'auto', padding: '0 10px',
                     color: r.advertised ? C.muted : C.bad,
                     borderColor: r.advertised ? C.rule : C.bad,
@@ -405,7 +405,7 @@ How many cards exist in the set. It does not change what a pack holds — you bu
                   <span style={{ ...micro, color: r.finishes.length ? C.note : C.dimmer }}>
                     {finishText(r.finishes).toUpperCase()}
                   </span>
-                  <button type="button" aria-label={`Remove ${r.label}`} onClick={() => {
+                  <button className="pressable" type="button" aria-label={`Remove ${r.label}`} onClick={() => {
                     // Cards crafted at this rung go with it — they have nowhere
                     // left to sit, and a silent orphan is worse than a visible
                     // deletion. The pack's slots lose it too, for the same
@@ -426,12 +426,12 @@ How many cards exist in the set. It does not change what a pack holds — you bu
             ))}
 
             <div style={{ padding: '12px 16px 0' }}>
-              <button type="button" onClick={() => setRows([...rows, {
+              <button className="pressable" type="button" onClick={() => setRows([...rows, {
                 id: newRowId(), label: `Rung ${rows.length + 1}`, count: 1,
                 advertised: true, finishes: [],
               }])} style={{
                 width: '100%', height: 40, background: 'transparent', color: C.ink,
-                border: `1px dashed ${C.border}`, borderRadius: 2, fontSize: 12.5,
+                border: `1px dashed ${C.border}`, borderRadius: RADIUS, fontSize: 12.5,
                 fontFamily: 'inherit', cursor: 'pointer', touchAction: 'manipulation',
               }}>+ Add a rung</button>
               <div style={{ fontSize: 11, lineHeight: 1.4, color: C.dim, marginTop: 7 }}>
@@ -472,11 +472,11 @@ How many cards exist in the set. It does not change what a pack holds — you bu
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '15px 18px 0' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
               <span style={label}>PRINT QUALITY</span>
-              <div style={{ display: 'flex', background: C.raised, border: `1px solid ${C.rule}`, borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{ display: 'flex', background: C.raised, border: `1px solid ${C.rule}`, borderRadius: RADIUS, overflow: 'hidden' }}>
                 {tiers.map(t => {
                   const owned = t === 'budget' || t === 'standard' || pub?.unlocks.printQualityTiers.includes(t);
                   return (
-                    <button key={t} disabled={!owned} onClick={() => setQuality(t)} style={{
+                    <button className="pressable" key={t} disabled={!owned} onClick={() => setQuality(t)} style={{
                       flexGrow: 1, height: 46, border: 'none', cursor: owned ? 'pointer' : 'default',
                       fontFamily: 'inherit', textTransform: 'capitalize', fontSize: 11,
                       background: quality === t ? C.ink : 'transparent',
@@ -500,7 +500,7 @@ How many cards exist in the set. It does not change what a pack holds — you bu
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                   <span style={{ ...micro }}>SKU {i + 1}</span>
                   {skus.length > 1 && (
-                    <button onClick={() => setSkus(skus.filter((_, j) => j !== i))}
+                    <button className="pressable" onClick={() => setSkus(skus.filter((_, j) => j !== i))}
                       style={{ ...pillBtn, color: C.bad }}>×</button>
                   )}
                 </div>
@@ -669,9 +669,9 @@ function PackStep({ rows, slots, setSlots, draws, odds }: {
             .sort((a, b) => b[1] - a[1]);
           const open = openSlot === sl.id;
           return (
-            <button key={sl.id} type="button" onClick={() => setOpenSlot(open ? null : sl.id)}
+            <button className="pressable" key={sl.id} type="button" onClick={() => setOpenSlot(open ? null : sl.id)}
               style={{
-                textAlign: 'left', padding: '7px 8px 8px', borderRadius: 2, cursor: 'pointer',
+                textAlign: 'left', padding: '7px 8px 8px', borderRadius: RADIUS, cursor: 'pointer',
                 fontFamily: 'inherit', color: C.ink, touchAction: 'manipulation',
                 background: open ? C.raised : C.panel,
                 border: `1px solid ${open ? C.go : total <= 0 ? C.bad : C.rule}`,
@@ -711,7 +711,7 @@ function PackStep({ rows, slots, setSlots, draws, odds }: {
         return (
           <div key={sl.id} style={{
             margin: '10px 16px 0', padding: '10px 12px 12px',
-            background: C.raised, border: `1px solid ${C.go}`, borderRadius: 2,
+            background: C.raised, border: `1px solid ${C.go}`, borderRadius: RADIUS,
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ ...micro, color: C.dim, minWidth: 22 }}>{String(i + 1).padStart(2, '0')}</span>
@@ -721,10 +721,10 @@ function PackStep({ rows, slots, setSlots, draws, odds }: {
                   borderBottom: `1px dashed ${C.rule}`, color: C.ink,
                   fontFamily: 'inherit', padding: '2px 0', outline: 'none',
                 }} />
-              <button type="button" aria-label={`Remove slot ${i + 1}`}
+              <button className="pressable" type="button" aria-label={`Remove slot ${i + 1}`}
                 onClick={() => { setOpenSlot(null); setSlots(slots.filter((_, j) => j !== i)); }}
                 style={{ ...pillBtn, color: C.bad }}>×</button>
-              <button type="button" aria-label="Close slot" onClick={() => setOpenSlot(null)}
+              <button className="pressable" type="button" aria-label="Close slot" onClick={() => setOpenSlot(null)}
                 style={{ ...pillBtn, width: 'auto', padding: '0 10px', fontSize: 11 }}>Done</button>
             </div>
 
@@ -759,7 +759,7 @@ function PackStep({ rows, slots, setSlots, draws, odds }: {
                     }}
                     style={{
                       height: 30, padding: '0 7px', background: C.ground, color: C.ink,
-                      border: `1px solid ${w > 0 ? C.border : C.rule}`, borderRadius: 2,
+                      border: `1px solid ${w > 0 ? C.border : C.rule}`, borderRadius: RADIUS,
                       ...num, fontSize: 12.5, outline: 'none', width: '100%', textAlign: 'right',
                     }} />
                   <div style={{ ...num, fontSize: 11, color: C.muted, textAlign: 'right' }}>
@@ -776,14 +776,14 @@ function PackStep({ rows, slots, setSlots, draws, odds }: {
       })}
 
       <div style={{ padding: '12px 16px 0' }}>
-        <button type="button" onClick={() => {
+        <button className="pressable" type="button" onClick={() => {
           const id = newSlotId();
           setSlots([...slots, { id, label: `Slot ${slots.length + 1}`, odds: { [COMMON_ROW_ID]: 100 } }]);
           // A new slot is always the one you want to edit next.
           setOpenSlot(id);
         }} style={{
           width: '100%', height: 40, background: 'transparent', color: C.ink,
-          border: `1px dashed ${C.border}`, borderRadius: 2, fontSize: 12.5,
+          border: `1px dashed ${C.border}`, borderRadius: RADIUS, fontSize: 12.5,
           fontFamily: 'inherit', cursor: 'pointer', touchAction: 'manipulation',
         }}>+ Add a slot</button>
       </div>
@@ -862,7 +862,7 @@ function CardsStep({ s, rows, crafted, setCrafted, ips, size }: {
           <div style={{ fontSize: 11.5, color: C.ink3 }}>
             {rows.find(r => r.id === c.rowId)?.label ?? '\u2014'}
           </div>
-          <button onClick={() => setCrafted(crafted.filter((_, j) => j !== i))} style={{
+          <button className="pressable" onClick={() => setCrafted(crafted.filter((_, j) => j !== i))} style={{
             ...pillBtn, width: 30, height: 30, color: C.bad, borderColor: C.rule,
           }}>×</button>
         </div>
@@ -890,7 +890,7 @@ function CardsStep({ s, rows, crafted, setCrafted, ips, size }: {
             {pickFinish === null ? 'PRINTS LIKE ITS RUNG' : 'CUSTOM PRINTING'}
           </span>
           {pickFinish !== null && (
-            <button type="button" onClick={() => setPickFinish(null)} style={{
+            <button className="pressable" type="button" onClick={() => setPickFinish(null)} style={{
               ...pillBtn, width: 'auto', padding: '0 10px', fontSize: 11, marginLeft: 'auto',
             }}>Follow the rung</button>
           )}

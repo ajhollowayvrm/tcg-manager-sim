@@ -103,7 +103,7 @@ export function Store({ s }: { s: SimState }) {
         const set = s.sets[p.setId];
         const a = p.allocations[direct.id]!;
         return (
-          <button key={p.id} onClick={() => { setUnits(Math.min(1000, a.unitsRemaining)); setInWeeks(4); setPlanning(p.id); }}
+          <button className="pressable" key={p.id} onClick={() => { setUnits(Math.min(1000, a.unitsRemaining)); setInWeeks(4); setPlanning(p.id); }}
             style={{
               display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center',
               gap: 10, padding: '11px 16px', borderTop: `1px solid ${C.rule}`, background: C.panel,

@@ -11,7 +11,7 @@ import { api } from '../../sim/engine.ts';
 import { readAffection, displayTier } from '../../sim/readings.ts';
 import {
   C, MONO, num, label, micro, Screen, Scroll, Header, Button, Field, Stepper, Note, Empty,
-  selectStyle,
+  selectStyle, RADIUS,
 } from '../ui.tsx';
 import { yearOf } from '../format.ts';
 import { commit, forgetCharacter } from '../store.ts';
@@ -76,12 +76,12 @@ export function Roster({ s, onNew }: { s: SimState; onNew: () => void }) {
             <div style={{ textAlign: 'right', ...num, fontSize: 13 }}>{ip.appearanceCount}</div>
             <div style={{ textAlign: 'right', ...num, fontSize: 11, color: C.dim }}>{yearOf(s, ip.createdTick)}</div>
             {ip.appearanceCount === 0
-              ? <button aria-label={`Delete ${ip.name}`} onClick={() => {
+              ? <button className="pressable" aria-label={`Delete ${ip.name}`} onClick={() => {
                   commit(st => { api.deleteIp(st, ip.id); });
                   forgetCharacter(ip.id as string);
                 }} style={{
                   width: 30, height: 30, background: 'none', border: `1px solid ${C.rule}`,
-                  color: C.bad, borderRadius: 2, cursor: 'pointer', fontFamily: 'inherit',
+                  color: C.bad, borderRadius: RADIUS, cursor: 'pointer', fontFamily: 'inherit',
                   fontSize: 15, padding: 0, justifySelf: 'end',
                 }}>×</button>
               : <span aria-label="Printed" title="On a printed card — cannot be removed" style={{
@@ -95,9 +95,9 @@ export function Roster({ s, onNew }: { s: SimState; onNew: () => void }) {
           {tier === 'prose' ? 'Readings are prose at research tier 0. Buy research for bands.' : `Reading sharpness: ${tier}.`}
           {' '}A character on a printed card cannot be removed.
         </div>
-        <button onClick={onNew} style={{
+        <button className="pressable" onClick={onNew} style={{
           display: 'flex', alignItems: 'center', gap: 5, height: 34, padding: '0 12px',
-          border: `1px solid ${C.ink}`, background: 'none', color: C.ink, borderRadius: 2,
+          border: `1px solid ${C.ink}`, background: 'none', color: C.ink, borderRadius: RADIUS,
           fontSize: 12.5, fontWeight: 600, flexShrink: 0, cursor: 'pointer', fontFamily: 'inherit',
         }}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
@@ -137,9 +137,9 @@ export function NewCharacter({ s, onDone, onBack }: { s: SimState; onDone: () =>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
             <span style={label}>WHAT IT IS</span>
-            <div style={{ display: 'flex', background: C.raised, border: `1px solid ${C.rule}`, borderRadius: 2, overflow: 'hidden' }}>
+            <div style={{ display: 'flex', background: C.raised, border: `1px solid ${C.rule}`, borderRadius: RADIUS, overflow: 'hidden' }}>
               {(['character', 'faction', 'location', 'concept', 'event'] as IpKind[]).map(k => (
-                <button key={k} onClick={() => setKind(k)} style={{
+                <button className="pressable" key={k} onClick={() => setKind(k)} style={{
                   flexGrow: 1, height: 44, border: 'none', cursor: 'pointer', fontFamily: 'inherit',
                   background: kind === k ? C.ink : 'transparent',
                   color: kind === k ? C.onAccent : C.muted,
@@ -174,11 +174,11 @@ export function NewCharacter({ s, onDone, onBack }: { s: SimState; onDone: () =>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
               {ARCHETYPES.map(a => (
-                <button key={a.name} onClick={() => setArch(a.name)} style={{
+                <button className="pressable" key={a.name} onClick={() => setArch(a.name)} style={{
                   display: 'grid', gridTemplateColumns: '78px 1fr', gap: 10, alignItems: 'center',
                   padding: '9px 10px', background: C.panel, textAlign: 'left', cursor: 'pointer',
                   border: arch === a.name ? `2px solid ${C.go}` : `1px solid ${C.rule}`,
-                  borderRadius: 2, color: C.ink, fontFamily: 'inherit',
+                  borderRadius: RADIUS, color: C.ink, fontFamily: 'inherit',
                 }}>
                   <div style={{ fontSize: 13, fontWeight: 600 }}>{a.name}</div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>

@@ -23,7 +23,7 @@
 import { useEffect, useRef, useState } from 'react';
 import uPlot from 'uplot';
 import 'uplot/dist/uPlot.min.css';
-import { C, MONO, SERIES_HEX } from './ui.tsx';
+import { C, MONO, RADIUS_SM, SERIES_HEX } from './ui.tsx';
 
 export interface Point { t: number; v: number }
 export interface Series { label: string; points: Point[]; color?: string }
@@ -145,7 +145,7 @@ export function Chart({ series, height = 168, logY, xToLabel, format }: {
               {hover.vals.map((v, i) => v != null && (
                 <span key={i} style={{ color: C.ink }}>
                   <span style={{
-                    display: 'inline-block', width: 7, height: 7, borderRadius: 2, marginRight: 4,
+                    display: 'inline-block', width: 7, height: 7, borderRadius: RADIUS_SM, marginRight: 4,
                     background: series[i]?.color ?? SERIES_HEX[i % SERIES_HEX.length]!,
                   }} />
                   {fmt(v)}

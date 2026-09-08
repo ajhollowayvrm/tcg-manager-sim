@@ -5,7 +5,7 @@
  * once and reprints it for years, so it does not belong inside a set wizard.
  */
 import { useState } from 'react';
-import { C, MONO, num, label, micro, Button, Stepper, Empty, pillBtn } from '../ui.tsx';
+import { C, MONO, num, label, micro, Button, Stepper, Empty, pillBtn, RADIUS } from '../ui.tsx';
 import { getMeta, saveFormat, deleteFormat } from '../store.ts';
 import { DEFAULT_ROWS, DEFAULT_SLOTS, newRowId, type Finish } from '../setdesign.ts';
 import { FinishPicker } from './FinishPicker.tsx';
@@ -30,7 +30,7 @@ export function Formats() {
       <>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '12px 18px' }}>
           <span style={{ fontFamily: MONO, fontWeight: 600, fontSize: 16 }}>{f.name}</span>
-          <button onClick={() => setEditing(null)} style={{
+          <button className="pressable" onClick={() => setEditing(null)} style={{
             ...pillBtn, width: 'auto', padding: '0 12px', fontSize: 12,
           }}>Done</button>
         </div>
@@ -49,13 +49,13 @@ export function Formats() {
               <div style={{ textAlign: 'right', ...num, fontSize: 13 }}>{r.count}</div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 7, flexWrap: 'wrap' }}>
-              <button onClick={() => setRow(i, { count: Math.max(0, r.count - 1) })} style={pillBtn}>−</button>
-              <button onClick={() => setRow(i, { count: r.count + 1 })} style={pillBtn}>+</button>
-              <button type="button" onClick={() => setRow(i, { advertised: !r.advertised })} style={{
+              <button className="pressable" onClick={() => setRow(i, { count: Math.max(0, r.count - 1) })} style={pillBtn}>−</button>
+              <button className="pressable" onClick={() => setRow(i, { count: r.count + 1 })} style={pillBtn}>+</button>
+              <button className="pressable" type="button" onClick={() => setRow(i, { advertised: !r.advertised })} style={{
                 ...pillBtn, width: 'auto', padding: '0 10px',
                 color: r.advertised ? C.muted : C.bad, borderColor: r.advertised ? C.rule : C.bad,
               }}>{r.advertised ? 'Advertised' : 'Secret'}</button>
-              <button type="button" aria-label={`Remove ${r.name}`}
+              <button className="pressable" type="button" aria-label={`Remove ${r.name}`}
                 onClick={() => saveFormat({ ...f, rows: f.rows.filter((_, j) => j !== i) })}
                 style={{ ...pillBtn, color: C.bad, marginLeft: 'auto' }}>×</button>
             </div>
@@ -66,7 +66,7 @@ export function Formats() {
           </div>
         ))}
         <div style={{ padding: '14px 16px 0' }}>
-          <button type="button" onClick={() => saveFormat({
+          <button className="pressable" type="button" onClick={() => saveFormat({
             ...f,
             rows: [...f.rows, {
               rowId: newRowId(), name: `Rung ${f.rows.length + 1}`,
@@ -74,7 +74,7 @@ export function Formats() {
             }],
           })} style={{
             width: '100%', height: 40, background: 'transparent', color: C.ink,
-            border: `1px dashed ${C.border}`, borderRadius: 2, fontSize: 12.5,
+            border: `1px dashed ${C.border}`, borderRadius: RADIUS, fontSize: 12.5,
             fontFamily: 'inherit', cursor: 'pointer', touchAction: 'manipulation',
           }}>+ Add a rung</button>
           <div style={{ fontSize: 11, lineHeight: 1.4, color: C.dim, marginTop: 7 }}>
@@ -101,7 +101,7 @@ export function Formats() {
         <Empty>No formats yet. A format is a rarity ladder and a pack configuration you reuse — settle it once, import it into every set.</Empty>
       )}
       {meta.formats.map(x => (
-        <button key={x.id} onClick={() => setEditing(x.id)} style={{
+        <button className="pressable" key={x.id} onClick={() => setEditing(x.id)} style={{
           display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between', gap: 10,
           padding: '12px 18px', borderTop: `1px solid ${C.rule}`, background: C.panel,
           border: 'none', borderTopStyle: 'solid', color: C.ink, cursor: 'pointer',

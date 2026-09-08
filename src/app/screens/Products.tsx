@@ -11,7 +11,7 @@
  * release will bear rather than what a form is worth in the abstract.
  */
 import { useState } from 'react';
-import { C, MONO, num, label, micro, Button, Stepper, Empty, pillBtn } from '../ui.tsx';
+import { C, MONO, num, label, micro, Button, Stepper, Empty, pillBtn, RADIUS } from '../ui.tsx';
 import {
   getMeta, saveProductLine, deleteProductLine, isBuiltinLine, productLineKey,
 } from '../store.ts';
@@ -27,7 +27,7 @@ export function Products() {
       <>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '12px 18px' }}>
           <span style={{ fontFamily: MONO, fontWeight: 600, fontSize: 16 }}>{line.name}</span>
-          <button onClick={() => setEditing(null)} style={{
+          <button className="pressable" onClick={() => setEditing(null)} style={{
             ...pillBtn, width: 'auto', padding: '0 12px', fontSize: 12,
           }}>Done</button>
         </div>
@@ -38,7 +38,7 @@ export function Products() {
             onChange={e => saveProductLine({ ...line, name: e.target.value })}
             style={{
               height: 44, padding: '0 12px', background: C.panel, color: C.ink,
-              border: `1px solid ${C.rule}`, borderRadius: 2, fontFamily: 'inherit',
+              border: `1px solid ${C.rule}`, borderRadius: RADIUS, fontFamily: 'inherit',
               fontSize: 14, outline: 'none', width: '100%',
             }} />
 
@@ -76,7 +76,7 @@ export function Products() {
         <Empty>No product lines. A set needs something to print into.</Empty>
       )}
       {meta.productLines.map(l => (
-        <button key={l.key} onClick={() => setEditing(l.key)} style={{
+        <button className="pressable" key={l.key} onClick={() => setEditing(l.key)} style={{
           display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between', gap: 10,
           padding: '12px 18px', borderTop: `1px solid ${C.rule}`, background: C.panel,
           border: 'none', borderTopStyle: 'solid', color: C.ink, cursor: 'pointer',

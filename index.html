@@ -26,6 +26,17 @@
       }
       * { -webkit-tap-highlight-color: transparent; }
       button { -webkit-appearance: none; appearance: none; }
+
+      /* Press feedback. Inline styles can't express :active, so every
+         interactive control gets this class alongside its own style. */
+      .pressable {
+        transition: transform 120ms ease, opacity 120ms ease, background 160ms ease,
+          color 160ms ease, border-color 160ms ease;
+      }
+      .pressable:active { transform: scale(0.97); opacity: 0.85; }
+      @media (hover: hover) {
+        .pressable:hover { filter: brightness(1.06); }
+      }
     </style>
   </head>
   <body>

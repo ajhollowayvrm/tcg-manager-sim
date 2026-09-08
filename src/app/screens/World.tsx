@@ -145,7 +145,7 @@ export function Channels({ s }: { s: SimState }) {
             const set = s.sets[p.setId]!;
             const left = p.unitsPrinted - allocatedUnits(p);
             return (
-              <button key={p.id} onClick={() => openSheet(p.id)} style={{
+              <button className="pressable" key={p.id} onClick={() => openSheet(p.id)} style={{
                 display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between',
                 gap: 10, padding: '11px 16px', borderTop: `1px solid ${C.rule}`, background: C.panel,
                 border: 'none', borderTopStyle: 'solid', color: C.ink, cursor: 'pointer',

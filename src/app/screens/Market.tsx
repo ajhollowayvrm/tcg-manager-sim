@@ -81,7 +81,7 @@ export function Market({ s }: { s: SimState }) {
           const card = s.cards[pr.cardId];
           const hot = pr.market.heat > 1.4;
           return (
-            <button onClick={() => setOpen(pr.id)} style={{
+            <button className="pressable" onClick={() => setOpen(pr.id)} style={{
               display: 'grid', width: '100%', height: 52, gridTemplateColumns: '1fr 62px 74px',
               gap: 8, alignItems: 'center', padding: '0 16px', borderTop: `1px solid ${C.rule}`,
               background: C.panel, border: 'none', borderTopStyle: 'solid', color: C.ink,

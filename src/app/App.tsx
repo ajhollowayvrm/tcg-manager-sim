@@ -16,7 +16,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { SetId } from '../sim/types.ts';
 import { subscribe, getState, getMeta, loadSaved, advance, abandonGame, type AdvanceResult } from './store.ts';
-import { C, num, label, micro, Screen, Scroll, Header, Button, Note, Empty, Tabs } from './ui.tsx';
+import { C, num, label, micro, Screen, Scroll, Header, Button, Note, Empty, Tabs, FadeIn, RADIUS } from './ui.tsx';
 import { money, yearOf } from './format.ts';
 import { Onboarding } from './screens/Onboarding.tsx';
 import { Roster, NewCharacter } from './screens/Roster.tsx';
@@ -83,9 +83,13 @@ export default function App() {
   const pub = s.publishers[s.playerId];
   const dead = pub?.deadTick != null;
 
-  if (route === 'newChar') return <NewCharacter s={s} onBack={() => setRoute('main')} onDone={() => setRoute('main')} />;
-  if (route === 'newSet') return <NewSet s={s} onBack={() => setRoute('main')} onDone={() => { setRoute('main'); setSub('Sets'); }} />;
-  if (openSet && s.sets[openSet]) return <SetDetail s={s} setId={openSet} onBack={() => setOpenSet(null)} />;
+  // These three routes replace the whole shell, so FadeIn's wrapper div has to
+  // keep the same flex-fill contract `Screen` expects from its parent — a
+  // plain block div here would collapse the fullscreen layout to content height.
+  const fullScreenFade = { display: 'flex', flexDirection: 'column' as const, flexGrow: 1, minHeight: 0 };
+  if (route === 'newChar') return <FadeIn style={fullScreenFade}><NewCharacter s={s} onBack={() => setRoute('main')} onDone={() => setRoute('main')} /></FadeIn>;
+  if (route === 'newSet') return <FadeIn style={fullScreenFade}><NewSet s={s} onBack={() => setRoute('main')} onDone={() => { setRoute('main'); setSub('Sets'); }} /></FadeIn>;
+  if (openSet && s.sets[openSet]) return <FadeIn style={fullScreenFade}><SetDetail s={s} setId={openSet} onBack={() => setOpenSet(null)} /></FadeIn>;
 
   return (
     <Screen>
@@ -108,9 +112,9 @@ export default function App() {
         </span>
         {dead
           ? <span style={{ ...micro, color: C.bad }}>{(pub?.deathCause ?? 'dead').toUpperCase()}</span>
-          : <button onClick={() => setStop(advance())} style={{
+          : <button onClick={() => setStop(advance())} className="pressable" style={{
               display: 'flex', alignItems: 'center', gap: 7, height: 44, padding: '0 16px',
-              background: C.go, color: C.onAccent, border: 'none', borderRadius: 2,
+              background: C.go, color: C.onAccent, border: 'none', borderRadius: RADIUS,
               fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
             }}>
               Continue
@@ -123,35 +127,37 @@ export default function App() {
           onChange={t => setSub(t)} />
       )}
 
-      {tab === 'Market' ? <Market s={s} />
-        : tab === 'Community' ? <Feed s={s} />
-        : (
-        <Scroll>
-          {dead && <Note tone="bad">
-            The studio is gone. It ran out of cash in {yearOf(s, pub!.deadTick as number)} and the bank
-            would not cover it. Cause on record: {pub!.deathCause}.
-          </Note>}
-          {tab === 'Studio' && sub === 'Roster' && <Roster s={s} onNew={() => setRoute('newChar')} />}
-          {tab === 'Studio' && sub === 'Sets' && <Sets s={s} onNew={() => setRoute('newSet')} onOpen={setOpenSet} />}
-          {tab === 'Studio' && sub === 'Formats' && <Formats />}
-          {tab === 'Studio' && sub === 'Products' && <Products />}
-          {tab === 'Studio' && sub === 'Store' && <Store s={s} />}
-          {tab === 'Studio' && sub === 'Growth' && <Growth s={s} />}
-          {tab === 'Studio' && sub === 'Ledger' && <>
-            <Ledger s={s} />
-            <div style={{ padding: '0 18px 24px' }}>
-              <Button tone="quiet" onClick={() => { if (confirm('Abandon this studio and start again?')) abandonGame(); }}>
-                Abandon the studio
-              </Button>
-            </div>
-          </>}
-          {tab === 'Partners' && sub === 'Artists' && <Artists s={s} />}
-          {tab === 'Partners' && sub === 'Licensing' && <Licensing s={s} />}
-          {tab === 'Partners' && sub === 'Creators' && <Creators s={s} />}
-          {tab === 'World' && sub === 'Regions' && <Regions s={s} />}
-          {tab === 'World' && sub === 'Channels' && <Channels s={s} />}
-        </Scroll>
-      )}
+      <FadeIn key={`${tab}:${sub}`} style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, minHeight: 0 }}>
+        {tab === 'Market' ? <Market s={s} />
+          : tab === 'Community' ? <Feed s={s} />
+          : (
+          <Scroll>
+            {dead && <Note tone="bad">
+              The studio is gone. It ran out of cash in {yearOf(s, pub!.deadTick as number)} and the bank
+              would not cover it. Cause on record: {pub!.deathCause}.
+            </Note>}
+            {tab === 'Studio' && sub === 'Roster' && <Roster s={s} onNew={() => setRoute('newChar')} />}
+            {tab === 'Studio' && sub === 'Sets' && <Sets s={s} onNew={() => setRoute('newSet')} onOpen={setOpenSet} />}
+            {tab === 'Studio' && sub === 'Formats' && <Formats />}
+            {tab === 'Studio' && sub === 'Products' && <Products />}
+            {tab === 'Studio' && sub === 'Store' && <Store s={s} />}
+            {tab === 'Studio' && sub === 'Growth' && <Growth s={s} />}
+            {tab === 'Studio' && sub === 'Ledger' && <>
+              <Ledger s={s} />
+              <div style={{ padding: '0 18px 24px' }}>
+                <Button tone="quiet" onClick={() => { if (confirm('Abandon this studio and start again?')) abandonGame(); }}>
+                  Abandon the studio
+                </Button>
+              </div>
+            </>}
+            {tab === 'Partners' && sub === 'Artists' && <Artists s={s} />}
+            {tab === 'Partners' && sub === 'Licensing' && <Licensing s={s} />}
+            {tab === 'Partners' && sub === 'Creators' && <Creators s={s} />}
+            {tab === 'World' && sub === 'Regions' && <Regions s={s} />}
+            {tab === 'World' && sub === 'Channels' && <Channels s={s} />}
+          </Scroll>
+        )}
+      </FadeIn>
 
       {stop && stop.stops.length > 0 && (
         // A dialog, not a button. It used to be a <button> backdrop wrapping the
@@ -165,22 +171,25 @@ export default function App() {
             position: 'absolute', inset: 0, background: 'oklch(0.12 0.01 250 / 0.72)',
             border: 'none', padding: 0, cursor: 'pointer',
           }} />
-          <div style={{
-            position: 'relative', width: '100%', background: C.panel,
-            borderTop: `1px solid ${C.rule}`, textAlign: 'left',
-          }}>
-            <div style={{ ...label, padding: '13px 18px 8px' }}>
-              {stop.weeks} WEEK{stop.weeks === 1 ? '' : 'S'} LATER
-            </div>
-            {stop.stops.slice(0, 6).map((e, i) => (
-              <div key={i} style={{ padding: '9px 18px', borderTop: `1px solid ${C.rule}`, fontSize: 13.5 }}>
-                {say(e)}
+          <FadeIn y={16} style={{ width: '100%' }}>
+            <div style={{
+              position: 'relative', width: '100%', background: C.panel,
+              borderTop: `1px solid ${C.rule}`, textAlign: 'left',
+              borderTopLeftRadius: RADIUS, borderTopRightRadius: RADIUS,
+            }}>
+              <div style={{ ...label, padding: '13px 18px 8px' }}>
+                {stop.weeks} WEEK{stop.weeks === 1 ? '' : 'S'} LATER
               </div>
-            ))}
-            <div style={{ padding: '14px 18px 30px' }}>
-              <Button onClick={() => setStop(null)}>Carry on</Button>
+              {stop.stops.slice(0, 6).map((e, i) => (
+                <div key={i} style={{ padding: '9px 18px', borderTop: `1px solid ${C.rule}`, fontSize: 13.5 }}>
+                  {say(e)}
+                </div>
+              ))}
+              <div style={{ padding: '14px 18px 30px' }}>
+                <Button onClick={() => setStop(null)}>Carry on</Button>
+              </div>
             </div>
-          </div>
+          </FadeIn>
         </div>
       )}
 
@@ -189,7 +198,7 @@ export default function App() {
         paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 6px)', flexShrink: 0,
       }}>
         {TABS.map(t => (
-          <button key={t} type="button" onClick={() => {
+          <button key={t} type="button" className="pressable" onClick={() => {
             setTab(t);
             // Each tab owns its own second row, so carrying the old selection
             // across would land on a sub-tab this tab does not have and render

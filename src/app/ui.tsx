@@ -4,6 +4,7 @@
  * Every value here came off the published design canvas. Screens compose these
  * rather than restating hex codes, so a palette change is one edit.
  */
+import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 
 export const C = {
@@ -28,6 +29,14 @@ export const C = {
 export const MONO = "'IBM Plex Mono', ui-monospace, Menlo, monospace";
 export const SANS = "Archivo, 'Helvetica Neue', Arial, sans-serif";
 
+/** Corner radius. One value everywhere a control or panel used to be square. */
+export const RADIUS = 8;
+/** For decorative squares under ~12px, where `RADIUS` would just draw a circle. */
+export const RADIUS_SM = 4;
+
+export const EASE = 'cubic-bezier(0.22, 0.61, 0.36, 1)';
+export const DUR = { fast: 120, base: 180, slow: 240 } as const;
+
 export const label: CSSProperties = {
   fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.11em', color: C.muted,
 };
@@ -35,6 +44,30 @@ export const micro: CSSProperties = {
   fontFamily: MONO, fontSize: 8.5, letterSpacing: '0.1em', color: C.dim,
 };
 export const num: CSSProperties = { fontFamily: MONO, fontVariantNumeric: 'tabular-nums' };
+
+/**
+ * Fades and rises a subtree in on mount. The mount-trick `Pane` in
+ * `NewSet.tsx` pioneered — flip a style on the next frame so the CSS
+ * `transition` has something to animate from — generalized for reuse
+ * anywhere a screen, sheet or dialog appears.
+ */
+export function FadeIn({ children, y = 6, style }: { children: ReactNode; y?: number; style?: CSSProperties }) {
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    setShown(false);
+    const id = requestAnimationFrame(() => setShown(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  return (
+    <div style={{
+      opacity: shown ? 1 : 0,
+      transform: shown ? 'translateY(0)' : `translateY(${y}px)`,
+      transition: `opacity ${DUR.base}ms ease, transform ${DUR.base}ms ${EASE}`,
+      willChange: 'opacity, transform',
+      ...style,
+    }}>{children}</div>
+  );
+}
 
 export function Screen({ children }: { children: ReactNode }) {
   return (
@@ -62,9 +95,10 @@ export function Header({ title, sub, right, onBack }: {
       background: C.panel, borderBottom: `1px solid ${C.rule}`, flexShrink: 0,
     }}>
       {onBack && (
-        <button type="button" onClick={onBack} aria-label="Back" style={{
+        <button type="button" onClick={onBack} aria-label="Back" className="pressable" style={{
           width: 40, height: 44, marginLeft: -8, background: 'none', border: 'none',
           color: C.ink, display: 'flex', alignItems: 'center', padding: 0, cursor: 'pointer',
+          borderRadius: RADIUS,
         }}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -89,11 +123,11 @@ export function Button({ children, onClick, tone = 'go', disabled }: {
 }) {
   const go = tone === 'go';
   return (
-    <button type="button" onClick={onClick} disabled={disabled} style={{
+    <button type="button" onClick={onClick} disabled={disabled} className="pressable" style={{
       width: '100%', height: 52, border: go ? 'none' : `1px solid ${C.border}`,
       background: disabled ? C.raised : go ? C.go : 'transparent',
       color: disabled ? C.dim : go ? C.onAccent : C.ink,
-      fontFamily: SANS, fontSize: 15, fontWeight: 600, borderRadius: 2,
+      fontFamily: SANS, fontSize: 15, fontWeight: 600, borderRadius: RADIUS,
       cursor: disabled ? 'default' : 'pointer',
       touchAction: 'manipulation', WebkitUserSelect: 'none',
     }}>{children}</button>
@@ -109,9 +143,10 @@ export function Field({ label: l, value, onChange, placeholder }: {
       <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
         style={{
           height: 50, padding: '0 13px', background: C.panel, color: C.ink,
-          border: `1px solid ${value ? C.ink : C.rule}`, borderRadius: 2,
+          border: `1px solid ${value ? C.ink : C.rule}`, borderRadius: RADIUS,
           fontFamily: MONO, fontWeight: 600, fontSize: 18, letterSpacing: '0.01em',
           outline: 'none', width: '100%',
+          transition: `border-color ${DUR.fast}ms ease`,
         }} />
     </div>
   );
@@ -123,19 +158,19 @@ export function Stepper({ value, onChange, step = 1, min = 0, max = Infinity }: 
   const box: CSSProperties = {
     width: 44, height: 46, display: 'flex', alignItems: 'center', justifyContent: 'center',
     border: `1px solid ${C.border}`, background: C.panel, color: C.ink,
-    borderRadius: 2, cursor: 'pointer', padding: 0,
+    borderRadius: RADIUS, cursor: 'pointer', padding: 0,
   };
   return (
     <div style={{ display: 'flex', alignItems: 'stretch', gap: 8 }}>
-      <button type="button" style={box} onClick={() => onChange(Math.max(min, value - step))} aria-label="Less">
+      <button type="button" className="pressable" style={box} onClick={() => onChange(Math.max(min, value - step))} aria-label="Less">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M5 12h14" /></svg>
       </button>
       <div style={{
         flexGrow: 1, height: 46, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: C.panel, border: `1px solid ${C.rule}`, borderRadius: 2,
+        background: C.panel, border: `1px solid ${C.rule}`, borderRadius: RADIUS,
         ...num, fontSize: 19, fontWeight: 600,
       }}>{value.toLocaleString()}</div>
-      <button type="button" style={box} onClick={() => onChange(Math.min(max, value + step))} aria-label="More">
+      <button type="button" className="pressable" style={box} onClick={() => onChange(Math.min(max, value + step))} aria-label="More">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
       </button>
     </div>
@@ -233,11 +268,10 @@ export function Tabs<T extends string>({ tabs, value, onChange }: {
       flexShrink: 0, paddingLeft: 6, paddingRight: 6, overflowX: 'auto',
     }}>
       {tabs.map(t => (
-        <button key={t} type="button" onClick={() => onChange(t)} style={{
+        <button key={t} type="button" onClick={() => onChange(t)} className="pressable" style={{
           flex: '1 1 0', minWidth: 62, height: 46, border: 'none', background: 'none',
           cursor: 'pointer', fontFamily: 'inherit', fontSize: 11, padding: '0 4px',
           whiteSpace: 'nowrap', touchAction: 'manipulation', WebkitUserSelect: 'none',
-          transition: 'color 160ms ease',
           color: value === t ? C.ink : C.dim, fontWeight: value === t ? 600 : 400,
           borderBottom: value === t ? `2px solid ${C.go}` : '2px solid transparent',
         }}>{t}</button>
@@ -264,24 +298,27 @@ export function Sheet({ open, onClose, title, children }: {
         position: 'absolute', inset: 0, background: 'oklch(0.12 0.01 250 / 0.72)',
         border: 'none', padding: 0, cursor: 'pointer',
       }} />
-      <div style={{
-        position: 'relative', width: '100%', maxHeight: '86vh', overflowY: 'auto',
-        background: C.panel, borderTop: `1px solid ${C.border}`,
-        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 18px)',
-      }}>
+      <FadeIn y={16} style={{ width: '100%' }}>
         <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
-          padding: '13px 18px 10px', borderBottom: `1px solid ${C.rule}`,
-          position: 'sticky', top: 0, background: C.panel, zIndex: 1,
+          position: 'relative', width: '100%', maxHeight: '86vh', overflowY: 'auto',
+          background: C.panel, borderTop: `1px solid ${C.border}`,
+          borderTopLeftRadius: RADIUS, borderTopRightRadius: RADIUS,
+          paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 18px)',
         }}>
-          <span style={{ fontFamily: MONO, fontWeight: 600, fontSize: 16 }}>{title}</span>
-          <button type="button" onClick={onClose} aria-label="Close" style={{
-            width: 34, height: 34, background: 'none', border: `1px solid ${C.rule}`,
-            color: C.ink, borderRadius: 2, cursor: 'pointer', fontFamily: 'inherit', fontSize: 15,
-          }}>×</button>
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+            padding: '13px 18px 10px', borderBottom: `1px solid ${C.rule}`,
+            position: 'sticky', top: 0, background: C.panel, zIndex: 1,
+          }}>
+            <span style={{ fontFamily: MONO, fontWeight: 600, fontSize: 16 }}>{title}</span>
+            <button type="button" onClick={onClose} aria-label="Close" className="pressable" style={{
+              width: 34, height: 34, background: 'none', border: `1px solid ${C.rule}`,
+              color: C.ink, borderRadius: RADIUS, cursor: 'pointer', fontFamily: 'inherit', fontSize: 15,
+            }}>×</button>
+          </div>
+          {children}
         </div>
-        {children}
-      </div>
+      </FadeIn>
     </div>
   );
 }
@@ -363,7 +400,7 @@ export function AllocationBar({ segments, total, height = 12 }: {
 }) {
   const denom = Math.max(1, total);
   return (
-    <div style={{ display: 'flex', gap: 2, height, width: '100%', background: C.raised, borderRadius: 2, overflow: 'hidden' }}>
+    <div style={{ display: 'flex', gap: 2, height, width: '100%', background: C.raised, borderRadius: RADIUS_SM, overflow: 'hidden' }}>
       {segments.map((seg, i) => seg.units > 0 && (
         <div key={seg.label} title={`${seg.label}: ${seg.units.toLocaleString()}`}
           style={{ width: `${(seg.units / denom) * 100}%`, background: seg.color ?? seriesColor(i) }} />
@@ -378,7 +415,7 @@ export function Legend({ items }: { items: Array<{ label: string; color: string;
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px 13px', padding: '8px 14px' }}>
       {items.map(it => (
         <div key={it.label} style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
-          <span style={{ width: 9, height: 9, borderRadius: 2, background: it.color, flexShrink: 0 }} />
+          <span style={{ width: 9, height: 9, borderRadius: RADIUS_SM, background: it.color, flexShrink: 0 }} />
           <span style={{ fontSize: 11, color: C.ink3 }}>{it.label}</span>
           {it.value != null && <span style={{ ...num, fontSize: 11, color: C.muted }}>{it.value}</span>}
         </div>
@@ -390,11 +427,12 @@ export function Legend({ items }: { items: Array<{ label: string; color: string;
 /** A small square control: a stepper nub, a remove cross, a toggle chip. */
 export const pillBtn = {
   width: 32, height: 32, background: C.raised, color: C.ink, border: `1px solid ${C.rule}`,
-  borderRadius: 2, fontSize: 14, fontFamily: 'inherit', cursor: 'pointer', padding: 0,
+  borderRadius: RADIUS, fontSize: 14, fontFamily: 'inherit', cursor: 'pointer', padding: 0,
 } as const;
 
 /** A native select, sized for a thumb. */
 export const selectStyle = {
   height: 44, background: C.panel, color: C.ink, border: `1px solid ${C.rule}`,
-  borderRadius: 2, fontSize: 13, fontFamily: 'inherit', padding: '0 10px', width: '100%',
+  borderRadius: RADIUS, fontSize: 13, fontFamily: 'inherit', padding: '0 10px', width: '100%',
+  transition: `border-color ${DUR.fast}ms ease`,
 } as const;

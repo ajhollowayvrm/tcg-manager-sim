@@ -290,7 +290,7 @@ function LeverRow({ name, cost, note, onClick, disabled }: {
   name: string; cost: string; note: string; onClick: () => void; disabled?: boolean;
 }) {
   return (
-    <button type="button" onClick={onClick} disabled={disabled} style={{
+    <button className="pressable" type="button" onClick={onClick} disabled={disabled} style={{
       display: 'flex', flexDirection: 'column', gap: 3, width: '100%', textAlign: 'left',
       padding: '11px 16px', background: C.panel, border: 'none', cursor: disabled ? 'default' : 'pointer',
       color: disabled ? C.dim : C.ink, fontFamily: 'inherit', opacity: disabled ? 0.55 : 1,

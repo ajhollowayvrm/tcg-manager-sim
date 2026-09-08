@@ -24,7 +24,7 @@ export function Sets({ s, onNew, onOpen }: {
           <div key={status}>
             <div style={{ ...micro, padding: '11px 18px 5px' }}>{title}</div>
             {group.map(set => (
-              <button key={set.id} onClick={() => onOpen(set.id)} style={{
+              <button className="pressable" key={set.id} onClick={() => onOpen(set.id)} style={{
                 display: 'grid', width: '100%', gridTemplateColumns: '1fr auto', gap: 10,
                 alignItems: 'center', padding: '10px 18px', borderTop: `1px solid ${C.rule}`,
                 background: C.panel, border: 'none', borderTopStyle: 'solid', color: C.ink,
