@@ -35,6 +35,20 @@ export interface RegionReading {
   tasteBias: Record<IpKind, number>;
   rarityAppetite: Record<Rarity, number>;
   priceTolerance: number;
+  /**
+   * What the studio THINKS each product form is worth here.
+   *
+   * This was missing, and its absence was a leak rather than an omission:
+   * `readingFit` builds a shadow region by spreading `...region.truth` and
+   * overriding the three fields above, so the product term went on reading the
+   * TRUE preference. The pre-print forecast was quietly better than the studio
+   * had earned, and a studio-invented form — whose whole point is that its
+   * appetite is unknown until it ships — was not hidden from it at all.
+   *
+   * Covers only the forms this region has a settled opinion about. A form the
+   * studio invented is absent, because there is nothing to read yet.
+   */
+  productPreference: Record<string, number>;
 }
 
 /**
@@ -166,12 +180,17 @@ export function readRegion(s: SimState, regionId: RegionId): RegionReading | nul
   for (const [k, v] of Object.entries(t.rarityAppetite)) {
     rarityAppetite[k as Rarity] = v * Math.exp(regionReadingNoise(s, regionId, `rarity:${k}`, err));
   }
+  const productPreference: Record<string, number> = {};
+  for (const [k, v] of Object.entries(t.productPreference)) {
+    productPreference[k] = v * Math.exp(regionReadingNoise(s, regionId, `product:${k}`, err));
+  }
   return {
     regionId,
     confidence: region.knowledge,
     tasteBias,
     rarityAppetite,
     priceTolerance: t.priceTolerance * Math.exp(regionReadingNoise(s, regionId, 'price', err)),
+    productPreference,
   };
 }
 
@@ -191,6 +210,11 @@ export function readingFit(
       tasteBias: reading.tasteBias,
       rarityAppetite: reading.rarityAppetite,
       priceTolerance: reading.priceTolerance,
+      // The fourth field, and the reason this shadow was dishonest without it.
+      // Spreading `...region.truth` alone left the product term reading the
+      // truth, so the forecast could not be wrong about a form — including one
+      // the studio had just invented and could not possibly know.
+      productPreference: reading.productPreference,
     },
   };
   return setFit(s, shadow, set, p);
