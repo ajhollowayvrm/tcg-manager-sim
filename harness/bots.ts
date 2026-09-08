@@ -6,7 +6,7 @@
  * decision log — the same path a UI would drive.
  */
 import type {
-  SimState, IpId, ArtistId, Rarity, PrintQualityTier, BuiltinProductKind, SetType, ProductId, IpKind,
+  SimState, IpId, ArtistId, Rarity, PrintQualityTier, BuiltinProductKind, ProductKind, SetType, ProductId, IpKind,
   ChannelId, Channel, Tick, SetId, Cents, Artist, ArtistTerms, RegionId,
   Collab, CollabId, AudienceSegment, ChainId,
 } from '../src/sim/types.ts';
@@ -259,7 +259,7 @@ export interface SetBotOptions {
    * product kinds declared and never once printed.
    */
   setTypeCycle?: SetType[];
-  productKindCycle?: BuiltinProductKind[];
+  productKindCycle?: ProductKind[];
 }
 
 /**
@@ -1294,6 +1294,37 @@ export const BOTS: Record<string, (t?: BotTuning) => Bot> = {
       'blister', 'collectionBox', 'surpriseBox', 'pack'],
     unlockOrder: [CHANNEL_IDS.direct, CHANNEL_IDS.online, CHANNEL_IDS.distributor, CHANNEL_IDS.bigbox],
     dropUnits: 1200, dropCadenceWeeks: 4,
+    unitsPolicy: 'market', bankrollFraction: 0.6,
+  }),
+
+  /**
+   * A studio that invents its own SKU forms.
+   *
+   * Without it `productPreferenceFor`'s derived branch is dead code in all 360+
+   * runs of the roster sweep, and `coverage.ts`'s whole premise is that a
+   * mechanism no run reaches is a mechanism nobody has measured.
+   *
+   * It is a NEW bot rather than a change to `mixer`, because touching `mixer`
+   * would move its banked numbers and make the diff unattributable. New rows
+   * are purely additive.
+   *
+   * Three properties fall out of it for free, and each is the real test of a
+   * claim this feature makes. `saveRoundTrip` proves the appetite is genuinely
+   * derived rather than stored — if it depended on anything not in the save,
+   * the 300/save/200 comparison would catch it. `parallelIdentity` proves
+   * `seedRng` is self-contained and touches no shared stream. And the spread of
+   * the roster's outcomes proves an invented form is a gamble rather than the
+   * free upgrade the old `?? 1` fallback made it.
+   *
+   * `x:` keys mirror what the UI mints, so the harness exercises the same
+   * namespace a player would.
+   */
+  inventor: setBot({
+    label: 'Inventor', cadenceWeeks: 26, cardsPerSet: 120, setType: 'main',
+    quality: 'standard', units: 4000, packsPerUnit: 12, msrp: 9000,
+    productKind: 'boosterBox', allocationPolicy: 'spread',
+    productKindCycle: ['boosterBox', 'x:hanger', 'x:checklane', 'boosterBox', 'x:jumbo-pack'],
+    unlockOrder: [CHANNEL_IDS.online, CHANNEL_IDS.distributor, CHANNEL_IDS.bigbox],
     unitsPolicy: 'market', bankrollFraction: 0.6,
   }),
 };
