@@ -20,7 +20,7 @@ import { money, moneyExact, oddsText, pct } from '../format.ts';
 import { commit, getMeta, saveFormat, setSetEra } from '../store.ts';
 import {
   DEFAULT_ROWS, DEFAULT_SLOTS, COMMON_ROW_ID, newRowId, newSlotId,
-  slotDraws, derivePulls, tiersForLadder, finishText,
+  slotDraws, derivePulls, tiersForLadder, packFrequency, finishText,
   type Finish, type RarityRow, type PackSlot,
 } from '../setdesign.ts';
 import { FinishPicker } from './FinishPicker.tsx';
@@ -664,19 +664,22 @@ function PackStep({ s, rows, slots, setSlots, draws, pulls }: {
         }}>+ Add a slot</button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 66px 74px', gap: 7, padding: '18px 16px 5px', ...micro }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 108px 74px', gap: 7, padding: '18px 16px 5px', ...micro }}>
         <div>WHAT A PACK HOLDS</div>
-        <div style={{ textAlign: 'right' }}>PER PACK</div>
-        <div style={{ textAlign: 'right' }}>ONE CARD</div>
+        <div style={{ textAlign: 'right' }}>HOW OFTEN</div>
+        <div style={{ textAlign: 'right' }}>A NAMED CARD</div>
       </div>
       {rows.map(r => (
         <div key={r.id} style={{
-          display: 'grid', gridTemplateColumns: '1fr 66px 74px', gap: 7, alignItems: 'center',
+          display: 'grid', gridTemplateColumns: '1fr 108px 74px', gap: 7, alignItems: 'center',
           padding: '8px 16px', borderTop: `1px solid ${C.rule}`, background: C.ground,
         }}>
           <div style={{ fontSize: 12, color: draws[r.id] ? C.ink : C.dimmer }}>{r.label}</div>
-          <div style={{ ...num, fontSize: 11.5, textAlign: 'right', color: C.muted }}>
-            {draws[r.id] ? draws[r.id]!.toFixed(2) : '—'}
+          <div style={{
+            ...num, fontSize: 11.5, textAlign: 'right',
+            color: (draws[r.id] ?? 0) >= 1 ? C.note : C.muted,
+          }}>
+            {packFrequency(draws[r.id] ?? 0)}
           </div>
           <div style={{ ...num, fontSize: 11.5, textAlign: 'right', color: pulls[r.id] ? C.note : C.dimmer }}>
             {pulls[r.id] ? oddsText(pulls[r.id]!) : '—'}
@@ -684,9 +687,10 @@ function PackStep({ s, rows, slots, setSlots, draws, pulls }: {
         </div>
       ))}
       <div style={{ padding: '12px 16px 0', fontSize: 11, lineHeight: 1.42, color: C.muted }}>
-        PER PACK is how many cards of that rung a pack holds on average. ONE CARD is the odds of
-        pulling a NAMED card from it — the rung's draws split across every card in it, which is why
-        a bigger rung makes each of its cards rarer. You set the pack; the odds follow.
+        HOW OFTEN is whether a pack holds one of that rung at all. A NAMED CARD is the odds of
+        pulling one PARTICULAR card from it — the rung's draws split across every card in it, which
+        is why adding cards to a rung makes each one rarer without changing how often the rung shows
+        up. You set the pack; both follow.
       </div>
     </>
   );

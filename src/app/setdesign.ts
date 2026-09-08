@@ -151,6 +151,25 @@ export function derivePulls(slots: PackSlot[], rows: RarityRow[], commons: numbe
 }
 
 /**
+ * How often a pack holds one of a rung, in words.
+ *
+ * The decimal alone misreads. A rung drawn 4.3 times a pack IS "every pack",
+ * but shown as `4.30` next to a `1 in 18` column it invites the player to read
+ * the wrong number as the answer to "how often do I see one of these".
+ *
+ * At one draw or more a pack always holds at least one, and that is the whole
+ * answer — "every pack" does not become more true at 4.3 than at 1.0, so the
+ * count is not shown. Below one the pack does NOT always hold one, and the
+ * interval is the fact worth reading.
+ */
+export function packFrequency(draws: number): string {
+  if (draws <= 0) return 'Never';
+  if (draws >= 1) return 'Every pack';
+  const every = 1 / draws;
+  return every < 10 ? `1 pack in ${every.toFixed(1)}` : `1 pack in ${Math.round(every)}`;
+}
+
+/**
  * The tier ladder, commonest first. `promo` is deliberately absent: it is a
  * product route, not a step on a rarity ladder, and its pull sits between
  * `rare` and `doubleRare` where it would corrupt any ordering.
