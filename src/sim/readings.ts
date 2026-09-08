@@ -176,16 +176,36 @@ export function forecastSetDemand(s: SimState, setId: SetId): Reading | null {
 export function forecastPrice(s: SimState, printingId: PrintingId, weeks: number): Reading | null {
   const pr = s.printings[printingId];
   if (!pr) return null;
+  // Drift is measured over a WINDOW, not over the last two points, and it is
+  // clamped. Both halves are load-bearing.
+  //
+  // `rawHistory` is compacted, so the last two points can be one week and a
+  // large move apart — and that per-week rate, compounded over a five-year
+  // horizon, diverges. Measured in the app: a card standing at $122.71 with a
+  // recent dip forecast a band of $1.15 to $8.49 a year out. That is not a
+  // pessimistic forecast, it is a broken one, and the compounding did it.
+  //
+  // A trend is what the last year did, and no real card doubles or halves
+  // every year forever, so the annual rate is bounded by
+  // `forecastMaxDriftPerYear`.
+  const cfg = s.config.readings;
   const pts = pr.market.rawHistory.points;
   const last = pts[pts.length - 1];
-  const prev = pts[pts.length - 2];
-  const drift = last && prev && prev.v > 0 && last.t > prev.t
-    ? Math.pow(last.v / prev.v, 1 / (last.t - prev.t)) : 1;
+  let base = last;
+  for (let i = pts.length - 1; i >= 0; i--) {
+    base = pts[i]!;
+    if (last && (last.t as number) - (pts[i]!.t as number) >= cfg.forecastDriftWindowWeeks) break;
+  }
+  const span = last && base ? (last.t as number) - (base.t as number) : 0;
+  let drift = last && base && base.v > 0 && span > 0
+    ? Math.pow(last.v / base.v, 1 / span) : 1;
+  const cap = Math.pow(Math.max(1.0001, cfg.forecastMaxDriftPerYear), 1 / 52);
+  drift = Math.max(1 / cap, Math.min(cap, drift));
   const projected = pr.market.rawPrice * Math.pow(drift, Math.max(0, weeks));
   // The further out, the wider. A forecast that is as sharp at five years as at
   // five weeks is not a forecast.
   const sigma = readingSigma(s, 'market')
-    * (1 + weeks / Math.max(1, s.config.readings.forecastHorizonWeeks));
+    * (1 + weeks / Math.max(1, cfg.forecastHorizonWeeks));
   const noise = readingNoise(pr.truth.chase * 1e6, bucketOf(s), printingId, sigma);
   return band(s, Math.max(0, projected * Math.exp(noise)), sigma,
     s.publishers[s.playerId]?.unlocks.analytics ?? 0);

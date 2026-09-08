@@ -171,7 +171,8 @@ function PrintingSheet({ s, id, onClose }: { s: SimState; id: PrintingId; onClos
           <Stat label="Liquidity" value={pr.market.liquidity.toFixed(2)}
             sub={pr.market.lastTradeTick ? stamp(s, pr.market.lastTradeTick) : 'never traded'} />
           <Stat label="You'd get" value={moneyExact(realisableCardValue(s, pr))}
-            sub="after the shop's spread" />
+            sub={realisableCardValue(s, pr) < pr.market.rawPrice
+              ? "after the shop's spread" : 'no spread is modelled yet'} />
           <Stat label="Tradeable" value={compact(tradeable)} sub={`of ${compact(pr.printQuantity)}`} />
         </StatRow>
 

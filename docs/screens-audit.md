@@ -1,5 +1,11 @@
 # Screens audit — what the sim can feed a UI
 
+> **Update, Phase 1 (UI build).** All seven screens are now BUILT, not merely
+> feedable, and the decision surface went from 6 of 22 `api.*` calls to 24 of 24
+> (counting `borrow` and `repay`, which had no wrapper at all). Building them
+> found five defects the audit could not have predicted, and they are recorded
+> at the end of this file under "What the build found".
+
 Written 2026-09-06, Round 11 C13. It closes Plan 1.
 
 **Purpose.** CONCEPT.md §8 names seven screens. This says, for each one, which
@@ -196,3 +202,46 @@ run. Two things a UI must respect:
   refreshed every sixth stride became state, and a reloaded run diverged by a
   cent that then propagated.
 - **A 50-year save is 63.7 MB.** Budget for it, or trim the event log.
+
+
+## What the build found
+
+Wiring a screen to a field is how you find out whether the field was right. Five
+defects, none of which a green suite could have shown.
+
+1. **`api.borrow` had no ceiling.** The `borrow` handler took any amount and
+   booked it, with no reference to the lending ceiling `tickFinance` computes
+   eight lines above. Nothing had ever called it, so the hole never opened — a
+   UI calling it is infinite money. `borrowCeiling` is now a shared pure
+   function and the handler clamps to it.
+
+2. **`forecastPrice` diverged.** It read drift off the last TWO points of a
+   compacted series and compounded that per-week rate over the whole horizon.
+   Measured in the app: a card standing at $122.71 forecast a band of $1.15 to
+   $8.49 a year out. Drift is now measured over a window and bounded by
+   `readings.forecastMaxDriftPerYear`. Nothing in the value engine reads
+   `forecastPrice`, so this moved no gate.
+
+3. **A save could not survive a new config knob.** A save carries its whole
+   config, so a save written before a knob existed came back missing it, and a
+   missing knob is `undefined` — which turns the first arithmetic that touches
+   it into `NaN` and spreads. Two knobs added in one session turned a live
+   save's forecast into "NaN to NaN". `deserialize` now backfills missing keys
+   from `defaultConfig`, adding only what the save lacks.
+
+4. **The interrupt modal nested a button inside a button.** Invalid HTML, and a
+   real hit-target bug on iOS where the inner tap can be swallowed.
+
+5. **Three dead symbols in the app.** `MIXES` and a module-level `pickRarity`
+   were the first rarity screen, replaced by the editable ladder and unreachable
+   since; `pickRarity` only read as live because a local variable shares its
+   name. `FINISHES` was declared and never read.
+
+### Two things the screens must keep saying honestly
+
+- **`realisableCardValue` returns the raw price**, because `actors.buylistWeight`
+  ships at exactly 0. The market screen says "no spread is modelled yet" rather
+  than "after the shop's spread", and it must keep telling the truth until that
+  knob is fitted.
+- **`Artist.specialty` is still unread**, so the artist screen does not filter on
+  it. It gains a consumer when the art director lands.

@@ -1,11 +1,13 @@
 /** Every set the studio has, grouped by where it is in its life. */
-import type { SimState } from '../../sim/types.ts';
+import type { SimState, SetId } from '../../sim/types.ts';
 import { C, MONO, num, micro, Button, Empty } from '../ui.tsx';
 import { money, yearOf } from '../format.ts';
 
 // --- studio: sets ----------------------------------------------------------
 
-export function Sets({ s, onNew }: { s: SimState; onNew: () => void }) {
+export function Sets({ s, onNew, onOpen }: {
+  s: SimState; onNew: () => void; onOpen: (id: SetId) => void;
+}) {
   const sets = Object.values(s.sets).filter(x => x.publisherId === s.playerId)
     .sort((a, b) => b.designStartTick - a.designStartTick);
   const stages: Array<[string, string]> = [
@@ -22,9 +24,11 @@ export function Sets({ s, onNew }: { s: SimState; onNew: () => void }) {
           <div key={status}>
             <div style={{ ...micro, padding: '11px 18px 5px' }}>{title}</div>
             {group.map(set => (
-              <div key={set.id} style={{
-                display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'center',
-                padding: '10px 18px', borderTop: `1px solid ${C.rule}`, background: C.panel,
+              <button key={set.id} onClick={() => onOpen(set.id)} style={{
+                display: 'grid', width: '100%', gridTemplateColumns: '1fr auto', gap: 10,
+                alignItems: 'center', padding: '10px 18px', borderTop: `1px solid ${C.rule}`,
+                background: C.panel, border: 'none', borderTopStyle: 'solid', color: C.ink,
+                cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
               }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
                   <div style={{ fontFamily: MONO, fontWeight: 600, fontSize: 15 }}>{set.name}</div>
@@ -41,7 +45,7 @@ export function Sets({ s, onNew }: { s: SimState; onNew: () => void }) {
                       </>
                     : <div style={{ ...micro, color: C.dim }}>—</div>}
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         );

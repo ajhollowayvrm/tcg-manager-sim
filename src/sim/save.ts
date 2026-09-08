@@ -30,6 +30,7 @@
  * on the state and `decisions` is the log — so a save can be replayed or
  * resumed.
  */
+import { defaultConfig } from './config.ts';
 import type { SimConfig, SimState, Tick } from './types.ts';
 
 /**
@@ -149,7 +150,30 @@ export function deserialize(json: string): SimState {
   // else is either derived on the next tick or is plain data.
   if (typeof state.tick !== 'number') throw new SaveError('save state has no tick');
   if (!state.rng || !Array.isArray(state.rng.s)) throw new SaveError('save state has no rng');
+  // A save carries its whole config, so a save written before a knob existed
+  // comes back missing it — and a missing knob is `undefined`, which turns the
+  // first arithmetic that touches it into NaN and then spreads. This was found
+  // in the app: two knobs added to `readings` in one session turned a live
+  // save's price forecast into "NaN to NaN".
+  //
+  // Backfilling only ADDS keys the save does not have. Every value the save
+  // does carry wins, so a run stays reproducible and a deliberate override
+  // survives a reload.
+  backfill(state.config as unknown as Record<string, unknown>,
+    defaultConfig as unknown as Record<string, unknown>);
   return state;
+}
+
+/** Recursively adds missing keys from `defaults`. Never overwrites. */
+function backfill(target: Record<string, unknown>, defaults: Record<string, unknown>): void {
+  if (!target || typeof target !== 'object') return;
+  for (const [k, v] of Object.entries(defaults)) {
+    if (!(k in target)) {
+      target[k] = structuredClone(v);
+    } else if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+      backfill(target[k] as Record<string, unknown>, v as Record<string, unknown>);
+    }
+  }
 }
 
 /** The overrides a save was taken with, if it recorded any. */

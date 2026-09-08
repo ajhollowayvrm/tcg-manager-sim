@@ -1901,6 +1901,10 @@ export interface SimConfig {
     rereadWeeks: number;
     /** Horizon at which a price forecast has doubled its error. */
     forecastHorizonWeeks: number;
+    /** Weeks of history a price forecast measures its trend over. */
+    forecastDriftWindowWeeks: number;
+    /** Cap on a forecast's extrapolation, as a multiple per year. */
+    forecastMaxDriftPerYear: number;
   };
 
   /** Orders taken before a set ships. See `CardSet.preorders`. */

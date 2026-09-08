@@ -1090,6 +1090,20 @@ export const defaultConfig: SimConfig = {
     // player can wait out the error instead of paying to remove it.
     rereadWeeks: 13,
     forecastHorizonWeeks: 52,
+    /**
+     * How far back a price forecast measures its trend, in weeks.
+     *
+     * `rawHistory` is compacted, so the gap between the last two points is
+     * arbitrary. Reading the drift off them made the forecast a function of
+     * when compaction happened to write a point.
+     */
+    forecastDriftWindowWeeks: 52,
+    /**
+     * The most a forecast will extrapolate, as a multiple per year, in either
+     * direction. Nothing read by the value engine touches this — `forecastPrice`
+     * is a reading and exists to be looked at.
+     */
+    forecastMaxDriftPerYear: 2.5,
   },
 
   // Orders taken during the reveal window. Ships INERT at `conversionRate: 0`
