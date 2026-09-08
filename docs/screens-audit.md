@@ -222,12 +222,19 @@ defects, none of which a green suite could have shown.
    `readings.forecastMaxDriftPerYear`. Nothing in the value engine reads
    `forecastPrice`, so this moved no gate.
 
-3. **A save could not survive a new config knob.** A save carries its whole
+3. **A save could not survive a new FIELD, in two separate ways.** A save carries its whole
    config, so a save written before a knob existed came back missing it, and a
    missing knob is `undefined` — which turns the first arithmetic that touches
    it into `NaN` and spreads. Two knobs added in one session turned a live
    save's forecast into "NaN to NaN". `deserialize` now backfills missing keys
    from `defaultConfig`, adding only what the save lacks.
+
+   The entity half was found the same way, by the app crashing: an `IpEntity`
+   written before `archetype` existed came back without it and the roster read
+   `undefined.toUpperCase()`. `migrateEntities` handles that, and **every field
+   added to an entity from now on needs a line there** — the same discipline as
+   a database migration, and for the same reason. Adding one is cheap;
+   forgetting one breaks every existing save the first time a screen reads it.
 
 4. **The interrupt modal nested a button inside a button.** Invalid HTML, and a
    real hit-target bug on iOS where the inner tap can be swallowed.

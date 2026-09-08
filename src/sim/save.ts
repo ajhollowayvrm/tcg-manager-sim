@@ -161,7 +161,34 @@ export function deserialize(json: string): SimState {
   // survives a reload.
   backfill(state.config as unknown as Record<string, unknown>,
     defaultConfig as unknown as Record<string, unknown>);
+  migrateEntities(state);
   return state;
+}
+
+/**
+ * Fields added to an ENTITY after a save was written.
+ *
+ * The config backfill above fixed half of this problem and the app found the
+ * other half by crashing: an `IpEntity` saved before `archetype` existed came
+ * back without it, and the roster read `undefined.toUpperCase()`.
+ *
+ * A save is a snapshot of shapes that were current when it was taken, so every
+ * field added to an entity needs a line here — the same discipline as a
+ * database migration, and for the same reason. Adding one is cheap; forgetting
+ * one breaks every existing save the first time a screen reads the field.
+ */
+function migrateEntities(state: SimState): void {
+  for (const ip of Object.values(state.ips ?? {})) {
+    ip.archetype ??= 'none';
+    ip.baseAge ??= 0;
+    ip.affiliation ??= null;
+  }
+  for (const pr of Object.values(state.printings ?? {})) {
+    pr.market.lastPricedTick ??= null;
+  }
+  for (const card of Object.values(state.cards ?? {})) {
+    card.treatments ??= [];
+  }
 }
 
 /** Recursively adds missing keys from `defaults`. Never overwrites. */
