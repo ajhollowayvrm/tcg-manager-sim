@@ -1,0 +1,162 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; font-family: Archivo, 'Helvetica Neue', Arial, sans-serif; }
+    a { color: oklch(0.72 0.16 150); } a:hover { color: oklch(0.62 0.16 150); }
+    * { box-sizing: border-box; }
+  </style>
+</helmet>
+
+<div style="width: 390px; height: 844px; background: oklch(0.20 0.012 250); color: oklch(0.92 0.008 250); display: flex; flex-direction: column; overflow: hidden;">
+
+  <div style="display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: oklch(0.235 0.014 250); border-bottom: 1px solid oklch(0.32 0.014 250);">
+    <div style="width: 40px; height: 44px; display: flex; align-items: center; margin-left: -8px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"></path><path d="M11 6l-6 6 6 6"></path></svg>
+    </div>
+    <div style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-weight: 600; font-size: 20px; letter-spacing: 0.02em; flex-grow: 1;">ASHFALL</div>
+    <div style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 10px; letter-spacing: 0.08em; color: oklch(0.60 0.010 250);">2 / 4</div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: oklch(0.32 0.014 250); border-bottom: 1px solid oklch(0.32 0.014 250);">
+    <div style="padding: 7px 8px; background: oklch(0.20 0.012 250); font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 8.5px; letter-spacing: 0.08em; text-align: center; color: oklch(0.60 0.010 250);">SHAPE</div>
+    <div style="padding: 7px 8px; background: oklch(0.265 0.014 250); border-bottom: 2px solid oklch(0.72 0.16 150); font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 8.5px; letter-spacing: 0.08em; text-align: center; font-weight: 600;">RARITY</div>
+    <div style="padding: 7px 8px; background: oklch(0.20 0.012 250); font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 8.5px; letter-spacing: 0.08em; text-align: center; color: oklch(0.60 0.010 250);">CARDS</div>
+    <div style="padding: 7px 8px; background: oklch(0.20 0.012 250); font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 8.5px; letter-spacing: 0.08em; text-align: center; color: oklch(0.60 0.010 250);">PRINT</div>
+  </div>
+
+  <!-- Two budgets: what a pack holds, and how much of the set carries a finish -->
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: oklch(0.32 0.014 250); border-bottom: 1px solid oklch(0.32 0.014 250);">
+
+    <div style="padding: 10px 14px 11px 14px; background: oklch(0.235 0.014 250);">
+      <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 6px;">
+        <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 8.5px; letter-spacing: 0.1em; color: oklch(0.60 0.010 250);">PACK SLOTS</span>
+        <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 15px; font-weight: 600;">17.3</span>
+      </div>
+      <div style="height: 6px; margin-top: 7px; background: oklch(0.29 0.014 250); display: flex; gap: 1px; overflow: hidden;">
+        <div style="width: 71.7%; background: oklch(0.92 0.008 250);"></div>
+        <div style="width: 22.5%; background: oklch(0.60 0.010 250);"></div>
+        <div style="width: 5.1%; background: oklch(0.72 0.16 70);"></div>
+        <div style="width: 1.0%; background: oklch(0.72 0.16 25);"></div>
+      </div>
+      <div style="font-size: 10px; line-height: 1.35; color: oklch(0.60 0.010 250); margin-top: 6px;">Fixed. You divide them.</div>
+    </div>
+
+    <div style="padding: 10px 14px 11px 14px; background: oklch(0.235 0.014 250);">
+      <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 6px;">
+        <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 8.5px; letter-spacing: 0.1em; color: oklch(0.60 0.010 250);">FINISHED</span>
+        <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 15px; font-weight: 600; color: oklch(0.72 0.16 70);">31%</span>
+      </div>
+      <div style="height: 6px; margin-top: 7px; background: oklch(0.29 0.014 250); overflow: hidden;">
+        <div style="width: 31%; height: 6px; background: oklch(0.72 0.16 70);"></div>
+      </div>
+      <div style="font-size: 10px; line-height: 1.35; color: oklch(0.60 0.010 250); margin-top: 6px;">55 of 180 &middot; +0.39 a box</div>
+    </div>
+
+  </div>
+
+  <div style="display: grid; grid-template-columns: 1fr 34px 62px 66px; gap: 7px; padding: 8px 16px 5px 16px; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 8.5px; letter-spacing: 0.09em; color: oklch(0.58 0.010 250);">
+    <div>RARITY</div>
+    <div style="text-align: right;">N</div>
+    <div style="text-align: right;">PULL</div>
+    <div style="text-align: right;">FINISH</div>
+  </div>
+
+  <div style="flex-grow: 1; display: flex; flex-direction: column;">
+
+    <div style="display: grid; grid-template-columns: 1fr 34px 62px 66px; gap: 7px; align-items: center; padding: 7px 16px; border-top: 1px solid oklch(0.29 0.014 250); background: oklch(0.235 0.014 250);">
+      <div style="font-size: 12.5px;">Common</div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 12.5px;">80</div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 10.5px; color: oklch(0.66 0.010 250);">12.4/pk</div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 10px; color: oklch(0.45 0.010 250);">&mdash;</div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 34px 62px 66px; gap: 7px; align-items: center; padding: 7px 16px; border-top: 1px solid oklch(0.29 0.014 250); background: oklch(0.235 0.014 250);">
+      <div style="font-size: 12.5px;">Uncommon</div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 12.5px;">45</div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 10.5px; color: oklch(0.66 0.010 250);">3.9/pk</div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 10px; color: oklch(0.45 0.010 250);">&mdash;</div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 34px 62px 66px; gap: 7px; align-items: center; padding: 7px 16px; border-top: 1px solid oklch(0.29 0.014 250); background: oklch(0.235 0.014 250);">
+      <div style="font-size: 12.5px;">Rare</div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 12.5px;">25</div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 10.5px; color: oklch(0.66 0.010 250);">1/pk</div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 10px; color: oklch(0.80 0.009 250);">HOLO</div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 34px 62px 66px; gap: 7px; align-items: center; padding: 7px 16px; border-top: 1px solid oklch(0.29 0.014 250); background: oklch(0.235 0.014 250);">
+      <div style="font-size: 12.5px;">Double rare</div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 12.5px;">13</div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 10.5px; color: oklch(0.66 0.010 250);">1 in 7</div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 10px; color: oklch(0.80 0.009 250);">HOLO</div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 34px 62px 66px; gap: 7px; align-items: center; padding: 7px 16px; border-top: 1px solid oklch(0.29 0.014 250); background: oklch(0.235 0.014 250);">
+      <div style="font-size: 12.5px;">Ultra rare</div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 12.5px;">7</div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 10.5px; color: oklch(0.66 0.010 250);">1 in 41</div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 10px; color: oklch(0.72 0.16 70);">FULL ART</div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 34px 62px 66px; gap: 7px; align-items: center; padding: 7px 16px; border-top: 1px solid oklch(0.29 0.014 250); background: oklch(0.235 0.014 250);">
+      <div style="font-size: 12.5px;">Illustration rare</div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 12.5px;">5</div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 10.5px; color: oklch(0.66 0.010 250);">1 in 147</div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 10px; color: oklch(0.72 0.16 70);">FULL ART</div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 34px 62px 66px; gap: 7px; align-items: center; padding: 7px 16px; border-top: 1px solid oklch(0.29 0.014 250); background: oklch(0.235 0.014 250);">
+      <div style="font-size: 12.5px;">Special illustration</div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 12.5px;">3</div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 10.5px; color: oklch(0.66 0.010 250);">1 in 1071</div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 10px; color: oklch(0.72 0.16 70);">ETCHED</div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 34px 62px 66px; gap: 7px; align-items: center; padding: 7px 16px; border-top: 1px solid oklch(0.29 0.014 250); border-bottom: 1px solid oklch(0.32 0.014 250); background: oklch(0.265 0.014 250);">
+      <div style="display: flex; flex-direction: column; gap: 1px;">
+        <div style="font-size: 12.5px; font-weight: 600;">Hyper rare</div>
+        <div style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 8.5px; letter-spacing: 0.07em; color: oklch(0.72 0.16 25);">UNANNOUNCED</div>
+      </div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 12.5px;">2</div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 10.5px; color: oklch(0.66 0.010 250);">1 in 3214</div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 10px; color: oklch(0.72 0.16 25);">GOLD FOIL</div>
+    </div>
+
+    <div style="font-size: 11px; line-height: 1.42; color: oklch(0.66 0.010 250); padding: 10px 16px 0 16px;">A finish only works while it is rare. Past a third of the set it stops reading as one &mdash; and the print bill climbs faster than the chase does.</div>
+
+  </div>
+
+  <div style="margin: 0 16px; border: 1px solid oklch(0.32 0.014 250); background: oklch(0.235 0.014 250);">
+    <div style="display: flex; align-items: baseline; justify-content: space-between; padding: 8px 12px 5px 12px;">
+      <span style="font-size: 12px; color: oklch(0.80 0.009 250);">Singles inside a box</span>
+      <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 15px; font-weight: 600; color: oklch(0.72 0.16 150);">142.80</span>
+    </div>
+    <div style="height: 1px; background: oklch(0.29 0.014 250); margin: 0 12px;"></div>
+    <div style="display: flex; align-items: baseline; justify-content: space-between; padding: 5px 12px 8px 12px;">
+      <span style="font-size: 12px; color: oklch(0.80 0.009 250);">What a box sells for</span>
+      <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 12.5px;">140.00</span>
+    </div>
+    <div style="padding: 8px 12px; background: oklch(0.265 0.014 250); border-top: 1px solid oklch(0.32 0.014 250); font-size: 11px; line-height: 1.4; color: oklch(0.86 0.008 250);">
+      Move slots toward the chase and this falls. <strong style="font-weight: 600;">Rarity buys a better story and a worse box.</strong>
+    </div>
+  </div>
+
+  <div style="padding: 11px 16px 26px 16px;">
+    <div style="height: 50px; display: flex; align-items: center; justify-content: center; gap: 9px; background: oklch(0.72 0.16 150); color: oklch(0.17 0.012 250); border-radius: 2px;">
+      <span style="font-size: 14.5px; font-weight: 600;">Cards</span>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="M13 6l6 6-6 6"></path></svg>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

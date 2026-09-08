@@ -1,0 +1,115 @@
+{
+  "artboards": [
+    {
+      "file": "Onboarding.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "1 \u00b7 Onboarding"
+    },
+    {
+      "file": "Main.dc.html",
+      "x": 470,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "2 \u00b7 Studio \u203a Roster"
+    },
+    {
+      "file": "NewCharacter.dc.html",
+      "x": 940,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "3 \u00b7 New character"
+    },
+    {
+      "file": "SetShape.dc.html",
+      "x": 0,
+      "y": 964,
+      "w": 390,
+      "h": 844,
+      "title": "4 \u00b7 Set \u2014 shape"
+    },
+    {
+      "file": "SetRarities.dc.html",
+      "x": 470,
+      "y": 964,
+      "w": 390,
+      "h": 844,
+      "title": "5 \u00b7 Set \u2014 rarities"
+    },
+    {
+      "file": "SetCards.dc.html",
+      "x": 940,
+      "y": 964,
+      "w": 390,
+      "h": 844,
+      "title": "6 \u00b7 Set \u2014 cards"
+    },
+    {
+      "file": "SetPrint.dc.html",
+      "x": 1410,
+      "y": 964,
+      "w": 390,
+      "h": 844,
+      "title": "7 \u00b7 Print run"
+    },
+    {
+      "file": "DirectionLight.dc.html",
+      "x": 0,
+      "y": 1928,
+      "w": 390,
+      "h": 844,
+      "title": "Alternate \u2014 light"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "flow-open",
+      "x": 1410,
+      "y": 0,
+      "w": 300,
+      "text": "THE OPENING\n\nName the studio, name the game, and you are in. Two fields.\n\nThe roster shows PROSE, never numbers \u2014 displayTier() returns 'prose' at research tier 0, so a player reads \"Everyone's second favourite\" rather than 61. Research turns prose into a band, then a figure. That is the progression tree on the screen the player looks at most.\n\nStarting cash 100,000 against a 147,840 first run: you cannot open without borrowing, and 18 of 24 measured studios survived it."
+    },
+    {
+      "id": "flow-set",
+      "x": 1880,
+      "y": 964,
+      "w": 300,
+      "text": "SET DESIGN \u2014 FOUR STEPS\n\nShape, rarities, cards, print. One wizard, and the sim receives ONE commitment at the end: how much, where, and through whom all lock together, 18 weeks before anything ships.\n\nThe rarity screen is the one to look at hardest. A pack holds a fixed number of slots, so setting pull rates DIVIDES them and never adds. And because scarcityExponent is 0.45, a card's contribution to box value scales as pullRate^0.55 \u2014 it FALLS as the card gets rarer.\n\nRarity buys a better story and a worse box. That trade is real arithmetic already in the model, not a rule invented for the UI."
+    },
+    {
+      "id": "crafted-note",
+      "x": 1880,
+      "y": 1330,
+      "w": 300,
+      "text": "FIVE CARDS, NOT 180\n\nThe player crafts the cards that matter; the rest ship as house work at art.houseQuality \u2014 which the sim already models, and already gates (sub.houseArtShare reads 0.086).\n\nThat is what makes a 180-card set a phone-sized decision.\n\nAryla appears three times at three rarities \u2014 AJ's own example \u2014 grouped as a VARIANT RUN. Collectors chase the complete run, which is pull demand, which is the shape chainTerm already models. It would be a third chain kind beside progression and illustration."
+    },
+    {
+      "id": "loan-note",
+      "x": 1880,
+      "y": 1660,
+      "w": 300,
+      "text": "THE LOAN IS THE POINT\n\nMeasured with a bot that insists on a proper 8,000-box first set whatever the bankroll says, 24 seeds x 20 years:\n\n500k cash   24/24 lived, peak debt 38,790\n100k cash   18/24 lived, peak debt 328,842, deaths at year 2.2\n\nDO NOT lower the borrowing ceiling \u2014 at 250k, 23 of 24 die.\n\nBLOCKER: the sim borrows AUTOMATICALLY when cash goes negative, so this is not yet a decision. api.borrow is implemented and has never been called by anything \u2014 same as api.reprint. Make the explicit loan the normal path and demote auto-borrow to an emergency overdraft."
+    },
+    {
+      "id": "direction-note",
+      "x": 470,
+      "y": 1928,
+      "w": 420,
+      "text": "DIRECTION: DARK, PICKED\n\nAll seven screens are now the trade-desk direction \u2014 dark ground, monospace throughout, tabular figures. Green is the primary action, amber is information, red is money leaving or a thing not announced.\n\nLeft: the light press-room version of the roster, kept for the record. Same data, opposite temperament."
+    },
+    {
+      "id": "finish-note",
+      "x": 1880,
+      "y": 2000,
+      "w": 300,
+      "text": "FINISHES ARE PER RARITY\n\nCommon and uncommon get nothing. Rare and double rare get holo. The top four get full art, etched, gold foil.\n\nTwo budgets now sit on the rarity screen and they are different axes: PACK SLOTS is fixed by physics, FINISHED is a share of the set you choose.\n\nThe rule: a finish only works while it is rare. Past a third of the set it stops reading as one, and the print bill climbs faster than the chase does. On the print screen that is a real line \u2014 +3,120 on this run, which is 6.5% of the loan.\n\nCard.treatment exists in the model and is read by nothing. This is its consumer."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}

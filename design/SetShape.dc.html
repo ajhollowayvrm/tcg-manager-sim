@@ -1,0 +1,121 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; font-family: Archivo, 'Helvetica Neue', Arial, sans-serif; }
+    a { color: oklch(0.72 0.16 25); } a:hover { color: oklch(0.62 0.16 25); }
+    * { box-sizing: border-box; }
+  </style>
+</helmet>
+
+<div style="width: 390px; height: 844px; background: oklch(0.20 0.012 250); color: oklch(0.92 0.008 250); display: flex; flex-direction: column; overflow: hidden;">
+
+  <div style="display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: oklch(0.235 0.014 250); border-bottom: 1px solid oklch(0.32 0.014 250);">
+    <div style="width: 40px; height: 44px; display: flex; align-items: center; margin-left: -8px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"></path><path d="M11 6l-6 6 6 6"></path></svg>
+    </div>
+    <div style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-weight: 600; letter-spacing: 0.01em; font-size: 22px; flex-grow: 1;">New set</div>
+    <div style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 10px; letter-spacing: 0.08em; color: oklch(0.60 0.010 250);">1 / 4</div>
+  </div>
+
+  <!-- Step rail -->
+  <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: oklch(0.32 0.014 250); border-bottom: 1px solid oklch(0.32 0.014 250);">
+    <div style="padding: 7px 8px; background: oklch(0.265 0.014 250); border-bottom: 2px solid oklch(0.72 0.16 150); font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 8.5px; letter-spacing: 0.08em; text-align: center; font-weight: 600;">SHAPE</div>
+    <div style="padding: 7px 8px; background: oklch(0.20 0.012 250); font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 8.5px; letter-spacing: 0.08em; text-align: center; color: oklch(0.60 0.010 250);">RARITY</div>
+    <div style="padding: 7px 8px; background: oklch(0.20 0.012 250); font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 8.5px; letter-spacing: 0.08em; text-align: center; color: oklch(0.60 0.010 250);">CARDS</div>
+    <div style="padding: 7px 8px; background: oklch(0.20 0.012 250); font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 8.5px; letter-spacing: 0.08em; text-align: center; color: oklch(0.60 0.010 250);">PRINT</div>
+  </div>
+
+  <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 15px; padding: 15px 18px 0 18px; overflow: hidden;">
+
+    <div style="display: flex; flex-direction: column; gap: 6px;">
+      <label style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; letter-spacing: 0.11em; color: oklch(0.66 0.010 250);">SET NAME</label>
+      <div style="height: 48px; display: flex; align-items: center; padding: 0 13px; background: oklch(0.235 0.014 250); border: 1px solid oklch(0.92 0.008 250); border-radius: 2px;">
+        <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-weight: 600; letter-spacing: 0.01em; font-size: 21px;">Ashfall</span>
+      </div>
+    </div>
+
+    <!-- Era placement: the excitement / anger trade -->
+    <div style="display: flex; flex-direction: column; gap: 6px;">
+      <label style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; letter-spacing: 0.11em; color: oklch(0.66 0.010 250);">ERA</label>
+      <div style="display: flex; flex-direction: column; gap: 5px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; background: oklch(0.235 0.014 250); border: 2px solid oklch(0.72 0.16 150); border-radius: 2px;">
+          <div style="display: flex; flex-direction: column; gap: 2px;">
+            <span style="font-size: 13.5px; font-weight: 600;">First Light &middot; fourth set</span>
+            <span style="font-size: 11px; color: oklch(0.66 0.010 250);">Continues what you have built.</span>
+          </div>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="oklch(0.72 0.16 150)" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><path d="M4 12.5l5 5L20 7"></path></svg>
+        </div>
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; background: oklch(0.235 0.014 250); border: 1px solid oklch(0.32 0.014 250); border-radius: 2px;">
+          <div style="display: flex; flex-direction: column; gap: 2px;">
+            <span style="font-size: 13.5px; font-weight: 600;">Close it, and open a new era</span>
+            <span style="font-size: 11px; color: oklch(0.66 0.010 250);"><span style="color: oklch(0.72 0.16 70);">Reaches people who never played.</span> <span style="color: oklch(0.72 0.16 25);">Costs you the ones who did.</span></span>
+          </div>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="oklch(0.50 0.010 250)" stroke-width="2" stroke-linecap="round" style="flex-shrink: 0;"><circle cx="12" cy="12" r="8"></circle></svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- Type -->
+    <div style="display: flex; flex-direction: column; gap: 6px;">
+      <label style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; letter-spacing: 0.11em; color: oklch(0.66 0.010 250);">TYPE</label>
+      <div style="display: flex; align-items: stretch; background: oklch(0.265 0.014 250); border: 1px solid oklch(0.32 0.014 250); border-radius: 2px; overflow: hidden;">
+        <div style="flex-grow: 1; height: 42px; display: flex; align-items: center; justify-content: center; font-size: 11.5px; font-weight: 600; background: oklch(0.92 0.008 250); color: oklch(0.17 0.012 250);">Main</div>
+        <div style="flex-grow: 1; height: 42px; display: flex; align-items: center; justify-content: center; font-size: 11.5px; color: oklch(0.66 0.010 250);">Specialty</div>
+        <div style="flex-grow: 1; height: 42px; display: flex; align-items: center; justify-content: center; font-size: 11.5px; color: oklch(0.66 0.010 250);">Subset</div>
+        <div style="flex-grow: 1; height: 42px; display: flex; align-items: center; justify-content: center; font-size: 11.5px; color: oklch(0.66 0.010 250);">Promo</div>
+        <div style="flex-grow: 1; height: 42px; display: flex; align-items: center; justify-content: center; font-size: 11.5px; color: oklch(0.66 0.010 250);">Collab</div>
+      </div>
+    </div>
+
+    <!-- Gimmick: Card.treatment, finally read -->
+    <div style="display: flex; flex-direction: column; gap: 6px;">
+      <div style="display: flex; align-items: baseline; justify-content: space-between;">
+        <label style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; letter-spacing: 0.11em; color: oklch(0.66 0.010 250);">GIMMICK</label>
+        <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; color: oklch(0.55 0.010 250);">TREATMENTS THIS SET MAY USE</span>
+      </div>
+      <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+        <div style="padding: 8px 12px; background: oklch(0.92 0.008 250); color: oklch(0.17 0.012 250); border-radius: 2px; font-size: 12px; font-weight: 600;">Full art</div>
+        <div style="padding: 8px 12px; background: oklch(0.92 0.008 250); color: oklch(0.17 0.012 250); border-radius: 2px; font-size: 12px; font-weight: 600;">Etched</div>
+        <div style="padding: 8px 12px; background: oklch(0.235 0.014 250); border: 1px solid oklch(0.32 0.014 250); border-radius: 2px; font-size: 12px; color: oklch(0.66 0.010 250);">Textured</div>
+        <div style="padding: 8px 12px; background: oklch(0.235 0.014 250); border: 1px solid oklch(0.32 0.014 250); border-radius: 2px; font-size: 12px; color: oklch(0.66 0.010 250);">Gold foil</div>
+        <div style="padding: 8px 12px; background: oklch(0.235 0.014 250); border: 1px solid oklch(0.32 0.014 250); border-radius: 2px; font-size: 12px; color: oklch(0.66 0.010 250);">Jumbo</div>
+        <div style="padding: 8px 12px; background: oklch(0.235 0.014 250); border: 1px solid oklch(0.32 0.014 250); border-radius: 2px; font-size: 12px; color: oklch(0.66 0.010 250);">Reverse holo</div>
+      </div>
+    </div>
+
+    <!-- Size -->
+    <div style="display: flex; flex-direction: column; gap: 6px;">
+      <label style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; letter-spacing: 0.11em; color: oklch(0.66 0.010 250);">HOW MANY CARDS</label>
+      <div style="display: flex; align-items: stretch; gap: 8px;">
+        <div style="width: 44px; height: 46px; display: flex; align-items: center; justify-content: center; border: 1px solid oklch(0.36 0.014 250); background: oklch(0.235 0.014 250); border-radius: 2px;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14"></path></svg>
+        </div>
+        <div style="flex-grow: 1; height: 46px; display: flex; align-items: center; justify-content: center; background: oklch(0.235 0.014 250); border: 1px solid oklch(0.32 0.014 250); border-radius: 2px; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 19px; font-weight: 600;">180</div>
+        <div style="width: 44px; height: 46px; display: flex; align-items: center; justify-content: center; border: 1px solid oklch(0.36 0.014 250); background: oklch(0.235 0.014 250); border-radius: 2px;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+        </div>
+      </div>
+      <div style="font-size: 11.5px; line-height: 1.4; color: oklch(0.66 0.010 250);">A pack still holds the same cardboard. A bigger set makes every single card rarer &mdash; it does not put more in the box.</div>
+    </div>
+
+  </div>
+
+  <div style="padding: 12px 18px 28px 18px;">
+    <div style="height: 52px; display: flex; align-items: center; justify-content: center; gap: 9px; background: oklch(0.72 0.16 150); color: oklch(0.17 0.012 250); border-radius: 2px;">
+      <span style="font-size: 15px; font-weight: 600;">Rarities</span>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="M13 6l6 6-6 6"></path></svg>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

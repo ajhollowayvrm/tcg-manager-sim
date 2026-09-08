@@ -1,0 +1,194 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap">
+  <style>
+    body { margin: 0; font-family: Archivo, 'Helvetica Neue', Arial, sans-serif; }
+    a { color: oklch(0.55 0.16 30); } a:hover { color: oklch(0.45 0.16 30); }
+    * { box-sizing: border-box; }
+  </style>
+</helmet>
+
+<div style="width: 390px; height: 844px; background: oklch(0.972 0.008 85); color: oklch(0.24 0.018 55); display: flex; flex-direction: column; overflow: hidden;">
+
+  <!-- Studio header -->
+  <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px 11px 18px; background: oklch(0.99 0.005 85); border-bottom: 1px solid oklch(0.87 0.012 80);">
+    <div style="display: flex; flex-direction: column; gap: 1px;">
+      <div style="font-family: 'Instrument Serif', Georgia, serif; font-size: 22px; line-height: 1.08;">Halcyon Press</div>
+      <div style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; letter-spacing: 0.09em; color: oklch(0.64 0.012 65);">EMBERLINE TCG</div>
+    </div>
+    <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 1px;">
+      <div style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 16px; font-weight: 600;">96,200</div>
+      <div style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; letter-spacing: 0.06em; color: oklch(0.55 0.16 30);">DEBT 128,500</div>
+    </div>
+  </div>
+
+  <!-- Standing figures: the studio at a glance -->
+  <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: oklch(0.87 0.012 80); border-bottom: 1px solid oklch(0.87 0.012 80);">
+    <div style="display: flex; flex-direction: column; gap: 2px; padding: 9px 10px; background: oklch(0.972 0.008 85);">
+      <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 8.5px; letter-spacing: 0.1em; color: oklch(0.58 0.012 62);">BRAND</span>
+      <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 15px; font-weight: 500;">0.12</span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 2px; padding: 9px 10px; background: oklch(0.972 0.008 85);">
+      <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 8.5px; letter-spacing: 0.1em; color: oklch(0.58 0.012 62);">SETS</span>
+      <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 15px; font-weight: 500;">3</span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 2px; padding: 9px 10px; background: oklch(0.972 0.008 85);">
+      <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 8.5px; letter-spacing: 0.1em; color: oklch(0.58 0.012 62);">IN PRINT</span>
+      <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 15px; font-weight: 500;">840</span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 2px; padding: 9px 10px; background: oklch(0.972 0.008 85);">
+      <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 8.5px; letter-spacing: 0.1em; color: oklch(0.58 0.012 62);">FATIGUE</span>
+      <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 15px; font-weight: 500; color: oklch(0.55 0.16 30);">0.21</span>
+    </div>
+  </div>
+
+  <!-- Time strip -->
+  <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 10px 7px 18px; background: oklch(0.955 0.010 82); border-bottom: 1px solid oklch(0.87 0.012 80);">
+    <div style="display: flex; align-items: baseline; gap: 10px;">
+      <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 12px; font-weight: 600; letter-spacing: 0.03em;">W014 &middot; 2029</span>
+      <span style="font-size: 11px; color: oklch(0.55 0.014 60);">next stop W017</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 7px; height: 44px; padding: 0 15px; background: oklch(0.55 0.16 30); color: oklch(0.98 0.005 85); border-radius: 2px;">
+      <span style="font-size: 13px; font-weight: 600;">Continue</span>
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4l10 8-10 8"></path><path d="M19 4v16"></path></svg>
+    </div>
+  </div>
+
+  <!-- Sub-tabs -->
+  <div style="display: flex; align-items: stretch; background: oklch(0.99 0.005 85); border-bottom: 1px solid oklch(0.87 0.012 80);">
+    <div style="flex-grow: 1; height: 42px; display: flex; align-items: center; justify-content: center; font-size: 12px; color: oklch(0.64 0.012 65);">Sets</div>
+    <div style="flex-grow: 1; height: 42px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; border-bottom: 2px solid oklch(0.55 0.16 30);">Roster</div>
+    <div style="flex-grow: 1; height: 42px; display: flex; align-items: center; justify-content: center; font-size: 12px; color: oklch(0.64 0.012 65);">Store</div>
+    <div style="flex-grow: 1; height: 42px; display: flex; align-items: center; justify-content: center; font-size: 12px; color: oklch(0.64 0.012 65);">Growth</div>
+    <div style="flex-grow: 1; height: 42px; display: flex; align-items: center; justify-content: center; font-size: 12px; color: oklch(0.64 0.012 65);">Ledger</div>
+  </div>
+
+  <!-- Column head -->
+  <div style="display: grid; grid-template-columns: 1fr 46px 44px 20px; gap: 8px; padding: 9px 18px 6px 18px; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 8.5px; letter-spacing: 0.1em; color: oklch(0.58 0.012 62);">
+    <div>NAME &middot; ARCHETYPE &middot; READING</div>
+    <div style="text-align: right;">CARDS</div>
+    <div style="text-align: right;">SINCE</div>
+    <div></div>
+  </div>
+
+  <div style="flex-grow: 1; display: flex; flex-direction: column;">
+
+    <div style="display: grid; grid-template-columns: 1fr 46px 44px 20px; gap: 8px; align-items: center; padding: 9px 18px; border-top: 1px solid oklch(0.87 0.012 80); background: oklch(0.99 0.005 85);">
+      <div style="display: flex; flex-direction: column; gap: 2px;">
+        <div style="font-family: 'Instrument Serif', Georgia, serif; font-size: 18px; line-height: 1.1;">Aryla</div>
+        <div style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 9px; letter-spacing: 0.07em; color: oklch(0.58 0.012 62);">MASCOT &middot; 12</div>
+        <div style="font-family: 'Instrument Serif', Georgia, serif; font-style: italic; font-size: 13.5px; line-height: 1.25;">Everyone&#39;s second favourite.</div>
+      </div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 13px;">34</div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 11px; color: oklch(0.58 0.012 62);">2026</div>
+      <div style="display: flex; justify-content: flex-end; color: oklch(0.55 0.16 245);">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17l6-7 4 4 5-7"></path></svg>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 46px 44px 20px; gap: 8px; align-items: center; padding: 9px 18px; border-top: 1px solid oklch(0.87 0.012 80); background: oklch(0.99 0.005 85);">
+      <div style="display: flex; flex-direction: column; gap: 2px;">
+        <div style="font-family: 'Instrument Serif', Georgia, serif; font-size: 18px; line-height: 1.1;">Bram Kestrel</div>
+        <div style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 9px; letter-spacing: 0.07em; color: oklch(0.58 0.012 62);">RIVAL &middot; 17 &middot; RIVAL OF ARYLA</div>
+        <div style="font-family: 'Instrument Serif', Georgia, serif; font-style: italic; font-size: 13.5px; line-height: 1.25;">Loud, and not for everyone.</div>
+      </div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 13px;">12</div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 11px; color: oklch(0.58 0.012 62);">2028</div>
+      <div style="display: flex; justify-content: flex-end; color: oklch(0.55 0.16 245);">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17l6-7 4 4 5-7"></path></svg>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 46px 44px 20px; gap: 8px; align-items: center; padding: 9px 18px; border-top: 1px solid oklch(0.87 0.012 80); background: oklch(0.99 0.005 85);">
+      <div style="display: flex; flex-direction: column; gap: 2px;">
+        <div style="font-family: 'Instrument Serif', Georgia, serif; font-size: 18px; line-height: 1.1;">Old Wren</div>
+        <div style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 9px; letter-spacing: 0.07em; color: oklch(0.58 0.012 62);">MENTOR &middot; 54 &middot; MENTORS SOOTFOOT</div>
+        <div style="font-family: 'Instrument Serif', Georgia, serif; font-style: italic; font-size: 13.5px; line-height: 1.25;">Quietly respected, and fading.</div>
+      </div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 13px;">51</div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 11px; color: oklch(0.58 0.012 62);">2026</div>
+      <div style="display: flex; justify-content: flex-end; color: oklch(0.55 0.16 30);">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7l6 7 4-4 5 7"></path></svg>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 46px 44px 20px; gap: 8px; align-items: center; padding: 9px 18px; border-top: 1px solid oklch(0.87 0.012 80); background: oklch(0.99 0.005 85);">
+      <div style="display: flex; flex-direction: column; gap: 2px;">
+        <div style="font-family: 'Instrument Serif', Georgia, serif; font-size: 18px; line-height: 1.1;">The Pale Court</div>
+        <div style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 9px; letter-spacing: 0.07em; color: oklch(0.58 0.012 62);">FACTION &middot; 3 MEMBERS</div>
+        <div style="font-family: 'Instrument Serif', Georgia, serif; font-style: italic; font-size: 13.5px; line-height: 1.25; color: oklch(0.58 0.012 62);">Too new to read.</div>
+      </div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 13px;">8</div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 11px; color: oklch(0.58 0.012 62);">2029</div>
+      <div></div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 46px 44px 20px; gap: 8px; align-items: center; padding: 9px 18px; border-top: 1px solid oklch(0.87 0.012 80); background: oklch(0.99 0.005 85);">
+      <div style="display: flex; flex-direction: column; gap: 2px;">
+        <div style="font-family: 'Instrument Serif', Georgia, serif; font-size: 18px; line-height: 1.1;">Sootfoot</div>
+        <div style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 9px; letter-spacing: 0.07em; color: oklch(0.58 0.012 62);">UPSTART &middot; 9</div>
+        <div style="font-family: 'Instrument Serif', Georgia, serif; font-style: italic; font-size: 13.5px; line-height: 1.25; color: oklch(0.58 0.012 62);">Nobody knows them yet.</div>
+      </div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 13px;">3</div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 11px; color: oklch(0.58 0.012 62);">2029</div>
+      <div></div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 46px 44px 20px; gap: 8px; align-items: center; padding: 9px 18px; border-top: 1px solid oklch(0.87 0.012 80); border-bottom: 1px solid oklch(0.87 0.012 80); background: oklch(0.99 0.005 85);">
+      <div style="display: flex; flex-direction: column; gap: 2px;">
+        <div style="font-family: 'Instrument Serif', Georgia, serif; font-size: 18px; line-height: 1.1;">Marrowgate</div>
+        <div style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 9px; letter-spacing: 0.07em; color: oklch(0.58 0.012 62);">LOCATION</div>
+        <div style="font-family: 'Instrument Serif', Georgia, serif; font-style: italic; font-size: 13.5px; line-height: 1.25;">A place people ask about.</div>
+      </div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 13px;">17</div>
+      <div style="text-align: right; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 11px; color: oklch(0.58 0.012 62);">2027</div>
+      <div style="display: flex; justify-content: flex-end; color: oklch(0.64 0.012 65);">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5 12h14"></path></svg>
+      </div>
+    </div>
+
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 18px;">
+      <div style="font-size: 11px; line-height: 1.4; color: oklch(0.55 0.014 60);">Readings are prose at research tier 0. Buy research for bands.</div>
+      <div style="display: flex; align-items: center; gap: 5px; height: 32px; padding: 0 11px; border: 1px solid oklch(0.24 0.018 55); border-radius: 2px; flex-shrink: 0;">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+        <span style="font-size: 12px; font-weight: 600;">New</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Five-tab shell -->
+  <div style="display: flex; align-items: stretch; background: oklch(0.99 0.005 85); border-top: 1px solid oklch(0.87 0.012 80); padding-bottom: 6px;">
+    <div style="flex-grow: 1; height: 58px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: oklch(0.55 0.16 30);">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V9l6-4v16"></path><path d="M9 21V11l7-3v13"></path><path d="M16 21V10l5 2v9"></path><path d="M2 21h20"></path></svg>
+      <span style="font-size: 9px; font-weight: 600;">Studio</span>
+    </div>
+    <div style="flex-grow: 1; height: 58px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: oklch(0.64 0.012 65);">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="8.5" cy="12" r="5"></circle><circle cx="15.5" cy="12" r="5"></circle></svg>
+      <span style="font-size: 9px;">Partners</span>
+    </div>
+    <div style="flex-grow: 1; height: 58px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: oklch(0.64 0.012 65);">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"></circle><ellipse cx="12" cy="12" rx="4" ry="9"></ellipse><path d="M3 12h18"></path></svg>
+      <span style="font-size: 9px;">World</span>
+    </div>
+    <div style="flex-grow: 1; height: 58px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: oklch(0.64 0.012 65);">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v16h16"></path><path d="M7 15l4-5 3 3 5-7"></path></svg>
+      <span style="font-size: 9px;">Market</span>
+    </div>
+    <div style="flex-grow: 1; height: 58px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: oklch(0.64 0.012 65);">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="9" r="3.2"></circle><path d="M3.5 19c0-3 2.5-5 5.5-5s5.5 2 5.5 5"></path><circle cx="17" cy="10" r="2.6"></circle><path d="M15 19c0-2.4 1.6-4 4-4"></path></svg>
+      <span style="font-size: 9px;">Community</span>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

@@ -1,0 +1,89 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; font-family: Archivo, 'Helvetica Neue', Arial, sans-serif; }
+    a { color: oklch(0.72 0.16 25); } a:hover { color: oklch(0.62 0.16 25); }
+    * { box-sizing: border-box; }
+  </style>
+</helmet>
+
+<div style="width: 390px; height: 844px; background: oklch(0.20 0.012 250); color: oklch(0.92 0.008 250); display: flex; flex-direction: column; overflow: hidden;">
+
+  <!-- Masthead -->
+  <div style="display: flex; flex-direction: column; padding: 62px 26px 0 26px;">
+    <div style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 10px; letter-spacing: 0.16em; color: oklch(0.72 0.16 25);">FOUNDED 2026</div>
+    <div style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-weight: 600; letter-spacing: 0.01em; font-size: 42px; line-height: 1.03; margin-top: 10px; text-wrap: pretty;">Every studio<br>starts with<br>a name.</div>
+  </div>
+
+  <div style="height: 1px; background: oklch(0.32 0.014 250); margin: 26px 26px 0 26px;"></div>
+
+  <!-- The two fields -->
+  <div style="display: flex; flex-direction: column; gap: 18px; padding: 24px 26px 0 26px;">
+
+    <div style="display: flex; flex-direction: column; gap: 7px;">
+      <label style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; letter-spacing: 0.12em; color: oklch(0.66 0.010 250);">THE STUDIO</label>
+      <div style="height: 50px; display: flex; align-items: center; padding: 0 13px; background: oklch(0.235 0.014 250); border: 1px solid oklch(0.92 0.008 250); border-radius: 2px;">
+        <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-weight: 600; letter-spacing: 0.01em; font-size: 21px;">Halcyon Press</span>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 7px;">
+      <label style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; letter-spacing: 0.12em; color: oklch(0.66 0.010 250);">THE GAME IT MAKES</label>
+      <div style="height: 50px; display: flex; align-items: center; padding: 0 13px; background: oklch(0.235 0.014 250); border: 1px solid oklch(0.36 0.014 250); border-radius: 2px;">
+        <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-weight: 600; letter-spacing: 0.01em; font-size: 21px; color: oklch(0.50 0.010 250);">Emberline</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- The opening position: you cannot afford a set -->
+  <div style="margin: 22px 26px 0 26px; border: 1px solid oklch(0.32 0.014 250); background: oklch(0.235 0.014 250);">
+    <div style="padding: 8px 13px; background: oklch(0.265 0.014 250); border-bottom: 1px solid oklch(0.32 0.014 250); font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; letter-spacing: 0.12em; color: oklch(0.66 0.010 250);">OPENING POSITION</div>
+
+    <div style="display: flex; align-items: baseline; justify-content: space-between; padding: 9px 13px 7px 13px;">
+      <span style="font-size: 12.5px; color: oklch(0.80 0.009 250);">Cash on hand</span>
+      <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 18px; font-weight: 600;">100,000</span>
+    </div>
+    <div style="height: 1px; background: oklch(0.29 0.014 250); margin: 0 13px;"></div>
+    <div style="display: flex; align-items: baseline; justify-content: space-between; padding: 7px 13px;">
+      <span style="font-size: 12.5px; color: oklch(0.80 0.009 250);">A first run of 8,000 boxes</span>
+      <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 13px;">147,840</span>
+    </div>
+    <div style="height: 1px; background: oklch(0.92 0.008 250); margin: 0 13px;"></div>
+    <div style="display: flex; align-items: baseline; justify-content: space-between; padding: 8px 13px;">
+      <span style="font-size: 12.5px; font-weight: 600; color: oklch(0.72 0.16 25);">Short by</span>
+      <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 18px; font-weight: 600; color: oklch(0.72 0.16 25);">47,840</span>
+    </div>
+    <div style="height: 1px; background: oklch(0.29 0.014 250); margin: 0 13px;"></div>
+    <div style="display: flex; align-items: baseline; justify-content: space-between; padding: 7px 13px 9px 13px;">
+      <span style="font-size: 12.5px; color: oklch(0.80 0.009 250);">Credit available</span>
+      <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 13px; color: oklch(0.72 0.16 70);">625,000 at 12.4%</span>
+    </div>
+
+    <div style="padding: 10px 13px; background: oklch(0.265 0.014 250); border-top: 1px solid oklch(0.32 0.014 250); font-size: 12px; line-height: 1.42; color: oklch(0.86 0.008 250);">
+      You cannot print your first set without borrowing. <strong style="font-weight: 600;">One studio in four never gets out from under it.</strong>
+    </div>
+  </div>
+
+  <div style="flex-grow: 1;"></div>
+
+  <div style="display: flex; flex-direction: column; gap: 11px; padding: 0 26px 34px 26px;">
+    <div style="height: 54px; display: flex; align-items: center; justify-content: center; gap: 10px; background: oklch(0.72 0.16 150); color: oklch(0.17 0.012 250); border-radius: 2px;">
+      <span style="font-size: 15px; font-weight: 600;">Open the doors</span>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="M13 6l6 6-6 6"></path></svg>
+    </div>
+    <div style="text-align: center; font-size: 11px; color: oklch(0.60 0.010 250);">You will design your first characters inside.</div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

@@ -1,0 +1,133 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; font-family: Archivo, 'Helvetica Neue', Arial, sans-serif; }
+    a { color: oklch(0.72 0.16 25); } a:hover { color: oklch(0.62 0.16 25); }
+    * { box-sizing: border-box; }
+  </style>
+</helmet>
+
+<div style="width: 390px; height: 844px; background: oklch(0.20 0.012 250); color: oklch(0.92 0.008 250); display: flex; flex-direction: column; overflow: hidden;">
+
+  <div style="display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: oklch(0.235 0.014 250); border-bottom: 1px solid oklch(0.32 0.014 250);">
+    <div style="width: 40px; height: 44px; display: flex; align-items: center; margin-left: -8px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"></path><path d="M11 6l-6 6 6 6"></path></svg>
+    </div>
+    <div style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-weight: 600; letter-spacing: 0.01em; font-size: 22px; flex-grow: 1;">Ashfall</div>
+    <div style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 10px; letter-spacing: 0.08em; color: oklch(0.60 0.010 250);">4 / 4</div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: oklch(0.32 0.014 250); border-bottom: 1px solid oklch(0.32 0.014 250);">
+    <div style="padding: 7px 8px; background: oklch(0.20 0.012 250); font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 8.5px; letter-spacing: 0.08em; text-align: center; color: oklch(0.60 0.010 250);">SHAPE</div>
+    <div style="padding: 7px 8px; background: oklch(0.20 0.012 250); font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 8.5px; letter-spacing: 0.08em; text-align: center; color: oklch(0.60 0.010 250);">RARITY</div>
+    <div style="padding: 7px 8px; background: oklch(0.20 0.012 250); font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 8.5px; letter-spacing: 0.08em; text-align: center; color: oklch(0.60 0.010 250);">CARDS</div>
+    <div style="padding: 7px 8px; background: oklch(0.265 0.014 250); border-bottom: 2px solid oklch(0.72 0.16 150); font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 8.5px; letter-spacing: 0.08em; text-align: center; font-weight: 600;">PRINT</div>
+  </div>
+
+  <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 13px; padding: 13px 18px 0 18px; overflow: hidden;">
+
+    <!-- Stock -->
+    <div style="display: flex; flex-direction: column; gap: 6px;">
+      <label style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; letter-spacing: 0.11em; color: oklch(0.66 0.010 250);">CARD STOCK</label>
+      <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px;">
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px; background: oklch(0.235 0.014 250); border: 1px solid oklch(0.32 0.014 250); border-radius: 2px;">
+          <span style="font-size: 11.5px;">Budget</span>
+          <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 11px; color: oklch(0.58 0.010 250);">10.56</span>
+        </div>
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px; background: oklch(0.235 0.014 250); border: 2px solid oklch(0.72 0.16 150); border-radius: 2px;">
+          <span style="font-size: 11.5px; font-weight: 600;">Standard</span>
+          <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 11px;">18.48</span>
+        </div>
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px; background: oklch(0.265 0.014 250); border: 1px solid oklch(0.32 0.014 250); border-radius: 2px;">
+          <span style="font-size: 11.5px; color: oklch(0.55 0.010 250);">Premium</span>
+          <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 9px; color: oklch(0.55 0.010 250);">LOCKED</span>
+        </div>
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px; background: oklch(0.265 0.014 250); border: 1px solid oklch(0.32 0.014 250); border-radius: 2px;">
+          <span style="font-size: 11.5px; color: oklch(0.55 0.010 250);">Archival</span>
+          <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 9px; color: oklch(0.55 0.010 250);">LOCKED</span>
+        </div>
+      </div>
+      <div style="font-size: 11px; color: oklch(0.66 0.010 250);">Better stock needs a distributor who trusts you.</div>
+    </div>
+
+    <!-- The bet -->
+    <div style="display: flex; flex-direction: column; gap: 6px;">
+      <label style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; letter-spacing: 0.11em; color: oklch(0.66 0.010 250);">HOW MANY BOXES</label>
+      <div style="display: flex; align-items: stretch; gap: 8px;">
+        <div style="width: 44px; height: 50px; display: flex; align-items: center; justify-content: center; border: 1px solid oklch(0.36 0.014 250); background: oklch(0.235 0.014 250); border-radius: 2px;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14"></path></svg>
+        </div>
+        <div style="flex-grow: 1; height: 50px; display: flex; align-items: center; justify-content: center; background: oklch(0.235 0.014 250); border: 1px solid oklch(0.92 0.008 250); border-radius: 2px; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 22px; font-weight: 600;">8,000</div>
+        <div style="width: 44px; height: 50px; display: flex; align-items: center; justify-content: center; border: 1px solid oklch(0.36 0.014 250); background: oklch(0.235 0.014 250); border-radius: 2px;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- What it costs, and what you have -->
+    <div style="border: 1px solid oklch(0.32 0.014 250); background: oklch(0.235 0.014 250);">
+      <div style="display: flex; align-items: baseline; justify-content: space-between; padding: 9px 12px 6px 12px;">
+        <span style="font-size: 12.5px; color: oklch(0.80 0.009 250);">8,000 boxes at 18.48</span>
+        <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 16px; font-weight: 600;">147,840</span>
+      </div>
+      <div style="height: 1px; background: oklch(0.29 0.014 250); margin: 0 12px;"></div>
+      <div style="display: flex; align-items: baseline; justify-content: space-between; padding: 6px 12px;">
+        <span style="font-size: 12.5px; color: oklch(0.80 0.009 250);">Finishes on 55 cards</span>
+        <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 12.5px; color: oklch(0.72 0.16 70);">+3,120</span>
+      </div>
+      <div style="height: 1px; background: oklch(0.29 0.014 250); margin: 0 12px;"></div>
+      <div style="display: flex; align-items: baseline; justify-content: space-between; padding: 6px 12px;">
+        <span style="font-size: 12.5px; color: oklch(0.80 0.009 250);">Cash on hand</span>
+        <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 13px;">100,000</span>
+      </div>
+      <div style="height: 1px; background: oklch(0.92 0.008 250); margin: 0 12px;"></div>
+      <div style="display: flex; align-items: baseline; justify-content: space-between; padding: 7px 12px 9px 12px;">
+        <span style="font-size: 12.5px; font-weight: 600; color: oklch(0.72 0.16 25);">You must borrow</span>
+        <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 17px; font-weight: 600; color: oklch(0.72 0.16 25);">50,960</span>
+      </div>
+    </div>
+
+    <!-- The loan, as a decision rather than an overdraft -->
+    <div style="border: 1px solid oklch(0.72 0.16 70); background: oklch(0.235 0.014 250);">
+      <div style="padding: 8px 12px; background: oklch(0.265 0.014 250); border-bottom: 1px solid oklch(0.32 0.014 250); font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; letter-spacing: 0.11em; color: oklch(0.66 0.010 250);">THE LOAN</div>
+      <div style="display: flex; align-items: baseline; justify-content: space-between; padding: 9px 12px 5px 12px;">
+        <span style="font-size: 12.5px; color: oklch(0.80 0.009 250);">Borrowing at 12.4%</span>
+        <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 13px;">6,319 / yr</span>
+      </div>
+      <div style="padding: 0 12px 9px 12px;">
+        <div style="display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 6px;">
+          <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; letter-spacing: 0.08em; color: oklch(0.58 0.010 250);">CREDIT LINE</span>
+          <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 10.5px; color: oklch(0.58 0.010 250);">50,960 / 625,000</span>
+        </div>
+        <div style="height: 6px; background: oklch(0.29 0.014 250);">
+          <div style="width: 8.2%; height: 6px; background: oklch(0.72 0.16 70);"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Irreversibility, stated once and plainly -->
+    <div style="display: flex; gap: 9px; padding: 10px 12px; background: oklch(0.265 0.014 250); border-left: 3px solid oklch(0.72 0.16 25);">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="oklch(0.72 0.16 25)" stroke-width="2" stroke-linecap="round" style="flex-shrink: 0; margin-top: 1px;"><path d="M12 8v5M12 16.5v.01"></path><circle cx="12" cy="12" r="9"></circle></svg>
+      <div style="font-size: 12px; line-height: 1.42; color: oklch(0.86 0.008 250);">The run cannot move once committed, and where it ships locks with it. <strong style="font-weight: 600;">Eighteen weeks before a single box exists, and long before anyone tells you whether Ashfall is any good.</strong></div>
+    </div>
+
+  </div>
+
+  <div style="padding: 12px 18px 28px 18px;">
+    <div style="height: 54px; display: flex; align-items: center; justify-content: center; background: oklch(0.72 0.16 150); color: oklch(0.17 0.012 250); border-radius: 2px;">
+      <span style="font-size: 15px; font-weight: 600;">Borrow 50,960 and print</span>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>
