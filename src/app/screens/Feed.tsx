@@ -93,6 +93,19 @@ const SAY: Record<string, (d: Record<string, unknown>) => string> = {
   collabGuaranteeCalled: d => `The licensor called in their guarantee: ${cash(d.amount)}.`,
 };
 
+/**
+ * The sentence for one event, or its raw kind when no line is written for it.
+ *
+ * Exported because the feed is not the only screen that shows events. The stop
+ * dialog in `App.tsx` renders the same objects, and it printed `e.kind` — so a
+ * licensing offer reached the player as the string `collabOffered`. One reader
+ * per table keeps that from happening again for the other 42 kinds.
+ */
+export function say(e: { kind: string; data: unknown }): string {
+  const line = SAY[e.kind];
+  return line ? line(e.data as Record<string, unknown>) : e.kind;
+}
+
 export function Feed({ s }: { s: SimState }) {
   const [group, setGroup] = useState<Group>('All');
 
@@ -116,7 +129,6 @@ export function Feed({ s }: { s: SimState }) {
       <VirtualList items={rows} rowHeight={54}
         empty="Nothing under this heading yet. Press Continue."
         render={e => {
-          const say = SAY[e.kind];
           return (
             <div style={{
               display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 3,
@@ -128,7 +140,7 @@ export function Feed({ s }: { s: SimState }) {
                 fontWeight: e.interrupts ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
               }}>
-                {say ? say(e.data as Record<string, unknown>) : e.kind}
+                {say(e)}
               </div>
               <div style={micro}>
                 {stamp(s, e.t)}{e.interrupts ? ' · WORTH STOPPING FOR' : ''}

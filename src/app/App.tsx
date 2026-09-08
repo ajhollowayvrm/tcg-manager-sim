@@ -25,7 +25,7 @@ import { NewSet } from './screens/NewSet.tsx';
 import { Formats } from './screens/Formats.tsx';
 import { Ledger } from './screens/Ledger.tsx';
 import { Growth } from './screens/Growth.tsx';
-import { Feed } from './screens/Feed.tsx';
+import { Feed, say } from './screens/Feed.tsx';
 import { SetDetail } from './screens/SetDetail.tsx';
 import { Store } from './screens/Store.tsx';
 import { Market } from './screens/Market.tsx';
@@ -172,7 +172,7 @@ export default function App() {
             </div>
             {stop.stops.slice(0, 6).map((e, i) => (
               <div key={i} style={{ padding: '9px 18px', borderTop: `1px solid ${C.rule}`, fontSize: 13.5 }}>
-                {e.kind}
+                {say(e)}
               </div>
             ))}
             <div style={{ padding: '14px 18px 30px' }}>
