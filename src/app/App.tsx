@@ -339,6 +339,14 @@ const FINISH_GROUPS: Array<[string, Finish[]]> = [
   ['Extra', ['jumbo', 'signed']],
 ];
 const FINISHES: Finish[] = FINISH_GROUPS.flatMap(([, f]) => f);
+
+/** Every tier the sim has, with the studio's opening name for it. */
+const ALL_RARITIES: Array<[Rarity, string]> = [
+  ['uncommon', 'Uncommon'], ['rare', 'Rare'], ['doubleRare', 'Double rare'],
+  ['ultraRare', 'Ultra rare'], ['illustrationRare', 'Illustration rare'],
+  ['specialIllustrationRare', 'Special illustration'], ['hyperRare', 'Hyper rare'],
+  ['promo', 'Promo'],
+];
 const FINISH_LABEL: Record<Finish, string> = {
   holo: 'Holo', reverseHolo: 'Reverse holo', rainbowFoil: 'Rainbow foil',
   goldFoil: 'Gold foil', coldFoil: 'Cold foil', textured: 'Textured',
@@ -670,12 +678,37 @@ function NewSet({ s, onDone, onBack }: { s: SimState; onDone: () => void; onBack
                   <span style={{ ...micro, color: r.finishes.length ? C.note : C.dimmer }}>
                     {finishText(r.finishes).toUpperCase()}
                   </span>
+                  <button type="button" aria-label={`Remove ${r.label}`} onClick={() => {
+                    // Cards crafted at this rung go with it — they have nowhere
+                    // left to sit, and a silent orphan is worse than a visible
+                    // deletion.
+                    setCrafted(crafted.filter(c => c.rarity !== r.rarity));
+                    setRows(rows.filter((_, j) => j !== i));
+                  }} style={{ ...pillBtn, color: C.bad, marginLeft: 'auto' }}>×</button>
                 </div>
                 <div style={{ marginTop: 8 }}>
                   <FinishPicker value={r.finishes} onChange={f => setRow(i, { finishes: f })} />
                 </div>
               </div>
             ))}
+
+            {ALL_RARITIES.filter(([r]) => !rows.some(x => x.rarity === r)).length > 0 && (
+              <div style={{ padding: '12px 16px 0', display: 'flex', flexDirection: 'column', gap: 7 }}>
+                <span style={label}>ADD A RUNG</span>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {ALL_RARITIES.filter(([r]) => !rows.some(x => x.rarity === r)).map(([r, lbl]) => (
+                    <button key={r} type="button" onClick={() => setRows([...rows, {
+                      rarity: r, label: lbl, count: 1, advertised: true, finishes: [],
+                    }].sort((a, b) => ALL_RARITIES.findIndex(x => x[0] === a.rarity)
+                                    - ALL_RARITIES.findIndex(x => x[0] === b.rarity)))} style={{
+                      height: 34, padding: '0 11px', background: 'transparent', color: C.ink,
+                      border: `1px dashed ${C.border}`, borderRadius: 2, fontSize: 12,
+                      fontFamily: 'inherit', cursor: 'pointer', touchAction: 'manipulation',
+                    }}>+ {lbl}</button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div style={{ padding: '12px 16px 0' }}>
               <Button tone="quiet" onClick={() => {
@@ -887,13 +920,35 @@ function Formats() {
                 ...pillBtn, width: 'auto', padding: '0 10px',
                 color: r.advertised ? C.muted : C.bad, borderColor: r.advertised ? C.rule : C.bad,
               }}>{r.advertised ? 'Advertised' : 'Secret'}</button>
+              <button type="button" aria-label={`Remove ${r.name}`}
+                onClick={() => saveFormat({ ...f, rows: f.rows.filter((_, j) => j !== i) })}
+                style={{ ...pillBtn, color: C.bad, marginLeft: 'auto' }}>×</button>
             </div>
             <div style={{ marginTop: 8 }}>
               <FinishPicker value={(r.finishes ?? []) as Finish[]}
-                onChange={f => setRow(i, { finishes: f })} />
+                onChange={fx => setRow(i, { finishes: fx })} />
             </div>
           </div>
         ))}
+        {ALL_RARITIES.filter(([r]) => !f.rows.some(x => x.rarity === r)).length > 0 && (
+          <div style={{ padding: '14px 16px 0', display: 'flex', flexDirection: 'column', gap: 7 }}>
+            <span style={label}>ADD A RUNG</span>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {ALL_RARITIES.filter(([r]) => !f.rows.some(x => x.rarity === r)).map(([r, lbl]) => (
+                <button key={r} type="button" onClick={() => saveFormat({
+                  ...f,
+                  rows: [...f.rows, { rarity: r, name: lbl, count: 1, advertised: true, finishes: [] }]
+                    .sort((a, b) => ALL_RARITIES.findIndex(x => x[0] === a.rarity)
+                                  - ALL_RARITIES.findIndex(x => x[0] === b.rarity)),
+                })} style={{
+                  height: 34, padding: '0 11px', background: 'transparent', color: C.ink,
+                  border: `1px dashed ${C.border}`, borderRadius: 2, fontSize: 12,
+                  fontFamily: 'inherit', cursor: 'pointer', touchAction: 'manipulation',
+                }}>+ {lbl}</button>
+              ))}
+            </div>
+          </div>
+        )}
         <div style={{ padding: '14px 16px 6px', display: 'flex', flexDirection: 'column', gap: 7 }}>
           <span style={label}>PACKS PER BOX</span>
           <Stepper value={f.packsPerUnit} onChange={v => saveFormat({ ...f, packsPerUnit: v })} min={1} max={60} />
