@@ -6,14 +6,14 @@
  * the same contract in one place for every screen.
  */
 import { useState } from 'react';
-import type { SimState, IpId } from '../../sim/types.ts';
+import type { SimState, IpId, Archetype } from '../../sim/types.ts';
 import { api } from '../../sim/engine.ts';
 import { readAffection, displayTier } from '../../sim/readings.ts';
 import {
   C, MONO, num, label, micro, Screen, Scroll, Header, Button, Field, Stepper, Note, Empty,
 } from '../ui.tsx';
 import { yearOf } from '../format.ts';
-import { commit, getMeta, setCharacterMeta, forgetCharacter } from '../store.ts';
+import { commit, forgetCharacter } from '../store.ts';
 import { ARCHETYPES } from '../setdesign.ts';
 
 /**
@@ -44,7 +44,6 @@ function readingText(s: SimState, id: IpId): string {
 // --- studio: roster --------------------------------------------------------
 
 export function Roster({ s, onNew }: { s: SimState; onNew: () => void }) {
-  const meta = getMeta();
   const ips = Object.values(s.ips).filter(ip => ip.publisherId === s.playerId);
   const tier = displayTier(Math.max(
     s.publishers[s.playerId]?.unlocks.marketResearch ?? 0,
@@ -59,7 +58,8 @@ export function Roster({ s, onNew }: { s: SimState; onNew: () => void }) {
       </div>
       {ips.length === 0 && <Empty>No characters yet. A set needs somebody on the cards.</Empty>}
       {ips.map(ip => {
-        const m = meta.characters[ip.id as string];
+        // Archetype and age come off the entity now, not off the app-side map.
+        const age = ip.baseAge > 0 ? ip.baseAge + Math.floor((s.tick - ip.createdTick) / 52) : 0;
         return (
           <div key={ip.id} style={{
             display: 'grid', gridTemplateColumns: '1fr 42px 40px 30px', gap: 8, alignItems: 'center',
@@ -68,7 +68,7 @@ export function Roster({ s, onNew }: { s: SimState; onNew: () => void }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
               <div style={{ fontFamily: MONO, fontWeight: 600, fontSize: 16, letterSpacing: '0.01em' }}>{ip.name}</div>
               <div style={{ ...micro, letterSpacing: '0.07em' }}>
-                {(m?.archetype ?? ip.kind).toUpperCase()}{m ? ` · ${m.baseAge + Math.floor((s.tick - ip.createdTick) / 52)}` : ''}
+                {(ip.archetype !== 'none' ? ip.archetype : ip.kind).toUpperCase()}{age > 0 ? ` · ${age}` : ''}
               </div>
               <div style={{ fontSize: 13, lineHeight: 1.25, fontStyle: 'italic', color: C.ink2 }}>{readingText(s, ip.id)}</div>
             </div>
@@ -149,16 +149,19 @@ export function NewCharacter({ s, onDone, onBack }: { s: SimState; onDone: () =>
               ))}
             </div>
             <div style={{ fontSize: 11, lineHeight: 1.4, color: C.dim }}>
-              Archetype and age are recorded but do not reach the simulation yet — see
-              docs/design/characters.md. The hidden roll behind this character is the same either way.
+              The archetype names the prior your character is rolled from — you choose the
+              distribution, never the result. The six ranges are identical until the table is
+              fitted, so today the bet is the same shape whichever you pick.
             </div>
           </div>
         </div>
         <div style={{ padding: '16px 18px 34px' }}>
           <Button disabled={!name.trim()} onClick={() => {
-            let created: IpId | null = null;
-            commit(st => { created = api.createIp(st, name.trim(), 'character'); });
-            if (created) setCharacterMeta(created, { archetype: arch, baseAge: age });
+            commit(st => {
+              api.createIp(st, name.trim(), 'character', {
+                archetype: arch.toLowerCase() as Archetype, baseAge: age,
+              });
+            });
             onDone();
           }}>Create {name.trim() || 'character'}</Button>
         </div>

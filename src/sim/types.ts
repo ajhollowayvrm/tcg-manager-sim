@@ -234,6 +234,24 @@ export type IpKind = 'character' | 'location' | 'faction' | 'concept' | 'event';
  * kid who starts at eight is an adult twenty years into a fifty-year run. The
  * motivation segments do not age, because "investor" is not a stage of life.
  */
+/**
+ * A named prior on the roll behind a character.
+ *
+ * The archetype ALREADY existed in the model, unnamed: three hidden numbers
+ * carry it, and every IP drew them from one global range, which is why every
+ * character was the same shapeless lottery ticket. An archetype replaces the
+ * global range with a per-archetype one. It is a config table and one changed
+ * signature — not a new subsystem — and the roll survives, so the blind bet
+ * survives. What changes is that the player chose the distribution they draw
+ * from.
+ *
+ * `none` is the global prior, and it is what every non-character IP uses:
+ * `location`, `faction`, `concept` and `event` keep it until somebody gives
+ * them their own table.
+ */
+export type Archetype =
+  | 'none' | 'mascot' | 'rival' | 'mentor' | 'trickster' | 'legend' | 'upstart';
+
 export type AudienceSegment =
   | 'kids' | 'teens' | 'adults'          // cohorts, which flow
   | 'investors' | 'artFans';             // motivations, which do not
@@ -268,6 +286,20 @@ export interface IpEntity {
    * exposure accumulates — this is why a set can flop: you can spend heavily
    * on exposure and watch affection refuse to climb.
    */
+  /**
+   * The prior this character was rolled from. `none` for everything that is
+   * not a character, and for characters made before archetypes existed.
+   */
+  archetype: Archetype;
+  /**
+   * How old the character was when they debuted.
+   *
+   * Stored now, read when `characters.md` §2 lands: the age-cohort part of
+   * `truth.affinities` becomes derived from `baseAge + (tick - createdTick)/52`
+   * rather than frozen at birth, so a character made at 10 speaks to kids and
+   * the same character at 30 speaks to adults.
+   */
+  baseAge: number;
   exposure: number;
   affection: number;
   affectionHistory: SparseSeries;
@@ -1071,7 +1103,7 @@ export interface GradingSubmission {
  * ids in the decision log itself so a replay reconstructs identical entities.
  */
 export type Decision =
-  | { type: 'createIp'; tick: Tick; payload: { id: IpId; name: string; kind: IpKind } }
+  | { type: 'createIp'; tick: Tick; payload: { id: IpId; name: string; kind: IpKind; archetype?: Archetype; baseAge?: number } }
   | { type: 'createSet'; tick: Tick; payload: { id: SetId; name: string; setType: SetType; targetSize: number } }
   | {
       type: 'designCard'; tick: Tick; payload: {
@@ -1994,6 +2026,16 @@ export interface SimConfig {
     exposureShare: number;
   };
 
+  /**
+   * Per-archetype ranges for the three hidden numbers. Every entry ships equal
+   * to the global `affection` range, so the table is neutral by construction.
+   */
+  archetypes: Record<Archetype, {
+    relatability: [number, number];
+    longevity: [number, number];
+    /** Per-segment override. A segment not named here uses the global range. */
+    affinity: Partial<Record<AudienceSegment, [number, number]>>;
+  }>;
   desire: {
     /** Total the connection bundle is worth. 0 keeps the legacy additive sum. */
     bonusBudget: number;

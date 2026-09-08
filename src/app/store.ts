@@ -32,6 +32,14 @@ const META_KEY = 'tcg.meta.v1';
 export interface Meta {
   studioName: string;
   gameName: string;
+  /**
+   * Characters authored before `IpEntity` had `archetype` and `baseAge`.
+   *
+   * **Nothing writes this any more.** Both fields reached the sim when the
+   * archetype table landed, so `api.createIp` carries them and the roster reads
+   * them off the entity. The map stays only so an older save still renders,
+   * and `forgetCharacter` still prunes it.
+   */
   characters: Record<string, { archetype: string; baseAge: number; affiliation?: string }>;
   /**
    * Eras, and which set belongs to which.
@@ -174,11 +182,6 @@ export function commit(fn: (s: SimState) => void): void {
   notify();
 }
 
-export function setCharacterMeta(id: IpId, m: Meta['characters'][string]): void {
-  meta.characters[id as string] = m;
-  persist();
-  notify();
-}
 
 export function saveFormat(f: Meta['formats'][number]): void {
   const i = meta.formats.findIndex(x => x.id === f.id);

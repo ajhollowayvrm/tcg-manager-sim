@@ -1231,6 +1231,33 @@ export const defaultConfig: SimConfig = {
    * produces a 349% price lift at affection 5 and may be too strong, so
    * whatever the budget should be, it is smaller than what one term does today.
    */
+  /**
+   * The archetype table.
+   *
+   * **Every entry is the global `affection` range today, which makes this
+   * exactly neutral**, per `docs/design/characters.md`: ship the table neutral,
+   * then widen the ranges as one measurable change. The roll count and order
+   * are unchanged, so nothing renumbers.
+   *
+   * The shape the widening must take, from the design document, with two rules:
+   *
+   * - **No archetype dominates.** Where one wins on the ceiling it must lose on
+   *   longevity or on breadth. If a sweep finds one archetype is simply
+   *   correct, the table is wrong, not the player.
+   * - `mascot` is the reason `affection.longevityWeight` has to stop being 0.
+   *   The label is meaningless unless longevity does something, so the table
+   *   and the longevity fit are ONE task, not two.
+   */
+  archetypes: {
+    none:      { relatability: [8, 96], longevity: [0.85, 1.18], affinity: {} },
+    mascot:    { relatability: [8, 96], longevity: [0.85, 1.18], affinity: {} },
+    rival:     { relatability: [8, 96], longevity: [0.85, 1.18], affinity: {} },
+    mentor:    { relatability: [8, 96], longevity: [0.85, 1.18], affinity: {} },
+    trickster: { relatability: [8, 96], longevity: [0.85, 1.18], affinity: {} },
+    legend:    { relatability: [8, 96], longevity: [0.85, 1.18], affinity: {} },
+    upstart:   { relatability: [8, 96], longevity: [0.85, 1.18], affinity: {} },
+  },
+
   desire: {
     /** Total the connection bundle is worth. 0 keeps the old additive sum. */
     bonusBudget: 0,

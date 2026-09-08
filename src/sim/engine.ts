@@ -4,7 +4,7 @@ import type {
   Printing, SimEvent, EventId, SetType, Rarity, ProductKind, PrintQualityTier,
   Treatment, ArtBrief, UnlockState, ChannelAllocation, Channel, SetPerformance,
   Drop, DropId, Grader, GradeTier, GradingSubmission, Collab, CollabId, AudienceSegment, ChainId,
-  Artist, Publisher, PublisherId, Commission, CommissionId, ArtistTerms,
+  Artist, Publisher, PublisherId, Commission, CommissionId, ArtistTerms, Archetype,
 } from './types.ts';
 import { rand, randRange, randInt, pick, chance, gauss } from './rng.ts';
 import {
@@ -148,18 +148,31 @@ export function submit(s: SimState, d: Decision): void { s.inbox.push(d); }
 // it (see `api`) so it can reference the entity in later decisions in the same
 // batch, before any of them have been applied.
 
-function createIp(s: SimState, id: IpId, name: string, kind: IpEntity['kind']): void {
+function createIp(
+  s: SimState, id: IpId, name: string, kind: IpEntity['kind'],
+  archetype: Archetype = 'none', baseAge = 0,
+): void {
   const r = s.rng;
   const af = s.config.affection;
+  // An archetype only names the prior a CHARACTER is drawn from. Everything
+  // else keeps the global range, per `docs/design/characters.md`.
+  const arch = kind === 'character' ? archetype : 'none';
+  const table = s.config.archetypes[arch] ?? s.config.archetypes.none;
   bumpRoster(s);
   s.ips[id] = {
     id, publisherId: s.playerId, name, kind, createdTick: s.tick,
+    archetype: arch, baseAge,
     truth: {
-      // The whole game lives in this roll. High variance is deliberate.
-      relatability: randRange(r, af.relatabilityMin, af.relatabilityMax),
+      // The whole game lives in this roll. High variance is deliberate, and the
+      // archetype changes the RANGE, never the number of draws — one extra
+      // `rand` here renumbers every later roll in the run.
+      relatability: randRange(r, table.relatability[0], table.relatability[1]),
       affinities: Object.fromEntries(
-        SEGMENTS.map(g => [g, randRange(r, af.affinityMin, af.affinityMax)])) as any,
-      longevity: randRange(r, af.longevityMin, af.longevityMax),
+        SEGMENTS.map(g => {
+          const band = table.affinity[g];
+          return [g, randRange(r, band ? band[0] : af.affinityMin, band ? band[1] : af.affinityMax)];
+        })) as any,
+      longevity: randRange(r, table.longevity[0], table.longevity[1]),
       readingNoiseSeed: rand(r),
     },
     exposure: 0, affection: 4, affectionHistory: emptySeries(s.tick),
@@ -1055,7 +1068,10 @@ function scheduleDrop(
 
 function applyDecision(s: SimState, d: Decision): void {
   switch (d.type) {
-    case 'createIp': createIp(s, d.payload.id, d.payload.name, d.payload.kind); break;
+    case 'createIp':
+      createIp(s, d.payload.id, d.payload.name, d.payload.kind,
+        d.payload.archetype, d.payload.baseAge);
+      break;
     case 'createSet': createSet(s, d.payload.id, d.payload.name, d.payload.setType, d.payload.targetSize); break;
     case 'designCard':
       designCard(s, d.payload.id, d.payload.setId, d.payload.subjectIp, d.payload.cameos,
@@ -1145,9 +1161,23 @@ function applyDecision(s: SimState, d: Decision): void {
  * batch while every action still lands in the decision log.
  */
 export const api = {
-  createIp(s: SimState, name: string, kind: IpEntity['kind']): IpId {
+  /**
+   * Make a character.
+   *
+   * `archetype` names the prior the hidden roll is drawn from, and `baseAge` is
+   * how old they are at debut. Both were authored in the UI and held app-side
+   * in `store.ts` because `IpEntity` had no field for them; they reach the sim
+   * now. Omitting either keeps the global prior exactly.
+   */
+  createIp(
+    s: SimState, name: string, kind: IpEntity['kind'],
+    opts: { archetype?: Archetype; baseAge?: number } = {},
+  ): IpId {
     const id = nextId(s, 'ip') as IpId;
-    submit(s, { type: 'createIp', tick: s.tick, payload: { id, name, kind } });
+    submit(s, {
+      type: 'createIp', tick: s.tick,
+      payload: { id, name, kind, archetype: opts.archetype, baseAge: opts.baseAge },
+    });
     return id;
   },
   createSet(s: SimState, name: string, setType: SetType, targetSize: number): SetId {
