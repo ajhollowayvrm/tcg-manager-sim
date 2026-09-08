@@ -62,7 +62,7 @@ export function Header({ title, sub, right, onBack }: {
       background: C.panel, borderBottom: `1px solid ${C.rule}`, flexShrink: 0,
     }}>
       {onBack && (
-        <button onClick={onBack} aria-label="Back" style={{
+        <button type="button" onClick={onBack} aria-label="Back" style={{
           width: 40, height: 44, marginLeft: -8, background: 'none', border: 'none',
           color: C.ink, display: 'flex', alignItems: 'center', padding: 0, cursor: 'pointer',
         }}>
@@ -89,12 +89,13 @@ export function Button({ children, onClick, tone = 'go', disabled }: {
 }) {
   const go = tone === 'go';
   return (
-    <button onClick={onClick} disabled={disabled} style={{
+    <button type="button" onClick={onClick} disabled={disabled} style={{
       width: '100%', height: 52, border: go ? 'none' : `1px solid ${C.border}`,
       background: disabled ? C.raised : go ? C.go : 'transparent',
       color: disabled ? C.dim : go ? C.onAccent : C.ink,
       fontFamily: SANS, fontSize: 15, fontWeight: 600, borderRadius: 2,
       cursor: disabled ? 'default' : 'pointer',
+      touchAction: 'manipulation', WebkitUserSelect: 'none',
     }}>{children}</button>
   );
 }
@@ -126,7 +127,7 @@ export function Stepper({ value, onChange, step = 1, min = 0, max = Infinity }: 
   };
   return (
     <div style={{ display: 'flex', alignItems: 'stretch', gap: 8 }}>
-      <button style={box} onClick={() => onChange(Math.max(min, value - step))} aria-label="Less">
+      <button type="button" style={box} onClick={() => onChange(Math.max(min, value - step))} aria-label="Less">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M5 12h14" /></svg>
       </button>
       <div style={{
@@ -134,7 +135,7 @@ export function Stepper({ value, onChange, step = 1, min = 0, max = Infinity }: 
         background: C.panel, border: `1px solid ${C.rule}`, borderRadius: 2,
         ...num, fontSize: 19, fontWeight: 600,
       }}>{value.toLocaleString()}</div>
-      <button style={box} onClick={() => onChange(Math.min(max, value + step))} aria-label="More">
+      <button type="button" style={box} onClick={() => onChange(Math.min(max, value + step))} aria-label="More">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
       </button>
     </div>

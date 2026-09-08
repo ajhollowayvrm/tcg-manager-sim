@@ -1083,11 +1083,18 @@ export default function App() {
       </div>
 
       {tab === 'Studio' && (
-        <div style={{ display: 'flex', background: C.panel, borderBottom: `1px solid ${C.rule}`, flexShrink: 0 }}>
+        <div style={{
+          display: 'flex', background: C.panel, borderBottom: `1px solid ${C.rule}`,
+          flexShrink: 0,
+          // iOS reserves the left screen edge for the back gesture, which can
+          // swallow a tap aimed at the first tab. Inset the row past it.
+          paddingLeft: 6, paddingRight: 6,
+        }}>
           {SUBTABS.map(t => (
-            <button key={t} onClick={() => setSub(t)} style={{
-              flexGrow: 1, height: 42, border: 'none', background: 'none', cursor: 'pointer',
-              fontFamily: 'inherit', fontSize: 11, padding: 0,
+            <button key={t} type="button" onClick={() => setSub(t)} style={{
+              flex: '1 1 0', minWidth: 0, height: 46, border: 'none', background: 'none',
+              cursor: 'pointer', fontFamily: 'inherit', fontSize: 11, padding: 0,
+              whiteSpace: 'nowrap', touchAction: 'manipulation', WebkitUserSelect: 'none',
               transition: 'color 160ms ease',
               color: sub === t ? C.ink : C.dim, fontWeight: sub === t ? 600 : 400,
               borderBottom: sub === t ? `2px solid ${C.go}` : '2px solid transparent',
@@ -1143,10 +1150,11 @@ export default function App() {
         paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 6px)', flexShrink: 0,
       }}>
         {TABS.map(t => (
-          <button key={t} onClick={() => setTab(t)} style={{
-            flexGrow: 1, height: 58, display: 'flex', flexDirection: 'column',
+          <button key={t} type="button" onClick={() => setTab(t)} style={{
+            flex: '1 1 0', minWidth: 0, height: 58, display: 'flex', flexDirection: 'column',
             alignItems: 'center', justifyContent: 'center', gap: 4,
             background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+            touchAction: 'manipulation', WebkitUserSelect: 'none',
             color: tab === t ? C.go : C.dim,
           }}>
             <TabIcon name={t} active={tab === t} />
