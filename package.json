@@ -19,8 +19,10 @@
   "dependencies": {
     "@capacitor/core": "^8.5.1",
     "@capacitor/ios": "^8.5.1",
+    "@tanstack/react-virtual": "^3.14.11",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "uplot": "^1.6.32"
   },
   "devDependencies": {
     "@capacitor/cli": "^7.6.9",
