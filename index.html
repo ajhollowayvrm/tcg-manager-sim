@@ -11,11 +11,17 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" />
     <style>
       *, *::before, *::after { box-sizing: border-box; }
-      html, body { margin: 0; height: 100%; background: oklch(0.20 0.012 250); }
-      /* The webview runs under the status bar and the home indicator, so the
-         app owns those insets rather than the OS. */
+      /* The PAGE must never scroll. The webview runs under the status bar, so
+         a scrolling body slides the safe-area padding out from under itself and
+         content collides with the clock — which is exactly what happens when
+         the keyboard opens and shrinks the viewport. Only inner panes scroll. */
+      html, body {
+        margin: 0; height: 100%; overflow: hidden;
+        background: oklch(0.20 0.012 250);
+        overscroll-behavior: none;
+      }
       #root {
-        min-height: 100%; display: flex; flex-direction: column;
+        height: 100%; display: flex; flex-direction: column; overflow: hidden;
         padding-top: env(safe-area-inset-top, 0px);
       }
       * { -webkit-tap-highlight-color: transparent; }
