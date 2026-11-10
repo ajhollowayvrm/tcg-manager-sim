@@ -1,31 +1,23 @@
-# Dependencies
-node_modules/
+# Xcode project: generated from project.yml by `xcodegen generate`.
+*.xcodeproj
+App/Info.plist
 
 # Build output
-dist/
 build/
+DerivedData/
+.build/
+.swiftpm/
+*.xcuserstate
+xcuserdata/
 
-# Balance harness output
-out/
-
-# Logs
-*.log
-npm-debug.log*
+# Simulator screenshots
+shots/
 
 # Editor / OS
 .DS_Store
 .vscode/
 .idea/
 
-# Playwright MCP scratch screenshots
-.playwright-mcp/
-
 # Env
 .env
 .env.local
-
-# iOS — the Xcode project is GENERATED from ios/project.yml by `npm run ios:project`.
-ios/*.xcodeproj
-ios/build
-ios/DerivedData
-ios/shots

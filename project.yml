@@ -1,0 +1,66 @@
+# XcodeGen spec. Generate the Xcode project with:  xcodegen generate
+# The generated TCGManager.xcodeproj is not committed.
+name: TCGManager
+options:
+  bundleIdPrefix: com.ajholloway
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+packages:
+  SimCore:
+    path: Packages/SimCore
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    DEVELOPMENT_TEAM: 2BY68WLT6R
+    CODE_SIGN_STYLE: Automatic
+targets:
+  TCGManager:
+    type: application
+    platform: iOS
+    sources:
+      - App
+    dependencies:
+      - package: SimCore
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: TCG Manager
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        UILaunchScreen: {}
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+    settings:
+      base:
+        # The old Capacitor app used this ID. Reusing it replaces that app on
+        # the phone and uses no new App ID (the free Apple ID allows 3 apps).
+        PRODUCT_BUNDLE_IDENTIFIER: com.ajholloway.tcgmanager
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+        ENABLE_PREVIEWS: YES
+  TCGManagerUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - UITests
+    dependencies:
+      - target: TCGManager
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.ajholloway.tcgmanager.uitests
+        TARGETED_DEVICE_FAMILY: "1"
+schemes:
+  TCGManager:
+    build:
+      targets:
+        TCGManager: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - TCGManagerUITests
