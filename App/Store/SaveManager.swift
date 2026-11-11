@@ -70,6 +70,17 @@ struct SaveManager {
         }
     }
 
+    /// Copies the main file and the backup to dated "unreadable" files. The game calls
+    /// this when it cannot read a save, before anything can write over the files.
+    func keepUnreadableCopies() {
+        let stamp = Date().formatted(.iso8601.year().month().day().time(includingFractionalSeconds: false))
+            .replacingOccurrences(of: ":", with: "-")
+        for (url, label) in [(mainURL, "save"), (backupURL, "backup")] where files.fileExists(atPath: url.path) {
+            let copy = directory.appending(path: "TCGManager-unreadable-\(label)-\(stamp).json")
+            if !files.fileExists(atPath: copy.path) { try? files.copyItem(at: url, to: copy) }
+        }
+    }
+
     /// Moves the current save to a dated archive file.
     func archive() throws {
         guard files.fileExists(atPath: mainURL.path) else { return }

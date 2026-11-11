@@ -217,10 +217,14 @@ extension World {
         if catalog["packPresets"] == nil { catalog["packPresets"] = [try jsonObject(pack)] }
         catalog["sets"] = try (catalog["sets"] as? [[String: Any]] ?? []).map { set in
             var s = set
-            if s["pack"] == nil, let ladderJSON = set["ladder"] {
-                let ladder = try JSONDecoder().decode(
-                    RarityLadder.self, from: JSONSerialization.data(withJSONObject: ladderJSON)
-                )
+            if s["pack"] == nil {
+                // Read only the tier IDs and names. A full decode of the ladder would
+                // need fields that later steps add, for example `secret` (version 11).
+                let tiers = ((set["ladder"] as? [String: Any])?["tiers"] as? [[String: Any]] ?? []).compactMap { tier -> RarityTier? in
+                    guard let id = tier["id"] as? Int, let name = tier["name"] as? String else { return nil }
+                    return RarityTier(id: id, name: name, code: "?", symbol: .circle, color: .slate)
+                }
+                let ladder = RarityLadder(id: 0, name: "", tiers: tiers)
                 s["pack"] = try jsonObject(pack.resolved(against: ladder, source: source))
             }
             return s

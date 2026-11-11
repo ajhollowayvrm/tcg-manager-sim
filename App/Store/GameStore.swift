@@ -25,7 +25,9 @@ final class GameStore {
                 lastSaved = file.savedAt
             }
         } catch {
-            errorMessage = "The game could not read the save file. \(error.localizedDescription)"
+            // Keep a copy first, so a new game cannot write over the only copy.
+            saves.keepUnreadableCopies()
+            errorMessage = "The game could not read the save file. A copy is in the Saves folder. \(error.localizedDescription)"
         }
     }
 
