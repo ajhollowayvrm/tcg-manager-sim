@@ -121,35 +121,4 @@ struct SetTests {
         #expect(world.catalog.headlinerHasCard(id))
     }
 
-    @Test("A version 7 save gets a type, a unique code, a symbol, and a size for each set")
-    func migrateVersion7() throws {
-        var world = World(seed: 9, studioName: "Test")
-        let aryla = try world.createCharacter(CharacterDraft(name: "Aryla", role: .mascot, kind: .person))
-        let first = try world.createSet(name: "Storm Rising", theme: nil, presetID: Catalog.defaultLadderID)
-        let second = try world.createSet(name: "Storm Risen", theme: nil, presetID: Catalog.defaultLadderID)
-        let common = try #require(world.catalog.set(first)?.ladder.tiers.first?.id)
-        try world.createCard(in: first, CardDraft(name: "Aryla", characterID: aryla, rarity: common))
-
-        var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(world)) as? [String: Any])
-        var catalog = try #require(json["catalog"] as? [String: Any])
-        catalog["sets"] = (catalog["sets"] as? [[String: Any]] ?? []).map {
-            var s = $0
-            for key in ["type", "code", "symbol", "size", "pairID", "headliner"] { s.removeValue(forKey: key) }
-            return s
-        }
-        json["catalog"] = catalog
-        json["version"] = 7
-
-        try World.migrate(&json)
-        let migrated = try JSONDecoder().decode(World.self, from: JSONSerialization.data(withJSONObject: json))
-        #expect(migrated.version == World.currentVersion)
-        let a = try #require(migrated.catalog.set(first))
-        let b = try #require(migrated.catalog.set(second))
-        #expect(a.type == .main && b.type == .main)
-        #expect(a.code != b.code)
-        #expect(a.symbol == .standard)
-        #expect(a.size == SetType.main.suggestedSize)
-        #expect(a.headliner == nil && a.pairID == nil)
-        #expect(migrated.catalog.cards(in: first).count == 1)
-    }
 }

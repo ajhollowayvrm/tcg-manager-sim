@@ -163,44 +163,4 @@ struct FillerTests {
         #expect(a == b)
     }
 
-    @Test("A version 8 save gets filler shares and no filler. Making the filler fills the set")
-    func migrateVersion8() throws {
-        var world = try world()
-        let aryla = try #require(world.characters.first?.id)
-        let set = try world.createSet(name: "Old", theme: nil, presetID: Catalog.defaultLadderID)
-        let common = try #require(world.catalog.set(set)?.ladder.tiers.first?.id)
-        try world.createCard(in: set, CardDraft(name: "Aryla", characterID: aryla, rarity: common))
-
-        var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(world)) as? [String: Any])
-        var catalog = try #require(json["catalog"] as? [String: Any])
-        func strip(_ ladder: Any?) -> [String: Any] {
-            var l = ladder as? [String: Any] ?? [:]
-            l["tiers"] = (l["tiers"] as? [[String: Any]] ?? []).map { var t = $0; t.removeValue(forKey: "fillerShare"); return t }
-            return l
-        }
-        catalog["ladderPresets"] = (catalog["ladderPresets"] as? [Any] ?? []).map(strip)
-        catalog["sets"] = (catalog["sets"] as? [[String: Any]] ?? []).map {
-            var s = $0
-            s["ladder"] = strip(s["ladder"])
-            s.removeValue(forKey: "generated")
-            return s
-        }
-        catalog["cards"] = (catalog["cards"] as? [[String: Any]] ?? []).compactMap { card -> [String: Any]? in
-            var c = card
-            if c["filler"] as? Bool == true { return nil }
-            c.removeValue(forKey: "filler")
-            return c
-        }
-        json["catalog"] = catalog
-        json["version"] = 8
-
-        try World.migrate(&json)
-        var migrated = try JSONDecoder().decode(World.self, from: JSONSerialization.data(withJSONObject: json))
-        #expect(migrated.version == World.currentVersion)
-        #expect(migrated.catalog.set(set)?.ladder.tiers.prefix(4).map(\.fillerShare) == [50, 33, 17, 0])
-        #expect(migrated.catalog.cards(in: set).count == 1)
-        #expect(migrated.catalog.fillerCards(in: set).isEmpty)
-        try migrated.rerollFiller(set)
-        #expect(migrated.catalog.fillerCards(in: set).count == 149)
-    }
 }

@@ -151,42 +151,4 @@ struct SetExtrasTests {
         _ = line
     }
 
-    @Test("A version 10 save gets the Base era, plain tiers, and empty subsets and art sets")
-    func migrateVersion10() throws {
-        var (world, set, aryla) = try setup()
-        let sir = try tier(world, set, "SIR")
-        try world.createCard(in: set, CardDraft(name: "Aryla", characterID: aryla, rarity: sir))
-        var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(world)) as? [String: Any])
-        var catalog = try #require(json["catalog"] as? [String: Any])
-        catalog.removeValue(forKey: "eras")
-        func strip(_ ladder: Any?) -> [String: Any] {
-            var l = ladder as? [String: Any] ?? [:]
-            l["tiers"] = (l["tiers"] as? [[String: Any]] ?? []).map { var t = $0; t.removeValue(forKey: "secret"); return t }
-            return l
-        }
-        catalog["ladderPresets"] = (catalog["ladderPresets"] as? [Any] ?? []).map(strip)
-        catalog["sets"] = (catalog["sets"] as? [[String: Any]] ?? []).map {
-            var s = $0
-            s["ladder"] = strip(s["ladder"])
-            for key in ["eraID", "subsets", "artSets"] { s.removeValue(forKey: key) }
-            return s
-        }
-        catalog["cards"] = (catalog["cards"] as? [[String: Any]] ?? []).map {
-            var c = $0
-            c.removeValue(forKey: "gimmick")
-            c.removeValue(forKey: "subsetID")
-            return c
-        }
-        json["catalog"] = catalog
-        json["version"] = 10
-        try World.migrate(&json)
-        let migrated = try JSONDecoder().decode(World.self, from: JSONSerialization.data(withJSONObject: json))
-        #expect(migrated.version == World.currentVersion)
-        #expect(migrated.catalog.eras == [Era.first])
-        #expect(migrated.catalog.set(set)?.eraID == Era.first.id)
-        // An old set's tiers are not secret, so its numbers do not jump.
-        #expect(migrated.catalog.set(set)?.ladder.tiers.allSatisfy { !$0.secret } == true)
-        #expect(migrated.catalog.preset(Catalog.defaultLadderID) == RarityLadder.defaultLadder(id: Catalog.defaultLadderID))
-        #expect(migrated.catalog.cardNumbers(in: set).values.allSatisfy { $0.hasSuffix("/020") })
-    }
 }

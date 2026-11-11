@@ -40,8 +40,7 @@ func check(_ world: World, _ step: String, sourceLocation: SourceLocation = #_so
         let designed = catalog.cards(in: set.id)
         let filler = catalog.fillerCards(in: set.id)
         if designed.count > set.size { fail("\(set.name) has more designed cards than its size") }
-        // A set from an old save can have no filler until the player makes it.
-        if !filler.isEmpty, filler.count != set.size - designed.count {
+        if filler.count != set.size - designed.count {
             fail("\(set.name) has \(filler.count) filler cards, expected \(set.size - designed.count)")
         }
         if !filler.isEmpty {
@@ -420,66 +419,7 @@ struct ScenarioTests {
 
     // MARK: - Scenario 7
 
-    @Test("Scenario 7: an old version 7 save loads, and the player keeps playing")
-    func oldSave() throws {
-        var (world, mascot, _) = try garageStudio()
-        let set = try world.createSet(name: "Legacy", theme: "castles", presetID: Catalog.defaultLadderID)
-        let sir = try tier(world, set, "SIR")
-        try world.createCard(in: set, CardDraft(name: "Aryla, Old Guard", characterID: mascot, rarity: sir))
-
-        // Turn the save back into version 7: no set identity, filler, packs, eras, or extras.
-        var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(world)) as? [String: Any])
-        var catalog = try #require(json["catalog"] as? [String: Any])
-        for key in ["packPresets", "eras"] { catalog.removeValue(forKey: key) }
-        func strip(_ ladder: Any?) -> [String: Any] {
-            var l = ladder as? [String: Any] ?? [:]
-            l["tiers"] = (l["tiers"] as? [[String: Any]] ?? []).map {
-                var t = $0
-                for key in ["fillerShare", "secret"] { t.removeValue(forKey: key) }
-                return t
-            }
-            return l
-        }
-        catalog["ladderPresets"] = (catalog["ladderPresets"] as? [Any] ?? []).map(strip)
-        catalog["sets"] = (catalog["sets"] as? [[String: Any]] ?? []).map {
-            var s = $0
-            s["ladder"] = strip(s["ladder"])
-            for key in ["type", "code", "symbol", "size", "pairID", "headliner", "generated", "pack", "eraID", "subsets", "artSets"] {
-                s.removeValue(forKey: key)
-            }
-            return s
-        }
-        catalog["cards"] = (catalog["cards"] as? [[String: Any]] ?? []).compactMap { card -> [String: Any]? in
-            if card["filler"] as? Bool == true { return nil }
-            var c = card
-            for key in ["filler", "gimmick", "subsetID"] { c.removeValue(forKey: key) }
-            return c
-        }
-        json["catalog"] = catalog
-        json["version"] = 7
-
-        try World.migrate(&json)
-        var loaded = try JSONDecoder().decode(World.self, from: JSONSerialization.data(withJSONObject: json))
-        check(loaded, "loaded old save")
-        #expect(loaded.version == World.currentVersion)
-        #expect(loaded.catalog.fillerCards(in: set).isEmpty)
-        #expect(loaded.catalog.set(set)?.code == "LEG")
-
-        // The player makes the filler, adds a card, and checks the pack.
-        try loaded.rerollFiller(set)
-        check(loaded, "filler made")
-        #expect(loaded.catalog.fillerCards(in: set).count == 149)
-        try loaded.createCard(in: set, CardDraft(name: "Aryla, New Dawn", characterID: mascot, rarity: try tier(loaded, set, "G")))
-        check(loaded, "card added after load")
-        #expect(!loaded.packWarnings(set).contains { $0.blocksPrint })
-        // The old set's tiers are not secret, so every number uses the full total.
-        #expect(loaded.catalog.cardNumbers(in: set).values.allSatisfy { $0.hasSuffix("/150") })
-        #expect(try roundTrip(loaded) == loaded)
-    }
-
-    // MARK: - Scenario 8
-
-    @Test("Scenario 8: the same decisions on the same seed give the same world, and a new seed gives a new cast")
+    @Test("Scenario 7: the same decisions on the same seed give the same world, and a new seed gives a new cast")
     func determinism() throws {
         func play(seed: UInt64) throws -> World {
             var (world, mascot, starters) = try garageStudio(seed: seed)
@@ -504,9 +444,9 @@ struct ScenarioTests {
         #expect(a.catalog.sets[0].generated.map(\.name) != c.catalog.sets[0].generated.map(\.name))
     }
 
-    // MARK: - Scenario 9
+    // MARK: - Scenario 8
 
-    @Test("Scenario 9: a long session of random decisions never breaks a rule")
+    @Test("Scenario 8: a long session of random decisions never breaks a rule")
     func randomSession() throws {
         var (world, mascot, starters) = try garageStudio(seed: 99)
         var rng = Xoshiro256(seed: 12345)

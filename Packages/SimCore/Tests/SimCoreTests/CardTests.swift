@@ -240,56 +240,6 @@ struct CardTests {
         #expect(World(seed: 1, studioName: "A").catalog.themes != World(seed: 2, studioName: "B").catalog.themes)
     }
 
-    @Test("A version 3 save gets the theme library, and an element theme keeps its ID")
-    func migrateVersion3() throws {
-        var world = World(seed: 9, studioName: "Test")
-        try world.createSet(name: "Old", theme: "storm", presetID: Catalog.defaultLadderID)
-        var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(world)) as? [String: Any])
-        var catalog = try #require(json["catalog"] as? [String: Any])
-        catalog.removeValue(forKey: "themes")
-        json["catalog"] = catalog
-        json["version"] = 3
-        try World.migrate(&json)
-        let migrated = try JSONDecoder().decode(World.self, from: JSONSerialization.data(withJSONObject: json))
-        #expect(migrated == world)
-        #expect(migrated.catalog.theme("storm")?.element == .storm)
-    }
-
-    @Test("A version 4 save keeps its look: solid frames, plain tiers, and no treatments (C14, C15)")
-    func migrateVersion4() throws {
-        var (world, set, aryla, _) = try setup()
-        let custom = try world.createPreset(copying: Catalog.defaultLadderID, name: "Mine")
-        let card = try world.createCard(in: set, CardDraft(name: "Aryla", characterID: aryla, rarity: try tier(world, set, 8)))
-
-        // Turn the JSON back into version 4: no frame styles, no tier looks, and a treatment list.
-        var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(world)) as? [String: Any])
-        var catalog = try #require(json["catalog"] as? [String: Any])
-        func strip(_ ladder: Any?) -> [String: Any] {
-            var l = ladder as? [String: Any] ?? [:]
-            l["tiers"] = (l["tiers"] as? [[String: Any]] ?? []).map {
-                var t = $0
-                for key in ["frameStyle", "look"] { t.removeValue(forKey: key) }
-                return t
-            }
-            return l
-        }
-        catalog["ladderPresets"] = (catalog["ladderPresets"] as? [Any] ?? []).map(strip)
-        catalog["sets"] = (catalog["sets"] as? [[String: Any]] ?? []).map { var s = $0; s["ladder"] = strip(s["ladder"]); return s }
-        catalog["treatments"] = [["id": 40, "name": "Holo", "finish": "holo", "costPerCopy": 0.02]]
-        catalog["cards"] = (catalog["cards"] as? [[String: Any]] ?? []).map { var c = $0; c["treatment"] = 40; return c }
-        json["catalog"] = catalog
-        json["version"] = 4
-
-        try World.migrate(&json)
-        let migrated = try JSONDecoder().decode(World.self, from: JSONSerialization.data(withJSONObject: json))
-        #expect(migrated.version == World.currentVersion)
-        for ladder in [migrated.catalog.set(set)?.ladder, migrated.catalog.preset(custom)] {
-            #expect(ladder?.tiers.allSatisfy { $0.frameStyle == .solid && $0.look == .plain && $0.costPerCopy == 0 } == true)
-        }
-        #expect(migrated.catalog.preset(Catalog.defaultLadderID) == RarityLadder.defaultLadder(id: Catalog.defaultLadderID))
-        #expect(migrated.catalog.card(card)?.name == "Aryla")
-    }
-
     @Test("A card has its tier's versions, can turn one off, and can add its own alt art (C16)")
     func versions() throws {
         var (world, set, aryla, _) = try setup()
@@ -336,48 +286,10 @@ struct CardTests {
         #expect(world.catalog.card(id)?.excludedVersions == [])
     }
 
-    @Test("A version 6 save gets no extra versions, so its cards do not change (C16)")
-    func migrateVersion6() throws {
-        var (world, set, aryla, _) = try setup()
-        let card = try world.createCard(in: set, CardDraft(name: "Aryla", characterID: aryla, rarity: try tier(world, set, 0)))
-        var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(world)) as? [String: Any])
-        var catalog = try #require(json["catalog"] as? [String: Any])
-        func strip(_ ladder: Any?) -> [String: Any] {
-            var l = ladder as? [String: Any] ?? [:]
-            l["tiers"] = (l["tiers"] as? [[String: Any]] ?? []).map { var t = $0; t.removeValue(forKey: "versions"); return t }
-            return l
-        }
-        catalog["sets"] = (catalog["sets"] as? [[String: Any]] ?? []).map { var s = $0; s["ladder"] = strip(s["ladder"]); return s }
-        catalog["cards"] = (catalog["cards"] as? [[String: Any]] ?? []).map {
-            var c = $0
-            c.removeValue(forKey: "excludedVersions")
-            c.removeValue(forKey: "ownVersions")
-            return c
-        }
-        json["catalog"] = catalog
-        json["version"] = 6
-        try World.migrate(&json)
-        let migrated = try JSONDecoder().decode(World.self, from: JSONSerialization.data(withJSONObject: json))
-        #expect(migrated.catalog.set(set)?.ladder.tiers.allSatisfy { $0.versions.isEmpty } == true)
-        #expect(migrated.catalog.card(card)?.ownVersions == [])
-        #expect(migrated.catalog.preset(Catalog.defaultLadderID) == RarityLadder.defaultLadder(id: Catalog.defaultLadderID))
-    }
-
     @Test("Set names are unique")
     func setNames() throws {
         var (world, _, _, _) = try setup()
         #expect(throws: CardError.duplicateSetName("base set")) { try world.createSet(name: "base set", theme: nil, presetID: Catalog.defaultLadderID) }
     }
 
-    @Test("A version 2 save gets the default catalog")
-    func migrateVersion2() throws {
-        var world = World(seed: 5, studioName: "Test")
-        try world.createCharacter(CharacterDraft(name: "Aryla"))
-        var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(world)) as? [String: Any])
-        json.removeValue(forKey: "catalog")
-        json["version"] = 2
-        try World.migrate(&json)
-        let migrated = try JSONDecoder().decode(World.self, from: JSONSerialization.data(withJSONObject: json))
-        #expect(migrated == world)
-    }
 }

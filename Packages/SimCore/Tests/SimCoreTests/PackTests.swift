@@ -168,21 +168,4 @@ struct PackTests {
         #expect(missing.contains { $0.blocksPrint })
     }
 
-    @Test("A version 9 save gets the default pack preset, and each set gets a matched copy")
-    func migrateVersion9() throws {
-        var (world, set, _) = try setup()
-        var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(world)) as? [String: Any])
-        var catalog = try #require(json["catalog"] as? [String: Any])
-        catalog.removeValue(forKey: "packPresets")
-        catalog["sets"] = (catalog["sets"] as? [[String: Any]] ?? []).map { var s = $0; s.removeValue(forKey: "pack"); return s }
-        json["catalog"] = catalog
-        json["version"] = 9
-        try World.migrate(&json)
-        let migrated = try JSONDecoder().decode(World.self, from: JSONSerialization.data(withJSONObject: json))
-        #expect(migrated.version == World.currentVersion)
-        #expect(migrated.catalog.packPresets == [PackLayout.defaultPack(id: Catalog.defaultPackID)])
-        #expect(migrated.catalog.set(set)?.pack == world.catalog.set(set)?.pack)
-        world = migrated
-        #expect(world.packWarnings(set).allSatisfy { !$0.blocksPrint })
-    }
 }

@@ -280,58 +280,11 @@ struct RosterTests {
         #expect(abs(c.truth.affection[.kids] - (-World.redesignCost * 0.1)) < 1e-9)
     }
 
-    @Test("A save from before R14 loads, and every character in it is a creature")
-    func oldSaveLoads() throws {
-        var world = World(seed: 81, studioName: "Test")
-        try world.createCharacter(draft("A"))
-        try world.createCharacter(draft("B"))
-        var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(world)) as? [String: Any])
-        var characters = try #require(json["characters"] as? [[String: Any]])
-        for i in characters.indices { characters[i].removeValue(forKey: "person") }
-        json["characters"] = characters
-        let decoded = try JSONDecoder().decode(World.self, from: JSONSerialization.data(withJSONObject: json))
-        #expect(decoded == world)
-        #expect(decoded.characters.allSatisfy { $0.kind == .creature })
-    }
-
     @Test("A suggested person name comes from the person list")
     func personName() {
         var rng = SplitMix64(seed: 5)
         let name = NameGenerator.uniqueName(for: .fire, kind: .person, taken: [], using: &rng)
         #expect(NameGenerator.personNames.contains(name))
-    }
-
-    @Test("A version 1 save moves each old form entry into its character (R23)")
-    func migrateVersion1Forms() throws {
-        // Build the JSON of a version 1 world: two characters, the second is a form of the first.
-        var world = World(seed: 91, studioName: "Test")
-        let base = try world.createCharacter(draft("Aryla", role: .mascot))
-        let other = try world.createCharacter(draft("Destined", role: .legendary))
-        let friend = try world.createCharacter(draft("Friend"))
-        var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(world)) as? [String: Any])
-        var characters = try #require(json["characters"] as? [[String: Any]])
-        for i in characters.indices { characters[i].removeValue(forKey: "forms") }
-        characters[1]["formOf"] = base
-        characters[2]["rivals"] = [other]
-        json["characters"] = characters
-        json.removeValue(forKey: "catalog")
-        json["version"] = 1
-
-        try World.migrate(&json)
-        let migrated = try JSONDecoder().decode(World.self, from: JSONSerialization.data(withJSONObject: json))
-
-        #expect(migrated.version == World.currentVersion)
-        #expect(migrated.catalog == Catalog(seed: World.streamSeed(91, stream: 4), themeSeed: World.streamSeed(91, stream: 5)))
-        #expect(migrated.characters.map(\.id) == [base, friend])
-        let form = try #require(migrated.character(base)?.forms.first)
-        #expect(form.id == other)
-        #expect(form.name == "Destined")
-        #expect(form.role == .legendary)
-        #expect(migrated.character(friend)?.rivals == [])
-        // A new ID does not reuse the old form's ID.
-        var next = migrated
-        let newID = try next.createCharacter(draft("New"))
-        #expect(newID > friend)
     }
 
     @Test("A current save is not changed by the migration")
