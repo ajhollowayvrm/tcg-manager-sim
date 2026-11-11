@@ -91,4 +91,13 @@ extension RandomNumberGenerator {
         precondition(!items.isEmpty, "pick(_:) needs a non-empty array")
         return items[int(0, items.count - 1)]
     }
+
+    /// Fisher-Yates, with one draw for each element after the first. The order is
+    /// pinned here, not left to the standard library, so a save stays the same.
+    public mutating func shuffle<T>(_ items: inout [T]) {
+        guard items.count > 1 else { return }
+        for i in stride(from: items.count - 1, to: 0, by: -1) {
+            items.swapAt(i, int(0, i))
+        }
+    }
 }

@@ -31,10 +31,20 @@ struct StudioView: View {
                         } label: {
                             LabeledContent("Rarity ladders", value: "\(world.catalog.ladderPresets.count)")
                         }
+                        NavigationLink {
+                            PackPresetsView()
+                        } label: {
+                            LabeledContent("Pack presets", value: "\(world.catalog.packPresets.count)")
+                        }
+                        NavigationLink {
+                            ErasView()
+                        } label: {
+                            LabeledContent("Eras", value: world.catalog.currentEra.name)
+                        }
                     } header: {
                         Text("Cards")
                     } footer: {
-                        Text("A new set copies a rarity ladder. Each tier sets the look of its cards: the frame, the layout, the foil, the texture, the stamp, and the extra cost for each copy.")
+                        Text("A new set copies a rarity ladder and a pack. Each tier sets the look of its cards. The pack sets the pull rates: the slots, and the odds in each slot.")
                     }
                 }
 

@@ -70,6 +70,12 @@ extension World {
                 rarity: tiers[7].id, featured: [noctra]
             ))
             try world.createCard(in: set, CardDraft(name: "Ember, First Flame", characterID: ember, rarity: tiers[2].id))
+            if let current = world.catalog.set(set) {
+                var details = SetDetails(from: current)
+                details.symbol = SetSymbol(shape: .bolt, color: .sunflower)
+                details.headliner = Headliner(characterID: mascot, formID: pipkit?.forms.first?.id)
+                try world.updateSet(set, details)
+            }
         } catch {
             preconditionFailure("The sample world must build: \(error)")
         }

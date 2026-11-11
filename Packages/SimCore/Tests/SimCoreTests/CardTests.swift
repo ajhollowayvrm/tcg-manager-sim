@@ -93,6 +93,32 @@ struct CardTests {
         #expect(world == before)
     }
 
+    @Test("A change to a saved card can add cards at more rarities, all or nothing (C18)")
+    func updateCardAddsRarities() throws {
+        var (world, set, aryla, _) = try setup()
+        let rare = try tier(world, set, 2)
+        let sir = try tier(world, set, 7)
+        let id = try world.createCard(in: set, CardDraft(name: "Aryla", characterID: aryla, rarity: rare))
+        let shift = try #require(world.catalog.card(id)?.cardShift)
+
+        let before = world
+        let bad = CardDraft(name: "Aryla, Renamed", characterID: aryla, rarity: 999)
+        #expect(throws: CardError.unknownTier(999)) {
+            try world.updateCard(id, CardDraft(name: "Aryla, Renamed", characterID: aryla, rarity: rare), adding: [bad])
+        }
+        #expect(world == before)
+
+        let added = try world.updateCard(
+            id, CardDraft(name: "Aryla, Renamed", characterID: aryla, rarity: rare),
+            adding: [CardDraft(name: "Aryla, Renamed", characterID: aryla, rarity: sir)]
+        )
+        #expect(added.count == 1)
+        #expect(world.catalog.card(id)?.cardShift == shift)
+        #expect(world.catalog.card(id)?.name == "Aryla, Renamed")
+        #expect(world.catalog.card(added[0])?.rarity == sir)
+        #expect(world.catalog.cards(in: set).count == 2)
+    }
+
     @Test("Card appeal: the subject, plus featured IP, plus the card's own shift (R22, R24)")
     func cardAppeal() throws {
         var (world, set, aryla, ember) = try setup()

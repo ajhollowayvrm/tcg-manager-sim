@@ -123,13 +123,28 @@ final class GameStore {
     // MARK: - Card designer decisions (cards.md)
 
     /// Returns the new set's ID, or an error message.
-    func createSet(name: String, theme: ThemeID?, presetID: LadderID) -> Result<SetID, StoreError> {
-        applyCard { world throws(CardError) in try world.createSet(name: name, theme: theme, presetID: presetID) }
+    func createSet(_ type: SetType, _ details: SetDetails, presetID: LadderID, packID: PackID) -> Result<SetID, StoreError> {
+        applyCard { world throws(CardError) in try world.createSet(type, details, presetID: presetID, packID: packID) }
     }
 
+    /// Returns the ID of the first set of the pair, or an error message.
+    func createParallelPair(_ first: SetDetails, _ second: SetDetails, presetID: LadderID, packID: PackID) -> Result<SetID, StoreError> {
+        applyCard { world throws(CardError) in try world.createParallelPair(first, second, presetID: presetID, packID: packID).0 }
+    }
+
+    /// Changes the set's details and type together, or changes nothing.
     @discardableResult
-    func updateSet(_ id: SetID, name: String, theme: ThemeID?) -> String? {
-        applyCard { world throws(CardError) in try world.updateSet(id, name: name, theme: theme) }.message
+    func updateSet(_ id: SetID, _ details: SetDetails, type: SetType) -> String? {
+        applyCard { world throws(CardError) in
+            try world.updateSetType(id, type)
+            try world.updateSet(id, details)
+        }.message
+    }
+
+    /// Makes all filler cards and generated characters of a set again (S5).
+    @discardableResult
+    func rerollFiller(_ id: SetID) -> String? {
+        applyCard { world throws(CardError) in try world.rerollFiller(id) }.message
     }
 
     @discardableResult
@@ -149,8 +164,8 @@ final class GameStore {
     }
 
     @discardableResult
-    func updateCard(_ id: CardID, _ draft: CardDraft) -> String? {
-        applyCard { world throws(CardError) in try world.updateCard(id, draft) }.message
+    func updateCard(_ id: CardID, _ draft: CardDraft, adding extra: [CardDraft] = []) -> String? {
+        applyCard { world throws(CardError) in try world.updateCard(id, draft, adding: extra) }.message
     }
 
     func deleteCard(_ id: CardID) {
@@ -168,6 +183,56 @@ final class GameStore {
 
     func deletePreset(_ id: LadderID) {
         report(applyCard { world throws(CardError) in try world.deletePreset(id) }.message)
+    }
+
+    // MARK: - Eras, subsets, and art sets (sets.md, section 6)
+
+    @discardableResult
+    func startEra(name: String, gimmick: Gimmick?) -> String? {
+        applyCard { world throws(CardError) in try world.startEra(name: name, gimmick: gimmick) }.message
+    }
+
+    @discardableResult
+    func updateEra(_ id: EraID, name: String, gimmick: Gimmick?) -> String? {
+        applyCard { world throws(CardError) in try world.updateEra(id, name: name, gimmick: gimmick) }.message
+    }
+
+    @discardableResult
+    func saveSubset(_ setID: SetID, _ subset: Subset, cards: [CardID]) -> String? {
+        applyCard { world throws(CardError) in try world.saveSubset(setID, subset, cards: cards) }.message
+    }
+
+    func deleteSubset(_ setID: SetID, _ id: SubsetID) {
+        report(applyCard { world throws(CardError) in try world.deleteSubset(setID, id) }.message)
+    }
+
+    @discardableResult
+    func saveArtSet(_ setID: SetID, _ artSet: ArtSet) -> String? {
+        applyCard { world throws(CardError) in try world.saveArtSet(setID, artSet) }.message
+    }
+
+    func deleteArtSet(_ setID: SetID, _ id: ArtSetID) {
+        report(applyCard { world throws(CardError) in try world.deleteArtSet(setID, id) }.message)
+    }
+
+    // MARK: - Packs (sets.md, section 5)
+
+    func createPackPreset(copying id: PackID, name: String) -> Result<PackID, StoreError> {
+        applyCard { world throws(CardError) in try world.createPackPreset(copying: id, name: name) }
+    }
+
+    @discardableResult
+    func updatePackPreset(_ pack: PackLayout) -> String? {
+        applyCard { world throws(CardError) in try world.updatePackPreset(pack) }.message
+    }
+
+    func deletePackPreset(_ id: PackID) {
+        report(applyCard { world throws(CardError) in try world.deletePackPreset(id) }.message)
+    }
+
+    @discardableResult
+    func updateSetPack(_ id: SetID, _ pack: PackLayout) -> String? {
+        applyCard { world throws(CardError) in try world.updateSetPack(id, pack) }.message
     }
 
     /// Creates a form from the card designer's "New design" (R26). Returns the form's ID, or an error message.

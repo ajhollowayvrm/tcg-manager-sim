@@ -13,7 +13,11 @@ struct ThemePickerRow: View {
         } label: {
             LabeledContent("Theme") {
                 if let theme = selection.flatMap({ store.world?.catalog.theme($0) }) {
-                    Label(theme.name, systemImage: theme.symbol)
+                    HStack(spacing: 6) {
+                        Image(systemName: theme.symbol)
+                        Text(theme.name)
+                    }
+                    .fixedSize()
                 } else {
                     Text("None")
                 }

@@ -3,7 +3,8 @@ import SimCore
 
 /// The card designer (cards.md, section 7.3). Five steps, one screen each,
 /// with the live card at the top. The same view adds a card and changes a card.
-/// A new card can take more than one rarity. Each rarity adds a separate card (D1).
+/// The player can pick more than one rarity. Each rarity is a separate card (D1, C18).
+/// When the designer changes a saved card, each extra rarity adds a new card.
 struct CardDesignerView: View {
     @Environment(GameStore.self) private var store
     let setID: SetID
@@ -34,10 +35,10 @@ struct CardDesignerView: View {
     @State private var previewVersion: VersionKey = .base
     /// The card's own version that the version editor shows.
     @State private var editingOwnVersion: VersionID?
-    /// New cards only: the picked tiers, from the most common to the rarest.
-    /// Each tier adds a separate card (D1). `draft.rarity` is the tier on show.
+    /// The picked tiers, from the most common to the rarest. Each tier is a
+    /// separate card (D1, C18). `draft.rarity` is the tier on show.
     @State private var rarities: [TierID]
-    /// New cards only: the version choices of each picked tier that is not on show.
+    /// The version choices of each picked tier that is not on show.
     @State private var stashedVersions: [TierID: TierVersions] = [:]
 
     /// The version choices of one card: the tier versions it turns off, and its own versions.
@@ -52,25 +53,31 @@ struct CardDesignerView: View {
         self.onDone = onDone
         _draft = State(initialValue: initial)
         _rarities = State(initialValue: initial.rarity.map { [$0] } ?? [])
+        savedRarity = cardID == nil ? nil : initial.rarity
     }
+
+    /// When the designer changes a saved card: the card's rarity before the change.
+    private let savedRarity: TierID?
 
     private var step: Step { Step.allCases[stepIndex] }
     private var isLastStep: Bool { stepIndex == Step.allCases.count - 1 }
-    /// A new card can take more than one rarity. A saved card has one rarity.
     private var isNew: Bool { cardID == nil }
 
     private var canAdvance: Bool {
         switch step {
         case .subject: draft.characterID != nil
         case .name: !draft.trimmedName.isEmpty
-        case .rarity: isNew ? !rarities.isEmpty : draft.rarity != nil
+        case .rarity: !rarities.isEmpty
         default: true
         }
     }
 
     private var confirmLabel: String {
-        if !isNew { return "Save the card" }
-        return rarities.count > 1 ? "Add \(rarities.count) cards" : "Add the card"
+        if isNew {
+            return rarities.count > 1 ? "Add \(rarities.count) cards" : "Add the card"
+        }
+        let added = rarities.count - 1
+        return added > 0 ? "Save and add \(added) \(added == 1 ? "card" : "cards")" : "Save the card"
     }
 
     var body: some View {
@@ -83,7 +90,8 @@ struct CardDesignerView: View {
 
     private func content(_ world: World, _ set: CardSet) -> some View {
         VStack(spacing: 0) {
-            CardView(face: CardFace(world: world, draft: draft, ladder: set.ladder, version: previewVersion), animated: true)
+            CardView(face: CardFace(world: world, draft: draft, ladder: set.ladder, version: previewVersion,
+                                    gimmick: draft.gimmick ? world.catalog.gimmick(of: setID) : nil), animated: true)
                 .frame(height: 220)
                 .padding(.top, 8)
                 .animation(.snappy, value: draft)
@@ -162,17 +170,21 @@ struct CardDesignerView: View {
             error = nil
             return
         }
+        let drafts = rarityDrafts()
         if let cardID {
-            error = store.updateCard(cardID, draft)
+            // The saved card keeps its rarity if it is still picked. If not, it
+            // takes the most common picked tier. Each other tier adds a new card.
+            let kept = drafts.first { $0.rarity == savedRarity } ?? drafts[0]
+            error = store.updateCard(cardID, kept, adding: drafts.filter { $0.rarity != kept.rarity })
         } else {
-            error = store.createCards(in: setID, newCardDrafts())
+            error = store.createCards(in: setID, drafts)
         }
         if error == nil { onDone() }
     }
 
     /// One draft for each picked tier. The subject, name, and art are the same.
     /// The versions belong to each tier.
-    private func newCardDrafts() -> [CardDraft] {
+    private func rarityDrafts() -> [CardDraft] {
         var all = stashedVersions
         if let shown = draft.rarity {
             all[shown] = TierVersions(excluded: draft.excludedVersions, own: draft.ownVersions)
@@ -201,7 +213,7 @@ struct CardDesignerView: View {
         previewVersion = .base
     }
 
-    /// New cards only: adds a tier to the picked tiers, or removes it.
+    /// Adds a tier to the picked tiers, or removes it.
     private func toggle(_ tier: RarityTier, in ladder: RarityLadder) {
         if let index = rarities.firstIndex(of: tier.id) {
             rarities.remove(at: index)
@@ -367,6 +379,17 @@ struct CardDesignerView: View {
             Text("Card names use the format \"Character, Title\". For example: Aryla, Destined Trainee.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
+            if let gimmick = world.catalog.gimmick(of: setID) {
+                Toggle(isOn: $draft.gimmick) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Carries the gimmick: \(gimmick.name)")
+                        Text("The card name gets the era's gimmick, for example \"Aryla \(gimmick.name)\".")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .accessibilityLabel("Carries the gimmick")
+            }
             if let id = draft.characterID, let character = world.character(id), !draft.name.contains(",") {
                 Button {
                     draft.name = "\(character.name), "
@@ -383,27 +406,15 @@ struct CardDesignerView: View {
             Text("The rarity gives the card its natural value and its look. The list goes from the most common to the rarest. Edit the looks in the set's rarity ladder.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
-            if isNew {
-                Text(rarities.count > 1
-                     ? "\(rarities.count) rarities picked. This adds \(rarities.count) separate cards with the same subject, name, and art."
-                     : "Pick one or more rarities. Each rarity adds a separate card, for example one character at Rare, Ultra Rare, and SIR.")
-                    .font(.subheadline.weight(.semibold))
-            }
+            Text(raritySummary)
+                .font(.subheadline.weight(.semibold))
             ForEach(Array(ladder.tiers.enumerated()), id: \.element.id) { index, tier in
-                let selected = isNew ? rarities.contains(tier.id) : draft.rarity == tier.id
+                let selected = rarities.contains(tier.id)
                 choiceRow(
                     selected: selected,
                     label: "Rarity \(tier.name)"
                 ) {
-                    if isNew {
-                        toggle(tier, in: ladder)
-                    } else {
-                        if draft.rarity != tier.id {
-                            draft.excludedVersions = []
-                            previewVersion = .base
-                        }
-                        draft.rarity = tier.id
-                    }
+                    toggle(tier, in: ladder)
                 } content: {
                     Text("\(index + 1)").font(.caption.monospacedDigit()).foregroundStyle(.secondary).frame(width: 20)
                     HStack(spacing: 4) {
@@ -422,19 +433,30 @@ struct CardDesignerView: View {
                     if tier.costPerCopy > 0 {
                         Text("+\(tier.costPerCopy.dollars)").font(.subheadline).foregroundStyle(.secondary)
                     }
-                    if isNew {
-                        Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                            .foregroundStyle(selected ? Theme.accent : .secondary)
-                    }
+                    Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(selected ? Theme.accent : .secondary)
                 }
             }
         }
     }
 
-    /// New cards with more than one rarity: picks the card whose versions the step shows.
+    /// The line above the tiers: what the picked tiers will do.
+    private var raritySummary: String {
+        let count = rarities.count
+        if isNew {
+            return count > 1
+                ? "\(count) rarities picked. This adds \(count) separate cards with the same subject, name, and art."
+                : "Pick one or more rarities. Each rarity adds a separate card, for example one character at Rare, Ultra Rare, and SIR."
+        }
+        return count > 1
+            ? "This card keeps one rarity. The other \(count - 1) \(count == 2 ? "rarity adds a new card" : "rarities add new cards") with the same subject, name, and art."
+            : "Pick more rarities to add new cards with the same subject, name, and art."
+    }
+
+    /// More than one picked tier: picks the card whose versions the step shows.
     @ViewBuilder
     private func rarityPicker(_ ladder: RarityLadder) -> some View {
-        if isNew, rarities.count > 1 {
+        if rarities.count > 1 {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Each rarity is a separate card with its own versions. Pick a card:")
                     .font(.footnote)
@@ -539,12 +561,12 @@ struct CardDesignerView: View {
                 .disabled(draft.ownVersions.count >= CardVersion.ownLimit)
             }
             .sheet(isPresented: Binding(get: { editingOwnVersion != nil }, set: { if !$0 { editingOwnVersion = nil } })) {
-                if let id = editingOwnVersion, let index = draft.ownVersions.firstIndex(where: { $0.id == id }) {
+                if let id = editingOwnVersion, let version = draft.ownVersions.first(where: { $0.id == id }) {
                     NavigationStack {
-                        VersionEditor(version: $draft.ownVersions[index], tier: tier) {
-                            draft.ownVersions.removeAll { $0.id == id }
-                            if previewVersion == .own(id) { previewVersion = .base }
+                        VersionEditor(version: $draft.ownVersions.version(id, fallback: version), tier: tier) {
                             editingOwnVersion = nil
+                            if previewVersion == .own(id) { previewVersion = .base }
+                            draft.ownVersions.removeAll { $0.id == id }
                         }
                         .toolbar {
                             ToolbarItem(placement: .confirmationAction) {
@@ -569,7 +591,10 @@ struct CardDesignerView: View {
             previewVersion = key
         } content: {
             VersionRow(version: version, tier: tier, face: store.world.flatMap { world in
-                draft.setLadder(world, setID).map { CardFace(world: world, draft: draft, ladder: $0, version: key) }
+                draft.setLadder(world, setID).map {
+                    CardFace(world: world, draft: draft, ladder: $0, version: key,
+                             gimmick: draft.gimmick ? world.catalog.gimmick(of: setID) : nil)
+                }
             })
             Spacer()
             if let detail {

@@ -7,8 +7,9 @@ struct VersionEditor: View {
     @Binding var version: CardVersion
     /// The tier that the version belongs to. It gives the preview its rarity corner and color.
     let tier: RarityTier?
-    /// Shows a remove button when set.
+    /// Shows a remove button when set. The editor closes before it calls this.
     var onRemove: (() -> Void)?
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         Form {
@@ -43,12 +44,31 @@ struct VersionEditor: View {
             PrintCostSection(look: version.look, frame: version.frameStyle)
             if let onRemove {
                 Section {
-                    Button("Remove this version", role: .destructive, action: onRemove)
+                    Button("Remove this version", role: .destructive) {
+                        dismiss()
+                        onRemove()
+                    }
                 }
             }
         }
         .navigationTitle(version.name.isEmpty ? "Version" : version.name)
         .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+extension Binding where Value == [CardVersion] {
+    /// A binding to one version, found by its ID. When the version is removed,
+    /// the binding reads `fallback` and ignores writes. An index binding would
+    /// crash while the editor of a removed version closes.
+    func version(_ id: VersionID, fallback: CardVersion) -> Binding<CardVersion> {
+        Binding<CardVersion>(
+            get: { wrappedValue.first { $0.id == id } ?? fallback },
+            set: { newValue in
+                if let index = wrappedValue.firstIndex(where: { $0.id == id }) {
+                    wrappedValue[index] = newValue
+                }
+            }
+        )
     }
 }
 

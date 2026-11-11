@@ -13,8 +13,12 @@ public struct World: Codable, Sendable, Equatable {
     /// Version 4: the theme library (C13).
     /// Version 5: tier frame styles (C14).
     /// Version 6: each tier sets the card look and cost. No treatment list (C15).
-    /// Version 7: printed versions on tiers and cards (C16). See World+Migration.swift.
-    public static let currentVersion = 7
+    /// Version 7: printed versions on tiers and cards (C16).
+    /// Version 8: set type, code, symbol, size, pair, and headliner (sets.md).
+    /// Version 9: filler shares, filler cards, and generated characters on sets (S4).
+    /// Version 10: pack presets and each set's own pack (S2, S6).
+    /// Version 11: eras, secret tiers, subsets, and art sets (S7, S10, S11, S14). See World+Migration.swift.
+    public static let currentVersion = 11
 
     /// Affection lost per audience for a full redesign (change = 1).
     public static let redesignCost = 20.0
@@ -66,9 +70,15 @@ public struct World: Codable, Sendable, Equatable {
 
     // MARK: - Reads
 
+    /// A roster character, or a generated character that waits on a draft set's
+    /// filler cards (sets.md, section 4.3).
     public func character(_ id: CharacterID) -> Character? {
-        characters.first { $0.id == id }
+        characters.first { $0.id == id } ?? catalog.sets.lazy.flatMap(\.generated).first { $0.id == id }
     }
+
+    /// The generated characters of all draft sets. They join the roster when
+    /// their set is printed (print system, not built yet).
+    var pendingCharacters: [Character] { catalog.sets.flatMap(\.generated) }
 
     func index(of id: CharacterID) -> Int? {
         characters.firstIndex { $0.id == id }
@@ -222,29 +232,43 @@ public struct World: Codable, Sendable, Equatable {
     public mutating func generateCharacters(count: Int) throws(RosterError) -> [CharacterID] {
         var ids: [CharacterID] = []
         for _ in 0..<count {
-            let primary = generatorRng.pick(ElementType.allCases)
-            var secondary: ElementType?
-            if generatorRng.chance(0.25) {
-                secondary = generatorRng.pick(ElementType.allCases.filter { $0 != primary })
-            }
-            let role = Self.weightedPick(Self.generatedRoleWeights, using: &generatorRng)
-            let archetype = generatorRng.pick(Archetype.allCases)
-            var palette: [PaletteColor] = []
-            let colorCount = generatorRng.int(2, 3)
-            while palette.count < colorCount {
-                let color = generatorRng.pick(PaletteColor.allCases)
-                if !palette.contains(color) { palette.append(color) }
-            }
-            let body = BodyParts.random(using: &generatorRng)
-            let taken = Set(characters.map { $0.name.lowercased() })
-            let name = NameGenerator.uniqueName(for: primary, taken: taken, using: &generatorRng)
-            let draft = CharacterDraft(
-                name: name, role: role, primaryType: primary, secondaryType: secondary,
-                archetype: archetype, palette: palette, body: body
-            )
-            ids.append(try add(draft, origin: .generated))
+            ids.append(try add(generatedDraft(kind: .creature, taken: takenNames()), origin: .generated))
         }
         return ids
+    }
+
+    /// A random feel, look, and name for a generated character (R13, R17).
+    mutating func generatedDraft(kind: CharacterKind, taken: Set<String>) -> CharacterDraft {
+        let primary = generatorRng.pick(ElementType.allCases)
+        var secondary: ElementType?
+        if generatorRng.chance(0.25) {
+            secondary = generatorRng.pick(ElementType.allCases.filter { $0 != primary })
+        }
+        let role = Self.weightedPick(kind == .person ? Self.generatedPersonRoleWeights : Self.generatedRoleWeights, using: &generatorRng)
+        let archetype = generatorRng.pick(Archetype.allCases)
+        var palette: [PaletteColor] = []
+        let colorCount = generatorRng.int(2, 3)
+        while palette.count < colorCount {
+            let color = generatorRng.pick(PaletteColor.allCases)
+            if !palette.contains(color) { palette.append(color) }
+        }
+        let body = BodyParts.random(using: &generatorRng)
+        let person = kind == .person ? PersonParts.random(using: &generatorRng) : PersonParts()
+        let name = NameGenerator.uniqueName(for: primary, kind: kind, taken: taken, using: &generatorRng)
+        return CharacterDraft(
+            name: name, role: role, primaryType: primary, secondaryType: secondary,
+            archetype: archetype, palette: palette, kind: kind, body: body, person: person
+        )
+    }
+
+    /// The lowercased names of all characters and forms, in the roster and on draft sets.
+    func takenNames() -> Set<String> {
+        var names: Set<String> = []
+        for c in characters + pendingCharacters {
+            names.insert(c.name.lowercased())
+            for f in c.forms { names.insert(f.name.lowercased()) }
+        }
+        return names
     }
 
     /// One week passes (D9). Buzz, fatigue and awareness fade.
@@ -262,6 +286,10 @@ public struct World: Codable, Sendable, Equatable {
     }
 
     // MARK: - Internals
+
+    static let generatedPersonRoleWeights: [(Role, Double)] = [
+        (.trainer, 0.55), (.rival, 0.2), (.villain, 0.15), (.companion, 0.1),
+    ]
 
     static let generatedRoleWeights: [(Role, Double)] = [
         (.companion, 0.65), (.trainer, 0.12), (.rival, 0.10),
@@ -299,7 +327,15 @@ public struct World: Codable, Sendable, Equatable {
         var d = draft
         d.name = d.trimmedName
         try validate(d, editing: nil)
+        characters.append(makeCharacter(d, origin: origin))
+        let id = characters[characters.count - 1].id
+        applyLinks(id, counterpart: d.counterpart, rivals: d.rivals, companions: d.companions)
+        return id
+    }
 
+    /// A new character with its hidden appeal. It does not join the roster and
+    /// has no links. The draft must be valid.
+    mutating func makeCharacter(_ d: CharacterDraft, origin: Character.Origin) -> Character {
         let spark = appealRng.gauss() * 12
         var random = AudienceValues()
         for audience in Audience.allCases where !audience.isDerived {
@@ -314,7 +350,7 @@ public struct World: Codable, Sendable, Equatable {
 
         let id = nextID
         nextID += 1
-        characters.append(Character(
+        return Character(
             id: id,
             name: d.name,
             origin: origin,
@@ -338,9 +374,7 @@ public struct World: Codable, Sendable, Equatable {
             fatigue: 0,
             knowledge: knowledge,
             readingSeed: readingSeed
-        ))
-        applyLinks(id, counterpart: d.counterpart, rivals: d.rivals, companions: d.companions)
-        return id
+        )
     }
 
     /// Sets the symmetric links for one character and repairs the other side.
@@ -396,7 +430,7 @@ public struct World: Codable, Sendable, Equatable {
         if name.isEmpty { throw .emptyName }
         if name.count > CharacterDraft.nameLimit { throw .nameTooLong }
         let key = name.lowercased()
-        for c in characters {
+        for c in characters + pendingCharacters {
             if c.id != editingCharacter, c.name.lowercased() == key { throw .duplicateName(name) }
             for f in c.forms where f.id != editingForm && f.name.lowercased() == key {
                 throw .duplicateName(name)

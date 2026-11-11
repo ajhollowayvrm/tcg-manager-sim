@@ -58,7 +58,12 @@ struct LadderEditorView: View {
             } header: {
                 Text("Tiers, from the most common to the rarest")
             } footer: {
-                Text("\(footer) A ladder has \(RarityLadder.tierRange.lowerBound) to \(RarityLadder.tierRange.upperBound) tiers. Tap Edit to reorder or remove tiers. Pull rates arrive with the pack design (C9).")
+                let shares = ladder.tiers.reduce(0) { $0 + $1.fillerShare }
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Filler shares: \(shares)%" + (shares == 100 ? "." : ". They must add up to 100%."))
+                        .foregroundStyle(shares == 100 ? Color.secondary : Color.red)
+                    Text("\(footer) A ladder has \(RarityLadder.tierRange.lowerBound) to \(RarityLadder.tierRange.upperBound) tiers. Tap Edit to reorder or remove tiers. Pull rates arrive with the pack design (C9).")
+                }
             }
             if let error {
                 Text(error).foregroundStyle(.red)
@@ -98,7 +103,9 @@ private struct TierRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(tier.name)
                 Text(tier.look.summary + (tier.costPerCopy > 0 ? " · +\(tier.costPerCopy.dollars)" : "")
-                     + (tier.versions.isEmpty ? "" : " · also " + tier.versions.map(\.name).joined(separator: ", ")))
+                     + (tier.versions.isEmpty ? "" : " · also " + tier.versions.map(\.name).joined(separator: ", "))
+                     + (tier.fillerShare > 0 ? " · filler \(tier.fillerShare)%" : "")
+                     + (tier.secret ? " · secret" : ""))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -120,6 +127,27 @@ private struct TierEditor: View {
             }
             Section("Name") {
                 TextField("Tier name", text: $tier.name)
+            }
+            Section {
+                Stepper(value: $tier.fillerShare, in: 0...100) {
+                    LabeledContent("Filler share", value: "\(tier.fillerShare)%")
+                }
+                .accessibilityLabel("Filler share")
+                .accessibilityValue("\(tier.fillerShare)%")
+                Slider(
+                    value: Binding(get: { Double(tier.fillerShare) }, set: { tier.fillerShare = Int($0.rounded()) }),
+                    in: 0...100
+                )
+                .accessibilityLabel("Filler share slider")
+            } header: {
+                Text("Filler")
+            } footer: {
+                Text("The share of the set's filler cards at this tier. The game makes the filler cards. The shares of all tiers must add up to 100%. A tier with 0% has only the cards that you design.")
+            }
+            Section {
+                Toggle("Secret", isOn: $tier.secret)
+            } footer: {
+                Text("A secret tier's cards number above the printed set total, for example 205/191. The set looks smaller than it is, and collectors chase the master set.")
             }
             Section {
                 TextField("Code", text: $tier.code)
@@ -165,9 +193,9 @@ private struct TierEditor: View {
             }
             PrintCostSection(look: tier.look, frame: tier.frameStyle)
             Section {
-                ForEach($tier.versions) { $version in
+                ForEach(tier.versions) { version in
                     NavigationLink {
-                        VersionEditor(version: $version, tier: tier) {
+                        VersionEditor(version: $tier.versions.version(version.id, fallback: version), tier: tier) {
                             tier.versions.removeAll { $0.id == version.id }
                         }
                     } label: {

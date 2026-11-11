@@ -447,3 +447,128 @@ AJ's words: "When creating a card in a set, I should be able to select multiple 
 - Each card has its own hidden shift (R24) and its own versions (C16). The Versions step has a rarity switcher. For example, only the SIR card gets the alt art.
 - The game adds all the cards or no card. If one card is not valid, the game adds none.
 - A saved card has one rarity. When the player changes a saved card, the Rarity step picks one tier.
+
+### C19. A change to a saved card can add more rarities. This changes C18
+
+AJ's words: "I still want to be able to select multiple rarities for a single created card." AJ chose "Separate cards, edit adds" over "One card, many rarities".
+
+- Each rarity stays a separate card (C18).
+- When the player changes a saved card, the Rarity step lets the player pick more tiers. Each extra tier adds a new card with the same subject, name, and art.
+- The saved card keeps its rarity while that tier stays picked. If the player removes it, the card moves to the most common picked tier.
+- The game saves the change and the new cards together, or saves nothing.
+
+## 2026-11-10: set configuration
+
+### S1. Design all four parts of the set configuration
+
+AJ picked all four parts for the first set design:
+
+- **Size and filler:** the total card count, and the generated filler cards (R6, R13, R17).
+- **Packs and pull rates:** the pack, its slots, and the pull rate of each tier (C9).
+- **Set type and headliner:** main set, mini set, or a parallel pair (D2). The set code and symbol. The headliner (R7, R18).
+- **Gimmick and chase:** the era gimmick and art sets (D3). A special rarity that matches a character's feel (D2).
+
+The design is in `docs/design/sets.md`.
+
+### S2. Pull rates use pack slots
+
+AJ chose "Pack slots" over "Odds per tier".
+
+- The player builds a pack from slots. Each slot draws from one or more tiers, at odds that the player sets.
+- A pack has a fixed number of cards. A rarer chase card takes odds from another tier in the same slot.
+- This is how the player customizes the pull rates (C9).
+
+### S3. The player picks the total card count
+
+AJ chose "You pick the total".
+
+- The player picks the total card count of a set.
+- The game fills the cards after the player's designed cards with generated filler cards.
+- A larger set makes each single card rarer in packs.
+
+## 2026-11-10: set draft (answers to its open questions)
+
+### S4. Filler cards use a share for each tier
+
+AJ chose "Share per tier" over a switch with a fixed ratio.
+
+- Each tier has a filler share, for example Common 50%, Uncommon 33%, Rare 17%. A tier with 0% gets no filler cards.
+- The shares add up to 100%.
+
+### S5. The player can reroll all filler cards
+
+AJ chose "Reroll all".
+
+- While the set is a draft, one button makes all filler cards again, with new generated characters.
+- The player cannot reroll a single filler card.
+
+### S6. Pack presets are a separate list
+
+AJ chose "Separate pack presets" over a pack inside the ladder preset.
+
+- The studio keeps a list of pack presets, next to the ladder presets.
+- The player picks a ladder preset and a pack preset for each set.
+- A pack outcome that points to a tier that is not in the set's ladder needs a fix.
+
+### S7. An era is its own object
+
+AJ chose "Era is its own object" over "an era is the run of sets with the same gimmick".
+
+- An era has a name, a start, an end, and its gimmick.
+- The player starts and ends an era on purpose.
+
+### S8. No size limits, but the size affects how the market accepts the set
+
+AJ's words: "No limits but it affects the acceptance and popularity of the set."
+
+- Every set type allows any size. The type does not set a size range.
+- The size changes the acceptance and the popularity of the set. **Interpretation, for AJ to confirm:** each audience has a hidden preferred size. A set far from it loses appeal with that audience.
+
+### S9. The halves of a parallel pair compete and lift each other
+
+AJ chose "Both".
+
+- Collectors want both halves, so each half lifts the other with collectors.
+- Other buyers split their money between the halves, so a strong half can take sales from a weak half.
+- Each audience reacts in its own way.
+
+### S10. Any designed cards can form an art set now
+
+AJ chose "Any cards now".
+
+- Any 2 to 5 designed cards in the same set can form an art set.
+- Later, when IP items link to each other (R20), a linked group gives more chase demand.
+
+### S11. Secret rares and subsets: both
+
+AJ picked both numbering features.
+
+- **Secret rares:** a tier can be secret. Its cards number above the set total, for example "205/191".
+- **Subsets:** a set can have sub-collections with their own name and numbers, for example "TG01/TG30".
+
+## 2026-11-10: set third draft (answers to its interpretations)
+
+### S12. Confirmations
+
+AJ confirmed three interpretations with "Yes":
+
+- The filler share is part of the ladder, so a ladder preset keeps it.
+- Each audience has a hidden preferred set size. A set far from it loses appeal with that audience.
+- The player edits a pack preset against one ladder preset.
+
+### S13. The first era is usually "Base", and an early gimmick is weak
+
+AJ's words: "The first is usually Base but it can be anything. You can try a gimmick early but it won't do much and might hurt the set."
+
+- A new save starts with a first era. Its default name is "Base". The player can give it any name.
+- The player can give the first era a gimmick. An early gimmick gives little lift, and it can hurt the set.
+- **Interpretation, for AJ to confirm:** a gimmick's lift grows with the company's popularity. With low popularity, the lift is small, and some audiences can dislike it.
+- One era runs at a time, and a new set joins the current era. AJ did not change these parts.
+
+### S14. A subset can have its own pack outcome
+
+AJ's words: "A subset can show up at a slot if you mark that similar to Trainer Gallery and Galarian Gallery."
+
+- A subset has a switch: "Own pack outcome".
+- When the switch is on, a slot can have the subset as an outcome, for example "Trainer Gallery: 10%" in a reverse holo slot.
+- When the switch is off, the subset's cards are drawn through their tiers.

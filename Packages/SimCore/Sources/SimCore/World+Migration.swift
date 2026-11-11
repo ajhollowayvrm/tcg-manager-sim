@@ -18,6 +18,10 @@ extension World {
         if version < 5 { try addFrameStyles(&world) }
         if version < 6 { try moveLooksToTiers(&world) }
         if version < 7 { try addVersions(&world) }
+        if version < 8 { try addSetIdentity(&world) }
+        if version < 9 { try addFiller(&world) }
+        if version < 10 { try addPacks(&world) }
+        if version < 11 { try addEras(&world) }
     }
 
     /// Version 1 to 2 (R23). In version 1, a form was a separate character
@@ -136,6 +140,120 @@ extension World {
         }
         world["catalog"] = catalog
         world["version"] = 7
+    }
+
+    /// Version 7 to 8 (sets.md, section 3): each set gets a type, a code, a symbol,
+    /// a size, no pair, and no headliner.
+    /// - Every old set becomes a main set with the standard symbol.
+    /// - The code comes from the set's name, and it is unique.
+    /// - The size is the suggested main size, or the set's card count when that is larger.
+    static func addSetIdentity(_ world: inout [String: Any]) throws {
+        guard var catalog = world["catalog"] as? [String: Any] else { throw MigrationError.notAWorld }
+        let cards = catalog["cards"] as? [[String: Any]] ?? []
+        var taken: Set<String> = []
+        let symbol = try jsonObject(SetSymbol.standard)
+        catalog["sets"] = (catalog["sets"] as? [[String: Any]] ?? []).map { set in
+            var s = set
+            let id = set["id"] as? Int
+            let count = cards.filter { ($0["setID"] as? Int) == id }.count
+            let code = CardSet.suggestCode(for: set["name"] as? String ?? "", taken: taken)
+            taken.insert(code)
+            if s["type"] == nil { s["type"] = SetType.main.rawValue }
+            if s["code"] == nil { s["code"] = code }
+            if s["symbol"] == nil { s["symbol"] = symbol }
+            if s["size"] == nil {
+                s["size"] = min(CardSet.sizeRange.upperBound, max(SetType.main.suggestedSize, count))
+            }
+            return s
+        }
+        world["catalog"] = catalog
+        world["version"] = 8
+    }
+
+    /// Version 8 to 9 (S4, sets.md section 4): filler cards.
+    /// - Each ladder gets filler shares by tier order: 50, 33, and 17 for the three
+    ///   most common tiers, or 60 and 40 for a ladder of two tiers. The other tiers get 0.
+    /// - Each card is a designed card. Each set has no generated characters.
+    /// - An old set has no filler cards. The set screen offers "Make the filler cards".
+    static func addFiller(_ world: inout [String: Any]) throws {
+        guard var catalog = world["catalog"] as? [String: Any] else { throw MigrationError.notAWorld }
+        func shared(_ ladder: [String: Any]) -> [String: Any] {
+            var copy = ladder
+            let tiers = ladder["tiers"] as? [[String: Any]] ?? []
+            let shares = tiers.count == 2 ? [60, 40] : [50, 33, 17]
+            copy["tiers"] = tiers.enumerated().map { index, tier in
+                var t = tier
+                if t["fillerShare"] == nil { t["fillerShare"] = index < shares.count ? shares[index] : 0 }
+                return t
+            }
+            return copy
+        }
+        let defaultLadder = try jsonObject(RarityLadder.defaultLadder(id: Catalog.defaultLadderID))
+        catalog["ladderPresets"] = (catalog["ladderPresets"] as? [[String: Any]] ?? []).map { preset in
+            (preset["id"] as? Int) == Catalog.defaultLadderID ? defaultLadder : shared(preset)
+        }
+        catalog["sets"] = (catalog["sets"] as? [[String: Any]] ?? []).map { set in
+            var s = set
+            if let ladder = set["ladder"] as? [String: Any] { s["ladder"] = shared(ladder) }
+            if s["generated"] == nil { s["generated"] = [Any]() }
+            return s
+        }
+        catalog["cards"] = (catalog["cards"] as? [[String: Any]] ?? []).map { card in
+            var c = card
+            if c["filler"] == nil { c["filler"] = false }
+            return c
+        }
+        world["catalog"] = catalog
+        world["version"] = 9
+    }
+
+    /// Version 9 to 10 (S2, S6): packs. The studio gets the default pack preset.
+    /// Each set gets a copy of it, with its tiers matched to the set's ladder by ID,
+    /// then by the default ladder's tier names.
+    static func addPacks(_ world: inout [String: Any]) throws {
+        guard var catalog = world["catalog"] as? [String: Any] else { throw MigrationError.notAWorld }
+        let pack = PackLayout.defaultPack(id: Catalog.defaultPackID)
+        let source = RarityLadder.defaultLadder(id: Catalog.defaultLadderID)
+        if catalog["packPresets"] == nil { catalog["packPresets"] = [try jsonObject(pack)] }
+        catalog["sets"] = try (catalog["sets"] as? [[String: Any]] ?? []).map { set in
+            var s = set
+            if s["pack"] == nil, let ladderJSON = set["ladder"] {
+                let ladder = try JSONDecoder().decode(
+                    RarityLadder.self, from: JSONSerialization.data(withJSONObject: ladderJSON)
+                )
+                s["pack"] = try jsonObject(pack.resolved(against: ladder, source: source))
+            }
+            return s
+        }
+        world["catalog"] = catalog
+        world["version"] = 10
+    }
+
+    /// Version 10 to 11 (S7, S10, S11, S13, S14): eras, secret tiers, subsets, and art sets.
+    /// - The studio gets the first era, "Base", with no gimmick. Every set joins it.
+    /// - Each tier in a set or in a player's preset is not secret, so card numbers do not
+    ///   jump. The locked default preset becomes the current default ladder.
+    /// - Each set has no subsets and no art sets. Each card has no gimmick and no subset.
+    static func addEras(_ world: inout [String: Any]) throws {
+        try updateLadders(&world) { tier in
+            if tier["secret"] == nil { tier["secret"] = false }
+        }
+        guard var catalog = world["catalog"] as? [String: Any] else { throw MigrationError.notAWorld }
+        if catalog["eras"] == nil { catalog["eras"] = [try jsonObject(Era.first)] }
+        catalog["sets"] = (catalog["sets"] as? [[String: Any]] ?? []).map { set in
+            var s = set
+            if s["eraID"] == nil { s["eraID"] = Era.first.id }
+            if s["subsets"] == nil { s["subsets"] = [Any]() }
+            if s["artSets"] == nil { s["artSets"] = [Any]() }
+            return s
+        }
+        catalog["cards"] = (catalog["cards"] as? [[String: Any]] ?? []).map { card in
+            var c = card
+            if c["gimmick"] == nil { c["gimmick"] = false }
+            return c
+        }
+        world["catalog"] = catalog
+        world["version"] = 11
     }
 
     /// Changes every tier of every ladder: the presets and each set's own copy.

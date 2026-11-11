@@ -15,16 +15,24 @@ struct CardFace {
     var featured: [Character]
     /// The name on a signature stamp.
     var signer: String
+    /// The era's gimmick, when the card carries it (S7).
+    var gimmick: Gimmick? = nil
+    /// The printed number, for example "019/018" or "TG04/TG30" (S11).
+    var number: String? = nil
 
     /// The face of a saved card, in one of its versions (C16).
-    init?(world: World, card: Card, version: VersionKey = .base) {
-        guard let ladder = card.setID.flatMap({ world.catalog.set($0)?.ladder }) else { return nil }
-        self.init(world: world, draft: CardDraft(from: card), ladder: ladder, version: version)
+    /// - Parameter numbers: the set's card numbers. Pass them when you draw many cards of one set.
+    init?(world: World, card: Card, version: VersionKey = .base, numbers: [CardID: String]? = nil) {
+        guard let setID = card.setID, let ladder = world.catalog.set(setID)?.ladder else { return nil }
+        let gimmick = card.gimmick ? world.catalog.gimmick(of: setID) : nil
+        self.init(world: world, draft: CardDraft(from: card), ladder: ladder, version: version, gimmick: gimmick)
+        number = (numbers ?? world.catalog.cardNumbers(in: setID))[card.id]
     }
 
     /// The live face in the card designer, in one of its versions (C16).
-    init(world: World, draft: CardDraft, ladder: RarityLadder, version: VersionKey = .base) {
+    init(world: World, draft: CardDraft, ladder: RarityLadder, version: VersionKey = .base, gimmick: Gimmick? = nil) {
         name = draft.trimmedName.isEmpty ? "Unnamed card" : draft.trimmedName
+        self.gimmick = gimmick
         tier = draft.rarity.flatMap(ladder.tier)
         let shown = tier?.versions(excluding: [], own: draft.ownVersions).first { $0.key == version }?.version ?? tier?.baseVersion
         look = shown?.look ?? .plain
@@ -193,7 +201,7 @@ struct CardView: View {
     // MARK: Parts
 
     private func nameBar(_ w: CGFloat) -> some View {
-        Text(face.name)
+        nameText(w)
             .font(.system(size: w * 0.07, weight: .bold, design: .rounded))
             .lineLimit(1)
             .minimumScaleFactor(0.5)
@@ -202,6 +210,16 @@ struct CardView: View {
             .padding(.vertical, w * 0.02)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(.white.opacity(0.88), in: RoundedRectangle(cornerRadius: w * 0.03))
+    }
+
+    /// The card name. A gimmick shows as a colored word after the character part:
+    /// "Aryla ex, Destined Trainee" (S7).
+    private func nameText(_ w: CGFloat) -> Text {
+        guard let gimmick = face.gimmick else { return Text(face.name) }
+        let parts = face.name.components(separatedBy: ", ")
+        let head = parts.first ?? face.name
+        let tail = parts.count > 1 ? ", " + parts.dropFirst().joined(separator: ", ") : ""
+        return Text(head + " ") + Text(gimmick.name).foregroundColor(gimmick.color.color).italic() + Text(tail)
     }
 
     private func artWindow(_ w: CGFloat, cornerRadius: CGFloat) -> some View {
@@ -304,6 +322,11 @@ struct CardView: View {
                     .padding(.vertical, w * 0.008)
                     .background(.black.opacity(0.75), in: Capsule())
                     .foregroundStyle(PaletteColor.gold.color)
+            } else if let number = face.number {
+                Text(number)
+                    .font(.system(size: w * 0.045, weight: .bold, design: .monospaced))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
             }
             Spacer(minLength: 0)
             if let tier = face.tier {

@@ -210,7 +210,7 @@ One step per screen, with a live card at the top, like the character creator:
 
 1. **Subject:** pick a character. Then pick the base form, a saved form, or "New design". "New design" opens the character creator in form mode. The game saves the result as a form (R26).
 2. **Name:** the title. The designer suggests "Aryla" and lets the player add ", Destined Trainee".
-3. **Rarity:** the tiers of the set's ladder, from common to rarest. A new card can take more than one tier (C18). Each picked tier adds a separate card with the same subject, name, and art. The Versions step has a switcher, so each card gets its own versions.
+3. **Rarity:** the tiers of the set's ladder, from common to rarest. A new card can take more than one tier (C18). Each picked tier adds a separate card with the same subject, name, and art. The Versions step has a switcher, so each card gets its own versions. When the designer changes a saved card, each extra tier adds a new card (C19).
 4. **Art:** the artist (see question 2), and up to 2 characters as featured IP.
 
 The same designer, opened from a card, changes the card while the set is a draft.

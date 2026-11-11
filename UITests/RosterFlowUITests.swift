@@ -107,6 +107,8 @@ final class RosterFlowUITests: XCTestCase {
         XCTAssertTrue(setName.waitForExistence(timeout: 5))
         setName.tap()
         setName.typeText("Base Set")
+        // The code follows the name until the player changes it (sets.md, section 3.1).
+        XCTAssertEqual(app.textFields["Set code"].value as? String, "BSE")
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Theme'")).firstMatch.tap()
         XCTAssertTrue(app.buttons["Theme Fire"].waitForExistence(timeout: 5))
         shot(app, "17a-theme-library")
@@ -144,6 +146,16 @@ final class RosterFlowUITests: XCTestCase {
         app.buttons["Add an alt art"].tap()
         XCTAssertTrue(app.buttons["Version Alt art"].waitForExistence(timeout: 5))
         shot(app, "21-designer-versions")
+        // Removing a version closes its editor, and the designer keeps working.
+        app.buttons["Add a version"].tap()
+        app.buttons["Edit Special 2"].tap()
+        XCTAssertTrue(app.navigationBars["Special 2"].waitForExistence(timeout: 5))
+        // The form loads its rows when they scroll into view.
+        let remove = app.buttons["Remove this version"]
+        for _ in 0..<5 where !(remove.exists && remove.isHittable) { app.swipeUp() }
+        remove.tap()
+        XCTAssertTrue(app.buttons["Version Alt art"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Version Special 2"].exists)
         app.buttons["Versions for Rare"].tap()
         XCTAssertTrue(app.buttons["Version Reverse holo"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["Version Alt art"].exists)
@@ -156,7 +168,99 @@ final class RosterFlowUITests: XCTestCase {
         XCTAssertTrue(cards.firstMatch.waitForExistence(timeout: 5))
         XCTAssertEqual(cards.count, 2)
         XCTAssertTrue(app.staticTexts["2 versions"].exists)
+
+        // Change the saved Rare card: one more rarity adds one more card (C18).
+        cards.firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["Change the card"].waitForExistence(timeout: 5))
+        app.buttons["Next"].tap()
+        app.buttons["Next"].tap()
+        app.buttons["Rarity Ultra Rare"].tap()
+        app.buttons["Next"].tap()
+        app.buttons["Next"].tap()
+        app.buttons["Save and add 1 card"].tap()
+        XCTAssertTrue(app.buttons["Add a card"].waitForExistence(timeout: 5))
+        XCTAssertEqual(cards.count, 3)
         shot(app, "23-set-with-card")
+
+        // Set details: the type, the size, and the headliner (sets.md, section 3).
+        app.buttons["Set options"].tap()
+        app.buttons["Edit the set details"].tap()
+        XCTAssertTrue(app.navigationBars["Set details"].waitForExistence(timeout: 5))
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Headliner'")).firstMatch.tap()
+        let maraHeadliner = app.buttons["Headliner Mara"]
+        XCTAssertTrue(maraHeadliner.waitForExistence(timeout: 5))
+        maraHeadliner.tap()
+        XCTAssertTrue(app.buttons["Save"].waitForExistence(timeout: 5))
+        shot(app, "23a-set-details")
+        app.buttons["Save"].tap()
+        XCTAssertTrue(app.staticTexts["Headliner: Mara"].waitForExistence(timeout: 5))
+        shot(app, "23b-set-headliner")
+
+        // Art set: designed cards whose art connects (S10).
+        let addArtSet = app.buttons["Add an art set"]
+        for _ in 0..<6 where !(addArtSet.exists && addArtSet.isHittable) { app.swipeUp() }
+        addArtSet.tap()
+        let artSetName = app.textFields["Art set name"]
+        XCTAssertTrue(artSetName.waitForExistence(timeout: 5))
+        artSetName.tap()
+        artSetName.typeText("Mara line")
+        let artCards = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Art set card'"))
+        artCards.element(boundBy: 0).tap()
+        artCards.element(boundBy: 1).tap()
+        shot(app, "23f-art-set-editor")
+        app.buttons["Save"].tap()
+        XCTAssertTrue(app.buttons["Art set Mara line"].waitForExistence(timeout: 5))
+
+        // Subset: its own numbers and its own pack outcome (S11, S14).
+        let addSubset = app.buttons["Add a subset"]
+        for _ in 0..<6 where !(addSubset.exists && addSubset.isHittable) { app.swipeUp() }
+        addSubset.tap()
+        let subsetName = app.textFields["Subset name"]
+        XCTAssertTrue(subsetName.waitForExistence(timeout: 5))
+        subsetName.tap()
+        subsetName.typeText("Trainer Gallery")
+        let prefixField = app.textFields["Subset prefix"]
+        prefixField.tap()
+        prefixField.typeText("tg")
+        let ownOutcome = app.switches["Own pack outcome"]
+        ownOutcome.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Subset card'")).element(boundBy: 2).tap()
+        app.buttons["Save"].tap()
+        let gallery = app.buttons["Subset Trainer Gallery"]
+        XCTAssertTrue(gallery.waitForExistence(timeout: 5))
+        for _ in 0..<3 where !gallery.isHittable { app.swipeUp() }
+        shot(app, "23g-art-set-and-subset")
+        app.swipeDown()
+        app.swipeDown()
+        app.swipeDown()
+
+        // Pack: the slots and the live pull rates (sets.md, section 5).
+        app.buttons["Set options"].tap()
+        app.buttons["Edit the pack"].tap()
+        XCTAssertTrue(app.buttons["Slot 4"].waitForExistence(timeout: 5))
+        shot(app, "23d-pack")
+        app.swipeUp()
+        app.swipeUp()
+        shot(app, "23d2-pull-rates")
+        app.swipeDown()
+        app.swipeDown()
+        app.buttons["Slot 4"].tap()
+        XCTAssertTrue(app.navigationBars["Slot 4"].waitForExistence(timeout: 5))
+        shot(app, "23e-slot")
+        app.navigationBars.buttons.firstMatch.tap()
+        app.buttons["Cancel"].tap()
+
+        // Filler: the game fills the set, and the player can reroll it (sets.md, section 4).
+        let reroll = app.buttons["Reroll the filler"]
+        for _ in 0..<6 where !(reroll.exists && reroll.isHittable) { app.swipeUp() }
+        XCTAssertTrue(reroll.isHittable)
+        XCTAssertTrue(app.staticTexts["Filler cards"].exists)
+        shot(app, "23c-set-filler")
+        reroll.tap()
+        app.buttons["Reroll"].tap()
+        XCTAssertTrue(reroll.waitForExistence(timeout: 5))
+        app.swipeDown()
+        app.swipeDown()
 
         // The set's ladder: each tier sets the look of its cards.
         app.buttons["Set options"].tap()
@@ -180,6 +284,24 @@ final class RosterFlowUITests: XCTestCase {
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Rarity ladders'")).firstMatch.tap()
         XCTAssertTrue(app.navigationBars["Rarity ladders"].waitForExistence(timeout: 5))
         shot(app, "26-ladder-presets")
+        app.navigationBars.buttons.firstMatch.tap()
+
+        // Eras: start a new era with a gimmick (S7, S13).
+        let eras = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Eras'")).firstMatch
+        XCTAssertTrue(eras.waitForExistence(timeout: 5))
+        eras.tap()
+        XCTAssertTrue(app.buttons["Era Base"].waitForExistence(timeout: 5))
+        app.buttons["Start a new era"].tap()
+        let eraName = app.textFields["Era name"]
+        XCTAssertTrue(eraName.waitForExistence(timeout: 5))
+        eraName.tap()
+        eraName.typeText("Ember Age")
+        app.switches["Gimmick"].coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        XCTAssertTrue(app.textFields["Gimmick name"].waitForExistence(timeout: 5))
+        shot(app, "27-new-era")
+        app.buttons["Save"].tap()
+        XCTAssertTrue(app.buttons["Era Ember Age"].waitForExistence(timeout: 5))
+        shot(app, "28-eras")
     }
 
     @MainActor

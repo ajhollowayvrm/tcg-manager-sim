@@ -17,9 +17,26 @@ struct SetsView: View {
         NavigationStack(path: $path) {
             Group {
                 if let world = store.world, !world.catalog.sets.isEmpty {
-                    List(world.catalog.sets.reversed()) { set in
-                        NavigationLink(value: SetRoute(id: set.id)) {
-                            SetRow(set: set, theme: set.theme.flatMap(world.catalog.theme), count: world.catalog.cards(in: set.id).count)
+                    List {
+                        // The sets grouped by era, the newest era first (S7).
+                        ForEach(world.catalog.eras.reversed()) { era in
+                            let sets = world.catalog.sets.filter { $0.eraID == era.id }.reversed()
+                            if !sets.isEmpty {
+                                Section {
+                                    ForEach(Array(sets)) { set in
+                                        NavigationLink(value: SetRoute(id: set.id)) {
+                                            SetRow(set: set, theme: set.theme.flatMap(world.catalog.theme), count: world.catalog.cards(in: set.id).count)
+                                        }
+                                    }
+                                } header: {
+                                    HStack(spacing: 6) {
+                                        Text(era.name)
+                                        if let gimmick = era.gimmick {
+                                            Text(gimmick.name).italic().foregroundStyle(gimmick.color.color)
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 } else {
@@ -67,13 +84,13 @@ private struct SetRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: theme?.symbol ?? "rectangle.stack.fill")
-                .font(.title2)
-                .foregroundStyle(theme?.tint ?? Theme.accent)
-                .frame(width: 36)
+            SetSymbolView(symbol: set.symbol, size: 36)
             VStack(alignment: .leading, spacing: 2) {
-                Text(set.name).font(.headline)
-                Text([theme?.name, "\(count) \(count == 1 ? "card" : "cards")", "draft"].compactMap { $0 }.joined(separator: " · "))
+                HStack(spacing: 6) {
+                    Text(set.name).font(.headline)
+                    Text(set.code).font(.caption.weight(.bold).monospaced()).foregroundStyle(.secondary)
+                }
+                Text([set.type.name, theme?.name, "\(count) of \(set.size) cards", "draft"].compactMap { $0 }.joined(separator: " · "))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -82,27 +99,58 @@ private struct SetRow: View {
     }
 }
 
-/// A new set: a name, a theme, and a ladder preset (C4, C10).
+/// A new set: the type, the name, code, and symbol, the theme, the size, and a
+/// ladder preset (sets.md, section 7.1). A parallel pair asks for two names,
+/// codes, symbols, and sizes.
 struct NewSetForm: View {
     @Environment(GameStore.self) private var store
     let onCreated: (SetID) -> Void
     let onCancel: () -> Void
 
-    @State private var name = ""
+    @State private var type = SetType.main
+    @State private var first = SetDetails(name: "", code: "", symbol: .standard, size: SetType.main.suggestedSize)
+    @State private var second = SetDetails(name: "", code: "", symbol: SetSymbol(shape: .moon, color: .indigo), size: SetType.parallel.suggestedSize)
     @State private var theme: ThemeID?
     @State private var presetID = Catalog.defaultLadderID
+    @State private var packID = Catalog.defaultPackID
+    @State private var sizeEdited = false
     @State private var error: String?
 
     var body: some View {
         Form {
-            Section("Name") {
-                TextField("Set name", text: $name)
-                    .textInputAutocapitalization(.words)
+            Section {
+                Picker("Type", selection: $type) {
+                    ForEach(SetType.allCases) { Text($0 == .parallel ? "Parallel pair" : $0.name).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: type) { _, newType in
+                    guard !sizeEdited else { return }
+                    first.size = newType.suggestedSize
+                    second.size = newType.suggestedSize
+                }
+            } footer: {
+                Text(typeHint)
+            }
+            if type == .parallel {
+                Section("First set") {
+                    SetNameFields(details: $first, otherCodes: [second.code], namePrompt: "First set name")
+                }
+                Section("Second set") {
+                    SetNameFields(details: $second, otherCodes: [first.code], namePrompt: "Second set name")
+                }
+            } else {
+                Section("Name") {
+                    SetNameFields(details: $first)
+                }
             }
             Section {
                 ThemePickerRow(selection: $theme)
             } footer: {
-                Text("The theme is the shape of the set, for example Feudalism or Castles. Later, the market will reward a theme that is in fashion.")
+                Text("The theme is the shape of the set, for example Feudalism or Castles. It also sets the mix of kinds in the filler cards. Later, the market will reward a theme that is in fashion.")
+            }
+            SetSizeSection(size: sizeBinding($first), title: type == .parallel ? "First set size" : "Size")
+            if type == .parallel {
+                SetSizeSection(size: sizeBinding($second), title: "Second set size")
             }
             Section {
                 Picker("Rarity ladder", selection: $presetID) {
@@ -113,14 +161,19 @@ struct NewSetForm: View {
                 if let preset = store.world?.catalog.preset(presetID) {
                     TierStrip(tiers: preset.tiers)
                 }
+                Picker("Pack", selection: $packID) {
+                    ForEach(store.world?.catalog.packPresets ?? []) { pack in
+                        Text(pack.name).tag(pack.id)
+                    }
+                }
             } footer: {
-                Text("The set keeps its own copy of the ladder. A later change to the preset does not change this set. Edit the presets in Studio.")
+                Text("The set keeps its own copy of the ladder and the pack. A later change to a preset does not change this set. Edit the presets in Studio.")
             }
             if let error {
                 Text(error).foregroundStyle(.red)
             }
         }
-        .navigationTitle("New set")
+        .navigationTitle(type == .parallel ? "New parallel pair" : "New set")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
@@ -128,13 +181,32 @@ struct NewSetForm: View {
             }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Create") {
-                    switch store.createSet(name: name, theme: theme, presetID: presetID) {
+                    var a = first
+                    var b = second
+                    a.theme = theme
+                    b.theme = theme
+                    let result = type == .parallel
+                        ? store.createParallelPair(a, b, presetID: presetID, packID: packID)
+                        : store.createSet(type, a, presetID: presetID, packID: packID)
+                    switch result {
                     case .success(let id): onCreated(id)
                     case .failure(let failure): error = failure.message
                     }
                 }
             }
         }
+    }
+
+    private var typeHint: String {
+        switch type {
+        case .main: "A full expansion. The game adds 10 to 20 new generated characters on its filler cards."
+        case .mini: "A small special set. The game adds 3 to 8 new generated characters."
+        case .parallel: "Two sets that release in the same week. Collectors want both. Other buyers split their money between them."
+        }
+    }
+
+    private func sizeBinding(_ details: Binding<SetDetails>) -> Binding<Int> {
+        Binding(get: { details.wrappedValue.size }, set: { details.wrappedValue.size = $0; sizeEdited = true })
     }
 }
 

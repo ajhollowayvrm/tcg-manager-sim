@@ -4,6 +4,8 @@
 // and form IDs come from the world. Card, set, and ladder IDs come
 // from the catalog.
 
+import Foundation
+
 public typealias SetID = Int
 public typealias CardID = Int
 public typealias LadderID = Int
@@ -50,6 +52,12 @@ public struct RarityTier: Codable, Sendable, Equatable, Hashable, Identifiable {
     /// Extra printed versions of every card at this tier, for example a reverse holo (C16).
     /// A card can turn one off. The tier's own look is the base version.
     public var versions: [CardVersion]
+    /// The share of a set's filler cards at this tier, 0 to 100 (S4). The shares
+    /// of a ladder add up to 100. Reader: the filler (sets.md, section 4.2).
+    public var fillerShare: Int
+    /// A secret tier's cards number above the printed set total, for example "205/191" (S11).
+    /// Reader: card numbers. Set completion appeal (market, not built yet).
+    public var secret: Bool
 
     public init(
         id: TierID,
@@ -59,7 +67,9 @@ public struct RarityTier: Codable, Sendable, Equatable, Hashable, Identifiable {
         color: PaletteColor,
         frameStyle: FrameStyle = .solid,
         look: CardLook = .plain,
-        versions: [CardVersion] = []
+        versions: [CardVersion] = [],
+        fillerShare: Int = 0,
+        secret: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -69,6 +79,8 @@ public struct RarityTier: Codable, Sendable, Equatable, Hashable, Identifiable {
         self.frameStyle = frameStyle
         self.look = look
         self.versions = versions
+        self.fillerShare = fillerShare
+        self.secret = secret
     }
 
     /// The tier's own look as a version. Every card at the tier has it.
@@ -121,9 +133,9 @@ public struct RarityLadder: Codable, Sendable, Equatable, Identifiable {
     /// The default preset: a modern ladder with nine tiers (cards.md, section 4.2).
     public static func defaultLadder(id: LadderID) -> RarityLadder {
         RarityLadder(id: id, name: "Modern (default)", tiers: [
-            RarityTier(id: 1, name: "Common", code: "C", symbol: .circle, color: .slate, versions: [.reverseHolo]),
-            RarityTier(id: 2, name: "Uncommon", code: "U", symbol: .diamond, color: .forest, versions: [.reverseHolo]),
-            RarityTier(id: 3, name: "Rare", code: "R", symbol: .star, color: .ocean, versions: [.reverseHolo]),
+            RarityTier(id: 1, name: "Common", code: "C", symbol: .circle, color: .slate, versions: [.reverseHolo], fillerShare: 50),
+            RarityTier(id: 2, name: "Uncommon", code: "U", symbol: .diamond, color: .forest, versions: [.reverseHolo], fillerShare: 33),
+            RarityTier(id: 3, name: "Rare", code: "R", symbol: .star, color: .ocean, versions: [.reverseHolo], fillerShare: 17),
             RarityTier(id: 4, name: "Holo Rare", code: "HR", symbol: .star, color: .indigo,
                        look: CardLook(foil: .holo), versions: [.reverseHolo]),
             RarityTier(id: 5, name: "Double Rare", code: "RR", symbol: .doubleStar, color: .crimson,
@@ -131,11 +143,11 @@ public struct RarityLadder: Codable, Sendable, Equatable, Identifiable {
             RarityTier(id: 6, name: "Ultra Rare", code: "UR", symbol: .doubleStar, color: .violet, frameStyle: .silver,
                        look: CardLook(layout: .fullArt, foil: .holo, textured: true)),
             RarityTier(id: 7, name: "Illustration Rare", code: "IR", symbol: .sparkle, color: .teal,
-                       look: CardLook(layout: .borderless, foil: .holo)),
+                       look: CardLook(layout: .borderless, foil: .holo), secret: true),
             RarityTier(id: 8, name: "Special Illustration Rare", code: "SIR", symbol: .crown, color: .rose, frameStyle: .rainbow,
-                       look: CardLook(layout: .frameBreak, foil: .holo, textured: true)),
+                       look: CardLook(layout: .frameBreak, foil: .holo, textured: true), secret: true),
             RarityTier(id: 9, name: "Gold", code: "G", symbol: .crown, color: .gold, frameStyle: .gold,
-                       look: CardLook(layout: .fullArt, foil: .gold, textured: true)),
+                       look: CardLook(layout: .fullArt, foil: .gold, textured: true), secret: true),
         ])
     }
 }
@@ -348,13 +360,41 @@ public struct CardSet: Codable, Sendable, Equatable, Identifiable {
     public let id: SetID
     /// FLAVOR.
     public internal(set) var name: String
+    /// Main, mini, or parallel (sets.md, section 3.2). Reader: the generator count
+    /// (not built yet), the products (print system, not built yet).
+    public internal(set) var type: SetType
+    /// FLAVOR. 2 to 4 capital letters, unique in the world.
+    public internal(set) var code: String
+    /// FLAVOR.
+    public internal(set) var symbol: SetSymbol
     /// The shape of the set (C13). Reader: set theme fit (market, not built yet).
     public internal(set) var theme: ThemeID?
+    /// The total card count: designed cards plus filler cards (S3, S8).
+    /// Reader: the filler count (not built yet), set acceptance (market, not built yet).
+    public internal(set) var size: Int
+    /// The other set of a parallel pair (D2, S9). Reader: the release (not built yet).
+    public internal(set) var pairID: SetID?
+    /// Optional while the set is a draft (R7, R18). Reader: set demand (market, not built yet).
+    public internal(set) var headliner: Headliner?
     /// The set's own copy of a ladder preset (C10).
     public internal(set) var ladder: RarityLadder
+    /// The set's own copy of a pack preset (S6, C10). Reader: the pull rates (sets.md, section 5).
+    public internal(set) var pack: PackLayout
+    /// The era that ran when the player created the set (S7, S13). The set uses its gimmick.
+    public internal(set) var eraID: EraID
+    /// Sub-collections with their own numbers, 0 to 3 (S11, S14).
+    public internal(set) var subsets: [Subset]
+    /// Groups of designed cards whose art connects (D3, S10).
+    public internal(set) var artSets: [ArtSet]
+    /// The new generated characters on this set's filler cards (R6, R13). They
+    /// join the roster when the set is printed (print system, not built yet).
+    public internal(set) var generated: [Character]
     /// Only a draft set can change. The print system adds more states.
     public internal(set) var status: Status
     public let createdWeek: Int
+
+    /// The count of filler cards that the game will make (sets.md, section 4).
+    public func fillerCount(designed: Int) -> Int { max(0, size - designed) }
 
     public static let nameLimit = 40
     /// D1: each set has 10 to 20 featured cards. The set screen shows the count against it.
@@ -366,6 +406,9 @@ public struct Card: Codable, Sendable, Equatable, Identifiable {
     public let id: CardID
     /// Optional, so that a standalone card is possible later (C6).
     public let setID: SetID?
+    /// True for a filler card that the game made (sets.md, section 4). The player
+    /// does not design or edit a filler card.
+    public let filler: Bool
     /// FLAVOR. "Character, Title" (R25).
     public internal(set) var name: String
     /// Reader: card appeal. The character's popularity is the base (R24).
@@ -383,6 +426,12 @@ public struct Card: Codable, Sendable, Equatable, Identifiable {
     /// Hidden. The card's own appeal shift for each audience (R24).
     public internal(set) var cardShift: AudienceValues
     public let createdWeek: Int
+    /// The card carries its era's gimmick, for example "Aryla ex" (S7). FLAVOR until the
+    /// market reads the gimmick's trend (M1).
+    public internal(set) var gimmick: Bool = false
+    /// The subset that the card belongs to, if any (S11). A designed card only.
+    /// Reader: card numbers, the subset's pack outcome (S14).
+    public internal(set) var subsetID: SubsetID? = nil
 
     public static let nameLimit = 40
     public static let featuredLimit = 2
@@ -397,6 +446,7 @@ public struct CardDraft: Sendable, Equatable {
     public var featured: [CharacterID]
     public var excludedVersions: [VersionID]
     public var ownVersions: [CardVersion]
+    public var gimmick: Bool
 
     public init(
         name: String = "",
@@ -405,8 +455,10 @@ public struct CardDraft: Sendable, Equatable {
         rarity: TierID? = nil,
         featured: [CharacterID] = [],
         excludedVersions: [VersionID] = [],
-        ownVersions: [CardVersion] = []
+        ownVersions: [CardVersion] = [],
+        gimmick: Bool = false
     ) {
+        self.gimmick = gimmick
         self.name = name
         self.characterID = characterID
         self.formID = formID
@@ -420,7 +472,8 @@ public struct CardDraft: Sendable, Equatable {
         self.init(
             name: card.name, characterID: card.characterID, formID: card.formID,
             rarity: card.rarity, featured: card.featured,
-            excludedVersions: card.excludedVersions, ownVersions: card.ownVersions
+            excludedVersions: card.excludedVersions, ownVersions: card.ownVersions,
+            gimmick: card.gimmick
         )
     }
 
@@ -441,6 +494,10 @@ public struct Catalog: Codable, Sendable, Equatable {
     public internal(set) var sets: [CardSet]
     public internal(set) var cards: [Card]
     public internal(set) var ladderPresets: [RarityLadder]
+    /// The pack presets (S6).
+    public internal(set) var packPresets: [PackLayout]
+    /// Every era, oldest first. The last era with no end is the current era (S7).
+    public internal(set) var eras: [Era]
     /// The theme library (C13).
     public internal(set) var themes: [SetTheme]
     var nextID: Int
@@ -449,6 +506,9 @@ public struct Catalog: Codable, Sendable, Equatable {
 
     /// The ID of the default ladder preset. The player cannot change or delete it.
     public static let defaultLadderID: LadderID = 1
+    /// The ID of the default pack preset. The player cannot change or delete it.
+    /// It shares the number 1 with the default ladder, because IDs are unique only in their own list.
+    public static let defaultPackID: PackID = 1
 
     /// - Parameters:
     ///   - seed: the card stream.
@@ -458,6 +518,8 @@ public struct Catalog: Codable, Sendable, Equatable {
         sets = []
         cards = []
         ladderPresets = [RarityLadder.defaultLadder(id: Self.defaultLadderID)]
+        packPresets = [PackLayout.defaultPack(id: Self.defaultPackID)]
+        eras = [Era.first]
         nextID = Self.defaultLadderID + 1
         rng = Xoshiro256(seed: seed)
     }
@@ -466,9 +528,16 @@ public struct Catalog: Codable, Sendable, Equatable {
     public func card(_ id: CardID) -> Card? { cards.first { $0.id == id } }
     public func preset(_ id: LadderID) -> RarityLadder? { ladderPresets.first { $0.id == id } }
     public func theme(_ id: ThemeID) -> SetTheme? { themes.first { $0.id == id } }
+    public func packPreset(_ id: PackID) -> PackLayout? { packPresets.first { $0.id == id } }
 
-    /// The cards of a set, in the order the player made them.
-    public func cards(in setID: SetID) -> [Card] { cards.filter { $0.setID == setID } }
+    /// All cards of a set: designed and filler.
+    public func allCards(in setID: SetID) -> [Card] { cards.filter { $0.setID == setID } }
+
+    /// The designed cards of a set, in the order the player made them.
+    public func cards(in setID: SetID) -> [Card] { cards.filter { $0.setID == setID && !$0.filler } }
+
+    /// The filler cards of a set (sets.md, section 4).
+    public func fillerCards(in setID: SetID) -> [Card] { cards.filter { $0.setID == setID && $0.filler } }
 
     mutating func takeID() -> Int {
         defer { nextID += 1 }
@@ -503,6 +572,36 @@ public enum CardError: Error, Equatable, Sendable {
     case emptyVersionName
     case duplicateVersionName(String)
     case tooManyVersions
+    case badSetCode
+    case duplicateSetCode(String)
+    case badSetSize
+    case sizeBelowCards(Int)
+    case setFull(Int)
+    case parallelNeedsPair
+    case parallelTypeFixed
+    case fillerShares(Int)
+    case fillerLocked
+    case emptyEraName
+    case badGimmickName
+    case unknownEra(EraID)
+    case unknownSubset(SubsetID)
+    case badSubsetPrefix
+    case duplicateSubset(String)
+    case tooManySubsets
+    case subsetCard
+    case artSetSize
+    case artSetCard
+    case cardInTwoArtSets(String)
+    case unknownPack(PackID)
+    case duplicatePackName(String)
+    case defaultPackLocked
+    case packCardCount
+    case badBoxSize
+    case emptySlot(Int)
+    case badOdds(Int)
+    case slotOddsSum(slot: Int, sum: Double)
+    case duplicateOutcome(Int)
+    case badFillerShare(String)
 
     public var message: String {
         switch self {
@@ -532,6 +631,36 @@ public enum CardError: Error, Equatable, Sendable {
         case .emptyVersionName: "Give every version a name."
         case .duplicateVersionName(let name): "Two versions are named \(name). Use different names."
         case .tooManyVersions: "A card can add \(CardVersion.ownLimit) versions of its own at most."
+        case .badSetCode: "Use \(CardSet.codeRange.lowerBound) to \(CardSet.codeRange.upperBound) letters for the set code."
+        case .duplicateSetCode(let code): "A set with the code \(code) already exists."
+        case .badSetSize: "A set has \(CardSet.sizeRange.lowerBound) to \(CardSet.sizeRange.upperBound) cards."
+        case .sizeBelowCards(let count): "The set already has \(count) designed cards. Make the size \(count) or more."
+        case .setFull(let size): "The set is full at \(size) cards. Make the set larger first."
+        case .parallelNeedsPair: "A parallel set is created as a pair."
+        case .parallelTypeFixed: "A parallel set stays parallel, and a set cannot become parallel later."
+        case .fillerShares(let sum): "The filler shares add up to \(sum)%. Make them add up to 100%."
+        case .unknownPack: "That pack does not exist."
+        case .duplicatePackName(let name): "A pack named \(name) already exists."
+        case .defaultPackLocked: "The default pack cannot change. Make a copy, then change the copy."
+        case .packCardCount: "A pack has \(PackLayout.cardRange.lowerBound) to \(PackLayout.cardRange.upperBound) cards."
+        case .badBoxSize: "A box has \(PackLayout.boxRange.lowerBound) to \(PackLayout.boxRange.upperBound) packs."
+        case .emptySlot(let slot): "Slot \(slot) has no outcome. Add one."
+        case .badOdds(let slot): "Slot \(slot) has odds below 0% or above 100%."
+        case .slotOddsSum(let slot, let sum): "The odds in slot \(slot) add up to \(sum.formatted(.number.precision(.fractionLength(0...2))))%. Make them add up to 100%."
+        case .duplicateOutcome(let slot): "Slot \(slot) has the same outcome twice. Merge them."
+        case .emptyEraName: "Give the era a name."
+        case .badGimmickName: "Use 1 to \(Gimmick.nameLimit) characters for the gimmick."
+        case .unknownEra: "That era does not exist."
+        case .unknownSubset: "That subset does not exist."
+        case .badSubsetPrefix: "Use 1 to \(Subset.prefixLimit) letters for the subset prefix."
+        case .duplicateSubset(let name): "A subset named or prefixed \(name) already exists in this set."
+        case .tooManySubsets: "A set can have \(Subset.limit) subsets at most."
+        case .subsetCard: "Only a designed card of this set can go into a subset."
+        case .artSetSize: "An art set has \(ArtSet.cardRange.lowerBound) to \(ArtSet.cardRange.upperBound) cards."
+        case .artSetCard: "Only designed cards of this set can form an art set."
+        case .cardInTwoArtSets(let name): "\(name) is already in another art set."
+        case .fillerLocked: "The game makes the filler cards. Reroll them on the set screen."
+        case .badFillerShare(let name): "Give \(name) a filler share from 0% to 100%."
         }
     }
 }
