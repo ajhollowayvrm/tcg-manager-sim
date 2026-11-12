@@ -49,6 +49,11 @@ public struct World: Codable, Sendable, Equatable {
     var appealRng: Xoshiro256
     /// Stream: the feel and the name of each generated character.
     var generatorRng: Xoshiro256
+    /// The market (audiences.md). Nil in a save from before the market. Read it
+    /// through `market`, which gives the start values then.
+    var marketState: Market?
+    /// Money and sales (sales.md). Nil in a save from before the selling engine.
+    var businessState: Business?
 
     public init(seed: UInt64, studioName: String) {
         version = Self.currentVersion
@@ -61,6 +66,8 @@ public struct World: Codable, Sendable, Equatable {
         characters = []
         catalog = Catalog(seed: Self.streamSeed(seed, stream: 4), themeSeed: Self.streamSeed(seed, stream: 5))
         nextID = 1
+        marketState = Market(seed: Self.streamSeed(seed, stream: 6))
+        businessState = .start(seed: Self.streamSeed(seed, stream: 8))
     }
 
     static func streamSeed(_ seed: UInt64, stream: UInt64) -> UInt64 {
@@ -271,9 +278,14 @@ public struct World: Codable, Sendable, Equatable {
         return names
     }
 
-    /// One week passes (D9). Buzz, fatigue and awareness fade.
-    /// Later systems (sets, the market, the hub) add their weekly work here.
+    /// One week passes (D9). Buzz, fatigue and awareness fade, the market moves
+    /// (audiences.md, section 8), and the released sets sell (sales.md).
     public mutating func advanceWeek() {
+        advanceWeek(noise: true)
+    }
+
+    /// The week step. The forecast runs it with no sales noise (sales.md, section 11).
+    mutating func advanceWeek(noise: Bool) {
         week += 1
         for i in characters.indices {
             let formBuzz = characters[i].forms.map(\.buzz).max() ?? 0
@@ -283,6 +295,8 @@ public struct World: Codable, Sendable, Equatable {
             characters[i].fatigue *= 0.93
             characters[i].awareness = characters[i].awareness.map { $0 * 0.998 }
         }
+        advanceMarket()
+        runSales(noise: noise)
     }
 
     // MARK: - Internals

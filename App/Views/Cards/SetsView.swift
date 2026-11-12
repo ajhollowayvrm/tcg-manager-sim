@@ -7,78 +7,8 @@ struct SetRoute: Hashable {
     let id: SetID
 }
 
-/// The Sets tab (cards.md, section 7.1).
-struct SetsView: View {
-    @Environment(GameStore.self) private var store
-    @State private var creating = false
-    @State private var path: [SetRoute] = []
-
-    var body: some View {
-        NavigationStack(path: $path) {
-            Group {
-                if let world = store.world, !world.catalog.sets.isEmpty {
-                    List {
-                        // The sets grouped by era, the newest era first (S7).
-                        ForEach(world.catalog.eras.reversed()) { era in
-                            let sets = world.catalog.sets.filter { $0.eraID == era.id }.reversed()
-                            if !sets.isEmpty {
-                                Section {
-                                    ForEach(Array(sets)) { set in
-                                        NavigationLink(value: SetRoute(id: set.id)) {
-                                            SetRow(set: set, theme: set.theme.flatMap(world.catalog.theme), count: world.catalog.cards(in: set.id).count,
-                                                   series: world.catalog.seriesNumber(of: set.id))
-                                        }
-                                    }
-                                } header: {
-                                    HStack(spacing: 6) {
-                                        Text(era.name)
-                                        if let gimmick = era.gimmick {
-                                            Text(gimmick.name).italic().foregroundStyle(gimmick.color.color)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    ContentUnavailableView {
-                        Label("No sets yet", systemImage: "rectangle.stack")
-                    } description: {
-                        Text("A set is a group of cards that release together. Create a set, then design its cards.")
-                    } actions: {
-                        Button("Create a set") { creating = true }
-                            .buttonStyle(.borderedProminent)
-                    }
-                }
-            }
-            .navigationTitle("Sets")
-            .navigationDestination(for: SetRoute.self) { route in
-                SetDetailView(setID: route.id)
-            }
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        creating = true
-                    } label: {
-                        Label("New set", systemImage: "plus")
-                    }
-                }
-            }
-            .sheet(isPresented: $creating) {
-                NavigationStack {
-                    NewSetForm { id in
-                        creating = false
-                        path.append(SetRoute(id: id))
-                    } onCancel: {
-                        creating = false
-                    }
-                }
-            }
-        }
-    }
-}
-
-private struct SetRow: View {
+/// One set in a list: its symbol, name, series number, code, type, and size.
+struct SetRow: View {
     let set: CardSet
     let theme: SetTheme?
     let count: Int
@@ -108,11 +38,14 @@ private struct SetRow: View {
 /// codes, symbols, and sizes.
 struct NewSetForm: View {
     @Environment(GameStore.self) private var store
+    /// The types that the sheet offers. An era screen offers the series types,
+    /// and the promo screen offers only the promo type (E9).
+    let types: [SetType]
     let onCreated: (SetID) -> Void
     let onCancel: () -> Void
 
-    @State private var type = SetType.main
-    @State private var first = SetDetails(name: "", code: "", symbol: .standard, size: SetType.main.suggestedSize)
+    @State private var type: SetType
+    @State private var first: SetDetails
     @State private var second = SetDetails(name: "", code: "", symbol: SetSymbol(shape: .moon, color: .indigo), size: SetType.parallel.suggestedSize)
     @State private var theme: ThemeID?
     @State private var presetID = Catalog.defaultLadderID
@@ -120,17 +53,28 @@ struct NewSetForm: View {
     @State private var sizeEdited = false
     @State private var error: String?
 
+    init(types: [SetType] = [.main, .mini, .parallel], onCreated: @escaping (SetID) -> Void, onCancel: @escaping () -> Void) {
+        self.types = types
+        self.onCreated = onCreated
+        self.onCancel = onCancel
+        let type = types.first ?? .main
+        _type = State(initialValue: type)
+        _first = State(initialValue: SetDetails(name: "", code: "", symbol: .standard, size: type.suggestedSize))
+    }
+
     var body: some View {
         Form {
             Section {
-                Picker("Type", selection: $type) {
-                    ForEach(SetType.allCases) { Text($0 == .parallel ? "Parallel pair" : $0.name).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .onChange(of: type) { _, newType in
-                    guard !sizeEdited else { return }
-                    first.size = newType.suggestedSize
-                    second.size = newType.suggestedSize
+                if types.count > 1 {
+                    Picker("Type", selection: $type) {
+                        ForEach(types) { Text($0 == .parallel ? "Parallel pair" : $0.name).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: type) { _, newType in
+                        guard !sizeEdited else { return }
+                        first.size = newType.suggestedSize
+                        second.size = newType.suggestedSize
+                    }
                 }
             } footer: {
                 Text(typeHint)
@@ -178,7 +122,7 @@ struct NewSetForm: View {
             }
         }
         .onAppear(perform: preselectEraPresets)
-        .navigationTitle(type == .parallel ? "New parallel pair" : "New set")
+        .navigationTitle(type == .parallel ? "New parallel pair" : type == .promo ? "New promo set" : "New set")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
@@ -213,7 +157,8 @@ struct NewSetForm: View {
     private var typeHint: String {
         switch type {
         case .main: "A full expansion. The game adds 10 to 20 new generated characters on its filler cards."
-        case .mini: "A small special set. The game adds 3 to 8 new generated characters."
+        case .mini: "A special set inside the era, like 151. It takes the number of the main set before it, plus .5. The game adds 3 to 8 new generated characters."
+        case .promo: "A small set outside the series numbers, like a McDonald's Collection. It takes the current era's look. Its filler cards reprint characters from your roster."
         case .parallel: "Two sets that release in the same week. Collectors want both. Other buyers split their money between them."
         }
     }
@@ -245,7 +190,3 @@ struct TierStrip: View {
     }
 }
 
-#Preview {
-    SetsView()
-        .environment(GameStore(preview: .sample()))
-}

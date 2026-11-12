@@ -355,7 +355,8 @@ extension RarityTier {
 
 /// A named group of cards that release together (C6).
 public struct CardSet: Codable, Sendable, Equatable, Identifiable {
-    public enum Status: String, Codable, Sendable { case draft }
+    /// Draft, then scheduled when the release is planned and paid, then released (B2).
+    public enum Status: String, Codable, Sendable { case draft, scheduled, released }
 
     public let id: SetID
     /// FLAVOR.
@@ -392,6 +393,8 @@ public struct CardSet: Codable, Sendable, Equatable, Identifiable {
     /// Only a draft set can change. The print system adds more states.
     public internal(set) var status: Status
     public let createdWeek: Int
+    /// The release plan and its stock (sales.md, section 2). Nil while the set is a draft.
+    public internal(set) var release: SetRelease? = nil
 
     /// The count of filler cards that the game will make (sets.md, section 4).
     public func fillerCount(designed: Int) -> Int { max(0, size - designed) }
@@ -587,6 +590,8 @@ public enum CardError: Error, Equatable, Sendable {
     case badEraCode
     case duplicateEraCode(String)
     case badHomeTier
+    case setLocked
+    case badRelease(String)
     case unknownSubset(SubsetID)
     case badSubsetPrefix
     case duplicateSubset(String)
@@ -657,6 +662,8 @@ public enum CardError: Error, Equatable, Sendable {
         case .badEraCode: "Use 2 or 3 letters for the era code."
         case .duplicateEraCode(let code): "Another era already uses the code \(code)."
         case .badHomeTier: "The home tier must be a tier of the era's ladder. Pick the home tier again."
+        case .setLocked: "This set is scheduled or released. It cannot change."
+        case .badRelease(let reason): reason
         case .unknownSubset: "That subset does not exist."
         case .badSubsetPrefix: "Use 1 to \(Subset.prefixLimit) letters for the subset prefix."
         case .duplicateSubset(let name): "A subset named or prefixed \(name) already exists in this set."

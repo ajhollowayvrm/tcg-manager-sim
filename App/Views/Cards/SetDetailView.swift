@@ -461,6 +461,7 @@ private struct SetDetailsForm: View {
                     Picker("Type", selection: $type) {
                         Text(SetType.main.name).tag(SetType.main)
                         Text(SetType.mini.name).tag(SetType.mini)
+                        Text(SetType.promo.name).tag(SetType.promo)
                     }
                     .pickerStyle(.segmented)
                 }

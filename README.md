@@ -14,6 +14,7 @@ AJ plays it alone, sideloaded with Xcode.
 - `docs/design/sets.md`: the set configuration design.
 - `docs/design/test-rip.md`: the test rip (pack opening) design.
 - `docs/design/eras.md`: the era designer design.
+- `docs/design/audiences.md`: the audience demand design (the market).
 
 ## Layout
 
@@ -43,7 +44,7 @@ The free Apple ID makes the app stop after 7 days.
 
 - When the app stops, **do not delete it**. Deleting the app deletes the save.
 - Connect the iPhone and press Run in Xcode again. The save stays.
-- Export the save often: Studio tab, then "Export the save". The Files app also shows the save in "On My iPhone > TCG Manager > Saves".
+- Export the save often: Settings tab, then "Export the save". The Files app also shows the save in "On My iPhone > TCG Manager > Saves".
 
 ## Tests
 

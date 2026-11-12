@@ -256,6 +256,14 @@ final class GameStore {
         report(apply { world throws(RosterError) in try world.generateCharacters(count: count) })
     }
 
+    /// Unlocks or locks one part of the market view. A developer tool until money exists (A5).
+    func setMarketInsight(_ insight: MarketInsight, on: Bool) {
+        guard var current = world else { return }
+        current.setMarketInsight(insight, on: on)
+        world = current
+        persist()
+    }
+
     func advanceWeek() {
         guard var current = world else { return }
         current.advanceWeek()

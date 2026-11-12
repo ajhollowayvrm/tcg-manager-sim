@@ -688,3 +688,167 @@ AJ chose "Later, separate" over "Now, same build" and "Not at all".
 AJ chose "One number + letter" over "Two numbers" and "One shared number".
 
 - Both halves of a parallel pair take one main number, with a letter in creation order: SV4a and SV4b.
+
+## 2026-11-11: app layout
+
+### U1. Two tabs: Studio and Settings. This changes the Sets tab in cards.md, section 7.1
+
+AJ's words: "I think Sets should live inside Studio and there should be another tab for settings. Roster should also be in Studio".
+
+- The app has two tabs: **Studio** and **Settings**.
+- The Studio tab is a hub with the roster, the sets, the eras, the rarity ladders, and the pack presets.
+- The Settings tab has the save (export and import), the developer tools, and "Start a new game".
+- The Studio tab keeps its place when the player goes to Settings and back.
+
+### E9. Sets work like Pokemon: special sets inside eras, promo sets outside the numbers
+
+AJ's words: "So Eras is bigger than sets. Pack presets and rarity ladders are more like the tools while Sets fold into Eras or are specialty ones". Asked what a specialty set is, AJ answered: "Do this exactly how Pokemon does it".
+
+The main thread followed Pokemon [from memory, not checked]:
+
+- **A special set** is inside its era, like 151 (SV3.5) or Hidden Fates (SM11.5). The "Mini set" type now shows as **"Special set"**. Its rules do not change: it takes the main number before it, plus .5.
+- **A promo set** is a new set type, like a McDonald's Collection or Trick or Trade. It has its own set code but **no series number**. It takes the look and the gimmick of the era that runs when the player creates it. Its filler cards reprint characters from the roster, with no new generated characters. Its suggested size is 15.
+
+### E10. Studio: eras hold their sets, and the ladders and packs are tools. This changes U1
+
+AJ chose "Era screens hold sets" over "One Eras list".
+
+- The Studio tab lists the eras, the current era first, with "Start a new era".
+- An era screen shows the era's code, weeks, name bar, and gimmick, an "Edit the era" button, and the era's sets in series order. Only the current era has "New set" (S13).
+- Promo sets have their own row in Studio.
+- The rarity ladders and the pack presets are in a **Tools** section.
+- The Studio tab has no separate Sets row.
+
+## 2026-11-11: audience demand
+
+AJ's words: "Now, we gotta build the conditions the set will enter into. Let's start with the audience demand". The design is in `docs/design/audiences.md`.
+
+### A1. A real market, with a small reach for the studio
+
+AJ chose "Real market, small reach" over "Your market only" and "Abstract points".
+
+- Each audience has a real-world size in people and in dollars.
+- The studio has its own reach in each audience: the share of the audience that knows the studio. The reach starts near zero and grows.
+- This makes D6 true: the first set feels big to the player but is small in the world.
+
+### A2. Four conditions change the audiences from week to week
+
+AJ picked all four:
+
+- **Seasons:** the holidays and the other times of year move each audience in its own way.
+- **Hobby boom and bust:** a market-wide hobby heat rises and falls over years.
+- **Release fatigue:** releases close together tire each audience.
+- **Studio reputation:** each audience has goodwill toward the studio, and the studio's actions move it.
+
+### A3. What the player sees depends on studio upgrades
+
+AJ's words: "This is a good spot for some upgrades".
+
+- **Interpretation, for AJ to confirm:** the market screen and the demand forecast unlock with studio upgrades. A new studio sees little. Each upgrade shows more, and makes the ranges narrower. This connects to M5 (market research as an upgrade) and D10 (actions unlock as the company grows).
+
+### A4. Each audience has its own buying rhythm
+
+AJ's words: "This all depends on the set and which audience it appeals to the most. So the different audiences have different buying cadences".
+
+- Each audience buys on its own rhythm over a set's life. For example, resellers buy in release week, and completionists buy over many months.
+- The demand curve of a set is the sum of the audience rhythms, weighted by how much the set appeals to each audience.
+
+## 2026-11-11: audience demand draft (answers to its open questions)
+
+### A5. Each part of the market view has its own upgrade. This confirms and changes A3
+
+AJ's words: "Sure. You can even gate each part with a separate set of upgrades."
+
+- The market view does not unlock in four fixed levels. Each part has its own upgrade: the audience sizes, the reach, the goodwill, the fatigue, the buying rhythms, the set forecast, the forecast curve, and sharper ranges.
+- The season and the hobby heat are common knowledge. Every studio sees them as phrases.
+
+### A6. A large studio moves the hobby heat
+
+AJ's words: "Yes".
+
+- A small studio does not move the hobby heat. A studio with a big reach pushes it up with hits and down with flops.
+
+### A7. The start reach is small. A media crossover can be the real kickoff
+
+AJ's words: "Sounds good to me. The real kickoff catalyst might be a media crossover or something".
+
+- The start reach is about 2,000 people, mostly casual players, completionists, and chase collectors. Kids and parents start near 0.
+- A media crossover (D7) is a likely catalyst for the studio's first large jump in reach. The collaboration design must give a crossover a large reach effect, mostly with kids and parents.
+
+### U2. Four tabs: Studio, Market, Business, and Settings. This changes U1 and E10
+
+AJ's words: "Market can be another tab. I'm thinking the tabs will be Studio, one about your studio to the market and then another that's your studio to other businesses".
+
+- **Studio:** your IP and your tools: the roster, the eras with their sets, the promo sets, the ladders, and the packs.
+- **Market:** your studio and the market: the conditions and the audiences (audiences.md). Later: releases, sales, and fans.
+- **Business:** your studio and other businesses: printers, distributors and retailers, partners (D7), and lenders and backers (D5, D6). None of these exist yet, so the tab lists them.
+- **Settings:** the save, the developer tools, and a new game.
+- The Market row leaves the Studio tab. The main thread chose the name "Business".
+
+### U3. Studio: a status widget, then Product and Upgrades. This changes U2
+
+AJ's words: "Upgrades should live in Studio. Maybe we have a button for Product and then another for Upgrades. Then it should have like a quick look widget of the status of the business".
+
+- The Studio tab shows the studio name, a quick-look status widget, and two buttons: **Product** and **Upgrades**.
+- **Product** holds the roster, the eras with their sets, the promo sets, and the tools (the ladders and the packs).
+- **Upgrades** holds the market upgrades (A5). They leave Settings. Until money exists, they are free.
+- The main thread chose the widget tiles: the calendar, the hobby, the reach (it needs the Fan survey), the current era, the IP, and the upgrades. Money joins the widget when the money system exists.
+
+## 2026-11-12: the selling engine (main thread's choices, for AJ's review)
+
+AJ's words: "You need a place eventually for money too. Ok, work on the entire selling engine of the audiences buying engine. In the morning, I want to be able to watch my decisions turn into sales and see the algorithm of the different audiences, etc. you have full permission."
+
+AJ gave full permission, so the main thread made these choices without questions. Each one is open for AJ to change. The design is in `docs/design/sales.md`.
+
+### B1. A release has a print run, a pack price, and a release week
+
+- The print run is in boxes. The pack price starts at $4.49. The release week is at least 3 weeks away, for the previews.
+- The studio pays the print cost when it schedules the release: $0.025 for each card, $0.05 for each wrapper, the extra cost of the looks (C17), and a $2,000 print setup.
+- The studio gets 38% of the pack price.
+
+### B2. A scheduled or released set cannot change
+
+- Scheduling the release locks the set. The cards, the ladder, the pack, the subsets, the art sets, and the details cannot change after that.
+
+### B3. Money: a cash balance and a ledger
+
+- A new studio starts with $25,000. Cash can go below zero until loans and the lose state exist.
+- The Studio widget shows the cash. The Business tab shows the ledger.
+
+### B4. Demand is a lifetime share of the money of the people who know the studio
+
+- A normal set takes 25% of one year's spend of each person who knows the studio, over the set's life. The factors in B5 raise or lower that share.
+- The buying rhythm (B6) spreads it over 52 weeks. The season, the hobby, fatigue, goodwill, and a 15% noise multiply each week.
+
+### B5. Fourteen factors make each audience's share
+
+- Characters, fame, pull rates, a grail, completion, set size, theme, gimmick, art, subsets, headliner, set type, price, and no game. `sales.md`, section 5, gives each one.
+- The hidden favorites (hit rate, set size, theme fit) come from the world seed.
+
+### B6. Each audience has a rhythm over 52 weeks
+
+- Chase collectors and competitive players buy half in the first two weeks. Kids and parents buy evenly, with the holiday lift. Art collectors rise to a peak near week 6.
+
+### B7. Resellers follow the gap between demand and stock
+
+- They take up to 50% of the stock in release weeks 0 and 1 when demand is above the stock. A sell-out where they took 25% or more costs goodwill with kids, parents, and chase collectors.
+
+### B8. Stock limits sales, and a reprint arrives 6 weeks after the order
+
+- Missed demand is lost and shows as "missed". A reprint raises goodwill with kids, parents, and completionists, and lowers it with investors.
+
+### B9. Sales grow the studio
+
+- Word of mouth, shelf discovery from the stock in stores, and previews grow the reach. Buyers learn the set's characters, which raises the Fame factor of the next set.
+
+### B10. The market reacts to each release
+
+- A release adds fatigue. At week 4, a strong set raises goodwill, and a weak set lowers it. A large studio's result moves the hobby heat (A6).
+
+### B11. Time moves with "Next week"
+
+- The Studio tab and the Market tab have a "Next week" button. A menu also moves 4 weeks.
+
+### B12. "Show the hidden numbers" is on by default
+
+- AJ asked to see the algorithm of the audiences. Settings has a switch that shows the true factors and the forecast. It is on by default for now. When it is off, the upgrades decide what the player sees (A5).

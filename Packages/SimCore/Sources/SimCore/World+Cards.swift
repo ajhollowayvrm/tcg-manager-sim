@@ -72,6 +72,7 @@ extension World {
 
     public mutating func updateSet(_ id: SetID, _ details: SetDetails) throws(CardError) {
         guard let i = catalog.sets.firstIndex(where: { $0.id == id }) else { throw .unknownSet(id) }
+        try requireDraft(id)
         let d = try validSetDetails(details, editing: id, designed: catalog.cards(in: id).count)
         catalog.sets[i].name = d.name
         catalog.sets[i].code = d.code
@@ -93,6 +94,7 @@ extension World {
     /// A main set can become a mini set, and back. A parallel set stays parallel.
     public mutating func updateSetType(_ id: SetID, _ type: SetType) throws(CardError) {
         guard let i = catalog.sets.firstIndex(where: { $0.id == id }) else { throw .unknownSet(id) }
+        try requireDraft(id)
         if catalog.sets[i].type == type { return }
         if type == .parallel || catalog.sets[i].type == .parallel { throw .parallelTypeFixed }
         catalog.sets[i].type = type
@@ -118,6 +120,7 @@ extension World {
     /// Changes a set's own ladder (C10). A tier that a card uses must stay.
     public mutating func updateSetLadder(_ id: SetID, _ ladder: RarityLadder) throws(CardError) {
         guard let i = catalog.sets.firstIndex(where: { $0.id == id }) else { throw .unknownSet(id) }
+        try requireDraft(id)
         try validate(ladder)
         let kept = Set(ladder.tiers.map(\.id))
         for card in catalog.cards(in: id) where !kept.contains(card.rarity) {
@@ -132,6 +135,7 @@ extension World {
     @discardableResult
     public mutating func createCard(in setID: SetID, _ draft: CardDraft) throws(CardError) -> CardID {
         guard let set = catalog.set(setID) else { throw .unknownSet(setID) }
+        try requireDraft(setID)
         let d = try validCard(draft, ladder: set.ladder)
         if catalog.cards(in: setID).count >= set.size { throw .setFull(set.size) }
         var shift = AudienceValues()
@@ -168,6 +172,7 @@ extension World {
         guard let i = catalog.cards.firstIndex(where: { $0.id == id }) else { throw .unknownCard(id) }
         if catalog.cards[i].filler { throw .fillerLocked }
         guard let setID = catalog.cards[i].setID, let set = catalog.set(setID) else { throw .unknownSet(-1) }
+        try requireDraft(setID)
         let d = try validCard(draft, ladder: set.ladder)
         catalog.cards[i].name = d.name
         catalog.cards[i].characterID = d.characterID
@@ -185,6 +190,7 @@ extension World {
     public mutating func updateCard(_ id: CardID, _ draft: CardDraft, adding extra: [CardDraft]) throws(CardError) -> [CardID] {
         guard let card = catalog.card(id) else { throw .unknownCard(id) }
         guard let setID = card.setID, let set = catalog.set(setID) else { throw .unknownSet(-1) }
+        try requireDraft(setID)
         for d in [draft] + extra { _ = try validCard(d, ladder: set.ladder) }
         if catalog.cards(in: setID).count + extra.count > set.size { throw .setFull(set.size) }
         try updateCard(id, draft)
@@ -196,6 +202,7 @@ extension World {
     public mutating func deleteCard(_ id: CardID) throws(CardError) {
         guard let card = catalog.card(id) else { throw .unknownCard(id) }
         if card.filler { throw .fillerLocked }
+        if let setID = card.setID { try requireDraft(setID) }
         catalog.cards.removeAll { $0.id == id }
         if let setID = card.setID {
             removeFromArtSets(id, setID: setID)

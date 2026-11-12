@@ -62,7 +62,7 @@ struct LadderEditorView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Filler shares: \(shares)%" + (shares == 100 ? "." : ". They must add up to 100%."))
                         .foregroundStyle(shares == 100 ? Color.secondary : Color.red)
-                    Text("\(footer) A ladder has \(RarityLadder.tierRange.lowerBound) to \(RarityLadder.tierRange.upperBound) tiers. Tap Edit to reorder or remove tiers. Pull rates arrive with the pack design (C9).")
+                    Text("\(footer) A ladder has \(RarityLadder.tierRange.lowerBound) to \(RarityLadder.tierRange.upperBound) tiers. Tap Edit to reorder or remove tiers. The pack sets the pull rates.")
                 }
             }
             if let error {

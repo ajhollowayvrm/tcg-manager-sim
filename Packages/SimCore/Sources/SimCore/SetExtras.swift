@@ -283,6 +283,7 @@ extension Catalog {
     }
 
     /// The series number of each set in an era, for example "SV3.5" (E6, E8).
+    /// A promo set has no series number (E9).
     /// Main sets count up. A mini set takes the main number before it, plus .5,
     /// then .6. A parallel pair takes one main number with a letter: "SV4a", "SV4b".
     /// The game calculates the numbers from the order of the sets. It does not store them.
@@ -297,6 +298,9 @@ extension Catalog {
                 main += 1
                 minis = 0
                 result[set.id] = "\(era.code)\(main)"
+            case .promo:
+                // A promo set is outside the series numbers (E9).
+                continue
             case .mini:
                 minis += 1
                 result[set.id] = "\(era.code)\(main).\(4 + minis)"
@@ -440,6 +444,7 @@ extension World {
     @discardableResult
     public mutating func saveSubset(_ setID: SetID, _ subset: Subset, cards: [CardID]) throws(CardError) -> SubsetID {
         guard let si = catalog.sets.firstIndex(where: { $0.id == setID }) else { throw .unknownSet(setID) }
+        try requireDraft(setID)
         var s = subset
         s.name = try validName(subset.name, limit: Subset.nameLimit)
         s.prefix = subset.prefix.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
@@ -477,6 +482,7 @@ extension World {
     /// subset now points nowhere, and the pack warnings ask the player to fix it.
     public mutating func deleteSubset(_ setID: SetID, _ id: SubsetID) throws(CardError) {
         guard let si = catalog.sets.firstIndex(where: { $0.id == setID }) else { throw .unknownSet(setID) }
+        try requireDraft(setID)
         guard catalog.sets[si].subset(id) != nil else { throw .unknownSubset(id) }
         catalog.sets[si].subsets.removeAll { $0.id == id }
         for i in catalog.cards.indices where catalog.cards[i].subsetID == id && catalog.cards[i].setID == setID {
@@ -491,6 +497,7 @@ extension World {
     @discardableResult
     public mutating func saveArtSet(_ setID: SetID, _ artSet: ArtSet) throws(CardError) -> ArtSetID {
         guard let si = catalog.sets.firstIndex(where: { $0.id == setID }) else { throw .unknownSet(setID) }
+        try requireDraft(setID)
         let name = try validName(artSet.name, limit: ArtSet.nameLimit)
         guard ArtSet.cardRange.contains(artSet.cards.count), Set(artSet.cards).count == artSet.cards.count else {
             throw .artSetSize
@@ -513,6 +520,7 @@ extension World {
 
     public mutating func deleteArtSet(_ setID: SetID, _ id: ArtSetID) throws(CardError) {
         guard let si = catalog.sets.firstIndex(where: { $0.id == setID }) else { throw .unknownSet(setID) }
+        try requireDraft(setID)
         catalog.sets[si].artSets.removeAll { $0.id == id }
     }
 

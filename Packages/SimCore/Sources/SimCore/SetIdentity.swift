@@ -2,15 +2,20 @@
 
 /// The type of a set (sets.md, section 3.2). Every type allows any size (S8).
 public enum SetType: String, CaseIterable, Codable, Sendable, Identifiable {
+    /// The raw value "mini" stays for the save. The player sees "Special set" (E9).
     case main, mini, parallel
+    /// A small set outside the series numbers, like a McDonald's Collection (E9).
+    /// It takes the look of the era that runs when the player creates it.
+    case promo
 
     public var id: String { rawValue }
 
     public var name: String {
         switch self {
         case .main: "Main set"
-        case .mini: "Mini set"
+        case .mini: "Special set"
         case .parallel: "Parallel set"
+        case .promo: "Promo set"
         }
     }
 
@@ -21,6 +26,8 @@ public enum SetType: String, CaseIterable, Codable, Sendable, Identifiable {
         case .main: 10...20
         case .mini: 3...8
         case .parallel: 5...10
+        // A promo set reprints characters from the roster.
+        case .promo: 0...0
         }
     }
 
@@ -30,6 +37,7 @@ public enum SetType: String, CaseIterable, Codable, Sendable, Identifiable {
         case .main: 150
         case .mini: 60
         case .parallel: 100
+        case .promo: 15
         }
     }
 }

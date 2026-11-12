@@ -30,14 +30,17 @@ struct RootView: View {
 struct MainTabView: View {
     var body: some View {
         TabView {
-            Tab("Roster", systemImage: "person.3.fill") {
-                RosterView()
-            }
-            Tab("Sets", systemImage: "rectangle.stack.fill") {
-                SetsView()
-            }
             Tab("Studio", systemImage: "building.2.fill") {
                 StudioView()
+            }
+            Tab("Market", systemImage: "chart.line.uptrend.xyaxis") {
+                NavigationStack { MarketView() }
+            }
+            Tab("Business", systemImage: "briefcase.fill") {
+                BusinessView()
+            }
+            Tab("Settings", systemImage: "gearshape.fill") {
+                SettingsView()
             }
         }
     }

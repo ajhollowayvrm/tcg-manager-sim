@@ -36,6 +36,7 @@ extension World {
     /// Changes a set's own pack. The set's pack keeps its ID and name.
     public mutating func updateSetPack(_ setID: SetID, _ pack: PackLayout) throws(CardError) {
         guard let i = catalog.sets.firstIndex(where: { $0.id == setID }) else { throw .unknownSet(setID) }
+        try requireDraft(setID)
         let valid = try validPack(pack)
         catalog.sets[i].pack.slots = valid.slots
         catalog.sets[i].pack.boxSize = valid.boxSize

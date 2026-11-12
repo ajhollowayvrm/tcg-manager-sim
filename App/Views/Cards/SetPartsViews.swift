@@ -5,69 +5,8 @@ import SimCore
 
 // MARK: - Eras (S7, S13)
 
-/// Studio: the current era, the past eras, and "Start a new era".
-struct ErasView: View {
-    @Environment(GameStore.self) private var store
-    @State private var editing: Era?
-    @State private var starting = false
-
-    var body: some View {
-        let eras = store.world?.catalog.eras ?? []
-        let current = store.world?.catalog.currentEra
-        List {
-            if let current {
-                Section {
-                    Button { editing = current } label: { EraRow(era: current, sets: setCount(current.id)) }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Era \(current.name)")
-                    Button {
-                        starting = true
-                    } label: {
-                        Label("Start a new era", systemImage: "sparkles")
-                    }
-                } header: {
-                    Text("Current era")
-                } footer: {
-                    Text("New sets join the current era and use its gimmick. A new era ends this one. An early gimmick does little, and it can hurt the set.")
-                }
-            }
-            let past = eras.filter { $0.id != current?.id }.reversed()
-            if !past.isEmpty {
-                Section("Past eras") {
-                    ForEach(Array(past)) { era in
-                        Button { editing = era } label: { EraRow(era: era, sets: setCount(era.id)) }
-                            .buttonStyle(.plain)
-                    }
-                }
-            }
-        }
-        .navigationTitle("Eras")
-        .sheet(item: $editing) { era in
-            NavigationStack {
-                EraDesignerView(eraID: era.id, initial: EraDraft(from: era)) { editing = nil }
-            }
-            .interactiveDismissDisabled()
-        }
-        .sheet(isPresented: $starting) {
-            NavigationStack {
-                EraDesignerView(eraID: nil, initial: newDraft) { starting = false }
-            }
-            .interactiveDismissDisabled()
-        }
-    }
-
-    /// A new era starts with the current era's look and presets (eras.md, section 6).
-    private var newDraft: EraDraft {
-        guard let current = store.world?.catalog.currentEra else { return EraDraft() }
-        return EraDraft(nameBar: current.nameBar, ladderPresetID: current.ladderPresetID, packPresetID: current.packPresetID)
-    }
-
-    private func setCount(_ id: EraID) -> Int {
-        store.world?.catalog.sets.filter { $0.eraID == id }.count ?? 0
-    }
-}
-
-private struct EraRow: View {
+/// One era in a list: its name, code, weeks, set count, and gimmick.
+struct EraRow: View {
     let era: Era
     let sets: Int
 

@@ -71,10 +71,11 @@ Example: a "Tera" gimmick with a logo mark, a black banner name bar, and a crims
 
 - Each set of the era gets a series number from the order in which the player created the sets. The game calculates the number. It does not store it.
 - **Main sets** count up: SV1, SV2, SV3.
-- **A mini set** takes the number of the main set before it, plus .5: SV3.5. A second mini set after the same main set takes .6, then .7.
+- **A special set** (the "mini" type, E9) takes the number of the main set before it, plus .5: SV3.5. A second mini set after the same main set takes .6, then .7.
 - A mini set before the first main set of the era takes 0.5: SV0.5.
 - **A parallel pair** takes one main number, and each half adds a letter in creation order: SV4a and SV4b (E8).
 - Each set keeps its own set code, for example "PAL".
+- **A promo set** has no series number (E9). It keeps its own set code, for example "MCD", and the look of the era that ran when the player created it.
 - The series number shows in the sets list, in the set header ("SV2 · PAL"), and on the test rip wrapper.
 - An era code of the Base era is "BS" by default. The player can change it.
 

@@ -50,6 +50,7 @@ extension World {
     /// Makes all filler cards and generated characters of a draft set again (S5).
     public mutating func rerollFiller(_ setID: SetID) throws(CardError) {
         guard let i = catalog.sets.firstIndex(where: { $0.id == setID }) else { throw .unknownSet(setID) }
+        try requireDraft(setID)
         catalog.cards.removeAll { $0.setID == setID && $0.filler }
         catalog.sets[i].generated = []
         refreshFiller(setID)

@@ -112,3 +112,27 @@ struct EraTests {
         #expect(saved.gimmick?.homeTierID == doubleRare)
     }
 }
+
+@Suite("Promo sets")
+struct PromoSetTests {
+    @Test("A promo set joins the current era, has no series number, and reprints roster characters (E9)")
+    func promo() throws {
+        var world = World(seed: 7, studioName: "Test")
+        let mascot = try world.createCharacter(CharacterDraft(name: "Aryla", role: .mascot, kind: .person))
+        let era = try world.startEra(EraDraft(name: "Scarlet Violet", code: "SV"))
+        let one = try world.createSet(.main, SetDetails(name: "One", code: "ONE", size: 20), presetID: Catalog.defaultLadderID)
+        let promo = try world.createSet(.promo, SetDetails(name: "Burger Promos", code: "MCD", size: 15), presetID: Catalog.defaultLadderID)
+        let two = try world.createSet(.main, SetDetails(name: "Two", code: "TWO", size: 20), presetID: Catalog.defaultLadderID)
+        #expect(world.catalog.set(promo)?.eraID == era)
+        #expect(world.catalog.seriesNumber(of: promo) == nil)
+        // The promo set does not take a number from the main sets.
+        #expect(world.catalog.seriesNumber(of: one) == "SV1")
+        #expect(world.catalog.seriesNumber(of: two) == "SV2")
+        // No new generated characters: the filler cards reprint the roster.
+        #expect(world.catalog.set(promo)?.generated.isEmpty == true)
+        let filler = world.catalog.fillerCards(in: promo)
+        #expect(filler.count == 15)
+        #expect(filler.allSatisfy { $0.characterID == mascot })
+        #expect(SetType.mini.name == "Special set")
+    }
+}

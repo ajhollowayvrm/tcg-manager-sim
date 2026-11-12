@@ -71,17 +71,28 @@ final class RosterFlowUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Skip for now"].waitForExistence(timeout: 5))
         app.buttons["Skip for now"].tap()
 
-        // Roster
+        // Studio: the status widget, then Product and Upgrades (U3). Then the roster.
+        XCTAssertTrue(app.navigationBars[Self.studioTitle].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.tabBars.buttons.count, 4)
+        XCTAssertTrue(app.buttons["Product"].exists)
+        XCTAssertTrue(app.buttons["Upgrades"].exists)
+        shot(app, "09a-studio")
+        app.buttons["Product"].tap()
+        XCTAssertTrue(app.navigationBars["Product"].waitForExistence(timeout: 5))
+        app.buttons["Roster"].tap()
         XCTAssertTrue(app.navigationBars["Roster"].waitForExistence(timeout: 5))
         shot(app, "09-roster-two")
 
-        // Studio: add generated characters, as a set commit will later
-        app.tabBars.buttons["Studio"].tap()
-        shot(app, "10-studio")
+        // Settings: add generated characters, as a set commit will later
+        app.tabBars.buttons["Settings"].tap()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
+        shot(app, "10-settings")
         let generate = app.buttons["Add generated characters"]
         for _ in 0..<3 where !generate.isHittable { app.swipeUp() }
         generate.tap()
-        app.tabBars.buttons["Roster"].tap()
+        // The Studio tab keeps its place: the roster is still open.
+        app.tabBars.buttons["Studio"].tap()
+        XCTAssertTrue(app.navigationBars["Roster"].waitForExistence(timeout: 5))
         shot(app, "11-roster-generated")
 
         // Detail of the mascot
@@ -100,9 +111,11 @@ final class RosterFlowUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Forms"].exists)
 
         // Sets: create a set, then design a card (cards.md).
-        app.tabBars.buttons["Sets"].tap()
-        XCTAssertTrue(app.buttons["Create a set"].waitForExistence(timeout: 5))
-        app.buttons["Create a set"].tap()
+        // An era holds its sets (E10): open the Base era, then add a set to it.
+        toProduct(app)
+        app.buttons["Era Base"].tap()
+        XCTAssertTrue(app.navigationBars["Base"].waitForExistence(timeout: 5))
+        app.buttons["New set"].tap()
         let setName = app.textFields["Set name"]
         XCTAssertTrue(setName.waitForExistence(timeout: 5))
         setName.tap()
@@ -295,23 +308,24 @@ final class RosterFlowUITests: XCTestCase {
         app.navigationBars.buttons.firstMatch.tap()
         app.buttons["Cancel"].tap()
 
-        app.tabBars.buttons["Studio"].tap()
-        app.swipeDown()
-        app.swipeDown()
+        toProduct(app)
 
         // Studio: the rarity ladder presets.
-        app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Rarity ladders'")).firstMatch.tap()
+        let ladders = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Rarity ladders'")).firstMatch
+        for _ in 0..<4 where !(ladders.exists && ladders.isHittable) { app.swipeUp() }
+        ladders.tap()
         XCTAssertTrue(app.navigationBars["Rarity ladders"].waitForExistence(timeout: 5))
         shot(app, "26-ladder-presets")
         app.navigationBars.buttons.firstMatch.tap()
 
-        // Eras: start a new era with a gimmick (S7, S13).
-        let eras = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Eras'")).firstMatch
-        XCTAssertTrue(eras.waitForExistence(timeout: 5))
-        eras.tap()
-        XCTAssertTrue(app.buttons["Era Base"].waitForExistence(timeout: 5))
+        // Eras: start a new era with a gimmick (S7, S13), from the Studio hub.
+        let baseEra = app.buttons["Era Base"]
+        for _ in 0..<4 where !baseEra.exists { app.swipeDown() }
+        XCTAssertTrue(baseEra.waitForExistence(timeout: 5))
+        let startEra = app.buttons["Start a new era"]
+        for _ in 0..<3 where !startEra.isHittable { app.swipeUp() }
         // The era designer: name and code, name bar, gimmick, defaults, review (eras.md, section 6).
-        app.buttons["Start a new era"].tap()
+        startEra.tap()
         let eraName = app.textFields["Era name"]
         XCTAssertTrue(eraName.waitForExistence(timeout: 5))
         eraName.tap()
@@ -335,6 +349,79 @@ final class RosterFlowUITests: XCTestCase {
         app.buttons["Start the era"].tap()
         XCTAssertTrue(app.buttons["Era Ember Age"].waitForExistence(timeout: 5))
         shot(app, "28-eras")
+
+        // The new era screen takes new sets. The Base era is past and takes none (S13).
+        app.buttons["Era Ember Age"].tap()
+        XCTAssertTrue(app.buttons["New set"].waitForExistence(timeout: 5))
+        shot(app, "29-era-screen")
+        app.navigationBars.buttons.firstMatch.tap()
+        app.buttons["Era Base"].tap()
+        XCTAssertTrue(app.navigationBars["Base"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["New set"].exists)
+        app.navigationBars.buttons.firstMatch.tap()
+
+        // Promo sets: outside the series numbers (E9).
+        let promos = app.buttons["Promo sets"]
+        for _ in 0..<3 where !promos.isHittable { app.swipeUp() }
+        promos.tap()
+        XCTAssertTrue(app.buttons["New promo set"].waitForExistence(timeout: 5))
+        app.buttons["New promo set"].tap()
+        XCTAssertTrue(app.navigationBars["New promo set"].waitForExistence(timeout: 5))
+        shot(app, "30-new-promo-set")
+        app.buttons["Cancel"].tap()
+
+        // The market (audiences.md): locked at the start, then two upgrades (A5).
+        app.tabBars.buttons["Market"].tap()
+        XCTAssertTrue(app.navigationBars["Market"].waitForExistence(timeout: 5))
+        // Locked: the audience row shows only its name.
+        XCTAssertTrue(app.buttons["Kids"].exists)
+        shot(app, "31-market-locked")
+        // Studio → Upgrades (U3).
+        backToStudio(app)
+        app.buttons["Upgrades"].tap()
+        XCTAssertTrue(app.navigationBars["Upgrades"].waitForExistence(timeout: 5))
+        for name in ["Upgrade Market desk", "Upgrade Fan survey"] {
+            let toggle = app.switches[name]
+            for _ in 0..<6 where !toggle.isHittable { app.swipeUp() }
+            toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        }
+        app.tabBars.buttons["Market"].tap()
+        XCTAssertTrue(app.navigationBars["Market"].waitForExistence(timeout: 5))
+        // Upgraded: the row adds the size and the reach ranges.
+        XCTAssertFalse(app.buttons["Kids"].exists)
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Kids'")).firstMatch.exists)
+        shot(app, "32-market-upgraded")
+        let completionists = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Set completionists'")).firstMatch
+        for _ in 0..<4 where !(completionists.exists && completionists.isHittable) { app.swipeUp() }
+        completionists.tap()
+        XCTAssertTrue(app.navigationBars["Set completionists"].waitForExistence(timeout: 5))
+        shot(app, "33-audience")
+
+        // The Business tab: the studio and other businesses (U2). Nothing is built yet.
+        app.tabBars.buttons["Business"].tap()
+        XCTAssertTrue(app.navigationBars["Business"].waitForExistence(timeout: 5))
+        shot(app, "34-business")
+    }
+
+    /// Goes back to the Studio hub, one screen at a time.
+    @MainActor
+    private func backToStudio(_ app: XCUIApplication) {
+        app.tabBars.buttons["Studio"].tap()
+        for _ in 0..<6 where !app.navigationBars[Self.studioTitle].exists {
+            app.navigationBars.buttons.firstMatch.tap()
+        }
+        XCTAssertTrue(app.navigationBars[Self.studioTitle].waitForExistence(timeout: 5))
+    }
+
+    /// The Studio tab shows the studio name as its title.
+    static let studioTitle = "Garage Games"
+
+    /// Goes back to the Studio tab, then opens Product.
+    @MainActor
+    private func toProduct(_ app: XCUIApplication) {
+        backToStudio(app)
+        app.buttons["Product"].tap()
+        XCTAssertTrue(app.navigationBars["Product"].waitForExistence(timeout: 5))
     }
 
     @MainActor

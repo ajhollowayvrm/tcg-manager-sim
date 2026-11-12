@@ -1,7 +1,8 @@
 import SwiftUI
 import SimCore
 
-/// The roster grid (roster.md, section 8.1).
+/// The roster grid (roster.md, section 8.1). It lives in the Studio tab, which
+/// owns the navigation stack and opens the character detail.
 struct RosterView: View {
     @Environment(GameStore.self) private var store
 
@@ -36,7 +37,7 @@ struct RosterView: View {
     @State private var creating = false
 
     var body: some View {
-        NavigationStack {
+        Group {
             ScrollView {
                 if let world = store.world {
                     let shown = filtered(world)
@@ -68,9 +69,6 @@ struct RosterView: View {
             }
             .navigationTitle("Roster")
             .searchable(text: $search, prompt: "Search names")
-            .navigationDestination(for: CharacterID.self) { id in
-                CharacterDetailView(id: id)
-            }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { filterMenu }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -212,6 +210,6 @@ struct CharacterTile: View {
 }
 
 #Preview {
-    RosterView()
+    NavigationStack { RosterView() }
         .environment(GameStore(preview: .sample()))
 }
