@@ -33,6 +33,20 @@ struct MarketView: View {
                 Text("Every studio sees the season and the hobby. A hot hobby swells the investors and the resellers. A slump shrinks them.")
             }
 
+            MarketSalesSection(world: world)
+
+            let news = world.business.news.suffix(8).reversed()
+            if !news.isEmpty {
+                Section("News") {
+                    ForEach(Array(news.enumerated()), id: \.offset) { _, item in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.text).font(.subheadline)
+                            Text(Market.calendar(week: item.week)).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+
             Section {
                 ForEach(Audience.allCases) { audience in
                     NavigationLink {
@@ -59,6 +73,7 @@ struct MarketView: View {
             }
         }
         .navigationTitle("Market")
+        .toolbar { ToolbarItem(placement: .primaryAction) { NextWeekButton() } }
     }
 
 }

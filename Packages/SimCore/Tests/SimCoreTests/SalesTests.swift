@@ -149,4 +149,15 @@ struct SalesTests {
         #expect(try roundTrip(world) == world)
         #expect(try play() == world)
     }
+
+    @Test("The news reports the release, the sell-out, and the week-4 review")
+    func news() throws {
+        var (world, set, _) = try studio()
+        try world.scheduleRelease(set, boxes: 20, packPrice: 4.49, releaseWeek: 3)
+        for _ in 0..<8 { world.advanceWeek() }
+        let lines = world.business.news.map(\.text)
+        #expect(lines.contains { $0.hasPrefix("Base is out") })
+        #expect(lines.contains { $0.hasPrefix("Base sold out in week 0") })
+        #expect(lines.contains { $0.hasPrefix("Week 4 review") })
+    }
 }

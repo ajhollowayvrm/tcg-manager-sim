@@ -40,6 +40,12 @@ public struct WeekSales: Codable, Sendable, Equatable {
     public var totalMissed: Double { missed.reduce(0, +) }
 }
 
+/// One line of the market news.
+public struct NewsItem: Codable, Sendable, Equatable {
+    public let week: Int
+    public let text: String
+}
+
 /// One line of the ledger (B3).
 public struct LedgerEntry: Codable, Sendable, Equatable {
     public let week: Int
@@ -56,13 +62,19 @@ public struct Business: Codable, Sendable, Equatable {
     public internal(set) var sales: [SetID: [WeekSales]]
     /// Stream: the weekly noise of the sales (B4).
     var rng: Xoshiro256
+    /// Notable events for the Market tab's news: releases, sell-outs, reprints, and reviews.
+    public internal(set) var news: [NewsItem] = []
 
     /// B3: a new studio starts with $25,000.
     public static let startCash = 25_000.0
 
     static func start(seed: UInt64) -> Business {
         Business(cash: startCash, ledger: [LedgerEntry(week: 0, amount: startCash, note: "Starting cash")], sales: [:],
-                 rng: Xoshiro256(seed: seed))
+                 rng: Xoshiro256(seed: seed), news: [])
+    }
+
+    mutating func report(_ week: Int, _ text: String) {
+        news.append(NewsItem(week: week, text: text))
     }
 
     mutating func record(_ week: Int, _ amount: Double, _ note: String) {

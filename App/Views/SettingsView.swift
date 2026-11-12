@@ -8,6 +8,7 @@ struct SettingsView: View {
     @State private var importing = false
     @State private var confirmNewGame = false
     @State private var generateCount = 15
+    @AppStorage(HiddenNumbers.key) private var showHidden = true
 
     var body: some View {
         NavigationStack {
@@ -40,10 +41,14 @@ struct SettingsView: View {
                     Button("Advance one week") {
                         store.advanceWeek()
                     }
+                    Button("Add $50,000") {
+                        store.addCash(50_000)
+                    }
+                    Toggle("Show the hidden numbers", isOn: $showHidden)
                 } header: {
                     Text("Developer tools")
                 } footer: {
-                    Text("Later, each set adds generated characters when you print it. Until the print system exists, use these tools to test the roster.")
+                    Text("\"Add $50,000\" stands in for loans. \"Show the hidden numbers\" shows the true factors and the forecast, with no upgrades.")
                 }
 
                 Section {

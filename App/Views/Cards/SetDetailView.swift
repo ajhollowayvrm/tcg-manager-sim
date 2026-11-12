@@ -48,6 +48,9 @@ struct SetDetailView: View {
         return ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 header(world, set, theme: set.theme.flatMap(world.catalog.theme), count: cards.count)
+                if set.status != .draft {
+                    ReleaseSection(world: world, set: set)
+                }
                 if cards.isEmpty {
                     ContentUnavailableView {
                         Label("No cards yet", systemImage: "rectangle.portrait")
@@ -79,21 +82,34 @@ struct SetDetailView: View {
                         }
                     }
                 }
-                Button {
-                    sheet = .newCard
-                } label: {
-                    Label("Add a card", systemImage: "plus.rectangle.portrait")
-                        .frame(maxWidth: .infinity)
+                if set.status == .draft {
+                    Button {
+                        sheet = .newCard
+                    } label: {
+                        Label("Add a card", systemImage: "plus.rectangle.portrait")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                } else {
+                    Label("This set is \(set.status == .scheduled ? "scheduled" : "released"). It cannot change.", systemImage: "lock.fill")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
                 if !cards.isEmpty {
-                    ArtSetsSection(world: world, set: set, numbers: numbers) { sheet = .artSet($0) }
-                    SubsetsSection(world: world, set: set, numbers: numbers) { sheet = .subset($0) }
+                    Group {
+                        ArtSetsSection(world: world, set: set, numbers: numbers) { sheet = .artSet($0) }
+                        SubsetsSection(world: world, set: set, numbers: numbers) { sheet = .subset($0) }
+                    }
+                    .disabled(set.status != .draft)
+                }
+                if set.status == .draft {
+                    ReleaseSection(world: world, set: set)
                 }
                 PackSummary(world: world, set: set) { sheet = .pack }
+                    .disabled(set.status != .draft)
                 testRipButton(world, set)
-                FillerSection(world: world, set: set, designed: cards.count, numbers: numbers) {
+                FillerSection(world: world, set: set, designed: cards.count, numbers: numbers, locked: set.status != .draft) {
                     confirmReroll = true
                 }
             }
@@ -102,6 +118,7 @@ struct SetDetailView: View {
         .navigationTitle(set.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .primaryAction) { NextWeekButton() }
             ToolbarItem(placement: .primaryAction) {
                 Menu {
                     Button("Edit the set details", systemImage: "pencil") { sheet = .details }
@@ -110,6 +127,7 @@ struct SetDetailView: View {
                 } label: {
                     Label("Set options", systemImage: "ellipsis.circle")
                 }
+                .disabled(set.status != .draft)
             }
         }
         .sheet(item: $sheet) { sheet in
@@ -342,6 +360,8 @@ private struct FillerSection: View {
     let set: CardSet
     let designed: Int
     let numbers: [CardID: String]
+    /// A scheduled or released set cannot reroll its filler (B2).
+    let locked: Bool
     let onReroll: () -> Void
 
     var body: some View {
@@ -365,7 +385,7 @@ private struct FillerSection: View {
                     tierRow(tier, cards)
                 }
             }
-            if wanted > 0 {
+            if wanted > 0, !locked {
                 Button(action: onReroll) {
                     Label(filler.isEmpty ? "Make the filler cards" : "Reroll the filler", systemImage: "dice")
                         .frame(maxWidth: .infinity)

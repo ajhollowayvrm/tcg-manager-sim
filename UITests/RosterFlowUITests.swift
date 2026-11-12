@@ -401,6 +401,50 @@ final class RosterFlowUITests: XCTestCase {
         app.tabBars.buttons["Business"].tap()
         XCTAssertTrue(app.navigationBars["Business"].waitForExistence(timeout: 5))
         shot(app, "34-business")
+
+        // The selling engine (sales.md): plan the release, schedule it, then watch it sell.
+        toProduct(app)
+        let baseEraRow = app.buttons["Era Base"]
+        for _ in 0..<4 where !baseEraRow.exists { app.swipeDown() }
+        baseEraRow.tap()
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Base Set'")).firstMatch.tap()
+        let plan = app.buttons["Plan the release"]
+        for _ in 0..<8 where !(plan.exists && plan.isHittable) { app.swipeUp() }
+        plan.tap()
+        XCTAssertTrue(app.navigationBars["Plan the release"].waitForExistence(timeout: 5))
+        shot(app, "35-release-plan")
+        app.swipeUp()
+        app.swipeUp()
+        shot(app, "36-release-forecast")
+        app.buttons["Schedule"].tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'This set is scheduled'")).firstMatch.waitForExistence(timeout: 5))
+        for _ in 0..<6 { app.buttons["Next week"].firstMatch.tap() }
+        // A locked set shows its release at the top.
+        let salesLink = app.buttons["Sales and the algorithm"]
+        for _ in 0..<12 where !(salesLink.exists && salesLink.isHittable) { app.swipeDown() }
+        XCTAssertFalse(app.buttons["Add a card"].exists)
+        shot(app, "37-release-section")
+        salesLink.tap()
+        XCTAssertTrue(app.staticTexts["Packs sold"].waitForExistence(timeout: 5))
+        shot(app, "38-set-sales")
+        let chase = app.buttons["Algorithm Chase collectors"]
+        for _ in 0..<8 where !(chase.exists && chase.isHittable) { app.swipeUp() }
+        shot(app, "38b-algorithm-list")
+        chase.tap()
+        XCTAssertTrue(app.navigationBars["Chase collectors"].waitForExistence(timeout: 5))
+        shot(app, "39-audience-algorithm")
+        app.swipeUp()
+        shot(app, "39b-audience-algorithm-more")
+
+        // The Market tab: this week's sales, the releases, and the news.
+        app.tabBars.buttons["Market"].tap()
+        for _ in 0..<3 where !app.navigationBars["Market"].exists { app.navigationBars.buttons.firstMatch.tap() }
+        XCTAssertTrue(app.navigationBars["Market"].waitForExistence(timeout: 5))
+        shot(app, "40-market-sales")
+        let news = app.staticTexts["News"]
+        for _ in 0..<6 where !news.exists { app.swipeDown() }
+        XCTAssertTrue(news.exists)
+        shot(app, "41-market-news")
     }
 
     /// Goes back to the Studio hub, one screen at a time.

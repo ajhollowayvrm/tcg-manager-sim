@@ -15,6 +15,7 @@ AJ plays it alone, sideloaded with Xcode.
 - `docs/design/test-rip.md`: the test rip (pack opening) design.
 - `docs/design/eras.md`: the era designer design.
 - `docs/design/audiences.md`: the audience demand design (the market).
+- `docs/design/sales.md`: the selling engine: releases, money, demand, and sales.
 
 ## Layout
 

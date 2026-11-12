@@ -34,6 +34,7 @@ extension World {
             release.stockPacks += Double(packs)
             release.printedPacks += packs
             release.pendingReprints.removeAll { $0.arrivalWeek <= week }
+            news("A reprint of \(set.name) arrived: \(packs.formatted()) packs.")
             changeMarket { m in
                 m.changeGoodwill(.kids, by: 5)
                 m.changeGoodwill(.parents, by: 5)
@@ -64,6 +65,7 @@ extension World {
         // Release week (B10).
         if w == 0 {
             catalog.sets[i].status = .released
+            news("\(set.name) is out: \(release.printedPacks.formatted()) packs at \(String(format: "$%.2f", release.packPrice)).")
             let chase = demand[Audience.chaseCollectors.rawValue].factors.first { $0.name == "Pull rates" }?.value ?? 1
             changeMarket { m in
                 m.addReleaseFatigue(size: set.size, type: set.type)
@@ -112,6 +114,10 @@ extension World {
         let revenue = total * release.packPrice * Pricing.publisherShare
         b.sales[set.id, default: []].append(WeekSales(week: week, sold: sold, missed: missed, revenue: revenue, stockAfter: release.stockPacks))
         if revenue > 0 { b.record(week, revenue, "Sales: \(set.name)") }
+        if stockBefore >= 1, release.stockPacks < 1 {
+            b.report(week, "\(set.name) sold out in week \(w) of its life."
+                + (resellerPacks >= 1 ? " Resellers took \(Int(resellerPacks.rounded()).formatted()) packs." : ""))
+        }
         businessState = b
 
         // Growth: word of mouth, shelf discovery, and character awareness (B9).
@@ -173,6 +179,15 @@ extension World {
             }
             m.studioResult((quality - 1) * 5)
         }
+        news(quality > 1.3 ? "Week 4 review: a strong set. Its buyers like you more."
+             : quality < 0.7 ? "Week 4 review: a weak set. Its buyers like you less."
+             : "Week 4 review: a normal set.")
+    }
+
+    private mutating func news(_ text: String) {
+        var b = business
+        b.report(week, text)
+        businessState = b
     }
 
     private mutating func changeMarket(_ change: (inout Market) -> Void) {

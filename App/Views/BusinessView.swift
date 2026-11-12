@@ -1,9 +1,10 @@
 import SwiftUI
 import SimCore
 
-/// The Business tab (U2): the studio and other businesses. No business system
-/// exists yet, so the tab lists what will come.
+/// The Business tab (U2): the studio and other businesses. Money and the ledger
+/// are here (B3). The other business systems do not exist yet, so the tab lists them.
 struct BusinessView: View {
+    @Environment(GameStore.self) private var store
     private let areas: [(title: String, systemImage: String, detail: String)] = [
         ("Printers", "printer.fill", "Print runs, foil capacity, and the cost of each card. Later, your own print facility."),
         ("Distributors and retailers", "shippingbox.and.arrow.backward.fill", "Orders, store limits, and how much stock each channel takes."),
@@ -14,6 +15,9 @@ struct BusinessView: View {
     var body: some View {
         NavigationStack {
             List {
+                if let world = store.world {
+                    MoneySection(business: world.business)
+                }
                 Section {
                     ForEach(areas, id: \.title) { area in
                         HStack(alignment: .top, spacing: 14) {
@@ -42,4 +46,5 @@ struct BusinessView: View {
 
 #Preview {
     BusinessView()
+        .environment(GameStore(preview: .sample()))
 }

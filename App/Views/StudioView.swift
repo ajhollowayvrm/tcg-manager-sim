@@ -41,6 +41,7 @@ struct StudioView: View {
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle(store.world?.studioName ?? "Studio")
+            .toolbar { ToolbarItem(placement: .primaryAction) { NextWeekButton() } }
             .navigationDestination(for: StudioRoute.self) { route in
                 switch route {
                 case .product: ProductView()
@@ -75,8 +76,8 @@ struct StudioView: View {
     }
 }
 
-/// A quick look at the business (U3). Money does not exist yet, so it shows the
-/// calendar, the hobby, the reach, the current era, the IP, and the upgrades.
+/// A quick look at the business (U3, B3): the calendar, the hobby, the reach,
+/// the current era, the IP, and the cash.
 private struct StatusWidget: View {
     let world: World
 
@@ -95,8 +96,8 @@ private struct StatusWidget: View {
                  detail: "\(era.code) · \(world.catalog.sets.filter { $0.eraID == era.id && $0.type != .promo }.count) sets")
             tile("Your IP", systemImage: "person.3.fill", value: "\(world.characters.count) characters",
                  detail: "\(world.catalog.sets.count) sets · \(world.catalog.cards.count) cards")
-            tile("Upgrades", systemImage: "arrow.up.circle.fill", value: "\(market.insights.count) of \(MarketInsight.allCases.count)",
-                 detail: "Market research")
+            tile("Cash", systemImage: "banknote.fill", value: Money.text(world.business.cash),
+                 detail: world.business.cash < 0 ? "Below zero" : "Ledger in Business")
         }
     }
 

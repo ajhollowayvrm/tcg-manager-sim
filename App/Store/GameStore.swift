@@ -264,6 +264,36 @@ final class GameStore {
         persist()
     }
 
+    // MARK: - Releases and money (sales.md)
+
+    @discardableResult
+    func scheduleRelease(_ setID: SetID, boxes: Int, packPrice: Double, releaseWeek: Int) -> String? {
+        applyCard { world throws(CardError) in
+            try world.scheduleRelease(setID, boxes: boxes, packPrice: packPrice, releaseWeek: releaseWeek)
+        }.message
+    }
+
+    @discardableResult
+    func reprint(_ setID: SetID, boxes: Int) -> String? {
+        applyCard { world throws(CardError) in try world.reprint(setID, boxes: boxes) }.message
+    }
+
+    /// A developer tool until loans exist (B3).
+    func addCash(_ amount: Double) {
+        guard var current = world else { return }
+        current.addCash(amount, note: "Developer cash")
+        world = current
+        persist()
+    }
+
+    /// Moves time by several weeks at once (B11).
+    func advanceWeeks(_ count: Int) {
+        guard var current = world else { return }
+        for _ in 0..<count { current.advanceWeek() }
+        world = current
+        persist()
+    }
+
     func advanceWeek() {
         guard var current = world else { return }
         current.advanceWeek()
