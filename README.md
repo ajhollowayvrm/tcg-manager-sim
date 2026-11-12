@@ -11,6 +11,9 @@ AJ plays it alone, sideloaded with Xcode.
 - `docs/design/roster.md`: the character roster design.
 - `docs/design/cards.md`: the card designer design.
 - `docs/design/trends.md`: the market trends design (not built yet).
+- `docs/design/sets.md`: the set configuration design.
+- `docs/design/test-rip.md`: the test rip (pack opening) design.
+- `docs/design/eras.md`: the era designer design.
 
 ## Layout
 

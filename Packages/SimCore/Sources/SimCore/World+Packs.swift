@@ -27,6 +27,10 @@ extension World {
         guard id != Catalog.defaultPackID else { throw .defaultPackLocked }
         guard catalog.packPreset(id) != nil else { throw .unknownPack(id) }
         catalog.packPresets.removeAll { $0.id == id }
+        // An era that used the preset goes back to the default preset (eras.md, section 4).
+        for i in catalog.eras.indices where catalog.eras[i].packPresetID == id {
+            catalog.eras[i].packPresetID = Catalog.defaultPackID
+        }
     }
 
     /// Changes a set's own pack. The set's pack keeps its ID and name.

@@ -584,6 +584,9 @@ public enum CardError: Error, Equatable, Sendable {
     case emptyEraName
     case badGimmickName
     case unknownEra(EraID)
+    case badEraCode
+    case duplicateEraCode(String)
+    case badHomeTier
     case unknownSubset(SubsetID)
     case badSubsetPrefix
     case duplicateSubset(String)
@@ -651,6 +654,9 @@ public enum CardError: Error, Equatable, Sendable {
         case .emptyEraName: "Give the era a name."
         case .badGimmickName: "Use 1 to \(Gimmick.nameLimit) characters for the gimmick."
         case .unknownEra: "That era does not exist."
+        case .badEraCode: "Use 2 or 3 letters for the era code."
+        case .duplicateEraCode(let code): "Another era already uses the code \(code)."
+        case .badHomeTier: "The home tier must be a tier of the era's ladder. Pick the home tier again."
         case .unknownSubset: "That subset does not exist."
         case .badSubsetPrefix: "Use 1 to \(Subset.prefixLimit) letters for the subset prefix."
         case .duplicateSubset(let name): "A subset named or prefixed \(name) already exists in this set."

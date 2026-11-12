@@ -168,4 +168,62 @@ struct PackTests {
         #expect(missing.contains { $0.blocksPrint })
     }
 
+
+    @Test("A slider change rebalances the other outcomes by their ratio, and the slot stays at 100% (S15)")
+    func rebalance() throws {
+        // Slot 9 of the default pack: reverse holo 90, IR 8, SIR 1.3, Gold 0.7.
+        var slot = PackLayout.defaultPack(id: 1).slots[3]
+        slot.setOdds(80, at: 0)
+        #expect(slot.outcomes.map(\.odds) == [80, 16, 2.6, 1.4])
+
+        // A drag keeps the ratio from the drag start, so 100% and back restores it.
+        let base = slot.outcomes
+        slot.setOdds(100, at: 0, base: base)
+        #expect(slot.outcomes.map(\.odds) == [100, 0, 0, 0])
+        slot.setOdds(80, at: 0, base: base)
+        #expect(slot.outcomes.map(\.odds) == [80, 16, 2.6, 1.4])
+
+        // Others that are all at 0% share the rest equally.
+        slot.setOdds(100, at: 0)
+        slot.setOdds(70, at: 0)
+        #expect(slot.outcomes.map(\.odds) == [70, 10, 10, 10])
+
+        // Rounding never breaks the sum, and no outcome goes below 0%.
+        for value in stride(from: 0.0, through: 100, by: 3.33) {
+            slot.setOdds(value, at: 2)
+            #expect(abs(slot.oddsSum - 100) < 1e-9)
+            #expect(slot.outcomes.allSatisfy { $0.odds >= 0 })
+        }
+
+        // A single outcome is always 100%.
+        var single = PackSlot(id: 1, outcomes: [PackOutcome(id: 1, kind: .tier(1), odds: 100)])
+        single.setOdds(40, at: 0)
+        #expect(single.outcomes[0].odds == 100)
+    }
+
+    @Test("A removed outcome gives its odds to the others by their ratio (S15)")
+    func removeRebalances() throws {
+        var slot = PackLayout.defaultPack(id: 1).slots[4]
+        // Rare 55, Holo Rare 22, Double Rare 16, Ultra Rare 7. Remove the Holo Rare.
+        slot.removeOutcomes(atOffsets: [1])
+        #expect(abs(slot.oddsSum - 100) < 1e-9)
+        #expect(slot.outcomes.map(\.odds) == [70.52, 20.51, 8.97])
+    }
+
+    @Test("An outcome whose cards are all in an own-outcome subset names the subset (S14)")
+    func subsetOnlyWarning() throws {
+        var (world, set, aryla) = try setup()
+        let sir = try #require(world.catalog.set(set)?.ladder.tiers[7].id)
+        let card = try world.createCard(in: set, CardDraft(name: "Aryla", characterID: aryla, rarity: sir))
+        #expect(!world.packWarnings(set).contains { if case .emptyOutcome(4, "Special Illustration Rare") = $0 { true } else { false } })
+        let collection = try world.saveSubset(set, Subset(id: 0, name: "Aryla Collection", prefix: "AC", ownOutcome: true), cards: [card])
+        let warnings = world.packWarnings(set)
+        #expect(warnings.contains(.subsetOnly(slot: 4, label: "Special Illustration Rare", subset: "Aryla Collection")))
+        #expect(!warnings.contains(.emptyOutcome(slot: 4, label: "Special Illustration Rare")))
+        // A tier with no cards anywhere keeps the plain warning.
+        #expect(warnings.contains(.emptyOutcome(slot: 4, label: "Gold")))
+        // With the switch off, the card comes through its tier again.
+        try world.saveSubset(set, Subset(id: collection, name: "Aryla Collection", prefix: "AC", ownOutcome: false), cards: [card])
+        #expect(!world.packWarnings(set).contains { if case .subsetOnly = $0 { true } else { false } })
+    }
 }

@@ -51,6 +51,51 @@ public struct PackSlot: Codable, Sendable, Hashable, Identifiable {
 
     /// An ID for a new outcome in this slot.
     public var nextOutcomeID: Int { (outcomes.map(\.id).max() ?? 0) + 1 }
+
+    /// Sets one outcome's odds, and rebalances the other outcomes so the slot
+    /// stays at 100% (S15). The others keep their ratio from `base`: the outcomes
+    /// when the slider drag started. So a drag to 100% and back gives the old ratio again.
+    /// With no base, the others keep their current ratio. Others that are all at 0% share the rest equally.
+    public mutating func setOdds(_ value: Double, at index: Int, base: [PackOutcome]? = nil) {
+        guard outcomes.indices.contains(index) else { return }
+        guard outcomes.count > 1 else {
+            outcomes[index].odds = 100
+            return
+        }
+        let odds = Self.round(min(100, max(0, value)))
+        outcomes[index].odds = odds
+        let others = outcomes.indices.filter { $0 != index }
+        let weights = others.map { i in
+            base?.first { $0.id == outcomes[i].id }?.odds ?? outcomes[i].odds
+        }
+        let total = weights.reduce(0, +)
+        for (n, i) in others.enumerated() {
+            let share = total > 0 ? weights[n] / total : 1 / Double(others.count)
+            outcomes[i].odds = Self.round((100 - odds) * share)
+        }
+        fixRounding(skipping: index)
+    }
+
+    /// Removes outcomes. The other outcomes take their odds, by their ratio, so the slot stays at 100% (S15).
+    public mutating func removeOutcomes(atOffsets offsets: IndexSet) {
+        outcomes = outcomes.enumerated().filter { !offsets.contains($0.offset) }.map(\.element)
+        guard !outcomes.isEmpty else { return }
+        let total = oddsSum
+        for i in outcomes.indices {
+            outcomes[i].odds = Self.round(total > 0 ? outcomes[i].odds / total * 100 : 100 / Double(outcomes.count))
+        }
+        fixRounding(skipping: nil)
+    }
+
+    /// The odds have two decimals. The largest other outcome takes the rounding difference.
+    private mutating func fixRounding(skipping index: Int?) {
+        let diff = Self.round(100 - oddsSum)
+        guard diff != 0, let largest = outcomes.indices.filter({ $0 != index }).max(by: { outcomes[$0].odds < outcomes[$1].odds })
+        else { return }
+        outcomes[largest].odds = Self.round(max(0, outcomes[largest].odds + diff))
+    }
+
+    private static func round(_ value: Double) -> Double { (value * 100).rounded() / 100 }
 }
 
 /// A pack: a pack preset in the studio, or a set's own copy (S6, C10).
@@ -218,6 +263,9 @@ public enum PackWarning: Sendable, Equatable {
     case unreachable(name: String)
     /// An outcome can give no card: its tier or its version has no cards.
     case emptyOutcome(slot: Int, label: String)
+    /// An outcome can give no card, because all its cards are in a subset with its
+    /// own pack outcome (S14). Those cards come only through the subset outcome.
+    case subsetOnly(slot: Int, label: String, subset: String)
 
     public var message: String {
         switch self {
@@ -225,6 +273,8 @@ public enum PackWarning: Sendable, Equatable {
         case .missingSubset(let slot): "Slot \(slot) gives a subset that is gone or has no pack outcome of its own. Pick another outcome."
         case .unreachable(let name): "Nobody can pull your \(name) cards. Add \(name) to a slot."
         case .emptyOutcome(let slot, let label): "Slot \(slot) gives \(label), but the set has no such cards yet."
+        case .subsetOnly(let slot, let label, let subset):
+            "Slot \(slot) gives \(label), but all your \(label) cards are in \(subset). They come only from the \(subset) outcome. Remove this outcome, or turn off \"Own pack outcome\" in \(subset)."
         }
     }
 
@@ -275,7 +325,15 @@ extension PackLayout {
                     reachedSubsets.insert(id)
                 }
                 if PackStats.pool(outcome.kind, ladder: ladder, cards: cards, subsets: subsets).isEmpty {
-                    add(.emptyOutcome(slot: index + 1, label: label(outcome.kind, ladder: ladder, subsets: subsets)))
+                    let name = label(outcome.kind, ladder: ladder, subsets: subsets)
+                    // The same outcome with no subset rules: the cards that a subset took away.
+                    let taken = Set(PackStats.pool(outcome.kind, ladder: ladder, cards: cards).compactMap(\.subsetID))
+                    let names = own.filter { taken.contains($0.id) }.map(\.name)
+                    if names.isEmpty {
+                        add(.emptyOutcome(slot: index + 1, label: name))
+                    } else {
+                        add(.subsetOnly(slot: index + 1, label: name, subset: names.joined(separator: ", ")))
+                    }
                 }
             }
         }

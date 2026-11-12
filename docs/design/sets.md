@@ -174,7 +174,7 @@ The pack screen does not show prices or box value. The market adds them later.
 
 ### 5.4 Rules
 
-- The odds in each slot must add up to 100%. The slot editor moves the last outcome to keep the sum. A slot with a sum that is not 100% blocks the print.
+- The odds in each slot must add up to 100%. The sliders are balanced (S15): when the player moves one outcome, the other outcomes share the change by their ratio. A removed outcome gives its odds to the others the same way. A slot with a sum that is not 100% blocks the print.
 - A tier that has cards but no slot can give it is a **warning**: "Nobody can pull your Gold cards." A version outcome reaches every tier that has that version.
 - **Build note:** a card's own versions, for example an alt art, have no pack outcome yet. They get one with the version pull rates (C16, C9).
 - A slot outcome that points to a tier with no cards is a **warning**. A pack cannot hold an empty outcome, so the print system skips it.

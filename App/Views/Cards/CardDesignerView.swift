@@ -40,6 +40,8 @@ struct CardDesignerView: View {
     @State private var rarities: [TierID]
     /// The version choices of each picked tier that is not on show.
     @State private var stashedVersions: [TierID: TierVersions] = [:]
+    /// The player turned the gimmick off for a new card at the home tier (E5).
+    @State private var homeGimmickOff = false
 
     /// The version choices of one card: the tier versions it turns off, and its own versions.
     struct TierVersions {
@@ -91,7 +93,8 @@ struct CardDesignerView: View {
     private func content(_ world: World, _ set: CardSet) -> some View {
         VStack(spacing: 0) {
             CardView(face: CardFace(world: world, draft: draft, ladder: set.ladder, version: previewVersion,
-                                    gimmick: draft.gimmick ? world.catalog.gimmick(of: setID) : nil), animated: true)
+                                    gimmick: shownGimmick(world), eraBar: world.catalog.era(of: setID)?.nameBar ?? .classic),
+                     animated: true)
                 .frame(height: 220)
                 .padding(.top, 8)
                 .animation(.snappy, value: draft)
@@ -193,10 +196,26 @@ struct CardDesignerView: View {
             var copy = draft
             let versions = all[id] ?? TierVersions()
             copy.rarity = id
+            copy.gimmick = carriesGimmick(id)
             copy.excludedVersions = versions.excluded
             copy.ownVersions = versions.own
             return copy
         }
+    }
+
+    /// The gimmick's home tier in this set (E5).
+    private var homeTier: TierID? { store.world?.catalog.homeTier(of: setID) }
+
+    /// True when the card at this tier carries the gimmick. A new card at the home
+    /// tier carries it unless the player turned it off (E5). A saved card keeps its choice.
+    private func carriesGimmick(_ tier: TierID?) -> Bool {
+        guard let tier, tier == homeTier, !(cardID != nil && tier == savedRarity) else { return draft.gimmick }
+        return !homeGimmickOff
+    }
+
+    /// The gimmick that the card on show carries.
+    private func shownGimmick(_ world: World) -> Gimmick? {
+        carriesGimmick(draft.rarity) ? world.catalog.gimmick(of: setID) : nil
     }
 
     /// Shows a picked tier on the card and in the Versions step. The designer
@@ -386,6 +405,11 @@ struct CardDesignerView: View {
                         Text("The card name gets the era's gimmick, for example \"Aryla \(gimmick.name)\".")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                        if let home = homeTier, let tier = world.catalog.set(setID)?.ladder.tier(home) {
+                            Text("A new \(tier.name) card carries it by default. This switch is for the other rarities.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
                 .accessibilityLabel("Carries the gimmick")
@@ -408,6 +432,7 @@ struct CardDesignerView: View {
                 .foregroundStyle(.secondary)
             Text(raritySummary)
                 .font(.subheadline.weight(.semibold))
+            homeGimmickToggle(ladder)
             ForEach(Array(ladder.tiers.enumerated()), id: \.element.id) { index, tier in
                 let selected = rarities.contains(tier.id)
                 choiceRow(
@@ -437,6 +462,23 @@ struct CardDesignerView: View {
                         .foregroundStyle(selected ? Theme.accent : .secondary)
                 }
             }
+        }
+    }
+
+    /// A new card at the home tier carries the gimmick by default (E5).
+    @ViewBuilder
+    private func homeGimmickToggle(_ ladder: RarityLadder) -> some View {
+        if let home = homeTier, rarities.contains(home), !(cardID != nil && home == savedRarity),
+           let tier = ladder.tier(home), let gimmick = store.world?.catalog.gimmick(of: setID) {
+            Toggle(isOn: Binding(get: { !homeGimmickOff }, set: { homeGimmickOff = !$0 })) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("The \(tier.name) card carries \(gimmick.name)")
+                    Text("\(tier.name) is the home tier of the gimmick, so its card carries it by default.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .accessibilityLabel("Home tier carries the gimmick")
         }
     }
 
@@ -593,7 +635,7 @@ struct CardDesignerView: View {
             VersionRow(version: version, tier: tier, face: store.world.flatMap { world in
                 draft.setLadder(world, setID).map {
                     CardFace(world: world, draft: draft, ladder: $0, version: key,
-                             gimmick: draft.gimmick ? world.catalog.gimmick(of: setID) : nil)
+                             gimmick: shownGimmick(world), eraBar: world.catalog.era(of: setID)?.nameBar ?? .classic)
                 }
             })
             Spacer()

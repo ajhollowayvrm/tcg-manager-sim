@@ -25,7 +25,8 @@ struct SetsView: View {
                                 Section {
                                     ForEach(Array(sets)) { set in
                                         NavigationLink(value: SetRoute(id: set.id)) {
-                                            SetRow(set: set, theme: set.theme.flatMap(world.catalog.theme), count: world.catalog.cards(in: set.id).count)
+                                            SetRow(set: set, theme: set.theme.flatMap(world.catalog.theme), count: world.catalog.cards(in: set.id).count,
+                                                   series: world.catalog.seriesNumber(of: set.id))
                                         }
                                     }
                                 } header: {
@@ -81,6 +82,8 @@ private struct SetRow: View {
     let set: CardSet
     let theme: SetTheme?
     let count: Int
+    /// The series number in the set's era, for example "SV2" (E6).
+    let series: String?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -88,7 +91,8 @@ private struct SetRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(set.name).font(.headline)
-                    Text(set.code).font(.caption.weight(.bold).monospaced()).foregroundStyle(.secondary)
+                    Text([series, set.code].compactMap { $0 }.joined(separator: " · "))
+                        .font(.caption.weight(.bold).monospaced()).foregroundStyle(.secondary)
                 }
                 Text([set.type.name, theme?.name, "\(count) of \(set.size) cards", "draft"].compactMap { $0 }.joined(separator: " · "))
                     .font(.subheadline)
@@ -167,12 +171,13 @@ struct NewSetForm: View {
                     }
                 }
             } footer: {
-                Text("The set keeps its own copy of the ladder and the pack. A later change to a preset does not change this set. Edit the presets in Studio.")
+                Text("The current era picks the ladder and the pack first. The set keeps its own copy of both. A later change to a preset does not change this set. Edit the presets in Studio.")
             }
             if let error {
                 Text(error).foregroundStyle(.red)
             }
         }
+        .onAppear(perform: preselectEraPresets)
         .navigationTitle(type == .parallel ? "New parallel pair" : "New set")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -195,6 +200,14 @@ struct NewSetForm: View {
                 }
             }
         }
+    }
+
+    /// The new set starts with the current era's ladder and pack (eras.md, section 4).
+    private func preselectEraPresets() {
+        guard let catalog = store.world?.catalog else { return }
+        let era = catalog.currentEra
+        if catalog.preset(era.ladderPresetID) != nil { presetID = era.ladderPresetID }
+        if catalog.packPreset(era.packPresetID) != nil { packID = era.packPresetID }
     }
 
     private var typeHint: String {

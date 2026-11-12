@@ -36,6 +36,14 @@ extension PaletteColor {
         case .snow: Color(red: 0.97, green: 0.97, blue: 0.99)
         }
     }
+
+    /// True when black text reads better than white text on this color.
+    var prefersDarkText: Bool {
+        switch self {
+        case .gold, .sunflower, .lime, .sky, .rose, .cream, .snow: true
+        default: false
+        }
+    }
 }
 
 extension ElementType {

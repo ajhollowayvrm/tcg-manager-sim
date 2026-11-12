@@ -228,7 +228,18 @@ extension World {
     public mutating func deletePreset(_ id: LadderID) throws(CardError) {
         guard id != Catalog.defaultLadderID else { throw .defaultPresetLocked }
         guard catalog.preset(id) != nil else { throw .unknownPreset(id) }
+        let removed = catalog.preset(id)
         catalog.ladderPresets.removeAll { $0.id == id }
+        // An era that used the preset goes back to the default preset (eras.md, section 4).
+        // Its home tier matches a default tier by name, or it clears.
+        let fallback = catalog.preset(Catalog.defaultLadderID)
+        for i in catalog.eras.indices where catalog.eras[i].ladderPresetID == id {
+            catalog.eras[i].ladderPresetID = Catalog.defaultLadderID
+            if let home = catalog.eras[i].gimmick?.homeTierID {
+                let name = removed?.tier(home)?.name.lowercased()
+                catalog.eras[i].gimmick?.homeTierID = fallback?.tiers.first { $0.name.lowercased() == name }?.id
+            }
+        }
     }
 
     // MARK: - Validation

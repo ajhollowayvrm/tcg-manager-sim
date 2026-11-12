@@ -222,6 +222,8 @@ private struct SlotEditor: View {
     let number: Int
     let ladder: RarityLadder
     let subsets: [Subset]
+    /// The outcomes when the slider drag started. The other outcomes keep this ratio (S15).
+    @State private var dragBase: [PackOutcome]?
 
     private var kinds: [PackOutcomeKind] {
         var names: [String] = []
@@ -255,10 +257,14 @@ private struct SlotEditor: View {
                             }
                         }
                         HStack {
-                            Slider(value: oddsBinding(index), in: 0...100)
-                                .accessibilityLabel("Odds \(PackLayout.labelFor(outcome.kind, ladder: ladder, subsets: subsets))")
+                            Slider(value: oddsBinding(index), in: 0...100) { editing in
+                                dragBase = editing ? slot.outcomes : nil
+                            }
+                            .disabled(slot.outcomes.count < 2)
+                            .accessibilityLabel("Odds \(PackLayout.labelFor(outcome.kind, ladder: ladder, subsets: subsets))")
                             TextField("Odds", value: oddsBinding(index), format: .number.precision(.fractionLength(0...2)))
                                 .keyboardType(.decimalPad)
+                                .disabled(slot.outcomes.count < 2)
                                 .multilineTextAlignment(.trailing)
                                 .frame(width: 64)
                             Text("%").foregroundStyle(.secondary)
@@ -266,7 +272,7 @@ private struct SlotEditor: View {
                     }
                     .padding(.vertical, 4)
                 }
-                .onDelete { slot.outcomes.remove(atOffsets: $0) }
+                .onDelete { slot.removeOutcomes(atOffsets: $0) }
                 Button {
                     let unused = kinds.first { kind in !slot.outcomes.contains { $0.kind == kind } } ?? .tier(0)
                     slot.outcomes.append(PackOutcome(id: slot.nextOutcomeID, kind: unused, odds: 0))
@@ -280,7 +286,7 @@ private struct SlotEditor: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("The odds add up to \(sum.percent).")
                         .foregroundStyle(abs(sum - 100) < 0.001 ? Color.secondary : Color.red)
-                    Text("A change to an outcome moves the last outcome, so the slot stays at 100%. A reverse holo outcome gives the reverse holo of a card at any tier that has one.")
+                    Text("When you change one outcome, the other outcomes share the change by their ratio, so the slot stays at 100%. A reverse holo outcome gives the reverse holo of a card at any tier that has one.")
                 }
             }
         }
@@ -295,26 +301,12 @@ private struct SlotEditor: View {
         )
     }
 
-    /// Changes one outcome's odds. The last outcome takes the difference, so the
-    /// slot stays at 100% (sets.md, section 5.4).
+    /// Changes one outcome's odds. The other outcomes rebalance, so the slot
+    /// stays at 100% (S15, sets.md section 5.4).
     private func oddsBinding(_ index: Int) -> Binding<Double> {
         Binding(
             get: { slot.outcomes.indices.contains(index) ? slot.outcomes[index].odds : 0 },
-            set: { value in
-                guard slot.outcomes.indices.contains(index) else { return }
-                let last = slot.outcomes.count - 1
-                var odds = min(100, max(0, (value * 100).rounded() / 100))
-                if index != last {
-                    let others = slot.outcomes.indices
-                        .filter { $0 != index && $0 != last }
-                        .reduce(0) { $0 + slot.outcomes[$1].odds }
-                    odds = min(odds, max(0, 100 - others))
-                    slot.outcomes[index].odds = odds
-                    slot.outcomes[last].odds = max(0, ((100 - others - odds) * 100).rounded() / 100)
-                } else {
-                    slot.outcomes[index].odds = odds
-                }
-            }
+            set: { slot.setOdds($0, at: index, base: dragBase) }
         )
     }
 }

@@ -44,22 +44,22 @@ struct ErasView: View {
         .navigationTitle("Eras")
         .sheet(item: $editing) { era in
             NavigationStack {
-                EraForm(title: "Edit era", initialName: era.name, initialGimmick: era.gimmick) { name, gimmick in
-                    let error = store.updateEra(era.id, name: name, gimmick: gimmick)
-                    if error == nil { editing = nil }
-                    return error
-                } onCancel: { editing = nil }
+                EraDesignerView(eraID: era.id, initial: EraDraft(from: era)) { editing = nil }
             }
+            .interactiveDismissDisabled()
         }
         .sheet(isPresented: $starting) {
             NavigationStack {
-                EraForm(title: "New era", initialName: "", initialGimmick: nil) { name, gimmick in
-                    let error = store.startEra(name: name, gimmick: gimmick)
-                    if error == nil { starting = false }
-                    return error
-                } onCancel: { starting = false }
+                EraDesignerView(eraID: nil, initial: newDraft) { starting = false }
             }
+            .interactiveDismissDisabled()
         }
+    }
+
+    /// A new era starts with the current era's look and presets (eras.md, section 6).
+    private var newDraft: EraDraft {
+        guard let current = store.world?.catalog.currentEra else { return EraDraft() }
+        return EraDraft(nameBar: current.nameBar, ladderPresetID: current.ladderPresetID, packPresetID: current.packPresetID)
     }
 
     private func setCount(_ id: EraID) -> Int {
@@ -74,7 +74,10 @@ private struct EraRow: View {
     var body: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(era.name).font(.headline)
+                HStack(spacing: 6) {
+                    Text(era.name).font(.headline)
+                    Text(era.code).font(.caption.weight(.bold).monospaced()).foregroundStyle(.secondary)
+                }
                 Text(era.endWeek.map { "Weeks \(era.startWeek) to \($0)" } ?? "Since week \(era.startWeek)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -103,76 +106,6 @@ struct GimmickBadge: View {
             .padding(.vertical, 4)
             .foregroundStyle(.white)
             .background(gimmick.color.color, in: Capsule())
-    }
-}
-
-/// The name of an era, and its gimmick or no gimmick.
-private struct EraForm: View {
-    let title: String
-    let onSave: (String, Gimmick?) -> String?
-    let onCancel: () -> Void
-
-    @State private var name: String
-    @State private var hasGimmick: Bool
-    @State private var gimmick: Gimmick
-    @State private var error: String?
-
-    init(title: String, initialName: String, initialGimmick: Gimmick?,
-         onSave: @escaping (String, Gimmick?) -> String?, onCancel: @escaping () -> Void) {
-        self.title = title
-        self.onSave = onSave
-        self.onCancel = onCancel
-        _name = State(initialValue: initialName)
-        _hasGimmick = State(initialValue: initialGimmick != nil)
-        _gimmick = State(initialValue: initialGimmick ?? Gimmick(name: "ex", color: .gold))
-    }
-
-    var body: some View {
-        Form {
-            Section("Name") {
-                TextField("Era name", text: $name)
-                    .textInputAutocapitalization(.words)
-            }
-            Section {
-                Toggle("Gimmick", isOn: $hasGimmick)
-                if hasGimmick {
-                    TextField("Gimmick name", text: $gimmick.name)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 8), spacing: 10) {
-                        ForEach(PaletteColor.allCases) { color in
-                            Button {
-                                gimmick.color = color
-                            } label: {
-                                Circle()
-                                    .fill(color.color)
-                                    .frame(width: 28, height: 28)
-                                    .overlay(Circle().stroke(gimmick.color == color ? Theme.accent : .primary.opacity(0.15),
-                                                             lineWidth: gimmick.color == color ? 3 : 1))
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Gimmick color \(color.name)")
-                        }
-                    }
-                    HStack {
-                        Text("Example")
-                        Spacer()
-                        Text("Aryla ") + Text(gimmick.name).foregroundColor(gimmick.color.color).italic().bold()
-                    }
-                }
-            } footer: {
-                Text("A gimmick is a mark on some cards, for example \"ex\". It has no gameplay. A new gimmick excites the market, and it tires with each set that uses it. An early gimmick, before the studio is popular, does little and can hurt the set.")
-            }
-            if let error { Text(error).foregroundStyle(.red) }
-        }
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) { Button("Cancel", action: onCancel) }
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Save") { error = onSave(name, hasGimmick ? gimmick : nil) }
-            }
-        }
     }
 }
 

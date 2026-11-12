@@ -19,20 +19,28 @@ struct CardFace {
     var gimmick: Gimmick? = nil
     /// The printed number, for example "019/018" or "TG04/TG30" (S11).
     var number: String? = nil
+    /// The era's name bar, or the gimmick's name bar on a gimmick card (E3, E4).
+    var nameBar: NameBarStyle = .classic
+    /// On a solid frame, a gimmick card takes this color in place of the tier color (E4).
+    var frameColor: PaletteColor? = nil
 
     /// The face of a saved card, in one of its versions (C16).
     /// - Parameter numbers: the set's card numbers. Pass them when you draw many cards of one set.
     init?(world: World, card: Card, version: VersionKey = .base, numbers: [CardID: String]? = nil) {
         guard let setID = card.setID, let ladder = world.catalog.set(setID)?.ladder else { return nil }
         let gimmick = card.gimmick ? world.catalog.gimmick(of: setID) : nil
-        self.init(world: world, draft: CardDraft(from: card), ladder: ladder, version: version, gimmick: gimmick)
+        let eraBar = world.catalog.era(of: setID)?.nameBar ?? .classic
+        self.init(world: world, draft: CardDraft(from: card), ladder: ladder, version: version, gimmick: gimmick, eraBar: eraBar)
         number = (numbers ?? world.catalog.cardNumbers(in: setID))[card.id]
     }
 
     /// The live face in the card designer, in one of its versions (C16).
-    init(world: World, draft: CardDraft, ladder: RarityLadder, version: VersionKey = .base, gimmick: Gimmick? = nil) {
+    init(world: World, draft: CardDraft, ladder: RarityLadder, version: VersionKey = .base, gimmick: Gimmick? = nil,
+         eraBar: NameBarStyle = .classic) {
         name = draft.trimmedName.isEmpty ? "Unnamed card" : draft.trimmedName
         self.gimmick = gimmick
+        nameBar = gimmick?.nameBar ?? eraBar
+        frameColor = gimmick?.frameColor
         tier = draft.rarity.flatMap(ladder.tier)
         let shown = tier?.versions(excluding: [], own: draft.ownVersions).first { $0.key == version }?.version ?? tier?.baseVersion
         look = shown?.look ?? .plain
@@ -87,7 +95,8 @@ struct CardView: View {
 
     private var look: CardLook { face.look }
     private var frameStyle: FrameStyle { face.frame }
-    private var tierColor: Color { (face.tier?.color ?? .slate).color }
+    /// The frame color: the tier's color, or the gimmick's frame color (E4).
+    private var tierColor: Color { (face.frameColor ?? face.tier?.color ?? .slate).color }
 
     var body: some View {
         GeometryReader { geo in
@@ -200,26 +209,54 @@ struct CardView: View {
 
     // MARK: Parts
 
+    /// The name bar in the era's style, or the gimmick's style (E3, E4).
+    @ViewBuilder
     private func nameBar(_ w: CGFloat) -> some View {
-        nameText(w)
+        let style = face.nameBar
+        let plain = style.shape == .plain
+        let dark = !plain && style.color.prefersDarkText
+        let text = nameText(w)
             .font(.system(size: w * 0.07, weight: .bold, design: .rounded))
             .lineLimit(1)
             .minimumScaleFactor(0.5)
-            .foregroundStyle(.black.opacity(0.85))
-            .padding(.horizontal, w * 0.04)
+            .foregroundStyle(dark ? Color.black.opacity(0.85) : .white)
+            .shadow(color: plain ? .black.opacity(0.7) : .clear, radius: plain ? w * 0.01 : 0)
+            .padding(.horizontal, style.shape == .banner ? w * 0.07 : w * 0.04)
             .padding(.vertical, w * 0.02)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.white.opacity(0.88), in: RoundedRectangle(cornerRadius: w * 0.03))
+        let fill = style.color.color.opacity(0.92)
+        switch style.shape {
+        case .rounded: text.background(fill, in: RoundedRectangle(cornerRadius: w * 0.03))
+        case .square: text.background(fill, in: Rectangle())
+        case .banner: text.background(fill, in: BannerShape())
+        case .plain: text
+        }
     }
 
-    /// The card name. A gimmick shows as a colored word after the character part:
-    /// "Aryla ex, Destined Trainee" (S7).
+    /// The card name. A gimmick shows after the character part, in its mark
+    /// style: "Aryla ex, Destined Trainee" (S7, E4).
     private func nameText(_ w: CGFloat) -> Text {
         guard let gimmick = face.gimmick else { return Text(face.name) }
         let parts = face.name.components(separatedBy: ", ")
         let head = parts.first ?? face.name
         let tail = parts.count > 1 ? ", " + parts.dropFirst().joined(separator: ", ") : ""
-        return Text(head + " ") + Text(gimmick.name).foregroundColor(gimmick.color.color).italic() + Text(tail)
+        let mark: Text
+        switch gimmick.mark {
+        case .word:
+            mark = Text(gimmick.name).foregroundColor(gimmick.color.color).italic()
+        case .badge:
+            var badge = AttributedString("\u{2009}\(gimmick.name)\u{2009}")
+            badge.backgroundColor = gimmick.color.color
+            badge.foregroundColor = gimmick.color.prefersDarkText ? .black : .white
+            mark = Text(badge).italic()
+        case .logo:
+            mark = Text(gimmick.name)
+                .font(.system(size: w * 0.095, weight: .black, design: .rounded))
+                .italic()
+                .tracking(w * 0.004)
+                .foregroundColor(gimmick.color.color)
+        }
+        return Text(head + " ") + mark + Text(tail)
     }
 
     private func artWindow(_ w: CGFloat, cornerRadius: CGFloat) -> some View {
@@ -338,6 +375,22 @@ struct CardView: View {
         .foregroundStyle(.white)
         .shadow(color: .black.opacity(0.5), radius: 1)
         .padding(.horizontal, w * 0.02)
+    }
+}
+
+/// A name bar with pointed ends, like a ribbon (eras.md, section 2.2).
+nonisolated struct BannerShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let notch = min(rect.height * 0.5, rect.width * 0.08)
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX - notch, y: rect.midY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX + notch, y: rect.midY))
+        path.closeSubpath()
+        return path
     }
 }
 

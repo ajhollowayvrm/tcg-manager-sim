@@ -12,6 +12,7 @@ struct SetDetailView: View {
         case ladder
         case details
         case pack
+        case testRip
         case subset(SubsetID?)
         case artSet(ArtSetID?)
 
@@ -22,6 +23,7 @@ struct SetDetailView: View {
             case .ladder: "ladder"
             case .details: "details"
             case .pack: "pack"
+            case .testRip: "rip"
             case .subset(let id): "subset-\(id ?? 0)"
             case .artSet(let id): "art-\(id ?? 0)"
             }
@@ -90,6 +92,7 @@ struct SetDetailView: View {
                     SubsetsSection(world: world, set: set, numbers: numbers) { sheet = .subset($0) }
                 }
                 PackSummary(world: world, set: set) { sheet = .pack }
+                testRipButton(world, set)
                 FillerSection(world: world, set: set, designed: cards.count, numbers: numbers) {
                     confirmReroll = true
                 }
@@ -146,7 +149,8 @@ struct SetDetailView: View {
                 SetSymbolView(symbol: set.symbol, size: 44)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(set.name).font(.largeTitle.bold())
-                    Text(set.code).font(.subheadline.weight(.bold).monospaced()).foregroundStyle(.secondary)
+                    Text([world.catalog.seriesNumber(of: set.id), set.code].compactMap { $0 }.joined(separator: " · "))
+                        .font(.subheadline.weight(.bold).monospaced()).foregroundStyle(.secondary)
                 }
             }
             HStack(spacing: 8) {
@@ -211,6 +215,26 @@ struct SetDetailView: View {
         }
     }
 
+    /// Open packs of this set to test it (test-rip.md, section 4). A blocking warning stops it.
+    @ViewBuilder
+    private func testRipButton(_ world: World, _ set: CardSet) -> some View {
+        let blocked = world.testRip(set.id) == nil
+        Button {
+            sheet = .testRip
+        } label: {
+            Label("Test rip", systemImage: "sparkles.rectangle.stack")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.large)
+        .disabled(blocked)
+        if blocked {
+            Label("Fix the pack warnings to open a test rip.", systemImage: "exclamationmark.octagon.fill")
+                .font(.caption)
+                .foregroundStyle(.red)
+        }
+    }
+
     @ViewBuilder
     private func sheetView(_ sheet: Sheet, _ world: World, _ set: CardSet) -> some View {
         switch sheet {
@@ -251,6 +275,10 @@ struct SetDetailView: View {
                 },
                 onCancel: { self.sheet = nil }
             )
+        case .testRip:
+            if let rip = world.testRip(set.id) {
+                TestRipView(world: world, set: set, rip: rip) { self.sheet = nil }
+            }
         case .subset(let id):
             SubsetEditor(world: world, set: set, existing: id.flatMap(set.subset)) { self.sheet = nil }
         case .artSet(let id):

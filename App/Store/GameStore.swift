@@ -190,13 +190,13 @@ final class GameStore {
     // MARK: - Eras, subsets, and art sets (sets.md, section 6)
 
     @discardableResult
-    func startEra(name: String, gimmick: Gimmick?) -> String? {
-        applyCard { world throws(CardError) in try world.startEra(name: name, gimmick: gimmick) }.message
+    func startEra(_ draft: EraDraft) -> String? {
+        applyCard { world throws(CardError) in try world.startEra(draft) }.message
     }
 
     @discardableResult
-    func updateEra(_ id: EraID, name: String, gimmick: Gimmick?) -> String? {
-        applyCard { world throws(CardError) in try world.updateEra(id, name: name, gimmick: gimmick) }.message
+    func updateEra(_ id: EraID, _ draft: EraDraft) -> String? {
+        applyCard { world throws(CardError) in try world.updateEra(id, draft) }.message
     }
 
     @discardableResult

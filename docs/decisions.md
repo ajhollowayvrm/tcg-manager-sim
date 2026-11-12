@@ -572,3 +572,119 @@ AJ's words: "A subset can show up at a slot if you mark that similar to Trainer 
 - A subset has a switch: "Own pack outcome".
 - When the switch is on, a slot can have the subset as an outcome, for example "Trainer Gallery: 10%" in a reverse holo slot.
 - When the switch is off, the subset's cards are drawn through their tiers.
+
+## 2026-11-11: test rip (pack opening)
+
+AJ picked "Pack opening first" as the next part, before print and release and before the market. The design is in `docs/design/test-rip.md`.
+
+### P1. The cards show in slot order
+
+AJ chose "Slot order" over "Rarest card last".
+
+- A pack shows its cards in the slot order that the player built. A real Scarlet and Violet pack works this way.
+- The slot order becomes a design choice.
+
+### P2. A pack opens all at once
+
+AJ chose "All at once" over "Swipe a stack" and "Flip a face-down fan".
+
+- A pack opens straight to one grid of all its cards, in slot order.
+- The grid marks the hits. The game shows no build-up before a hit.
+
+### P3. The player opens one pack or one box
+
+AJ chose "A pack or a box" over "One pack only" and "Pack, box, and bulk".
+
+- The player opens one pack, or one box of the pack's box size.
+- A box shows its hits, and the count of each outcome next to the expected count. The player checks the odds by hand with it.
+
+### P4. A test rip is free and keeps nothing
+
+AJ chose "Free, keeps nothing" over "Free, keeps a test binder" and "Costs money later".
+
+- A test rip is a design tool. It is free and unlimited.
+- The game keeps no pulls. A test rip changes nothing in the world.
+
+### P5. The test rip keeps the start values
+
+AJ's words: "Keep the defalts."
+
+- A hit is a pull from an outcome that comes in fewer than 1 pack in 10.
+- The box table gives no color to a count far from its expected count.
+
+## 2026-11-11: slot odds
+
+### S15. The outcome sliders of a slot stay balanced at 100%. This changes sets.md, section 5.4
+
+AJ's words: "The Outcomes on a slot should have balanced sliders that all equal 100%. As you slide one, it should rebalance the others."
+
+- When the player moves one outcome's slider, the other outcomes in the slot share the change by their ratio. Before, only the last outcome moved.
+- During one drag, the other outcomes keep their ratio from the start of the drag. A drag to 100% and back gives the old ratio again.
+- When all other outcomes are at 0%, they share the rest equally.
+- When the player removes an outcome, the other outcomes take its odds by their ratio.
+- A slot with one outcome is always 100%.
+
+## 2026-11-11: era designer
+
+AJ's words: "Well I think set creation is good. Can we create an era designer".
+
+### E1. An era has three new parts
+
+AJ picked three of four parts:
+
+- **Gimmick look and tier:** the gimmick gets its own card look and its own rarity tier, like the "ex" cards and the Double Rare tier.
+- **Era frame:** the era sets the base frame of all its cards. When the era changes, new cards look new, and old cards look like their era.
+- **Era defaults and code:** the era sets the ladder preset and the pack preset for its new sets, and a series code for its sets.
+
+AJ did not pick **New generation** (a region and a wave of new characters for each era).
+
+### E2. The era designer uses steps with a live card
+
+AJ chose "Steps with a live card" over "One form".
+
+- The era designer works like the card designer: one step at a time, with a sample card at the top.
+- The sample card shows the era's look at each step. Each new era goes through the designer.
+
+### E3. The era frame sets only the name bar
+
+AJ picked "Name bar" from "Border", "Name bar", "Name font", and "Art window". AJ's words: "A lot of this seems like stuff you could do to individual cards like the Prime cards in Pokemon".
+
+- The era sets the shape and the color of the name bar of its cards.
+- **Interpretation, for AJ to confirm:** the border, the name font, and the art window belong to a card look (a tier look or a version look), like the Prime cards. They are not part of an era.
+
+### E4. A gimmick card has its own frame and mark
+
+AJ chose "Own frame and mark" over "Mark only".
+
+- A gimmick card uses the gimmick's own name bar and frame color in place of the era's, like the V and GX cards.
+- The gimmick word gets a mark style.
+- The tier keeps its layout, its foil, and its rarity code.
+
+### E5. The gimmick has a home tier, and the gimmick is on by default there
+
+AJ chose "Home tier, auto on" over "Home tier, gimmick only" and "No home tier".
+
+- The gimmick names one home tier, for example Double Rare.
+- A new card at the home tier carries the gimmick by default. The player can turn it off.
+- A card at another tier, for example an SIR ex, can still carry the gimmick.
+
+### E6. Sets count up in the era, and a mini set takes ".5"
+
+AJ chose "Code + number, mini .5" over "Code + number for all" and "Code only".
+
+- The era has a code, for example "SV".
+- Main sets count SV1, SV2, SV3. A mini set takes the number of the main set before it, plus .5, for example SV3.5.
+- Each set keeps its own set code too.
+
+### E7. Prime-style looks come later
+
+AJ chose "Later, separate" over "Now, same build" and "Not at all".
+
+- The border, the name font, and the art window go into the card look (a tier look or a version look) in a separate change, after AJ tries the eras.
+- This confirms the interpretation in E3.
+
+### E8. A parallel pair takes one number with a letter
+
+AJ chose "One number + letter" over "Two numbers" and "One shared number".
+
+- Both halves of a parallel pair take one main number, with a letter in creation order: SV4a and SV4b.
