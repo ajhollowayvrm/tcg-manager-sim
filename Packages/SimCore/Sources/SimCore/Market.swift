@@ -10,9 +10,35 @@ import Foundation
 /// A part of the market view that a studio upgrade unlocks (A5, audiences.md section 10.1).
 public enum MarketInsight: String, CaseIterable, Codable, Sendable, Identifiable {
     case sizes, reach, goodwill, fatigue, rhythms, forecast, curve, sharp, scout, scoutNetwork
+    // The upgrades of 2026-11-15 (U5 to U16).
+    case focusGroups, characterDesigner, storyWriter, loreResearcher
+    case artDirector, staffIllustrator
+    case printBuyer, printPlant
+    case marketingLead, storeRelations, collectorRelations, priceTracker
 
-    /// True for a hire that watches the artists, not the market (K11).
-    public var isTalent: Bool { self == .scout || self == .scoutNetwork }
+    /// True for a hire that shows a part of the Market tab.
+    public var isMarketView: Bool { group == .market && self != .forecast && self != .curve }
+
+    /// The group of the hire on the Upgrades screen.
+    public enum Group: String, CaseIterable, Sendable {
+        case market = "Market research"
+        case characters = "Characters and story"
+        case talent = "Artists"
+        case production = "Production"
+        case marketing = "Marketing and sales"
+        case collectors = "Collectors"
+    }
+
+    public var group: Group {
+        switch self {
+        case .sizes, .reach, .goodwill, .fatigue, .rhythms, .forecast, .curve, .sharp: .market
+        case .focusGroups, .characterDesigner, .storyWriter, .loreResearcher: .characters
+        case .scout, .scoutNetwork, .artDirector, .staffIllustrator: .talent
+        case .printBuyer, .printPlant: .production
+        case .marketingLead, .storeRelations: .marketing
+        case .collectorRelations, .priceTracker: .collectors
+        }
+    }
 
     public var id: String { rawValue }
 
@@ -29,6 +55,18 @@ public enum MarketInsight: String, CaseIterable, Codable, Sendable, Identifiable
         case .sharp: "Data science"
         case .scout: "Talent scout"
         case .scoutNetwork: "Scouting network"
+        case .focusGroups: "Focus groups"
+        case .characterDesigner: "Character design"
+        case .storyWriter: "Story writing"
+        case .loreResearcher: "Lore research"
+        case .artDirector: "Art direction"
+        case .staffIllustrator: "Staff illustrator"
+        case .printBuyer: "Print deals"
+        case .printPlant: "Print plant"
+        case .marketingLead: "Marketing lead"
+        case .storeRelations: "Store relations"
+        case .collectorRelations: "Collector relations"
+        case .priceTracker: "Price tracker"
         }
     }
 
@@ -44,6 +82,18 @@ public enum MarketInsight: String, CaseIterable, Codable, Sendable, Identifiable
         case .sharp: "Every range is half as wide"
         case .scout: "Rising artists, 3 weeks before the news"
         case .scoutNetwork: "Rising artists, 6 weeks before the news, and if the fame will last"
+        case .focusGroups: "Each week, the audiences' appeal readings of your characters get narrower"
+        case .characterDesigner: "Each new character that you create starts with 5 more appeal"
+        case .storyWriter: "Story beats move relations and group fame 50% more"
+        case .loreResearcher: "The fans of each group in each audience"
+        case .artDirector: "Art takes 1 week less for each card, and a lead draws 15 filler cards a week"
+        case .staffIllustrator: "Founder art counts as popularity 45, not amateur"
+        case .printBuyer: "Packs cost 15% less to print, and reprints arrive in 4 weeks"
+        case .printPlant: "Your own plant: packs cost 35% less, no setup cost, and reprints arrive in 2 weeks"
+        case .marketingLead: "Campaigns and the brand budget reach 30% more people"
+        case .storeRelations: "Shelves reach 25% more people, and stores keep a set on the shelf longer"
+        case .collectorRelations: "Goodwill losses from sell-outs, reprints, and weak sets are half as large"
+        case .priceTracker: "Price trends and copies for every single"
         }
     }
 }

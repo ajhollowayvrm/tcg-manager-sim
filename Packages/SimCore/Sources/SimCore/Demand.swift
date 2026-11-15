@@ -161,7 +161,7 @@ private struct DemandContext {
         }.count) / Double(designed.count)
         let talent = world.talent
         let count = Double(max(1, designed.count))
-        artistScore = designed.reduce(0) { $0 + (talent.artist(world.artistID(of: $1))?.fame ?? World.founderPopularity) } / count / 100
+        artistScore = designed.reduce(0) { $0 + (talent.artist(world.artistID(of: $1)).map(world.fame) ?? World.founderPopularity) } / count / 100
         styleShare = Double(designed.filter { card in
             guard let artist = talent.artist(world.artistID(of: card)), let style = artist.style,
                   let c = world.character(card.characterID) else { return false }

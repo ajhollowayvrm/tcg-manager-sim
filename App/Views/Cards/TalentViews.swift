@@ -43,11 +43,13 @@ struct ArtistRow: View {
                 Text(artist.isFounder ? "Free" : Money.text(artist.fee)).font(.subheadline.monospacedDigit().weight(.semibold))
             }
             if artist.isFounder {
-                Text("Your own art. Free and done at once. Collectors see it as amateur.")
+                Text(world.market.insights.contains(.staffIllustrator)
+                     ? "Your own art, with your staff illustrator. Free and done at once. It counts as popularity 45."
+                     : "Your own art. Free and done at once. Collectors see it as amateur.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                Text("Draws \(artist.style?.rawValue ?? "any") characters · \(artist.weeks) weeks a card · done \(Market.calendar(week: world.artReadyWeek(for: artist)))")
+                Text("Draws \(artist.style?.rawValue ?? "any") characters · \(world.artWeeks(artist)) weeks a card · done \(Market.calendar(week: world.artReadyWeek(for: artist)))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -228,7 +230,7 @@ struct LeadArtistPicker: View {
         ScrollView {
             if let world = store.world {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("The lead draws the filler at 10% of their card fee, 10 cards a week, and each designed card with no own artist at the full fee. The studio pays the lead with the print run. A new lead starts the work again.")
+                    Text("The lead draws the filler at 10% of their card fee, \(world.fillerPerWeek) cards a week, and each designed card with no own artist at the full fee. The studio pays the lead with the print run. A new lead starts the work again.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     if let error {

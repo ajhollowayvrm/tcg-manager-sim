@@ -159,8 +159,9 @@ struct UpgradesView: View {
                 } footer: {
                     Text("A move costs one month of the new rent. The founder needs no place.")
                 }
+                ForEach(MarketInsight.Group.allCases, id: \.self) { group in
                 Section {
-                    ForEach(MarketInsight.allCases) { insight in
+                    ForEach(MarketInsight.allCases.filter { $0.group == group }) { insight in
                         let hired = world.market.insights.contains(insight)
                         Toggle(isOn: Binding(get: { hired }, set: { error = store.setHire(insight, hired: $0) })) {
                             HStack(spacing: 12) {
@@ -177,9 +178,12 @@ struct UpgradesView: View {
                         .accessibilityLabel("Hire \(insight.hireName)")
                     }
                 } header: {
-                    Text("Hires")
+                    Text(group.rawValue)
                 } footer: {
-                    Text("Each hire shows one part of the Market tab, or watches the artists for you. Each hire costs a salary every week. Dismissing a hire is free, and that part locks again.")
+                    if group == MarketInsight.Group.allCases.last {
+                        Text("Each hire shows you more, or makes a part of the studio better. Each hire costs a salary every week and needs room. Dismissing a hire is free, and its effect stops.")
+                    }
+                }
                 }
             }
         }

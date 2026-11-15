@@ -283,10 +283,26 @@ final class GameStore {
     // MARK: - Releases and money (sales.md)
 
     @discardableResult
-    func scheduleRelease(_ setID: SetID, boxes: Int, packPrice: Double, releaseWeek: Int, campaign: Campaign = .none) -> String? {
+    func scheduleRelease(_ setID: SetID, boxes: Int, packPrice: Double, releaseWeek: Int, campaign: Campaign = .none,
+                         holdBack: Double = 0) -> String? {
         applyCard { world throws(CardError) in
-            try world.scheduleRelease(setID, boxes: boxes, packPrice: packPrice, releaseWeek: releaseWeek, campaign: campaign)
+            try world.scheduleRelease(setID, boxes: boxes, packPrice: packPrice, releaseWeek: releaseWeek, campaign: campaign,
+                                      holdBack: holdBack)
         }.message
+    }
+
+    func signDistributor() {
+        guard var current = world else { return }
+        current.signDistributor()
+        world = current
+        persist()
+    }
+
+    func endDistributor() {
+        guard var current = world else { return }
+        current.endDistributor()
+        world = current
+        persist()
     }
 
     func setBrandBudget(_ amount: Double, adShare: Double) {
@@ -417,6 +433,33 @@ final class GameStore {
         } catch {
             errorMessage = "The game could not save. \(error.localizedDescription)"
         }
+    }
+
+    // MARK: - Funding (F1 to F4)
+
+    @discardableResult
+    func takeBankLoan(amount: Double, years: Int) -> String? {
+        applyCard { world throws(CardError) in try world.takeBankLoan(amount: amount, years: years) }.message
+    }
+
+    @discardableResult
+    func payOffLoan(_ id: Int) -> String? {
+        applyCard { world throws(CardError) in try world.payOffLoan(id) }.message
+    }
+
+    @discardableResult
+    func takeAdvance(amount: Double) -> String? {
+        applyCard { world throws(CardError) in try world.takeAdvance(amount: amount) }.message
+    }
+
+    @discardableResult
+    func acceptInvestor() -> String? {
+        applyCard { world throws(CardError) in try world.acceptInvestor() }.message
+    }
+
+    @discardableResult
+    func launchCrowdfund(_ setID: SetID, goal: Double, pledge: Double) -> String? {
+        applyCard { world throws(CardError) in try world.launchCrowdfund(setID, goal: goal, pledge: pledge) }.message
     }
 }
 

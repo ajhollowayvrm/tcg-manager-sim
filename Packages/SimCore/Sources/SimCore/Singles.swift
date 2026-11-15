@@ -256,8 +256,8 @@ extension World {
         guard topBefore >= 20, let after = singles(in: setID).first?.price, after < 0.7 * topBefore,
               let set = catalog.set(setID) else { return }
         var m = market
-        m.changeGoodwill(.investors, by: -10)
-        m.changeGoodwill(.chaseCollectors, by: -5)
+        m.changeGoodwill(.investors, by: goodwillLoss(-10))
+        m.changeGoodwill(.chaseCollectors, by: goodwillLoss(-5))
         marketState = m
         var b = business
         b.report(week, "The reprint of \(set.name) cut its top single from \(dollars(topBefore)) to \(dollars(after)). Investors and collectors are upset.")

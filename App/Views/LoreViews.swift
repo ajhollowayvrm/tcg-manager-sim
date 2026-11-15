@@ -141,6 +141,13 @@ private struct GroupRow: View {
                 Text([(group.kind?.name ?? "Group"), group.tone.name, "\(members.count) members", races.isEmpty ? nil : races.joined(separator: ", ")]
                     .compactMap { $0 }.joined(separator: " · "))
                     .font(.caption).foregroundStyle(.secondary)
+                // The lore researcher shows the group's biggest fans (U8).
+                if world.market.insights.contains(.loreResearcher) {
+                    let top = Audience.allCases.filter { $0 != .resellers }
+                        .sorted { group.fans($0) > group.fans($1) }.prefix(3)
+                    Text("Fans: " + top.map { "\($0.name) \(Int(group.fans($0).rounded()))" }.joined(separator: ", "))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
         }
         .padding(.leading, inner ? 12 : 0)

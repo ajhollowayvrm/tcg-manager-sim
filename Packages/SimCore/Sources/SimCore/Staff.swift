@@ -58,6 +58,18 @@ extension MarketInsight {
         case .sharp: "Data scientist"
         case .scout: "Talent scout"
         case .scoutNetwork: "Scouting network"
+        case .focusGroups: "Focus group lead"
+        case .characterDesigner: "Character designer"
+        case .storyWriter: "Story writer"
+        case .loreResearcher: "Lore researcher"
+        case .artDirector: "Art director"
+        case .staffIllustrator: "Staff illustrator"
+        case .printBuyer: "Print buyer"
+        case .printPlant: "Print plant crew"
+        case .marketingLead: "Marketing lead"
+        case .storeRelations: "Store relations manager"
+        case .collectorRelations: "Collector relations manager"
+        case .priceTracker: "Price analyst"
         }
     }
 
@@ -74,6 +86,18 @@ extension MarketInsight {
         case .sharp: 150_000
         case .scout: 55_000
         case .scoutNetwork: 140_000
+        case .focusGroups: 60_000
+        case .characterDesigner: 75_000
+        case .storyWriter: 55_000
+        case .loreResearcher: 40_000
+        case .artDirector: 90_000
+        case .staffIllustrator: 60_000
+        case .printBuyer: 70_000
+        case .printPlant: 420_000
+        case .marketingLead: 85_000
+        case .storeRelations: 65_000
+        case .collectorRelations: 55_000
+        case .priceTracker: 45_000
         }
     }
 
@@ -85,6 +109,7 @@ extension MarketInsight {
         case .forecast: 2
         case .curve: 3
         case .scoutNetwork: 2
+        case .printPlant: 6
         default: 1
         }
     }
@@ -171,5 +196,47 @@ extension World {
             peak = max(peak, cash)
         }
         return StudioHistory(weeks: week, sets: business.sales.count, packsSold: sold.values.reduce(0, +), bestSet: best, peakCash: peak)
+    }
+}
+
+// The effects of the upgrade hires (U5 to U16).
+extension World {
+    func hired(_ insight: MarketInsight) -> Bool { market.insights.contains(insight) }
+
+    /// The share of the print cost of each pack that the studio pays (U11, U12).
+    public var printCostShare: Double { hired(.printPlant) ? 0.65 : hired(.printBuyer) ? 0.85 : 1 }
+    /// The setup cost of a first print run. The plant has none (U12).
+    public var printSetupCost: Double { hired(.printPlant) ? 0 : Pricing.printSetup }
+    /// Weeks until a reprint arrives (U11, U12).
+    public var reprintDelay: Int { hired(.printPlant) ? 2 : hired(.printBuyer) ? 4 : Pricing.reprintWeeks }
+    /// The marketing reach multiplier (U13).
+    public var marketingReach: Double { hired(.marketingLead) ? 1.3 : 1 }
+    /// The shelf reach multiplier and half-life in weeks (U14).
+    var shelfBoost: Double { hired(.storeRelations) ? 1.25 : 1 }
+    var shelfHalfLifeWeeks: Double { hired(.storeRelations) ? 11 : Self.shelfHalfLife }
+    /// A goodwill loss, halved with collector relations (U15). Pass a negative amount.
+    func goodwillLoss(_ amount: Double) -> Double { hired(.collectorRelations) ? amount / 2 : amount }
+    /// The story beat strength (U7).
+    var storyStrength: Double { hired(.storyWriter) ? 1.5 : 1 }
+    /// Weeks for each card of an artist. The art director takes 1 week off, to 1 at least (U9).
+    public func artWeeks(_ artist: Artist) -> Int { hired(.artDirector) ? max(1, artist.weeks - 1) : artist.weeks }
+    /// Filler cards that a lead draws in one week (U9).
+    public var fillerPerWeek: Int { hired(.artDirector) ? 15 : LeadArt.fillerPerWeek }
+    /// The fame that the "Artists" factor reads. A staff illustrator lifts founder art (U10).
+    public func fame(of artist: Artist) -> Double {
+        artist.isFounder && hired(.staffIllustrator) ? max(artist.fame, 45) : artist.fame
+    }
+    /// Release knowledge stops here. Focus groups reach higher (U5).
+    static let releaseKnowledgeCap = 0.7
+    static let focusKnowledgeCap = 0.95
+
+    /// Focus groups narrow the appeal readings of the roster each week (U5).
+    mutating func runFocusGroups() {
+        guard hired(.focusGroups) else { return }
+        for i in characters.indices where characters[i].status == .active {
+            for a in Audience.allCases where !a.isDerived {
+                characters[i].knowledge[a] = min(Self.focusKnowledgeCap, characters[i].knowledge[a] + 0.05)
+            }
+        }
     }
 }

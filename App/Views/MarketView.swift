@@ -63,7 +63,7 @@ struct MarketView: View {
                      : "Ranges get narrower with more research.")
             }
 
-            let locked = MarketInsight.allCases.filter { !market.insights.contains($0) && $0 != .forecast && $0 != .curve && !$0.isTalent }
+            let locked = MarketInsight.allCases.filter { !market.insights.contains($0) && $0.isMarketView }
             if !locked.isEmpty {
                 Section("Upgrades that show more") {
                     ForEach(locked) { insight in

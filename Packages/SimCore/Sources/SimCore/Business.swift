@@ -10,7 +10,7 @@ public struct SetRelease: Codable, Sendable, Equatable {
     public let packPrice: Double
     /// All packs printed so far, reprints included.
     public internal(set) var printedPacks: Int
-    /// Packs in stores now.
+    /// Unsold packs: the stores and the warehouse.
     public internal(set) var stockPacks: Double
     /// Reprints on the way: the week each one arrives, and its packs.
     public internal(set) var pendingReprints: [Reprint]
@@ -26,6 +26,8 @@ public struct SetRelease: Codable, Sendable, Equatable {
     public internal(set) var fansAtRelease: Double? = nil
     /// The week when the last reprint arrived. Reader: singles survival (M2).
     public internal(set) var lastPrintWeek: Int? = nil
+    /// The stock in each channel, and the orders (N1). Nil in a save from before distribution.
+    public internal(set) var channels: SetChannels? = nil
 
     public struct Reprint: Codable, Sendable, Equatable {
         public let arrivalWeek: Int
@@ -40,7 +42,7 @@ public struct WeekSales: Codable, Sendable, Equatable {
     public let sold: [Double]
     /// Demand that found no stock, for each audience.
     public let missed: [Double]
-    /// The studio's revenue: its share of the pack price.
+    /// The studio's money of the week from this set: shipments, reorders, and the web store.
     public let revenue: Double
     public let stockAfter: Double
 
@@ -60,6 +62,23 @@ public struct LedgerEntry: Codable, Sendable, Equatable {
     /// Positive for money in, negative for money out.
     public let amount: Double
     public let note: String
+    /// What the money is. Nil in a save from before the kinds, and for other money.
+    public let kind: LedgerKind?
+
+    init(week: Int, amount: Double, note: String, kind: LedgerKind? = nil) {
+        self.week = week
+        self.amount = amount
+        self.note = note
+        self.kind = kind
+    }
+}
+
+/// The kind of a ledger line. Funding reads the sales revenue (F1, F2, F4).
+public enum LedgerKind: String, Codable, Sendable {
+    /// Money from the sets: shipments, reorders, the web store, and the old fan sales.
+    case sales
+    /// Money from lenders, backers, and investors, and payments to them.
+    case funding
 }
 
 /// The studio's money and its sales record.
@@ -113,9 +132,16 @@ public struct Business: Codable, Sendable, Equatable {
         news.append(NewsItem(week: week, text: text))
     }
 
-    mutating func record(_ week: Int, _ amount: Double, _ note: String) {
+    mutating func record(_ week: Int, _ amount: Double, _ note: String, kind: LedgerKind? = nil) {
         cash += amount
-        ledger.append(LedgerEntry(week: week, amount: amount, note: note))
+        ledger.append(LedgerEntry(week: week, amount: amount, note: note, kind: kind))
+    }
+
+    /// The sales revenue from `fromWeek` to `toWeek`, both included (F1, F2, F4).
+    public func salesRevenue(from fromWeek: Int, to toWeek: Int) -> Double {
+        ledger.reduce(0) { sum, e in
+            e.kind == .sales && e.week >= fromWeek && e.week <= toWeek ? sum + e.amount : sum
+        }
     }
 }
 
@@ -161,19 +187,19 @@ extension World {
                 extra += line.perPack * costs.reduce(0, +) / Double(costs.count)
             }
         }
-        return Double(set.pack.cardCount) * Pricing.cardCost + Pricing.wrapperCost + extra
+        return (Double(set.pack.cardCount) * Pricing.cardCost + Pricing.wrapperCost + extra) * printCostShare
     }
 
     /// The cost of a first print run: the setup, the lead artist's pay (K7), and the packs.
     public func printCost(_ setID: SetID, boxes: Int) -> Double {
         guard let set = catalog.set(setID) else { return 0 }
-        return Pricing.printSetup + leadArtCost(setID)
+        return printSetupCost + leadArtCost(setID)
             + Double(boxes * set.pack.boxSize) * printCostPerPack(setID)
     }
 
     /// Plans the release, pays the print cost, and locks the set (B1, B2).
     public mutating func scheduleRelease(_ setID: SetID, boxes: Int, packPrice: Double, releaseWeek: Int,
-                                         campaign: Campaign = .none) throws(CardError) {
+                                         campaign: Campaign = .none, holdBack: Double = 0) throws(CardError) {
         guard let i = catalog.sets.firstIndex(where: { $0.id == setID }) else { throw .unknownSet(setID) }
         let set = catalog.sets[i]
         guard set.status == .draft else { throw .setLocked }
@@ -181,6 +207,11 @@ extension World {
         guard Pricing.packPriceRange.contains(packPrice) else { throw .badRelease("Set a pack price from $1 to $20.") }
         guard releaseWeek >= week + Pricing.previewWeeks else {
             throw .badRelease("The release must be at least \(Pricing.previewWeeks) weeks away, for the previews.")
+        }
+        guard (0...0.5).contains(holdBack) else { throw .badRelease("Hold back 0% to 50% of the print run for the web store.") }
+        let backers = backerPacks(setID)
+        guard boxes * set.pack.boxSize >= backers else {
+            throw .badRelease("The print run must cover the \(backers.formatted()) packs that the backers are owed.")
         }
         guard !catalog.cards(in: setID).isEmpty else { throw .badRelease("Design at least one card first.") }
         guard let lead = set.leadArt, let leadArtist = talent.artist(lead.artistID) else {
@@ -197,9 +228,11 @@ extension World {
         guard campaign.previewBudget >= 0, campaign.adBudget >= 0, campaign.storeKits >= 0 else {
             throw .badRelease("A marketing amount cannot be below zero.")
         }
+        guard let plan = orderPlan(setID, boxes: boxes, packPrice: packPrice, holdBack: holdBack) else { throw .unknownSet(setID) }
         catalog.sets[i].release = SetRelease(releaseWeek: releaseWeek, packPrice: packPrice, printedPacks: packs,
-                                             stockPacks: Double(packs), pendingReprints: [], reviewed: false, selloutNoted: false,
-                                             campaign: campaign == .none ? nil : campaign)
+                                             stockPacks: Double(packs - plan.backerPacks), pendingReprints: [], reviewed: false,
+                                             selloutNoted: false, campaign: campaign == .none ? nil : campaign,
+                                             channels: Self.channels(for: plan))
         catalog.sets[i].status = .scheduled
         var b = business
         let leadPay = leadArtCost(setID)
@@ -208,6 +241,8 @@ extension World {
         for legend in returningLegends(setID) {
             b.report(week, "\(legend.name) returns to draw \(set.name). Fans of \(setsDrawn(by: legend.id).first?.name ?? "the first set") take notice.")
         }
+        b.report(week, "\(set.name) orders: \(plan.orders(.hobby).formatted()) packs from hobby stores, \(plan.orders(.bigBox).formatted()) from big-box."
+            + (plan.shortage ? " The print run is smaller than the orders. Each store gets less." : ""))
         let marketing = self.cost(of: campaign)
         if marketing > 0 { b.record(week, -marketing, "Marketing: \(set.name)") }
         businessState = b
@@ -221,7 +256,7 @@ extension World {
         guard Pricing.boxRange.contains(boxes) else { throw .badRelease("Print 1 to \(Pricing.boxRange.upperBound.formatted()) boxes.") }
         let packs = boxes * catalog.sets[i].pack.boxSize
         let cost = Double(packs) * printCostPerPack(setID)
-        release.pendingReprints.append(.init(arrivalWeek: week + Pricing.reprintWeeks, packs: packs))
+        release.pendingReprints.append(.init(arrivalWeek: week + reprintDelay, packs: packs))
         catalog.sets[i].release = release
         var b = business
         b.record(week, -cost, "Reprint: \(catalog.sets[i].name), \(boxes.formatted()) boxes")

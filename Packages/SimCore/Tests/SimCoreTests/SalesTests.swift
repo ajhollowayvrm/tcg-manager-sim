@@ -14,7 +14,7 @@ private func goodwill(_ world: World, _ audience: Audience) -> Double {
 
 @Suite("Sales")
 struct SalesTests {
-    @Test("Release week puts the set on sale, books revenue as the studio's share, and tires the audiences (B3, B10)")
+    @Test("Release week puts the set on sale, books the shipment and the web store money, and tires the audiences (B3, B10, N1)")
     func releaseWeek() throws {
         let (world, set, mascot) = try Fixture.released(boxes: bigRun)
         let release = try #require(world.catalog.set(set)?.release)
@@ -22,15 +22,16 @@ struct SalesTests {
         #expect(world.business.sales[set]?.count == 1)
         #expect(sales.week == release.releaseWeek)
         #expect(sales.totalSold > 0)
-        let revenue = sales.totalSold * release.packPrice * Pricing.publisherShare
-        #expect(abs(sales.revenue - revenue) < 1e-6)
+        let booked = world.business.ledger.filter { $0.kind == .sales && $0.week == sales.week }.reduce(0) { $0 + $1.amount }
+        #expect(abs(sales.revenue - booked) < 1e-6)
+        #expect(sales.revenue > 0)
         let packs = Double(release.printedPacks)
         #expect(abs(sales.stockAfter - (packs - sales.totalSold)) < 1e-6)
         #expect(release.stockPacks == sales.stockAfter)
         #expect(sales.sold[Audience.resellers.rawValue] == 0)
         #expect(release.fansAtRelease ?? 0 > 0)
         let notes = world.business.ledger.map(\.note)
-        #expect(notes.contains("Sales: Base"))
+        #expect(notes.contains("Shipment: Base, Hobby stores"))
         #expect(world.business.news.contains { $0.text.hasPrefix("Base is out") })
         #expect(world.market.state(.competitivePlayers).fatigue > 0)
         #expect(world.market.state(.kids).reachedPeople > 0)
@@ -49,9 +50,12 @@ struct SalesTests {
         #expect(world.business.sales[set] == nil)
     }
 
-    @Test("A sell-out in release week gives resellers half the stock and costs goodwill, once (B7)")
+    @Test("A sell-out in release week gives resellers half the web store stock and costs goodwill, once (B7)")
     func selloutByResellers() throws {
-        var (world, set, _) = try Fixture.released()
+        var (world, set, _) = try Fixture.scheduled()
+        world.catalog.sets[0].release?.stockPacks = 100
+        world.catalog.sets[0].release?.channels = SetChannels()
+        while world.catalog.set(set)?.status != .released { world.advanceWeek() }
         let sales = try #require(lastSales(world, set))
         let resellers = sales.sold[Audience.resellers.rawValue]
         #expect(sales.stockAfter == 0)

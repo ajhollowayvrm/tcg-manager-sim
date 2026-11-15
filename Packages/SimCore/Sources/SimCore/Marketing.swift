@@ -96,10 +96,10 @@ extension World {
 
     /// The new people that a campaign reaches, in total.
     public func reach(of campaign: Campaign) -> Double {
-        campaign.previewBudget / Marketing.previewCostPerPerson
+        (campaign.previewBudget / Marketing.previewCostPerPerson
             + campaign.adBudget / Marketing.adCPM * 1_000 * Marketing.viewToFan
             + Double(campaign.storeKits)
-            + campaign.creators.compactMap(creator).reduce(0) { $0 + $1.newPeople }
+            + campaign.creators.compactMap(creator).reduce(0) { $0 + $1.newPeople }) * marketingReach
     }
 
     /// The campaign's reach in one week of a release's life (costs.md, section 5.1).
@@ -121,10 +121,11 @@ extension World {
         if w == 0 {
             for (a, share) in Marketing.kitMix { people[a, default: 0] += Double(campaign.storeKits) * share }
         }
+        let boost = marketingReach
         var m = market
-        for (a, n) in people { m.addReach(a, people: n) }
+        for (a, n) in people { m.addReach(a, people: n * boost) }
         marketState = m
-        return people.values.reduce(0, +)
+        return people.values.reduce(0, +) * boost
     }
 
     /// The weekly brand budget: ads and creators every week, release or not (K6).
@@ -132,8 +133,8 @@ extension World {
         let budget = business.brandBudget ?? 0
         guard budget > 0 else { return }
         let adShare = business.brandAdShare ?? 0.5
-        let adPeople = budget * adShare / Marketing.adCPM * 1_000 * Marketing.viewToFan
-        let creatorPeople = budget * (1 - adShare) / Marketing.creatorCPM * 1_000 * Marketing.viewToFan
+        let adPeople = budget * adShare / Marketing.adCPM * 1_000 * Marketing.viewToFan * marketingReach
+        let creatorPeople = budget * (1 - adShare) / Marketing.creatorCPM * 1_000 * Marketing.viewToFan * marketingReach
         var m = market
         for (a, share) in Marketing.adMix { m.addReach(a, people: adPeople * share) }
         // The creator part follows the average mix of all creators.

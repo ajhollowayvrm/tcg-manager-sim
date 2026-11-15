@@ -7,9 +7,7 @@ struct BusinessView: View {
     @Environment(GameStore.self) private var store
     private let areas: [(title: String, systemImage: String, detail: String)] = [
         ("Printers", "printer.fill", "Print runs, foil capacity, and the cost of each card. Later, your own print facility."),
-        ("Distributors and retailers", "shippingbox.and.arrow.backward.fill", "Orders, store limits, and how much stock each channel takes."),
         ("Partners", "person.2.fill", "Crossover sets, licensing your IP, and promotions. A media crossover can start your growth."),
-        ("Lenders and backers", "banknote.fill", "Bank loans, revenue-based financing, and crowdfunds."),
     ]
 
     var body: some View {
@@ -18,6 +16,18 @@ struct BusinessView: View {
                 if let world = store.world {
                     MoneySection(business: world.business)
                     BrandBudgetSection(business: world.business)
+                    Section("Your business") {
+                        NavigationLink {
+                            ChannelsView()
+                        } label: {
+                            Label("Distributors and retailers", systemImage: "shippingbox.and.arrow.backward.fill")
+                        }
+                        NavigationLink {
+                            FundingView()
+                        } label: {
+                            Label("Lenders and backers", systemImage: "banknote.fill")
+                        }
+                    }
                 }
                 Section {
                     ForEach(areas, id: \.title) { area in

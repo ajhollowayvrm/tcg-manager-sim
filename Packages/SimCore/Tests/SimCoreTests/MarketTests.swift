@@ -157,15 +157,16 @@ struct MarketTests {
         #expect(sharpWidth < wideWidth * 0.55)
     }
 
-    @Test("Insights switch on and off, and only the scouts are talent insights (A5, K11)")
+    @Test("Insights switch on and off, and only the market research hires show the Market tab (A5, K11)")
     func insights() throws {
         var world = try Fixture.world().world
         world.setMarketInsight(.fatigue, on: true)
         #expect(world.market.insights.contains(.fatigue))
         world.setMarketInsight(.fatigue, on: false)
         #expect(world.market.insights.isEmpty)
-        let talent = MarketInsight.allCases.filter(\.isTalent)
-        #expect(Set(talent) == [.scout, .scoutNetwork])
+        let marketView = Set(MarketInsight.allCases.filter { $0.isMarketView })
+        let expected: Set<MarketInsight> = [.sizes, .reach, .goodwill, .fatigue, .rhythms, .sharp]
+        #expect(marketView == expected)
     }
 
     @Test("Phrases change at their thresholds")

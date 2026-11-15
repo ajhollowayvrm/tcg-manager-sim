@@ -236,7 +236,7 @@ extension World {
         guard let lead = catalog.set(setID)?.leadArt else { return nil }
         if lead.artistID == Artist.founderID { return lead.startWeek }
         let filler = plannedFiller(setID)
-        let fillerWeeks = (filler + LeadArt.fillerPerWeek - 1) / LeadArt.fillerPerWeek
+        let fillerWeeks = (filler + fillerPerWeek - 1) / fillerPerWeek
         return lead.startWeek + lead.delay + fillerWeeks + leadDesigned(setID)
     }
 
@@ -252,13 +252,13 @@ extension World {
         let own = catalog.cards.filter { $0.artistID == artist && ($0.artReadyWeek ?? 0) > week }.count
         let lead = catalog.sets.filter { $0.leadArt?.artistID == artist && $0.status != .released }
             .filter { (leadReadyWeek($0.id) ?? 0) > week }
-            .reduce(0) { $0 + leadDesigned($1.id) + (plannedFiller($1.id) + LeadArt.fillerPerWeek - 1) / LeadArt.fillerPerWeek }
+            .reduce(0) { $0 + leadDesigned($1.id) + (plannedFiller($1.id) + fillerPerWeek - 1) / fillerPerWeek }
         return own + lead
     }
 
     /// The week when a new commission from this artist is done (K2). The founder is done at once.
     public func artReadyWeek(for artist: Artist) -> Int {
-        artist.isFounder ? week : week + artist.weeks + artist.outsideQueue + cardsInProgress(artist.id)
+        artist.isFounder ? week : week + artWeeks(artist) + artist.outsideQueue + cardsInProgress(artist.id)
     }
 
     /// The first week when all the cards of a set have their art (K2, K7).
@@ -391,7 +391,7 @@ extension World {
         if catalog.sets[i].leadArt?.artistID == id { return }
         guard let artist = talent.artist(id) else { throw .unknownArtist }
         catalog.sets[i].leadArt = nil
-        let delay = artist.isFounder ? 0 : artist.weeks + artist.outsideQueue + cardsInProgress(id)
+        let delay = artist.isFounder ? 0 : artWeeks(artist) + artist.outsideQueue + cardsInProgress(id)
         catalog.sets[i].leadArt = LeadArt(artistID: id, startWeek: week, delay: delay, cardFee: artist.fee,
                                           heat: workHeat(artist, ready: week + delay))
     }

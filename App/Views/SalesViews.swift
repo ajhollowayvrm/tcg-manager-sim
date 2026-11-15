@@ -202,9 +202,12 @@ struct ReleasePlanView: View {
     @State private var releaseWeek: Int?
     @State private var error: String?
     @State private var campaign = Campaign()
+    @State private var holdBackPercent = 0
 
     var body: some View {
         if let world = store.world, let set = world.catalog.set(setID) {
+            let holdBack = Double(holdBackPercent) / 100
+            let orders = world.orderPlan(setID, boxes: boxes, packPrice: price, holdBack: holdBack)
             let earliest = max(world.week + Pricing.previewWeeks, world.setArtReadyWeek(setID))
             let week = max(earliest, releaseWeek ?? world.week + 4)
             let cost = world.printCost(setID, boxes: boxes)
@@ -224,17 +227,17 @@ struct ReleasePlanView: View {
                 } header: {
                     Text("Print run")
                 } footer: {
-                    Text("Each card costs $0.025, each wrapper $0.05, plus the looks. The first run adds a $2,000 setup and the lead artist's pay. A larger run reaches more people from the shelves, and risks unsold stock.")
+                    Text("Each card costs $0.025, each wrapper $0.05, plus the looks. The first run adds a \(Money.text(world.printSetupCost)) setup and the lead artist's pay. A larger run reaches more people from the shelves, and risks unsold stock.")
                 }
                 Section {
                     Stepper(value: $price, in: Pricing.packPriceRange, step: 0.25) {
                         LabeledContent("Pack price", value: String(format: "$%.2f", price))
                     }
-                    LabeledContent("You get for each pack", value: String(format: "$%.2f", price * Pricing.publisherShare))
+                    LabeledContent("You get for each pack", value: "$\(String(format: "%.2f", price * 0.38)) to $\(String(format: "%.2f", price * 0.70))")
                 } header: {
                     Text("Price")
                 } footer: {
-                    Text("Distributors and stores keep 62%. Kids and parents notice the price most.")
+                    Text("You get 38% from a distributor or big-box, 45% from a hobby store direct, and 70% on your web store. Kids and parents notice the price most.")
                 }
                 Section {
                     Stepper(value: Binding(get: { week }, set: { releaseWeek = $0 }),
@@ -248,10 +251,36 @@ struct ReleasePlanView: View {
                 } footer: {
                     Text("Previews run for 3 weeks before the release. The set cannot release before its art is done. The holidays lift kids and parents.")
                 }
+                if let orders {
+                    Section {
+                        Stepper(value: $holdBackPercent, in: 0...50, step: 5) {
+                            LabeledContent("Hold back for the web store", value: "\(holdBackPercent)%")
+                        }
+                        LabeledContent("Held back", value: "\(orders.heldBack.formatted()) packs")
+                        if orders.backerPacks > 0 {
+                            LabeledContent("Owed to backers", value: "\(orders.backerPacks.formatted()) packs")
+                        }
+                        LabeledContent("Hobby stores order", value: "\(orders.orders(.hobby).formatted()) packs")
+                        if world.channels.hasDistributor {
+                            LabeledContent("Big-box retail orders", value: "\(orders.orders(.bigBox).formatted()) packs")
+                        } else {
+                            LabeledContent("Big-box retail orders", value: "Needs a distributor")
+                        }
+                        LabeledContent("Paid at shipment", value: Money.text(orders.shipmentMoney))
+                        if orders.shortage {
+                            Text("The stores want more than the print run gives. Each store gets less.").foregroundStyle(.orange)
+                        }
+                    } header: {
+                        Text("Orders and the web store")
+                    } footer: {
+                        Text("The stores order before the release, and pay when the packs ship. Held-back packs stay in your warehouse and sell on your web store at 70%.")
+                    }
+                }
                 CampaignSection(world: world, campaign: $campaign)
                 Section {
                     if showHidden || world.market.insights.contains(.forecast) {
-                        let forecast = world.forecast(setID, boxes: boxes, packPrice: price, releaseWeek: week, campaign: campaign)
+                        let forecast = world.forecast(setID, boxes: boxes, packPrice: price, releaseWeek: week, campaign: campaign,
+                                                      holdBack: holdBack)
                         let sold = forecast.reduce(0) { $0 + $1.totalSold }
                         let missed = forecast.reduce(0) { $0 + $1.totalMissed }
                         let revenue = forecast.reduce(0) { $0 + $1.revenue }
@@ -280,7 +309,8 @@ struct ReleasePlanView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel", action: onDone) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Schedule") {
-                        error = store.scheduleRelease(setID, boxes: boxes, packPrice: price, releaseWeek: week, campaign: campaign)
+                        error = store.scheduleRelease(setID, boxes: boxes, packPrice: price, releaseWeek: week, campaign: campaign,
+                                                    holdBack: holdBack)
                         if error == nil { onDone() }
                     }
                 }
@@ -310,11 +340,34 @@ struct SetSalesView: View {
                                    : "Releases \(Market.calendar(week: release.releaseWeek))")
                     LabeledContent("Packs sold", value: Money.packs(weeks.reduce(0) { $0 + $1.totalSold }))
                     LabeledContent("Missed for lack of stock", value: Money.packs(weeks.reduce(0) { $0 + $1.totalMissed }))
-                    LabeledContent("Stock in stores", value: Money.packs(release.stockPacks))
+                    LabeledContent("Stock left", value: Money.packs(release.stockPacks))
                     LabeledContent("Printed", value: release.printedPacks.formatted())
                     LabeledContent("Revenue to you", value: Money.text(weeks.reduce(0) { $0 + $1.revenue }))
                     if let campaign = release.campaign {
                         LabeledContent("Marketing", value: "\(Money.text(world.cost(of: campaign))) · \(Money.packs(release.campaignReached ?? 0)) people reached")
+                    }
+                }
+                if let ch = release.channels {
+                    Section {
+                        ForEach(Channel.allCases) { c in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(c.name).font(.subheadline.bold())
+                                Text("Sold \(Money.packs(ch.sold(c))) packs"
+                                     + (c == .web ? "" : " · \(Money.packs(ch.stock(c))) in stock · \(Money.packs(ch.received(c))) received"))
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        LabeledContent("Warehouse", value: "\(Money.packs(ch.warehouse(total: release.stockPacks))) packs")
+                        if ch.backerPacks > 0 {
+                            LabeledContent("Sent to backers", value: "\(ch.backerPacks.formatted()) packs")
+                        }
+                        if ch.limited {
+                            Text("Big-box stores limit this set to 2 packs a person.").foregroundStyle(.orange)
+                        }
+                    } header: {
+                        Text("Channels")
+                    } footer: {
+                        Text("Stores pay when packs ship. The web store pays when a pack sells. The warehouse costs about $20 a month for each 3,600 packs.")
                     }
                 }
                 if !weeks.isEmpty {
@@ -337,7 +390,7 @@ struct SetSalesView: View {
                 } header: {
                     Text("Reprints")
                 } footer: {
-                    Text("A reprint arrives 6 weeks after the order. Kids, parents, and completionists like a reprint. Investors do not.")
+                    Text("A reprint arrives \(world.reprintDelay) weeks after the order. Kids, parents, and completionists like a reprint. Investors do not.")
                 }
                 Section {
                     if visible {

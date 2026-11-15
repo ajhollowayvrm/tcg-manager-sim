@@ -60,6 +60,10 @@ public struct World: Codable, Sendable, Equatable {
     var loreState: Lore?
     /// The singles market history (M3). Nil in a save from before singles.
     var singlesState: SinglesState?
+    /// The distributor contract and the channels' trust (N1 to N4). Nil in a save from before distribution.
+    var channelState: ChannelBook?
+    /// Loans, financing, crowdfunds, and investors (F1 to F4). Nil in a save from before funding.
+    var financeState: Finance?
 
     public init(seed: UInt64, studioName: String) {
         version = Self.currentVersion
@@ -310,6 +314,8 @@ public struct World: Codable, Sendable, Equatable {
         runBrandBudget()
         runSales(noise: noise)
         runSinglesMarket()
+        runFocusGroups()
+        runFinance()
         payWeeklyCosts()
     }
 
@@ -364,7 +370,8 @@ public struct World: Codable, Sendable, Equatable {
     /// A new character with its hidden appeal. It does not join the roster and
     /// has no links. The draft must be valid.
     mutating func makeCharacter(_ d: CharacterDraft, origin: Character.Origin) -> Character {
-        let spark = appealRng.gauss() * 12
+        // A character designer gives each created character 5 more appeal (U6).
+        let spark = appealRng.gauss() * 12 + (origin == .created && hired(.characterDesigner) ? 5 : 0)
         var random = AudienceValues()
         for audience in Audience.allCases where !audience.isDerived {
             random[audience] = spark + appealRng.gauss() * 8

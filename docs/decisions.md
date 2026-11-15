@@ -1163,3 +1163,61 @@ AJ asked for card links: "a card is a better form of another card and the lesser
 - No card-to-card links. A "required" lower card is a play rule, and the game has no play. The roster's evolution lines (R7) already hold the link between characters.
 - The card face reads the character's line: "Basic" for the first stage of a line, then "Stage 1 · Evolves from <name>" and "Stage 2 · Evolves from <name>". A character with no line shows nothing. Flavor only.
 - Not built: the "complete lines" demand for set completionists (roster.md). It can come later.
+
+## 2026-11-15: upgrades for every system
+
+AJ asked for an audit of the upgrades. The audit found that all 10 hires only show hidden numbers, and that most systems had no upgrade. Then AJ said: "Add all the upgrades you can think of." The main thread picked the hires, the effects, and the salaries. AJ can change any of them.
+
+### U5. Releases and focus groups teach a character's appeal
+
+- Before this, a character's appeal reading stayed at the widest range, because nothing raised `knowledge` in a real game.
+- Each sales week, each audience that buys a set learns 3% of the appeal of the set's characters (× the card weight), up to 70%.
+- Focus group lead ($60,000): each week, every active character gains 5% in every audience, up to 95%.
+
+### U6 to U16. Twelve new hires
+
+| ID | Hire | Group | Salary | People | Effect |
+|---|---|---|---|---|---|
+| U5 | Focus group lead | Characters and story | $60,000 | 1 | See U5 |
+| U6 | Character designer | Characters and story | $75,000 | 1 | Each created character starts with 5 more appeal |
+| U7 | Story writer | Characters and story | $55,000 | 1 | Story beats move relations and group fame 50% more |
+| U8 | Lore researcher | Characters and story | $40,000 | 1 | The Lore screen shows each group's top 3 fan audiences |
+| U9 | Art director | Artists | $90,000 | 1 | 1 week less for each card (1 week at least). A lead draws 15 filler cards a week, not 10 |
+| U10 | Staff illustrator | Artists | $60,000 | 1 | Founder art counts as popularity 45, not 20 |
+| U11 | Print buyer | Production | $70,000 | 1 | Packs cost 15% less. Reprints arrive in 4 weeks, not 6 |
+| U12 | Print plant crew | Production | $420,000 | 6 | Packs cost 35% less. No setup cost. Reprints arrive in 2 weeks. It replaces the print buyer's effect |
+| U13 | Marketing lead | Marketing and sales | $85,000 | 1 | Campaigns and the brand budget reach 30% more people |
+| U14 | Store relations manager | Marketing and sales | $65,000 | 1 | Shelf reach ×1.25. The shelf half-life is 11 weeks, not 8 |
+| U15 | Collector relations manager | Collectors | $55,000 | 1 | Goodwill losses from sell-outs, reprints, weak sets, and bad pull rates are half as large |
+| U16 | Price analyst | Collectors | $45,000 | 1 | Singles show their copies and their 4-week trend. Without the analyst, only the prices show |
+
+- The Upgrades screen groups the hires: Market research, Characters and story, Artists, Production, Marketing and sales, and Collectors.
+- Not added: a campaign tracker (the release plan already shows the reach for free), distributors and retailers, and loans. The last two are separate systems in the Business tab.
+
+## 2026-11-15: distribution and funding
+
+AJ's words: "Let's build the distributors retailers and loans." The design is in `docs/design/distribution-and-funding.md`.
+
+### N1. Stock reaches the stores by orders, and the studio can hold stock back
+
+AJ chose "Both" over "Orders" and "You split the stock". The store channels order before the release, and the studio is paid at shipment. The studio can hold back up to 50% of a print run for its web store.
+
+### N2. Four channels: hobby stores, big-box retail, a web store, and a distributor
+
+AJ picked all four. Without a distributor, the studio sells direct to hobby stores only, at 45% of the pack price and 40% of their demand. With a distributor, big-box orders too, at 38%. The web store pays 70%.
+
+### N3. Each store channel has a trust
+
+Trust sets the size of the orders. A set that sells through raises it. A weak set lowers it, and big-box drops the studio after a very weak set.
+
+### N4. Big-box sets store limits after a scalper drop
+
+### F1. Bank loans, with late fees, then a default
+
+AJ picked all four funding tools, and chose "Late fees, then default" over "Counts toward the close" and "Lender takes assets". After 3 missed payments in a row, the bank calls the loan. If the cash cannot cover it, the studio closes.
+
+### F2. Revenue-based financing
+
+### F3. Crowdfunds for a draft set (D5)
+
+### F4. Investors take a share of the weekly profit, forever

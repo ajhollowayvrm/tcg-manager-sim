@@ -15,20 +15,22 @@ struct SingleRow: View {
     let world: World
     let single: Single
     var showSet = false
+    /// The price analyst shows the copies and the trend (U16).
+    private var tracked: Bool { world.market.insights.contains(.priceTracker) }
 
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(single.name).font(.subheadline.weight(.semibold))
                 Text((showSet ? (world.catalog.set(single.setID)?.name ?? "") + " · " : "") + single.versionName
-                     + " · about \(Int(single.copies.rounded()).formatted()) copies")
+                     + (tracked ? " · about \(Int(single.copies.rounded()).formatted()) copies" : ""))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
                 Text(SinglePrice.text(single.price)).font(.subheadline.monospacedDigit().weight(.semibold))
-                if let trend = world.priceTrend(single), abs(trend) >= 0.01 {
+                if tracked, let trend = world.priceTrend(single), abs(trend) >= 0.01 {
                     Label("\(trend > 0 ? "+" : "")\(Int((trend * 100).rounded()))%",
                           systemImage: trend > 0 ? "arrow.up.right" : "arrow.down.right")
                         .font(.caption2.monospacedDigit())

@@ -325,7 +325,7 @@ extension World {
         if let story {
             if story.factions.count == 2, story.beat.relationChange != 0 {
                 let (a, b) = (story.factions[0], story.factions[1])
-                let value = lore.relation(a, b) + story.beat.relationChange
+                let value = lore.relation(a, b) + story.beat.relationChange * storyStrength
                 changeLore { $0.relations[Lore.key(a, b)] = min(100, max(-100, value)) }
             }
             let fameBonus: Double = switch story.beat {
@@ -334,10 +334,11 @@ extension World {
             case .discovery: 0.02
             default: 0.01
             }
+            let fameChange = fameBonus * storyStrength
             changeLore { l in
                 for f in story.factions {
                     guard let i = l.factions.firstIndex(where: { $0.id == f }) else { continue }
-                    l.factions[i].fame = l.factions[i].fame.map { min(1, max(0, $0 + fameBonus)) }
+                    l.factions[i].fame = l.factions[i].fame.map { min(1, max(0, $0 + fameChange)) }
                 }
             }
             if let c = story.character, let index = characters.firstIndex(where: { $0.id == c }) {
