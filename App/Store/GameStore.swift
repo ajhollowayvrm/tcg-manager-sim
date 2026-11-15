@@ -174,6 +174,11 @@ final class GameStore {
         report(applyCard { world throws(CardError) in try world.deleteCard(id) }.message)
     }
 
+    /// Deletes a draft set with its cards (S16).
+    func deleteSet(_ id: SetID) {
+        report(applyCard { world throws(CardError) in try world.deleteSet(id) }.message)
+    }
+
     func createPreset(copying id: LadderID, name: String) -> Result<LadderID, StoreError> {
         applyCard { world throws(CardError) in try world.createPreset(copying: id, name: name) }
     }
@@ -256,7 +261,18 @@ final class GameStore {
         report(apply { world throws(RosterError) in try world.generateCharacters(count: count) })
     }
 
-    /// Unlocks or locks one part of the market view. A developer tool until money exists (A5).
+    /// Hires or dismisses the person for one part of the market view (K3).
+    @discardableResult
+    func setHire(_ insight: MarketInsight, hired: Bool) -> String? {
+        applyCard { world throws(CardError) in try world.setHire(insight, hired: hired) }.message
+    }
+
+    @discardableResult
+    func move(to space: Space) -> String? {
+        applyCard { world throws(CardError) in try world.move(to: space) }.message
+    }
+
+    /// Unlocks or locks one part of the market view, with no hire. Tests only (A5).
     func setMarketInsight(_ insight: MarketInsight, on: Bool) {
         guard var current = world else { return }
         current.setMarketInsight(insight, on: on)
@@ -267,15 +283,76 @@ final class GameStore {
     // MARK: - Releases and money (sales.md)
 
     @discardableResult
-    func scheduleRelease(_ setID: SetID, boxes: Int, packPrice: Double, releaseWeek: Int) -> String? {
+    func scheduleRelease(_ setID: SetID, boxes: Int, packPrice: Double, releaseWeek: Int, campaign: Campaign = .none) -> String? {
         applyCard { world throws(CardError) in
-            try world.scheduleRelease(setID, boxes: boxes, packPrice: packPrice, releaseWeek: releaseWeek)
+            try world.scheduleRelease(setID, boxes: boxes, packPrice: packPrice, releaseWeek: releaseWeek, campaign: campaign)
         }.message
+    }
+
+    func setBrandBudget(_ amount: Double, adShare: Double) {
+        guard var current = world else { return }
+        current.setBrandBudget(amount, adShare: adShare)
+        world = current
+        persist()
     }
 
     @discardableResult
     func reprint(_ setID: SetID, boxes: Int) -> String? {
         applyCard { world throws(CardError) in try world.reprint(setID, boxes: boxes) }.message
+    }
+
+    // MARK: - Lore (lore.md)
+
+    @discardableResult
+    func createRace(name: String, emblem: SetSymbolShape, color: PaletteColor) -> String? {
+        applyCard { world throws(CardError) in try world.createRace(name: name, emblem: emblem, color: color) }.message
+    }
+
+    @discardableResult
+    func createGroup(name: String, kind: GroupKind, parent: FactionID?, tone: FactionTone, emblem: SetSymbolShape, color: PaletteColor) -> String? {
+        applyCard { world throws(CardError) in
+            try world.createFaction(name: name, kind: kind, parent: parent, tone: tone, emblem: emblem, color: color)
+        }.message
+    }
+
+    @discardableResult
+    func setGroupParent(_ group: FactionID, to parent: FactionID?) -> String? {
+        applyCard { world throws(CardError) in try world.setParent(group, to: parent) }.message
+    }
+
+    @discardableResult
+    func deleteRace(_ id: RaceID) -> String? {
+        applyCard { world throws(CardError) in try world.deleteRace(id) }.message
+    }
+
+    @discardableResult
+    func deleteGroup(_ id: FactionID) -> String? {
+        applyCard { world throws(CardError) in try world.deleteFaction(id) }.message
+    }
+
+    @discardableResult
+    func setRelation(_ a: FactionID, _ b: FactionID, to value: Double) -> String? {
+        applyCard { world throws(CardError) in try world.setRelation(a, b, to: value) }.message
+    }
+
+    @discardableResult
+    func setLore(_ id: CharacterID, race: RaceID?, faction: FactionID?) -> String? {
+        applyCard { world throws(CardError) in try world.setLore(id, race: race, faction: faction) }.message
+    }
+
+    @discardableResult
+    func setFormFaction(_ id: CharacterID, form: FormID, faction: FactionID?) -> String? {
+        applyCard { world throws(CardError) in try world.setFormFaction(id, form: form, faction: faction) }.message
+    }
+
+    @discardableResult
+    func setLeadArtist(_ setID: SetID, _ artist: ArtistID?) -> String? {
+        applyCard { world throws(CardError) in try world.setLeadArtist(setID, artist) }.message
+    }
+
+    @discardableResult
+    func setStory(_ setID: SetID, _ story: SetStory?) -> String? {
+        applyCard { world throws(CardError) in try world.setStory(setID, story) }.message
     }
 
     /// A developer tool until loans exist (B3).

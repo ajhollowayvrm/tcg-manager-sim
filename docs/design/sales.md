@@ -48,6 +48,12 @@ packs          = weekly dollars / pack price
 - The lifetime share has a ceiling of 90%.
 - **Noise:** each week, each audience gets a random factor with a spread of about 15%.
 
+### 4.1 The fan wallet (B13)
+
+- Over any 52 weeks, the studio's sets together can take at most 50% of the yearly money of the people who know the studio.
+- When the sets want more than the wallet has left, each set's demand falls by the same share. Resellers are not fans, so the wallet does not limit them.
+- **Why word of mouth fell to 0.015:** at 0.05, each $4.49 pack sold to a chase collector brought about $8 of new future money through the new people it told. A loop above 1 grows with no end, and the wallet could not stop it. At 0.015, a normal set's loop is about 0.5.
+
 ## 5. The factors (B5)
 
 Each factor is a multiplier. The algorithm screen lists every factor for every audience. A factor of 1.00 means no effect.
@@ -60,11 +66,11 @@ Each factor is a multiplier. The algorithm screen lists every factor for every a
 | **A grail** | A single card rarer than 1 in 300 packs | Chase collectors, investors |
 | **Completion** | How hard the set is to finish. A very rare single hurts | Completionists |
 | **Set size** | The set size against the audience's hidden favorite size (S8, S12) | Completionists, kids |
-| **Theme** | A hidden fit between the theme and the audience. No theme gives 0.95 | Each audience in its own way |
+| **Theme** | A hidden fit between the theme and the audience, ×0.80 to ×1.20. No theme gives 0.90 (B15) | Each audience in its own way |
 | **Gimmick** | The share of cards that carry the era gimmick. The lift grows with the studio's size. A small studio gets almost nothing, and it can lose a little (S13) | Kids, teens, chase collectors |
 | **Art** | Full-art, borderless, frame-break, showcase, and extended-art cards, and art sets | Art collectors, chase collectors |
 | **Subsets** | Subsets with their own pack outcome | Completionists, chase collectors |
-| **Headliner** | A headliner with a card in the set. No headliner hurts with kids and parents | Kids, parents, teens |
+| **Headliner** | A headliner with a card in the set gives ×1.10. No headliner gives ×0.90 with kids and parents (B15) | Kids, parents, teens |
 | **Set type** | Promo sets suit kids and parents. Special sets suit collectors. Parallel pairs suit collectors and split kids | Each audience in its own way |
 | **Price** | The pack price against $4.49, with a price sensitivity for each audience | Kids, parents |
 | **No game** | The cards have no game rules (C3). Competitive players and casual players buy less | Competitive players, casual players |
@@ -106,8 +112,8 @@ So a chase-heavy set has a tall spike and a short tail. A kid-friendly set has a
 
 Sales grow the studio:
 
-- **Word of mouth:** each pack sold tells about 0.05 new people in the same audience. A set with strong characters spreads faster.
-- **Shelf discovery:** stock in stores is seen by people who do not know the studio. Each week, each 1,000 packs in stock reach about 20 new people, mostly kids, parents, and teens. A larger print run means more discovery, and a larger risk of unsold stock.
+- **Word of mouth:** each pack sold tells about 0.015 new people in the same audience (B13 lowered it from 0.05). A set with strong characters spreads faster.
+- **Shelf discovery:** stock in stores is seen by people who do not know the studio. The new people each week grow with the square root of the stock (about 360 people for 18,000 packs), mostly kids, parents, and teens. The effect halves every 8 weeks after release (B14).
 - **Previews:** in the 3 weeks before release, the studio gains reach with chase collectors, teens, completionists, and competitive players.
 - **Character awareness:** the buyers in each audience learn the set's characters. The headliner gains the most. This raises the Fame factor of the next set.
 - **Buzz:** the characters of a set that sells well gain buzz.

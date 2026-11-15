@@ -15,6 +15,7 @@ struct SetDetailView: View {
         case testRip
         case subset(SubsetID?)
         case artSet(ArtSetID?)
+        case lead
 
         var id: String {
             switch self {
@@ -26,6 +27,7 @@ struct SetDetailView: View {
             case .testRip: "rip"
             case .subset(let id): "subset-\(id ?? 0)"
             case .artSet(let id): "art-\(id ?? 0)"
+            case .lead: "lead"
             }
         }
     }
@@ -50,6 +52,7 @@ struct SetDetailView: View {
                 header(world, set, theme: set.theme.flatMap(world.catalog.theme), count: cards.count)
                 if set.status != .draft {
                     ReleaseSection(world: world, set: set)
+                    SinglesSection(world: world, set: set)
                 }
                 if cards.isEmpty {
                     ContentUnavailableView {
@@ -103,6 +106,8 @@ struct SetDetailView: View {
                     }
                     .disabled(set.status != .draft)
                 }
+                LeadArtistSection(world: world, set: set) { sheet = .lead }
+                StorySection(world: world, set: set)
                 if set.status == .draft {
                     ReleaseSection(world: world, set: set)
                 }
@@ -174,7 +179,7 @@ struct SetDetailView: View {
             HStack(spacing: 8) {
                 Chip(text: set.type.name)
                 if let theme { ThemeBadge(theme: theme) }
-                Chip(text: "Draft")
+                Chip(text: set.status.rawValue.capitalized)
             }
             if let era = world.catalog.era(set.eraID) {
                 HStack(spacing: 6) {
@@ -190,7 +195,20 @@ struct SetDetailView: View {
                 }
             }
             headlinerLine(world, set)
-            TierStrip(tiers: set.ladder.tiers)
+            Button {
+                sheet = .ladder
+            } label: {
+                HStack {
+                    TierStrip(tiers: set.ladder.tiers)
+                    if set.status == .draft {
+                        Image(systemName: "pencil.circle.fill").foregroundStyle(Theme.accent)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(set.status != .draft)
+            .accessibilityLabel("Rarity ladder")
+            .accessibilityHint(set.status == .draft ? "Opens the ladder editor" : "")
             let range = CardSet.featuredRange
             Label(
                 count < range.lowerBound
@@ -271,7 +289,8 @@ struct SetDetailView: View {
                 title: "\(set.name) ladder",
                 initial: set.ladder,
                 editsName: false,
-                footer: "This ladder belongs to this set only. A tier that a card uses cannot be removed.",
+                footer: "This ladder belongs to this set only. A tier that a designed card uses cannot be removed.",
+                saved: set.ladder,
                 onSave: { ladder in
                     let error = store.updateSetLadder(set.id, ladder)
                     if error == nil { self.sheet = nil }
@@ -301,6 +320,8 @@ struct SetDetailView: View {
             SubsetEditor(world: world, set: set, existing: id.flatMap(set.subset)) { self.sheet = nil }
         case .artSet(let id):
             ArtSetEditor(world: world, set: set, existing: set.artSets.first { $0.id == id }) { self.sheet = nil }
+        case .lead:
+            LeadArtistPicker(setID: set.id) { self.sheet = nil }
         case .details:
             SetDetailsForm(set: set, designed: world.catalog.cards(in: set.id).count) { self.sheet = nil }
         }
@@ -426,7 +447,7 @@ private struct FillerSection: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 HStack(spacing: 3) {
-                    RaritySymbolView(symbol: tier.symbol, size: 9)
+                    RaritySymbolView(symbol: tier.symbol, count: tier.symbolCount, size: 9)
                     Text(tier.code).font(.caption.weight(.bold))
                 }
                 .padding(.horizontal, 8)

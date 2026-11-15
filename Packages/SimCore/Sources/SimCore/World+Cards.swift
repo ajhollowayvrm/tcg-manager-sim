@@ -117,7 +117,9 @@ extension World {
         return id
     }
 
-    /// Changes a set's own ladder (C10). A tier that a card uses must stay.
+    /// Changes a set's own ladder (C10). A tier that a designed card uses must stay.
+    /// A change to the tiers or to the filler shares makes all filler cards and
+    /// generated characters again (S17). A change to a tier's look keeps them.
     public mutating func updateSetLadder(_ id: SetID, _ ladder: RarityLadder) throws(CardError) {
         guard let i = catalog.sets.firstIndex(where: { $0.id == id }) else { throw .unknownSet(id) }
         try requireDraft(id)
@@ -126,8 +128,32 @@ extension World {
         for card in catalog.cards(in: id) where !kept.contains(card.rarity) {
             throw .tierInUse(catalog.sets[i].ladder.tier(card.rarity)?.name ?? "a tier")
         }
+        let resets = Self.ladderResetsFiller(from: catalog.sets[i].ladder, to: ladder)
         catalog.sets[i].ladder.tiers = ladder.tiers
-        refreshFiller(id)
+        if resets {
+            try rerollFiller(id)
+        } else {
+            refreshFiller(id)
+        }
+    }
+
+    /// True when a ladder change makes the filler again (S17): a tier is added,
+    /// removed, or moved, or a filler share changes.
+    public static func ladderResetsFiller(from old: RarityLadder, to new: RarityLadder) -> Bool {
+        old.tiers.map(\.id) != new.tiers.map(\.id) || old.tiers.map(\.fillerShare) != new.tiers.map(\.fillerShare)
+    }
+
+    /// Deletes a draft set with all its cards and its generated characters (S16).
+    /// The other set of a parallel pair stays. A draft partner becomes a main set.
+    public mutating func deleteSet(_ id: SetID) throws(CardError) {
+        guard catalog.set(id) != nil else { throw .unknownSet(id) }
+        try requireDraft(id)
+        catalog.cards.removeAll { $0.setID == id }
+        catalog.sets.removeAll { $0.id == id }
+        for i in catalog.sets.indices where catalog.sets[i].pairID == id {
+            catalog.sets[i].pairID = nil
+            if catalog.sets[i].status == .draft { catalog.sets[i].type = .main }
+        }
     }
 
     // MARK: - Cards
@@ -138,6 +164,7 @@ extension World {
         try requireDraft(setID)
         let d = try validCard(draft, ladder: set.ladder)
         if catalog.cards(in: setID).count >= set.size { throw .setFull(set.size) }
+        if draft.artistID != nil, talent.artist(draft.artistID) == nil { throw .unknownArtist }
         var shift = AudienceValues()
         for audience in Audience.allCases where !audience.isDerived {
             shift[audience] = catalog.rng.gauss() * Self.cardShiftSpread
@@ -149,6 +176,7 @@ extension World {
             excludedVersions: d.excludedVersions, ownVersions: d.ownVersions,
             cardShift: shift, createdWeek: week, gimmick: d.gimmick
         ))
+        try commission(id, artist: draft.artistID)
         refreshFiller(setID)
         return id
     }
@@ -174,6 +202,10 @@ extension World {
         guard let setID = catalog.cards[i].setID, let set = catalog.set(setID) else { throw .unknownSet(-1) }
         try requireDraft(setID)
         let d = try validCard(draft, ladder: set.ladder)
+        if draft.artistID != catalog.cards[i].artistID {
+            if draft.artistID != nil, talent.artist(draft.artistID) == nil { throw .unknownArtist }
+            try commission(id, artist: draft.artistID)
+        }
         catalog.cards[i].name = d.name
         catalog.cards[i].characterID = d.characterID
         catalog.cards[i].formID = d.formID

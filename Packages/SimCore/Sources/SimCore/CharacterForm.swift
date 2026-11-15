@@ -24,6 +24,9 @@ public struct CharacterForm: Codable, Sendable, Equatable, Identifiable {
     public internal(set) var archetype: Archetype
     /// Reader: special-rarity match (set design, not built yet).
     public internal(set) var palette: [PaletteColor]
+    /// A faction for this form only, for example a dark form that joins the enemy (L5).
+    /// Nil means the form follows its character.
+    public internal(set) var factionID: FactionID? = nil
     /// FLAVOR. The creature drawing only.
     public internal(set) var body: BodyParts
     /// FLAVOR. The person drawing only. Nil when the character is a creature.

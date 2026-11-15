@@ -24,12 +24,71 @@ struct SetRow: View {
                     Text([series, set.code].compactMap { $0 }.joined(separator: " · "))
                         .font(.caption.weight(.bold).monospaced()).foregroundStyle(.secondary)
                 }
-                Text([set.type.name, theme?.name, "\(count) of \(set.size) cards", "draft"].compactMap { $0 }.joined(separator: " · "))
+                Text([set.type.name, theme?.name, "\(count) of \(set.size) cards", set.status.rawValue].compactMap { $0 }.joined(separator: " · "))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
         }
         .padding(.vertical, 4)
+    }
+}
+
+/// A swipe that deletes a draft set, after a confirmation (S16). A scheduled
+/// or released set has no swipe.
+///
+/// The swipe only marks the set. The list shows the confirmation, because a
+/// dialog on the row goes away with the row and never opens.
+struct DeleteSetSwipe: ViewModifier {
+    let set: CardSet
+    @Binding var pending: SetID?
+
+    func body(content: Content) -> some View {
+        content
+            .swipeActions {
+                if set.status == .draft {
+                    Button("Delete", systemImage: "trash") { pending = set.id }
+                        .tint(.red)
+                }
+            }
+    }
+}
+
+/// The confirmation for a set that a swipe marked. Put it on the list.
+struct DeleteSetConfirmation: ViewModifier {
+    @Environment(GameStore.self) private var store
+    @Binding var pending: SetID?
+
+    func body(content: Content) -> some View {
+        let set = pending.flatMap { store.world?.catalog.set($0) }
+        content
+            .confirmationDialog("Delete \(set?.name ?? "the set")?",
+                                isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } }),
+                                titleVisibility: .visible) {
+                Button("Delete the set", role: .destructive) {
+                    if let id = pending { store.deleteSet(id) }
+                    pending = nil
+                }
+            } message: {
+                Text(message(set))
+            }
+    }
+
+    private func message(_ set: CardSet?) -> String {
+        var text = "The set and all its cards go. You cannot undo this. Money that you paid for art does not come back."
+        if let set, let pair = store.world?.catalog.pair(of: set.id) {
+            text += " \(pair.name) stays and becomes a main set."
+        }
+        return text
+    }
+}
+
+extension View {
+    func deleteSetSwipe(_ set: CardSet, pending: Binding<SetID?>) -> some View {
+        modifier(DeleteSetSwipe(set: set, pending: pending))
+    }
+
+    func deleteSetConfirmation(_ pending: Binding<SetID?>) -> some View {
+        modifier(DeleteSetConfirmation(pending: pending))
     }
 }
 
@@ -177,7 +236,7 @@ struct TierStrip: View {
             HStack(spacing: 6) {
                 ForEach(tiers) { tier in
                     HStack(spacing: 3) {
-                        RaritySymbolView(symbol: tier.symbol, size: 9)
+                        RaritySymbolView(symbol: tier.symbol, count: tier.symbolCount, size: 9)
                         Text(tier.code).font(.caption.weight(.bold))
                     }
                     .padding(.horizontal, 8)

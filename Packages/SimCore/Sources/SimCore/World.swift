@@ -54,6 +54,12 @@ public struct World: Codable, Sendable, Equatable {
     var marketState: Market?
     /// Money and sales (sales.md). Nil in a save from before the selling engine.
     var businessState: Business?
+    /// The talent board (costs.md, section 4). Nil in a save from before artists.
+    var talentState: TalentBoard?
+    /// The lore (lore.md). Nil in a save from before the lore.
+    var loreState: Lore?
+    /// The singles market history (M3). Nil in a save from before singles.
+    var singlesState: SinglesState?
 
     public init(seed: UInt64, studioName: String) {
         version = Self.currentVersion
@@ -68,6 +74,8 @@ public struct World: Codable, Sendable, Equatable {
         nextID = 1
         marketState = Market(seed: Self.streamSeed(seed, stream: 6))
         businessState = .start(seed: Self.streamSeed(seed, stream: 8))
+        talentState = TalentBoard(seed: Self.streamSeed(seed, stream: 9))
+        loreState = Lore(seed: Self.streamSeed(seed, stream: 11))
     }
 
     static func streamSeed(_ seed: UInt64, stream: UInt64) -> UInt64 {
@@ -256,7 +264,7 @@ public struct World: Codable, Sendable, Equatable {
         var palette: [PaletteColor] = []
         let colorCount = generatorRng.int(2, 3)
         while palette.count < colorCount {
-            let color = generatorRng.pick(PaletteColor.allCases)
+            let color = generatorRng.pick(PaletteColor.generatorColors)
             if !palette.contains(color) { palette.append(color) }
         }
         let body = BodyParts.random(using: &generatorRng)
@@ -286,6 +294,8 @@ public struct World: Codable, Sendable, Equatable {
 
     /// The week step. The forecast runs it with no sales noise (sales.md, section 11).
     mutating func advanceWeek(noise: Bool) {
+        // A closed studio does not move on (K4).
+        if isClosed { return }
         week += 1
         for i in characters.indices {
             let formBuzz = characters[i].forms.map(\.buzz).max() ?? 0
@@ -296,7 +306,11 @@ public struct World: Codable, Sendable, Equatable {
             characters[i].awareness = characters[i].awareness.map { $0 * 0.998 }
         }
         advanceMarket()
+        advanceTalent()
+        runBrandBudget()
         runSales(noise: noise)
+        runSinglesMarket()
+        payWeeklyCosts()
     }
 
     // MARK: - Internals

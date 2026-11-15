@@ -42,11 +42,20 @@ public enum SetType: String, CaseIterable, Codable, Sendable, Identifiable {
     }
 }
 
-/// The shape of a set symbol. FLAVOR.
+/// The shape of a set symbol, or a lore emblem. FLAVOR.
 public enum SetSymbolShape: String, CaseIterable, Codable, Sendable, Identifiable {
     case star, bolt, flame, leaf, drop, moon, sun, crown, shield, gem, wave, mountain, key, swords, sparkle, eye
+    case heart, snowflake, flower, tree, paw, bird, fish, hare, turtle, bug
+    case cloud, tornado, globe, atom, hourglass, infinity, flag, bell, book, scroll
+    case music, masks, hammer, wand, trophy, dice, puzzle, cube, tent, columns
+    case digit0, digit1, digit2, digit3, digit4, digit5, digit6, digit7, digit8, digit9
 
     public var id: String { rawValue }
+
+    /// The number of a number shape, or nil.
+    public var digit: Int? {
+        rawValue.hasPrefix("digit") ? Int(rawValue.dropFirst(5)) : nil
+    }
 }
 
 /// The symbol of a set: one shape and one palette color. FLAVOR.

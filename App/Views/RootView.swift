@@ -12,6 +12,8 @@ struct RootView: View {
                 NewGameFlow()
             } else if !store.ui.starterPromptDone {
                 StarterFlow()
+            } else if let world = store.world, world.isClosed {
+                ClosedView(world: world)
             } else {
                 MainTabView()
             }
@@ -42,6 +44,38 @@ struct MainTabView: View {
             Tab("Settings", systemImage: "gearshape.fill") {
                 SettingsView()
             }
+        }
+    }
+}
+
+/// The studio closed after 8 weeks below zero (K4): its history, then a new game.
+struct ClosedView: View {
+    @Environment(GameStore.self) private var store
+    let world: World
+
+    var body: some View {
+        let h = world.history
+        NavigationStack {
+            List {
+                Section {
+                    Text("\(world.studioName) closed after \(Business.weeksToClose) weeks below zero.")
+                        .font(.headline)
+                }
+                Section("The studio's history") {
+                    LabeledContent("Weeks", value: "\(h.weeks)")
+                    LabeledContent("Calendar", value: Market.calendar(week: h.weeks))
+                    LabeledContent("Sets released", value: "\(h.sets)")
+                    LabeledContent("Packs sold", value: Money.packs(h.packsSold))
+                    if let best = h.bestSet { LabeledContent("Best set", value: best) }
+                    LabeledContent("Peak cash", value: Money.text(h.peakCash))
+                }
+                Section {
+                    Button("Start a new game", role: .destructive) { store.startOver() }
+                } footer: {
+                    Text("The closed save moves to an archive file. Nothing carries over to the new game.")
+                }
+            }
+            .navigationTitle("The studio closed")
         }
     }
 }

@@ -6,10 +6,13 @@ enum StudioRoute: Hashable {
     case product
     case upgrades
     case roster
+    case lore
     case era(EraID)
     case promos
     case ladders
     case packs
+    case talent
+    case hallOfFame
 }
 
 /// The Studio tab (U3): a quick look at the business, then Product and Upgrades.
@@ -31,7 +34,7 @@ struct StudioView: View {
                             }
                             NavigationLink(value: StudioRoute.upgrades) {
                                 bigButton("Upgrades", systemImage: "arrow.up.circle.fill",
-                                          detail: "\(world.market.insights.count) of \(MarketInsight.allCases.count) owned")
+                                          detail: "\(world.space.name) · \(world.market.insights.count) hires")
                             }
                         }
                         .buttonStyle(.plain)
@@ -47,10 +50,13 @@ struct StudioView: View {
                 case .product: ProductView()
                 case .upgrades: UpgradesView()
                 case .roster: RosterView()
+                case .lore: LoreView()
                 case .era(let id): EraDetailView(eraID: id) { path.append(SetRoute(id: $0)) }
                 case .promos: PromoSetsView { path.append(SetRoute(id: $0)) }
                 case .ladders: LadderPresetsView()
                 case .packs: PackPresetsView()
+                case .talent: TalentBoardView()
+                case .hallOfFame: HallOfFameView()
                 }
             }
             .navigationDestination(for: CharacterID.self) { id in
@@ -97,7 +103,9 @@ private struct StatusWidget: View {
             tile("Your IP", systemImage: "person.3.fill", value: "\(world.characters.count) characters",
                  detail: "\(world.catalog.sets.count) sets · \(world.catalog.cards.count) cards")
             tile("Cash", systemImage: "banknote.fill", value: Money.text(world.business.cash),
-                 detail: world.business.cash < 0 ? "Below zero" : "Ledger in Business")
+                 detail: world.business.cash < 0
+                    ? "Below zero: \(Business.weeksToClose - (world.business.weeksBelowZero ?? 0)) weeks left"
+                    : "Costs \(Money.text(world.weeklyCosts)) a week")
         }
     }
 
@@ -114,34 +122,64 @@ private struct StatusWidget: View {
     }
 }
 
-/// Studio → Upgrades (U3). Until money exists, an upgrade is free to unlock
-/// and to lock again.
+/// Studio → Upgrades (U3, K3): where the studio works, and the hires that unlock
+/// each part of the Market tab. Rent and salaries cost money every week.
 struct UpgradesView: View {
     @Environment(GameStore.self) private var store
+    @State private var error: String?
 
     var body: some View {
         List {
             if let world = store.world {
                 Section {
+                    LabeledContent("Rent and salaries", value: "\(Money.text(world.weeklyCosts)) a week")
+                    LabeledContent("Room", value: "\(world.usedRoom) of \(world.space.room) places used")
+                    if let error { Text(error).foregroundStyle(.red).font(.subheadline) }
+                }
+                Section {
+                    ForEach(Space.allCases) { place in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(place.name).font(.headline)
+                                Text("\(Money.text(place.monthlyRent)) a month · room for \(place.room)")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if place == world.space {
+                                Text("Here").font(.subheadline.weight(.semibold)).foregroundStyle(Theme.accent)
+                            } else {
+                                Button("Move") { error = store.move(to: place) }
+                                    .buttonStyle(.bordered)
+                                    .accessibilityLabel("Move to \(place.name)")
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Space")
+                } footer: {
+                    Text("A move costs one month of the new rent. The founder needs no place.")
+                }
+                Section {
                     ForEach(MarketInsight.allCases) { insight in
-                        let owned = world.market.insights.contains(insight)
-                        Toggle(isOn: Binding(get: { owned }, set: { store.setMarketInsight(insight, on: $0) })) {
+                        let hired = world.market.insights.contains(insight)
+                        Toggle(isOn: Binding(get: { hired }, set: { error = store.setHire(insight, hired: $0) })) {
                             HStack(spacing: 12) {
-                                Image(systemName: owned ? "checkmark.seal.fill" : "lock.fill")
-                                    .foregroundStyle(owned ? Theme.accent : .secondary)
+                                Image(systemName: hired ? "person.fill.checkmark" : "person.badge.plus")
+                                    .foregroundStyle(hired ? Theme.accent : .secondary)
                                     .frame(width: 24)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(insight.upgradeName)
-                                    Text(insight.unlocks).font(.caption).foregroundStyle(.secondary)
+                                    Text(insight.hireName)
+                                    Text("\(insight.unlocks). \(Money.text(insight.salary)) a year\(insight.heads > 1 ? ", \(insight.heads) people" : "").")
+                                        .font(.caption).foregroundStyle(.secondary)
                                 }
                             }
                         }
-                        .accessibilityLabel("Upgrade \(insight.upgradeName)")
+                        .accessibilityLabel("Hire \(insight.hireName)")
                     }
                 } header: {
-                    Text("Market research")
+                    Text("Hires")
                 } footer: {
-                    Text("Each upgrade shows one part of the Market tab. Until money exists, the upgrades are free.")
+                    Text("Each hire shows one part of the Market tab, or watches the artists for you. Each hire costs a salary every week. Dismissing a hire is free, and that part locks again.")
                 }
             }
         }
@@ -164,6 +202,14 @@ struct ProductView: View {
                             hubRow("Roster", systemImage: "person.3.fill",
                                    detail: "\(count(world.characters.count, "character")), \(world.characters.filter { $0.origin == .created }.count) created by you")
                         }
+                        NavigationLink(value: StudioRoute.lore) {
+                            hubRow("Lore", systemImage: "book.closed.fill",
+                                   detail: "\(count(world.lore.races.count, "race")), \(count(world.lore.factions.count, "faction")), \(count(world.lore.timeline.count, "chapter"))")
+                        }
+                        NavigationLink(value: StudioRoute.hallOfFame) {
+                            hubRow("Hall of fame", systemImage: "trophy.fill",
+                                   detail: world.hallOfFame(limit: 1).first.map { "Top single: \($0.name), \(SinglePrice.text($0.price))" } ?? "No released sets yet")
+                        }
                     }
 
                     erasSection(world)
@@ -185,6 +231,10 @@ struct ProductView: View {
                         NavigationLink(value: StudioRoute.packs) {
                             hubRow("Pack presets", systemImage: "shippingbox.fill",
                                    detail: count(world.catalog.packPresets.count, "preset"))
+                        }
+                        NavigationLink(value: StudioRoute.talent) {
+                            hubRow("Talent board", systemImage: "paintbrush.pointed.fill",
+                                   detail: count(world.talent.artists.count, "artist"))
                         }
                     } header: {
                         Text("Tools")
@@ -259,6 +309,7 @@ struct EraDetailView: View {
     let onOpenSet: (SetID) -> Void
     @State private var editing = false
     @State private var creating = false
+    @State private var deleting: SetID?
 
     var body: some View {
         if let world = store.world, let era = world.catalog.era(eraID) {
@@ -290,6 +341,7 @@ struct EraDetailView: View {
                         SetRow(set: set, theme: set.theme.flatMap(world.catalog.theme),
                                count: world.catalog.cards(in: set.id).count, series: numbers[set.id])
                     }
+                    .deleteSetSwipe(set, pending: $deleting)
                 }
                 if isCurrent {
                     Button {
@@ -307,6 +359,7 @@ struct EraDetailView: View {
             }
         }
         .navigationTitle(era.name)
+        .deleteSetConfirmation($deleting)
         .sheet(isPresented: $editing) {
             NavigationStack {
                 EraDesignerView(eraID: era.id, initial: EraDraft(from: era)) { editing = false }
@@ -331,6 +384,7 @@ struct PromoSetsView: View {
     @Environment(GameStore.self) private var store
     let onOpenSet: (SetID) -> Void
     @State private var creating = false
+    @State private var deleting: SetID?
 
     var body: some View {
         List {
@@ -344,6 +398,7 @@ struct PromoSetsView: View {
                                     SetRow(set: set, theme: set.theme.flatMap(world.catalog.theme),
                                            count: world.catalog.cards(in: set.id).count, series: nil)
                                 }
+                                .deleteSetSwipe(set, pending: $deleting)
                             }
                         }
                     }
@@ -360,6 +415,7 @@ struct PromoSetsView: View {
             }
         }
         .navigationTitle("Promo sets")
+        .deleteSetConfirmation($deleting)
         .sheet(isPresented: $creating) {
             NavigationStack {
                 NewSetForm(types: [.promo]) { id in

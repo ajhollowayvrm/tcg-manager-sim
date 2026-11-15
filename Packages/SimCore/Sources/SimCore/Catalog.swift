@@ -14,9 +14,12 @@ public typealias VersionID = Int
 
 // MARK: - Rarity
 
-/// The shape in a card's rarity corner. FLAVOR.
+/// The shape in a card's rarity corner. FLAVOR. A tier shows it one to three
+/// times (`RarityTier.symbolCount`). Reader: the rarity feel (RarityFeel.swift).
 public enum RaritySymbol: String, CaseIterable, Codable, Sendable, Identifiable {
-    case circle, diamond, star, doubleStar, tripleStar, sparkle, crown, heart, hexagon, flame
+    case circle, square, triangle, diamond, pentagon, hexagon, octagon, heart
+    case club, spade, leaf, drop, star, moon, sun, bolt
+    case snowflake, flame, shield, eye, sparkle, infinity, trophy, crown
 
     public var id: String { rawValue }
 }
@@ -42,6 +45,8 @@ public struct RarityTier: Codable, Sendable, Equatable, Hashable, Identifiable {
     public var code: String
     /// FLAVOR.
     public var symbol: RaritySymbol
+    /// How many times the corner shows the symbol, 1 to 3. For example, two stars.
+    public var symbolCount: Int
     /// FLAVOR. The tier's color: the frame color of a solid frame, and the color of the tier's chip.
     public var color: PaletteColor
     /// FLAVOR. The frame of every card at this tier (C14).
@@ -64,6 +69,7 @@ public struct RarityTier: Codable, Sendable, Equatable, Hashable, Identifiable {
         name: String,
         code: String,
         symbol: RaritySymbol,
+        symbolCount: Int = 1,
         color: PaletteColor,
         frameStyle: FrameStyle = .solid,
         look: CardLook = .plain,
@@ -75,12 +81,53 @@ public struct RarityTier: Codable, Sendable, Equatable, Hashable, Identifiable {
         self.name = name
         self.code = code
         self.symbol = symbol
+        self.symbolCount = min(Self.symbolCountRange.upperBound, max(Self.symbolCountRange.lowerBound, symbolCount))
         self.color = color
         self.frameStyle = frameStyle
         self.look = look
         self.versions = versions
         self.fillerShare = fillerShare
         self.secret = secret
+    }
+
+    public static let symbolCountRange = 1...3
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, code, symbol, symbolCount, color, frameStyle, look, versions, fillerShare, secret
+    }
+
+    /// Reads a save from before the symbol count. The old symbols "doubleStar"
+    /// and "tripleStar" become a star shown two or three times.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(TierID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        code = try c.decode(String.self, forKey: .code)
+        let raw = try c.decode(String.self, forKey: .symbol)
+        let legacyCount: Int
+        switch raw {
+        case "doubleStar": symbol = .star; legacyCount = 2
+        case "tripleStar": symbol = .star; legacyCount = 3
+        default: symbol = RaritySymbol(rawValue: raw) ?? .circle; legacyCount = 1
+        }
+        symbolCount = try c.decodeIfPresent(Int.self, forKey: .symbolCount) ?? legacyCount
+        color = try c.decode(PaletteColor.self, forKey: .color)
+        frameStyle = try c.decode(FrameStyle.self, forKey: .frameStyle)
+        look = try c.decode(CardLook.self, forKey: .look)
+        versions = try c.decode([CardVersion].self, forKey: .versions)
+        fillerShare = try c.decode(Int.self, forKey: .fillerShare)
+        secret = try c.decode(Bool.self, forKey: .secret)
+    }
+
+    /// One tap on the symbol in the tier editor: the same symbol shows one more
+    /// time, up to three, then goes back to one. A new symbol starts at one.
+    public mutating func tapSymbol(_ tapped: RaritySymbol) {
+        if tapped == symbol {
+            symbolCount = symbolCount >= Self.symbolCountRange.upperBound ? 1 : symbolCount + 1
+        } else {
+            symbol = tapped
+            symbolCount = 1
+        }
     }
 
     /// The tier's own look as a version. Every card at the tier has it.
@@ -138,9 +185,9 @@ public struct RarityLadder: Codable, Sendable, Equatable, Identifiable {
             RarityTier(id: 3, name: "Rare", code: "R", symbol: .star, color: .ocean, versions: [.reverseHolo], fillerShare: 17),
             RarityTier(id: 4, name: "Holo Rare", code: "HR", symbol: .star, color: .indigo,
                        look: CardLook(foil: .holo), versions: [.reverseHolo]),
-            RarityTier(id: 5, name: "Double Rare", code: "RR", symbol: .doubleStar, color: .crimson,
+            RarityTier(id: 5, name: "Double Rare", code: "RR", symbol: .star, symbolCount: 2, color: .crimson,
                        look: CardLook(foil: .cosmos)),
-            RarityTier(id: 6, name: "Ultra Rare", code: "UR", symbol: .doubleStar, color: .violet, frameStyle: .silver,
+            RarityTier(id: 6, name: "Ultra Rare", code: "UR", symbol: .star, symbolCount: 2, color: .violet, frameStyle: .silver,
                        look: CardLook(layout: .fullArt, foil: .holo, textured: true)),
             RarityTier(id: 7, name: "Illustration Rare", code: "IR", symbol: .sparkle, color: .teal,
                        look: CardLook(layout: .borderless, foil: .holo), secret: true),
@@ -211,22 +258,78 @@ public enum CardStamp: String, CaseIterable, Codable, Sendable, Identifiable {
 }
 
 /// How a card looks: four parts that combine (C14). A rarity tier sets it (C15).
+/// A look can stack foils and stamps, for example Cracked ice and Etched, or a
+/// signature and a serial number.
 public struct CardLook: Codable, Sendable, Equatable, Hashable {
     public var layout: CardLayout
-    public var foil: FoilPattern
+    /// The foils, in the order of `FoilPattern.allCases`. Never `.none`. Empty for no foil.
+    public private(set) var foils: [FoilPattern]
     /// A raised surface that you can feel.
     public var textured: Bool
-    public var stamp: CardStamp
+    /// The stamps, in the order of `CardStamp.allCases`. Never `.none`. Empty for no stamp.
+    public private(set) var stamps: [CardStamp]
 
     public init(layout: CardLayout = .standard, foil: FoilPattern = .none, textured: Bool = false, stamp: CardStamp = .none) {
+        self.init(layout: layout, foils: [foil], textured: textured, stamps: [stamp])
+    }
+
+    public init(layout: CardLayout = .standard, foils: [FoilPattern], textured: Bool = false, stamps: [CardStamp] = []) {
         self.layout = layout
-        self.foil = foil
+        self.foils = Self.normal(foils, none: .none)
         self.textured = textured
-        self.stamp = stamp
+        self.stamps = Self.normal(stamps, none: .none)
     }
 
     /// A plain card.
     public static let plain = CardLook()
+
+    public func has(_ foil: FoilPattern) -> Bool { foils.contains(foil) }
+    public func has(_ stamp: CardStamp) -> Bool { stamps.contains(stamp) }
+
+    /// Adds the foil, or removes it when the look has it. `.none` removes every foil.
+    public mutating func toggle(_ foil: FoilPattern) {
+        if foil == .none { foils = []; return }
+        foils = Self.normal(has(foil) ? foils.filter { $0 != foil } : foils + [foil], none: .none)
+    }
+
+    /// Adds the stamp, or removes it when the look has it. `.none` removes every stamp.
+    public mutating func toggle(_ stamp: CardStamp) {
+        if stamp == .none { stamps = []; return }
+        stamps = Self.normal(has(stamp) ? stamps.filter { $0 != stamp } : stamps + [stamp], none: .none)
+    }
+
+    /// No duplicates, no `.none`, and the order of `allCases`.
+    private static func normal<T: CaseIterable & Equatable>(_ list: [T], none: T) -> [T] {
+        T.allCases.filter { $0 != none && list.contains($0) }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case layout, foils, textured, stamps
+        /// Saves from before stacked foils and stamps.
+        case foil, stamp
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let foils = try c.decodeIfPresent([FoilPattern].self, forKey: .foils)
+            ?? [try c.decodeIfPresent(FoilPattern.self, forKey: .foil) ?? .none]
+        let stamps = try c.decodeIfPresent([CardStamp].self, forKey: .stamps)
+            ?? [try c.decodeIfPresent(CardStamp.self, forKey: .stamp) ?? .none]
+        self.init(
+            layout: try c.decode(CardLayout.self, forKey: .layout),
+            foils: foils,
+            textured: try c.decode(Bool.self, forKey: .textured),
+            stamps: stamps
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(layout, forKey: .layout)
+        try c.encode(foils, forKey: .foils)
+        try c.encode(textured, forKey: .textured)
+        try c.encode(stamps, forKey: .stamps)
+    }
 }
 
 // MARK: - Print cost
@@ -278,9 +381,10 @@ public enum PrintCost {
         }
     }
 
-    /// The sum of the parts.
+    /// The sum of the parts. Each stacked foil and each stamp adds its own price.
     public static func extra(for look: CardLook, frame: FrameStyle) -> Double {
-        layout(look.layout) + foil(look.foil) + (look.textured ? textured : 0) + stamp(look.stamp) + self.frame(frame)
+        layout(look.layout) + look.foils.reduce(0) { $0 + foil($1) } + (look.textured ? textured : 0)
+            + look.stamps.reduce(0) { $0 + stamp($1) } + self.frame(frame)
     }
 }
 
@@ -395,6 +499,10 @@ public struct CardSet: Codable, Sendable, Equatable, Identifiable {
     public let createdWeek: Int
     /// The release plan and its stock (sales.md, section 2). Nil while the set is a draft.
     public internal(set) var release: SetRelease? = nil
+    /// The set's chapter of the story (L3). Nil for no beat.
+    public internal(set) var story: SetStory? = nil
+    /// The lead artist (K7). The set cannot print without one. Nil in a save from before lead artists.
+    public internal(set) var leadArt: LeadArt? = nil
 
     /// The count of filler cards that the game will make (sets.md, section 4).
     public func fillerCount(designed: Int) -> Int { max(0, size - designed) }
@@ -435,6 +543,12 @@ public struct Card: Codable, Sendable, Equatable, Identifiable {
     /// The subset that the card belongs to, if any (S11). A designed card only.
     /// Reader: card numbers, the subset's pack outcome (S14).
     public internal(set) var subsetID: SubsetID? = nil
+    /// The card's own artist (K1). Nil means the set's lead artist draws the card (K7).
+    public internal(set) var artistID: ArtistID? = nil
+    /// The week when the card's own art is done (K2). Nil when the lead draws the card.
+    public internal(set) var artReadyWeek: Int? = nil
+    /// The own artist's heat while the art was made (K12). Reader: the "Hot artist" factor.
+    public internal(set) var heatAtCommission: Double? = nil
 
     public static let nameLimit = 40
     public static let featuredLimit = 2
@@ -450,6 +564,8 @@ public struct CardDraft: Sendable, Equatable {
     public var excludedVersions: [VersionID]
     public var ownVersions: [CardVersion]
     public var gimmick: Bool
+    /// Nil means founder art (K1).
+    public var artistID: ArtistID?
 
     public init(
         name: String = "",
@@ -459,9 +575,11 @@ public struct CardDraft: Sendable, Equatable {
         featured: [CharacterID] = [],
         excludedVersions: [VersionID] = [],
         ownVersions: [CardVersion] = [],
-        gimmick: Bool = false
+        gimmick: Bool = false,
+        artistID: ArtistID? = nil
     ) {
         self.gimmick = gimmick
+        self.artistID = artistID
         self.name = name
         self.characterID = characterID
         self.formID = formID
@@ -476,7 +594,7 @@ public struct CardDraft: Sendable, Equatable {
             name: card.name, characterID: card.characterID, formID: card.formID,
             rarity: card.rarity, featured: card.featured,
             excludedVersions: card.excludedVersions, ownVersions: card.ownVersions,
-            gimmick: card.gimmick
+            gimmick: card.gimmick, artistID: card.artistID
         )
     }
 
@@ -591,6 +709,8 @@ public enum CardError: Error, Equatable, Sendable {
     case duplicateEraCode(String)
     case badHomeTier
     case setLocked
+    case unknownArtist
+    case badLore(String)
     case badRelease(String)
     case unknownSubset(SubsetID)
     case badSubsetPrefix
@@ -663,6 +783,8 @@ public enum CardError: Error, Equatable, Sendable {
         case .duplicateEraCode(let code): "Another era already uses the code \(code)."
         case .badHomeTier: "The home tier must be a tier of the era's ladder. Pick the home tier again."
         case .setLocked: "This set is scheduled or released. It cannot change."
+        case .unknownArtist: "That artist is not on the talent board or in your alumni."
+        case .badLore(let reason): reason
         case .badRelease(let reason): reason
         case .unknownSubset: "That subset does not exist."
         case .badSubsetPrefix: "Use 1 to \(Subset.prefixLimit) letters for the subset prefix."

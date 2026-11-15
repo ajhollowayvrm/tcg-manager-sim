@@ -64,13 +64,21 @@ public enum Role: String, CaseIterable, Codable, Sendable, Identifiable {
     }
 }
 
-/// The fixed list of palette colors. The app maps each one to a display color.
+/// The fixed list of palette colors, in hue order. The app maps each one to a display color.
 public enum PaletteColor: String, CaseIterable, Codable, Sendable, Identifiable {
-    case crimson, ember, gold, sunflower, lime, forest, teal, sky
-    case ocean, indigo, violet, rose, cream, slate, charcoal, snow
+    case crimson, maroon, coral, ember, amber, gold, bronze, sunflower, cream, peach
+    case lime, olive, forest, mint, teal, aqua, sky, ocean, navy, indigo
+    case lavender, violet, plum, magenta, rose, chocolate, slate, silver, charcoal, snow
 
     public var id: String { rawValue }
     public var name: String { rawValue.capitalized }
+
+    /// The colors that the character generator picks from. It is the first list
+    /// of 16 colors, in its first order, so that a seed makes the same characters.
+    public static let generatorColors: [PaletteColor] = [
+        .crimson, .ember, .gold, .sunflower, .lime, .forest, .teal, .sky,
+        .ocean, .indigo, .violet, .rose, .cream, .slate, .charcoal, .snow,
+    ]
 }
 
 /// Body parts are FLAVOR: they control the drawing only, and no system reads them.

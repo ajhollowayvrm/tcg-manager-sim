@@ -59,11 +59,11 @@ struct MarketView: View {
                 Text("Audiences")
             } footer: {
                 Text(market.insights.isEmpty
-                     ? "Your studio knows little about the market yet. Each upgrade shows one more part."
+                     ? "Your studio knows little about the market yet. Each hire in Studio → Upgrades shows one more part."
                      : "Ranges get narrower with more research.")
             }
 
-            let locked = MarketInsight.allCases.filter { !market.insights.contains($0) && $0 != .forecast && $0 != .curve }
+            let locked = MarketInsight.allCases.filter { !market.insights.contains($0) && $0 != .forecast && $0 != .curve && !$0.isTalent }
             if !locked.isEmpty {
                 Section("Upgrades that show more") {
                     ForEach(locked) { insight in
@@ -162,7 +162,7 @@ struct AudienceDetailView: View {
                 Text(title)
                 Spacer(minLength: 8)
                 Image(systemName: "lock.fill").font(.footnote)
-                Text(insight.upgradeName)
+                Text(insight.hireName)
             }
             .foregroundStyle(.secondary)
             .accessibilityElement(children: .combine)
@@ -188,7 +188,7 @@ struct LockedRow: View {
         HStack(spacing: 12) {
             Image(systemName: "lock.fill").foregroundStyle(.secondary).frame(width: 24)
             VStack(alignment: .leading, spacing: 2) {
-                Text(insight.upgradeName).font(.subheadline.weight(.semibold))
+                Text(insight.hireName).font(.subheadline.weight(.semibold))
                 Text(insight.unlocks).font(.caption).foregroundStyle(.secondary)
             }
         }

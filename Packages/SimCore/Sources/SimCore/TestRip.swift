@@ -80,7 +80,8 @@ public struct TestRip: Sendable {
     /// True when the outcome comes in fewer than 1 pack in 10.
     public func isHit(_ kind: PackOutcomeKind) -> Bool {
         guard let chance = stats.line(kind)?.chance else { return false }
-        return chance < 1 / Self.hitPacks
+        // The tolerance keeps exactly 1 pack in 10 out: 1 - 0.9 is 0.09999999999999998.
+        return chance < 1 / Self.hitPacks - 1e-9
     }
 
     /// Opens one pack. The cards come in slot order (P1). A pack does not give

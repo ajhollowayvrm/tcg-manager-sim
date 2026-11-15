@@ -22,13 +22,57 @@ extension SetSymbolShape {
         case .swords: "figure.fencing"
         case .sparkle: "sparkles"
         case .eye: "eye.fill"
+        case .heart: "heart.fill"
+        case .snowflake: "snowflake"
+        case .flower: "camera.macro"
+        case .tree: "tree.fill"
+        case .paw: "pawprint.fill"
+        case .bird: "bird.fill"
+        case .fish: "fish.fill"
+        case .hare: "hare.fill"
+        case .turtle: "tortoise.fill"
+        case .bug: "ladybug.fill"
+        case .cloud: "cloud.fill"
+        case .tornado: "tornado"
+        case .globe: "globe.americas.fill"
+        case .atom: "atom"
+        case .hourglass: "hourglass"
+        case .infinity: "infinity"
+        case .flag: "flag.fill"
+        case .bell: "bell.fill"
+        case .book: "book.fill"
+        case .scroll: "scroll.fill"
+        case .music: "music.note"
+        case .masks: "theatermasks.fill"
+        case .hammer: "hammer.fill"
+        case .wand: "wand.and.stars"
+        case .trophy: "trophy.fill"
+        case .dice: "dice.fill"
+        case .puzzle: "puzzlepiece.fill"
+        case .cube: "cube.fill"
+        case .tent: "tent.fill"
+        case .columns: "building.columns.fill"
+        case .digit0, .digit1, .digit2, .digit3, .digit4, .digit5, .digit6, .digit7, .digit8, .digit9:
+            "\(digit ?? 0).circle.fill"
         }
     }
 
     var name: String {
-        switch self {
-        case .gem: "Gem"
-        default: rawValue.capitalized
+        if let digit { return "Number \(digit)" }
+        return rawValue.capitalized
+    }
+}
+
+/// A shape of a set symbol or an emblem. A number shape draws its digit as text.
+struct ShapeGlyph: View {
+    let shape: SetSymbolShape
+    let size: CGFloat
+
+    var body: some View {
+        if let digit = shape.digit {
+            Text("\(digit)").font(.system(size: size * 1.15, weight: .heavy, design: .rounded))
+        } else {
+            Image(systemName: shape.systemImage).font(.system(size: size, weight: .bold))
         }
     }
 }
@@ -39,9 +83,8 @@ struct SetSymbolView: View {
     var size: CGFloat = 28
 
     var body: some View {
-        Image(systemName: symbol.shape.systemImage)
-            .font(.system(size: size * 0.5, weight: .bold))
-            .foregroundStyle(.white)
+        ShapeGlyph(shape: symbol.shape, size: size * 0.5)
+            .foregroundStyle(symbol.color.prefersDarkText ? Color.black.opacity(0.8) : .white)
             .frame(width: size, height: size)
             .background(symbol.color.color, in: Circle())
             .overlay(Circle().stroke(.white.opacity(0.6), lineWidth: size > 24 ? 2 : 1))
@@ -69,6 +112,27 @@ struct SetSymbolRow: View {
 private struct SetSymbolPicker: View {
     @Binding var symbol: SetSymbol
 
+    private func shapeSection(_ title: String, _ shapes: [SetSymbolShape]) -> some View {
+        Section(title) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 6), spacing: 10) {
+                ForEach(shapes) { shape in
+                    let selected = symbol.shape == shape
+                    Button {
+                        symbol.shape = shape
+                    } label: {
+                        ShapeGlyph(shape: shape, size: 18)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .background(selected ? Theme.accent.opacity(0.18) : Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+                            .overlay(RoundedRectangle(cornerRadius: 10).stroke(selected ? Theme.accent : .clear, lineWidth: 2))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Shape \(shape.name)")
+                    .accessibilityAddTraits(selected ? .isSelected : [])
+                }
+            }
+        }
+    }
+
     var body: some View {
         Form {
             Section {
@@ -79,25 +143,8 @@ private struct SetSymbolPicker: View {
                 }
                 .padding(.vertical, 8)
             }
-            Section("Shape") {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 12) {
-                    ForEach(SetSymbolShape.allCases) { shape in
-                        let selected = symbol.shape == shape
-                        Button {
-                            symbol.shape = shape
-                        } label: {
-                            Image(systemName: shape.systemImage)
-                                .font(.title3)
-                                .frame(maxWidth: .infinity, minHeight: 48)
-                                .background(selected ? Theme.accent.opacity(0.18) : Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
-                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(selected ? Theme.accent : .clear, lineWidth: 2))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Shape \(shape.name)")
-                        .accessibilityAddTraits(selected ? .isSelected : [])
-                    }
-                }
-            }
+            shapeSection("Shape", SetSymbolShape.allCases.filter { $0.digit == nil })
+            shapeSection("Number", SetSymbolShape.allCases.filter { $0.digit != nil })
             Section("Color") {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 6), spacing: 12) {
                     ForEach(PaletteColor.allCases) { color in

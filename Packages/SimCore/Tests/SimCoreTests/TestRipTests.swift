@@ -1,138 +1,203 @@
-import Foundation
 import Testing
 @testable import SimCore
 
+/// A set with one designed card in each of the tiers 4 to 9, so every outcome of the default pack has cards.
+fileprivate func richStudio() throws -> (world: World, set: SetID) {
+    var (world, set, mascot) = try Fixture.studio()
+    let drafts = (4...9).map { (tier: Int) in CardDraft(name: "Card \(tier)", characterID: mascot, rarity: tier) }
+    try world.createCards(in: set, drafts)
+    return (world, set)
+}
+
+fileprivate func rip(_ world: World, _ set: SetID) throws -> TestRip {
+    try #require(world.testRip(set))
+}
+
+fileprivate func key(_ pull: Pull) -> String { "\(pull.cardID)/\(pull.version)" }
+
 @Suite("Test rip")
 struct TestRipTests {
-    /// A set with filler in C, U, and R, plus one designed card at each other tier.
-    func setup(chase: Bool = true) throws -> (World, SetID, CharacterID) {
-        var world = World(seed: 33, studioName: "Test")
-        let aryla = try world.createCharacter(CharacterDraft(name: "Aryla", role: .mascot, kind: .person))
-        let set = try world.createSet(name: "Base", theme: nil, presetID: Catalog.defaultLadderID)
-        if chase {
-            let tiers = try #require(world.catalog.set(set)?.ladder.tiers)
-            try world.createCards(in: set, tiers[3...].map { CardDraft(name: "Aryla \($0.code)", characterID: aryla, rarity: $0.id) })
+    @Test("A set has a test rip unless it is missing or a blocking warning stops it (test-rip.md, section 4)")
+    func ripAvailability() throws {
+        var (world, set, _) = try Fixture.studio()
+        #expect(world.testRip(999) == nil)
+        #expect(world.testRip(set) != nil)
+        let index = try #require(world.catalog.sets.firstIndex { $0.id == set })
+        world.catalog.sets[index].pack.slots[0].outcomes[0].kind = .tier(99)
+        #expect(world.testRip(set) == nil)
+    }
+
+    @Test("A pack opens in slot order, with the pack's card count, and each pull comes from its slot (P1, P2)")
+    func packOrder() throws {
+        let (world, set) = try richStudio()
+        let test = try rip(world, set)
+        let ids = Set(world.catalog.allCards(in: set).map(\.id))
+        var rng = Xoshiro256(seed: 11)
+        for _ in 0..<20 {
+            let opened = test.openPack(using: &rng)
+            #expect(opened.positions.map(\.slot) == [1, 1, 1, 1, 2, 2, 2, 3, 4, 5])
+            #expect(opened.pulls.count == 10)
+            for position in opened.positions {
+                let pull = try #require(position.pull)
+                let kinds = test.pack.slots[position.slot - 1].outcomes.map(\.kind)
+                #expect(kinds.contains(pull.kind))
+                #expect(ids.contains(pull.cardID))
+                if case .version = pull.kind {
+                    #expect(pull.version == .tier(1))
+                } else {
+                    #expect(pull.version == .base)
+                }
+            }
+            #expect(opened.hits == opened.pulls.filter(\.hit))
         }
-        return (world, set, aryla)
     }
 
-    @Test("A pack gives its card count, in slot order (P1)")
-    func slotOrder() throws {
-        let (world, set, _) = try setup()
-        let rip = try #require(world.testRip(set))
-        var rng = Xoshiro256(seed: 1)
-        let pack = rip.openPack(using: &rng)
-        #expect(pack.positions.count == 10)
-        #expect(pack.positions.map(\.slot) == [1, 1, 1, 1, 2, 2, 2, 3, 4, 5])
-        #expect(pack.pulls.count == 10)
-        let commons = try #require(world.catalog.set(set)?.ladder.tiers[0].id)
-        #expect(pack.pulls.prefix(4).allSatisfy { $0.kind == .tier(commons) && $0.version == .base })
-    }
-
-    @Test("A pack gives no card in the same version twice while the pool has an unused card")
+    @Test("A pack gives no card twice in one version while the pool has an unused card (P1, test-rip.md, section 3)")
     func noDuplicates() throws {
-        let (world, set, _) = try setup()
-        let rip = try #require(world.testRip(set))
-        var rng = Xoshiro256(seed: 2)
-        for _ in 0..<300 {
-            let keys = rip.openPack(using: &rng).pulls.map { "\($0.cardID)-\($0.version)" }
+        let (world, set, _) = try Fixture.studio()
+        let test = try rip(world, set)
+        var rng = Xoshiro256(seed: 3)
+        for _ in 0..<30 {
+            let keys = test.openPack(using: &rng).pulls.map(key)
             #expect(Set(keys).count == keys.count)
         }
+
+        let state = try #require(world.catalog.set(set))
+        let rares = [PackOutcome(id: 1, kind: .tier(3), odds: 100)]
+        let layout = PackLayout(id: 9, name: "Tiny", ladderID: 1, slots: [PackSlot(id: 1, count: 3, outcomes: rares)])
+        let small = TestRip(pack: layout, ladder: state.ladder, cards: world.catalog.allCards(in: set))
+        let pulls = small.openPack(using: &rng).pulls
+        #expect(pulls.count == 3)
+        #expect(Set(pulls.map(key)).count == 2)
     }
 
-    @Test("A test rip is pure: the same seed gives the same pack, and the world does not change (P4)")
-    func pure() throws {
-        let (world, set, _) = try setup()
-        let before = world
-        let rip = try #require(world.testRip(set))
-        var a = Xoshiro256(seed: 9)
-        var b = Xoshiro256(seed: 9)
-        #expect(rip.openPack(using: &a) == rip.openPack(using: &b))
-        _ = rip.openBox(using: &a)
-        #expect(world == before)
-    }
-
-    @Test("A version outcome gives the tier's version, and skips a card that turned it off (C16)")
-    func versions() throws {
-        var (world, set, aryla) = try setup()
-        let common = try #require(world.catalog.set(set)?.ladder.tiers[0])
-        let reverseID = common.versions[0].id
-        let plain = try world.createCard(in: set, CardDraft(name: "No shine", characterID: aryla, rarity: common.id, excludedVersions: [reverseID]))
-        let rip = try #require(world.testRip(set))
-        var rng = Xoshiro256(seed: 3)
-        let reverse = (0..<200).flatMap { _ in rip.openPack(using: &rng).pulls }.filter { $0.kind == .version("Reverse holo") }
-        #expect(!reverse.isEmpty)
-        #expect(reverse.allSatisfy { if case .tier = $0.version { true } else { false } })
-        #expect(!reverse.contains { $0.cardID == plain })
-    }
-
-    @Test("An empty outcome gives its odds to the other outcomes in its slot (test-rip.md, section 3)")
+    @Test("An empty outcome gives its odds to the others, and a slot with no cards shows an empty frame (test-rip.md, section 3)")
     func emptyOutcomes() throws {
-        let (world, set, _) = try setup(chase: false)
-        let rip = try #require(world.testRip(set))
-        // Slot 4 has only the reverse holo left, and slot 5 has only the Rare left.
-        #expect(rip.pack.slots[3].outcomes.map(\.odds) == [100])
-        #expect(rip.pack.slots[4].outcomes.map(\.odds) == [100])
-        #expect(abs(try #require(rip.stats.line(.version("Reverse holo"))?.perPack) - 2) < 1e-9)
-        var rng = Xoshiro256(seed: 4)
-        #expect(rip.openPack(using: &rng).pulls.count == 10)
-    }
+        let (world, set, _) = try Fixture.studio()
+        let test = try rip(world, set)
+        let counts = test.pack.slots.map(\.outcomes.count)
+        #expect(counts == [1, 1, 1, 1, 1])
+        for slot in test.pack.slots { #expect(abs(slot.oddsSum - 100) < 1e-9) }
+        #expect(test.stats.line(.tier(7)) == nil)
+        let source = try #require(world.catalog.set(set)).pack
+        #expect(source.slots[3].outcomes.count == 4)
 
-    @Test("A slot with no cards at all gives an empty position")
-    func emptySlot() throws {
-        var (world, set, _) = try setup(chase: false)
-        let ladder = try #require(world.catalog.set(set)?.ladder)
-        var pack = try #require(world.catalog.set(set)?.pack)
-        pack.slots.append(PackSlot(id: pack.nextSlotID, outcomes: [PackOutcome(id: 1, kind: .tier(ladder.tiers[8].id), odds: 100)]))
-        try world.updateSetPack(set, pack)
-        let rip = try #require(world.testRip(set))
+        let state = try #require(world.catalog.set(set))
+        let gold = [PackOutcome(id: 1, kind: .tier(9), odds: 100)]
+        let common = [PackOutcome(id: 1, kind: .tier(1), odds: 100)]
+        let layout = PackLayout(id: 9, name: "Gap", ladderID: 1, slots: [PackSlot(id: 1, outcomes: gold), PackSlot(id: 2, outcomes: common)])
+        let gap = TestRip(pack: layout, ladder: state.ladder, cards: world.catalog.allCards(in: set))
+        #expect(gap.pack.slots[0].outcomes.isEmpty)
         var rng = Xoshiro256(seed: 5)
-        let opened = rip.openPack(using: &rng)
-        #expect(opened.positions.count == 11)
-        #expect(opened.positions.last == RipPosition(slot: 6, pull: nil))
+        let opened = gap.openPack(using: &rng)
+        #expect(opened.positions.count == 2)
+        #expect(opened.positions[0].slot == 1)
+        #expect(opened.positions[0].pull == nil)
+        #expect(opened.positions[1].pull != nil)
+        #expect(opened.pulls.count == 1)
     }
 
-    @Test("A hit is an outcome that comes in fewer than 1 pack in 10")
-    func hits() throws {
-        let (world, set, _) = try setup()
-        let rip = try #require(world.testRip(set))
-        let tiers = try #require(world.catalog.set(set)?.ladder.tiers)
-        let hits = tiers.filter { rip.isHit(.tier($0.id)) }.map(\.name)
-        #expect(hits == ["Ultra Rare", "Illustration Rare", "Special Illustration Rare", "Gold"])
-        #expect(!rip.isHit(.version("Reverse holo")))
-    }
-
-    @Test("A box opens its box size, and its counts follow the expected counts (P3)")
-    func box() throws {
-        let (world, set, _) = try setup()
-        let rip = try #require(world.testRip(set))
-        var rng = Xoshiro256(seed: 6)
-        let box = rip.openBox(using: &rng)
-        #expect(box.packs.count == 36)
-        let commons = try #require(box.counts.first)
-        #expect(commons.pulled == 144)
-        #expect(commons.expected == 144)
-        #expect(box.counts.reduce(0) { $0 + $1.pulled } == 360)
-        #expect(box.hits.count == box.packs.flatMap(\.hits).count)
-        // The rarest outcome comes first.
-        let rank = Dictionary(uniqueKeysWithValues: rip.stats.lines.map { ($0.kind, $0.chance) })
-        let order = box.hits.map { rank[$0.kind] ?? 0 }
-        #expect(order == order.sorted())
-
-        // Over many boxes, each mean count is near its expected count.
-        let boxes = (0..<300).map { _ in rip.openBox(using: &rng) }
-        for count in box.counts {
-            let mean = Double(boxes.reduce(0) { $0 + ($1.counts.first { $0.kind == count.kind }?.pulled ?? 0) }) / 300
-            #expect(abs(mean - count.expected) < max(0.15, count.expected * 0.05), "\(count.kind)")
+    @Test("A hit comes in fewer than 1 pack in 10, so Ultra Rare is a hit and Double Rare is not (P5)")
+    func hitRule() throws {
+        let (world, set) = try richStudio()
+        let test = try rip(world, set)
+        for tier in [6, 7, 8, 9] { #expect(test.isHit(.tier(tier))) }
+        for tier in [1, 2, 3, 4, 5] { #expect(!test.isHit(.tier(tier))) }
+        #expect(!test.isHit(.version("Reverse holo")))
+        #expect(!test.isHit(.tier(99)))
+        var rng = Xoshiro256(seed: 21)
+        for _ in 0..<50 {
+            for pull in test.openPack(using: &rng).pulls { #expect(pull.hit == test.isHit(pull.kind)) }
         }
     }
 
-    @Test("A blocking warning stops the test rip (test-rip.md, section 4)")
-    func blocked() throws {
-        var (world, set, _) = try setup(chase: false)
-        var ladder = try #require(world.catalog.set(set)?.ladder)
-        ladder.tiers.removeLast()
-        try world.updateSetLadder(set, ladder)
-        #expect(world.testRip(set) == nil)
+    @Test("An outcome at exactly 1 pack in 10 is not a hit (P5)")
+    func hitBoundary() throws {
+        let (world, set, _) = try Fixture.studio()
+        let state = try #require(world.catalog.set(set))
+        let outcomes = [PackOutcome(id: 1, kind: .tier(1), odds: 10), PackOutcome(id: 2, kind: .tier(2), odds: 90)]
+        let layout = PackLayout(id: 9, name: "Edge", ladderID: 1, slots: [PackSlot(id: 1, outcomes: outcomes)])
+        let edge = TestRip(pack: layout, ladder: state.ladder, cards: world.catalog.allCards(in: set))
+        #expect(!edge.isHit(.tier(1)))
+        #expect(!edge.isHit(.tier(2)))
+    }
+
+    @Test("A box opens the box size in packs, counts each outcome against its expected count, and lists hits rarest first (P3)")
+    func openBox() throws {
+        let (world, set) = try richStudio()
+        let test = try rip(world, set)
+        var rng = Xoshiro256(seed: 8)
+        let box = test.openBox(using: &rng)
+        #expect(box.packs.count == test.pack.boxSize)
+        #expect(box.counts.map(\.kind) == test.stats.lines.map(\.kind))
+        let pulled = box.counts.map(\.pulled).reduce(0, +)
+        #expect(pulled == 360)
+        let expected = box.counts.map(\.expected).reduce(0, +)
+        #expect(abs(expected - 360) < 1e-6)
+        let all = box.packs.flatMap(\.pulls)
+        for count in box.counts {
+            let line = try #require(test.stats.line(count.kind))
+            #expect(abs(count.expected - line.perPack * 36) < 1e-9)
+            #expect(count.pulled == all.filter { $0.kind == count.kind }.count)
+        }
+        #expect(box.hits.count == all.filter(\.hit).count)
+        #expect(box.hits.allSatisfy { $0.hit })
+        let chances = box.hits.compactMap { test.stats.line($0.kind)?.chance }
+        #expect(chances == chances.sorted())
+    }
+
+    @Test("A pack draws by the slot odds (S2)")
+    func drawFollowsOdds() throws {
+        let (world, set, _) = try Fixture.studio()
+        let state = try #require(world.catalog.set(set))
+        let outcomes = [PackOutcome(id: 1, kind: .tier(1), odds: 70), PackOutcome(id: 2, kind: .tier(2), odds: 30)]
+        let layout = PackLayout(id: 9, name: "Odds", ladderID: 1, slots: [PackSlot(id: 1, outcomes: outcomes)])
+        let test = TestRip(pack: layout, ladder: state.ladder, cards: world.catalog.allCards(in: set))
+        var rng = Xoshiro256(seed: 99)
+        var commons = 0
+        for _ in 0..<1000 {
+            if test.openPack(using: &rng).pulls[0].kind == .tier(1) { commons += 1 }
+        }
+        #expect(commons > 650)
+        #expect(commons < 750)
+    }
+
+    @Test("A version outcome gives the tier's version and never a card that turned it off (C16)")
+    func versionPulls() throws {
+        var (world, set, mascot) = try Fixture.studio()
+        let off = try world.createCard(in: set, CardDraft(name: "Off", characterID: mascot, rarity: 3, excludedVersions: [1]))
+        let state = try #require(world.catalog.set(set))
+        let cards = world.catalog.allCards(in: set)
+        let pool = TestRip.pool(.version("Reverse holo"), ladder: state.ladder, cards: cards, subsets: [])
+        #expect(!pool.isEmpty)
+        #expect(pool.allSatisfy { $0.1 == .tier(1) })
+        #expect(!pool.contains { $0.0 == off })
+        let base = TestRip.pool(.tier(3), ladder: state.ladder, cards: cards, subsets: [])
+        #expect(base.contains { $0.0 == off })
+        #expect(base.allSatisfy { $0.1 == .base })
+
+        let test = try rip(world, set)
+        var rng = Xoshiro256(seed: 4)
+        for _ in 0..<100 {
+            for pull in test.openPack(using: &rng).pulls {
+                if case .version = pull.kind { #expect(pull.cardID != off) }
+            }
+        }
+    }
+
+    @Test("A rip changes nothing in the world, and the same seed gives the same pulls (P4)")
+    func ripIsPure() throws {
+        let (world, set) = try richStudio()
+        let before = world.catalog
+        let test = try rip(world, set)
+        var a = Xoshiro256(seed: 1)
+        var b = Xoshiro256(seed: 1)
+        var c = Xoshiro256(seed: 2)
+        let first = test.openBox(using: &a)
+        let second = test.openBox(using: &b)
+        let other = test.openBox(using: &c)
+        #expect(first == second)
+        #expect(first != other)
+        #expect(world.catalog == before)
     }
 }

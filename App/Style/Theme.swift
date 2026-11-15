@@ -34,13 +34,27 @@ extension PaletteColor {
         case .slate: Color(red: 0.50, green: 0.55, blue: 0.60)
         case .charcoal: Color(red: 0.20, green: 0.20, blue: 0.24)
         case .snow: Color(red: 0.97, green: 0.97, blue: 0.99)
+        case .maroon: Color(red: 0.48, green: 0.08, blue: 0.14)
+        case .coral: Color(red: 0.98, green: 0.45, blue: 0.40)
+        case .amber: Color(red: 0.98, green: 0.62, blue: 0.05)
+        case .bronze: Color(red: 0.70, green: 0.45, blue: 0.20)
+        case .peach: Color(red: 1.00, green: 0.80, blue: 0.65)
+        case .olive: Color(red: 0.45, green: 0.47, blue: 0.15)
+        case .mint: Color(red: 0.60, green: 0.92, blue: 0.75)
+        case .aqua: Color(red: 0.35, green: 0.88, blue: 0.90)
+        case .navy: Color(red: 0.08, green: 0.15, blue: 0.40)
+        case .lavender: Color(red: 0.78, green: 0.70, blue: 0.95)
+        case .plum: Color(red: 0.45, green: 0.15, blue: 0.40)
+        case .magenta: Color(red: 0.88, green: 0.15, blue: 0.62)
+        case .chocolate: Color(red: 0.40, green: 0.24, blue: 0.14)
+        case .silver: Color(red: 0.75, green: 0.77, blue: 0.80)
         }
     }
 
     /// True when black text reads better than white text on this color.
     var prefersDarkText: Bool {
         switch self {
-        case .gold, .sunflower, .lime, .sky, .rose, .cream, .snow: true
+        case .gold, .sunflower, .lime, .sky, .rose, .cream, .snow, .amber, .peach, .mint, .aqua, .lavender, .silver: true
         default: false
         }
     }

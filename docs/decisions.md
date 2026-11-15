@@ -852,3 +852,314 @@ AJ gave full permission, so the main thread made these choices without questions
 ### B12. "Show the hidden numbers" is on by default
 
 - AJ asked to see the algorithm of the audiences. Settings has a switch that shows the true factors and the forecast. It is on by default for now. When it is off, the upgrades decide what the player sees (A5).
+
+## 2026-11-12: selling engine fixes after the first simulations
+
+The main thread ran simulations of the engine. Every print run sold out, a $20 pack earned the most, and three years of releases gave $3.5M with nothing that could go wrong. The root cause: each set took 25% of a fan's yearly money, so four sets a year took all of it, and shelf discovery grew with the stock without a limit. AJ picked three of four fixes. AJ did not pick "Fair price" (a price sensitivity above about $6 a pack).
+
+### B13. A fan wallet shares each fan's money between the studio's sets. This changes B4
+
+AJ chose "Fan wallet".
+
+- Over any 52 weeks, the studio's sets together can take at most 50% of the yearly money of the people who know the studio [inferred]. The rest goes to the rest of the market.
+- When the studio's sets want more than the wallet has left, each set's demand falls by the same share. So the studio's own sets compete with each other, and releasing too often splits the money.
+- The algorithm screen shows the wallet as a weekly condition.
+- **Part of this fix:** word of mouth falls from 0.05 to 0.015 new people for each pack sold. At 0.05, each pack sold brought more future money than it cost the fan, so growth had no end and the wallet could not bind.
+
+### B14. Shelf reach saturates. This changes B9
+
+AJ chose "Shelf reach saturates".
+
+- Stock in stores reaches new people with the square root of the stock, not in a straight line. The reach also falls by half every 8 weeks after release, as stores give the shelf space to newer products.
+- A huge print run no longer creates its own demand, so a big run can leave unsold stock.
+
+### B15. The headliner and the theme are stronger levers. This changes B5
+
+AJ chose "Stronger small levers".
+
+- Headliner: a headliner with a card gives ×1.10 to kids, parents, teens, and casual players. With no headliner, kids and parents get ×0.90.
+- Theme: the hidden fit is ×0.80 to ×1.20. A set with no theme gets ×0.90.
+
+## 2026-11-12: running costs (artists, staff and rent, marketing)
+
+The simulations showed that the studio paid only for printing, so nothing could go wrong. AJ picked all three running costs. The design is in `docs/design/costs.md`.
+
+### K1. Artists come from a talent board
+
+AJ chose "A talent board" over "You create them" and "Both".
+
+- The game makes a pool of artists. Each artist has a name, a style, a fee for each card, a speed, and a hidden popularity.
+- The pool changes over time, and a popular artist gets busy.
+- The player picks one artist for each designed card in the card designer (D1).
+
+### K2. Art takes weeks
+
+AJ chose "It takes weeks" over "At once".
+
+- The studio pays the artist when it commissions the card. The art takes 2 to 8 weeks.
+- A set cannot release until all its art is done.
+
+### K3. Hires are the upgrades, and the studio moves to bigger places
+
+AJ chose "Hires are the upgrades" over "Office tiers only" and "Separate".
+
+- Each market upgrade (A5) becomes a hire with a weekly salary, for example a Community manager.
+- The studio moves from the garage to bigger places. Each place has a weekly rent and room for a number of staff.
+
+### K4. The studio closes after 8 weeks below zero
+
+AJ chose "After 8 weeks below zero" over "No end until loans exist" and "At once below zero".
+
+- The game warns when cash goes below zero. After 8 weeks in a row below zero, the studio closes (D8).
+- Loans and crowdfunds come later and give more room.
+
+### K5. Four marketing channels
+
+AJ picked all four: previews, creators, store events, and ads.
+
+### K6. Marketing is bought both ways
+
+AJ chose "Both" over "Part of a release" and "A weekly budget".
+
+- Each release gets campaigns: a preview budget, creators, store events, and ads.
+- The studio also has a standing weekly budget for brand reach.
+
+## 2026-11-12: lore (races, factions, and story)
+
+AJ's words: "I'd like there to potentially be different races. For example, I want to make an Orc. The Orcs are in natural opposition to the Humans. Even within humans there are factions. Do you think there's a place for some Lore building like this and maybe the set itself can build the lore." The design draft is in `docs/design/lore.md`.
+
+### L1. Races hold factions
+
+AJ chose "Races hold factions" over "Factions only" and "Tags only".
+
+- The player creates races (for example Orcs and Humans) and factions inside them (for example a Human kingdom and a Human rebel order).
+- Each character belongs to one race at most and one faction at most.
+- Races and factions are IP, like places and events (R15), each with a name, an emblem, and colors.
+
+### L2. Each pair of factions has a relation
+
+AJ chose "A relation for each pair" over "Fixed sides" and "No relations".
+
+- Each pair of factions has a relation from enemies to allies, for example Orcs and Humans as natural enemies.
+- The player sets the start. The sets' story beats move it over time.
+
+### L3. A set builds the lore with a story beat and with its cards
+
+AJ chose "Both" over "A story beat for each set" and "From the cards".
+
+- Each set picks a story beat (for example war, alliance, betrayal, discovery, rise, or fall) and the factions it involves. The beat changes the relations and the factions' fame.
+- The factions on the set's cards add to the beat.
+- The game keeps a lore timeline of all beats.
+
+### L4. Each faction has its own fans
+
+AJ chose "Faction fans" over "Only through characters" and "Flavor first".
+
+- Each faction has hidden fans in each audience, like character appeal.
+- A set that features and advances a loved faction sells more to its fans.
+- Enemy factions in one set, or in one parallel pair, draw both fan groups.
+- A story that runs across sets builds anticipation for the next set.
+
+## 2026-11-12: lore draft (answers to its open questions)
+
+### L5. A character can switch sides, or one version of it can
+
+AJ's words: "Yes it can or there can be a version of the card that does that so that one version is that way."
+
+- A "Betrayal" beat can move a named character to the other faction.
+- A form of a character can belong to another faction than its character (R23). For example, a dark form joins the enemy, and the base character stays. A card that shows the form counts for the form's faction.
+
+### L6. The six beats stay
+
+AJ's words: "No I like that for now." The beats are war, alliance, betrayal, rise, fall, and discovery.
+
+### L7. A beat can end a character. Change hype and nostalgia are two different draws
+
+AJ's words: "Hmm sure. However, the nostalgia is more about individual cards over time. So it's two different draws -- nostalgia and hype for a change of someone or something. Could even be like a character goes dark for a while so the older card where they were last light goes crazy."
+
+- A "Fall" beat can end a named character. The character retires (R10).
+- **Change hype:** when a character changes (it defects, it falls, or a dark form debuts), its buzz jumps now. Hype is short-term demand for the new state.
+- **Nostalgia** belongs to individual cards over time, not to characters. It is a reader of the secondary market (not built yet).
+- **The last card of the old state:** when a character changes, the game marks that character's last cards from before the change. While the change lasts, those cards gain value on the secondary market (not built yet). Example: a character goes dark, and its last light card climbs.
+
+## 2026-11-12: lore changes (mixed races, groups, and delete)
+
+AJ's words: "Should be able to delete lore. Also when adding it should be specific: am I adding a faction, a kingdom or a race". Then: "The thing I worry about is, what if you have a kingdom with two races in it?"
+
+### L8. Race and allegiance are separate. This changes L1
+
+AJ chose "Separate" over "Keep races over factions".
+
+- **A race** is what a character is, for example Orc, Human, or Elf.
+- **A group** is who a character serves. Each group has a kind that the player picks when adding it: kingdom, clan, order, guild, tribe, or cult.
+- A group can have members of any race. A kingdom with Humans and Elves is possible.
+- Relations, fans, and story beats belong to groups. ("Faction" in L2 to L7 now means a group.)
+
+### L9. A group can sit inside one larger group
+
+AJ chose "Yes, one level" over "No nesting".
+
+- A group can be part of one larger group, for example an order inside a kingdom. Only one level: a group inside another group cannot hold groups itself.
+- A character picks the most specific group, and counts for the larger group too.
+
+### L10. Lore can be deleted
+
+- Deleting a race removes it from its characters.
+- Deleting a group removes it from its characters, from forms, from relations, and from draft set stories. Its inner groups stand alone after that.
+- Released sets keep their timeline chapters. A deleted group shows there as "a removed group".
+- The add buttons say exactly what they add: "Add a race", or "Add a group" with its kind.
+
+## 2026-11-13: ladder and set editing
+
+AJ's list: "More symbols for rarity ladder. More colors. Double symbols up to triple by clicking twice or three times. Combining finishes and printings. Feedback as your making the ladder w/ upgrade (ex a lower rarity may have a higher rarity feel etc). Swipe to delete set (unless it's already published). Edit rarity ladder of set (resets generation). More set symbols including numbers."
+
+### C20. A tier shows its symbol one to three times
+
+- The rarity symbols grow from 10 to 24 shapes.
+- A tap on the selected symbol shows it one more time, up to three. A fourth tap goes back to one.
+- The old "two stars" and "three stars" symbols become a star shown two or three times. An old save loads them that way.
+
+### C21. The palette has 30 colors
+
+- The palette grows from 16 to 30 colors, in hue order. Every color picker shows all of them.
+- The character generator still picks from the first 16 colors, so that a seed makes the same characters.
+
+### C22. A look stacks foils and stamps
+
+AJ chose "Stack foils and stamps" over "A version adds to the tier" and "Both".
+
+- One look can have more than one foil, for example Cracked ice and Etched, and more than one stamp, for example a signature and a serial number.
+- Each foil and each stamp adds its own print cost (C17).
+- A version still replaces the tier look. It does not add to it.
+
+### C23. The rarity feel, and chase collectors read it
+
+AJ chose "Feedback and market" over "Feedback only".
+
+- Each part of a tier's look gives feel points: the symbol and its count, the layout, the foils, the texture, the stamps, the frame, and a secret number. The tables are in `RarityFeel.swift`.
+- The ladder editor shows each tier's feel, its upgrade over the tier below (for example "+ Full art, + Silver frame"), and a warning when a rarer tier feels less rare than a more common tier.
+- The default ladder climbs: each tier feels at least as rare as the tier below it.
+- Market: chase collectors buy 8% less for each rarer tier with cards that feels less rare than a more common tier, down to 30% less. The factor is "Rarity feel" in the demand list.
+
+### S16. Swipe to delete a draft set
+
+AJ chose "Delete one, keep the other" over "Delete both sets".
+
+- A swipe deletes a draft set, after a confirmation. A scheduled or released set has no swipe.
+- The set's cards and generated characters go. Money paid for art does not come back.
+- The other set of a parallel pair stays and becomes a main set.
+
+### S17. A ladder change to the tiers resets the filler
+
+- A change that adds, removes, or moves a tier, or that changes a filler share, makes all filler cards and generated characters again (S5).
+- A change to a tier's look, name, or color keeps the filler.
+- The ladder editor warns before the save. A tier that a designed card uses still cannot go.
+- The set screen opens the ladder editor from a tap on the ladder strip.
+
+### S18. Set symbols include numbers
+
+- The set symbol shapes grow from 16 to 46, plus the numbers 0 to 9. Lore emblems use the same shapes.
+
+## 2026-11-14: lead artists and legends
+
+AJ's words: "I want it to be possible to have a scenario where for the first base set it's all one artist. Then that artist becomes legendary as the TCG grows later because they were the first and bringing them back to do other cards is a big deal. Also every print run needs an artist of some sort even if just one for all the cards." The design is in `docs/design/costs.md`, sections 4.5 to 4.7.
+
+### K7. Each set has a lead artist
+
+AJ chose "Lead artist per set" over "Each designed card" and "Lead plus each card".
+
+- A set cannot print without a lead artist.
+- The lead draws all filler cards. This replaces the $100 stock art.
+- The lead also draws each designed card with no own artist. A designed card can still pick its own artist.
+- The lead draws filler at 10% of their card fee, 10 cards a week. Each designed card that the lead draws costs the full fee and adds 1 week.
+- The studio pays the lead with the print run. A new lead starts the work again.
+
+### K8. The founder is an artist
+
+AJ chose "Founder is an artist" over "Remove founder art" and "Keep, not an artist".
+
+- The founder is a named artist in every artist list. The founder is free, is done at once, and has popularity 20 (amateur).
+- The founder can be a lead artist, and can become a legend by the same rules.
+
+### K9. Legacy from early sets
+
+AJ chose "Legacy from early sets" over "Only the first set" and "Popularity only".
+
+- Each artist has a hidden legacy, 0 to 100. Legacy never falls.
+- Each released set gives its artists share × 15 legacy for each doubling of the fan base since the release. The nth released set gives 1/n of that, so the first set counts most.
+- The share counts a designed card 3 times a filler card.
+- An artist with legacy 30 or more is a legend. The fee rises with legacy: legacy 100 triples it.
+- The "Artists" factor reads fame: popularity or legacy, whichever is higher.
+
+### K10. Alumni and a return event
+
+AJ chose "Alumni and a return event" over "Legends stay on the board" and "Return offers".
+
+- An artist who drew for the studio joins the alumni when they leave the board. The studio can still hire them.
+- A legend returns when they draw for a set and had no art in the studio's last released set.
+- A return gives a news story at the print run, extra preview reach for art and chase collectors, and the "Legend returns" demand factor: art collectors ×(1 + 0.6 × legacy/100), chase collectors ×(1 + 0.4 × legacy/100), and other audiences ×(1 + 0.1 × legacy/100).
+
+## 2026-11-14: breakout artists
+
+AJ's words: "I'd also like for some artists to be able to spontaneously become popular and those are the ones you can hire to make a card really take off." The design is in `docs/design/costs.md`, section 4.8.
+
+### K11. Breakouts come as a wave, and scouts see them early
+
+AJ chose "A wave" over "Permanent" and "Short spike". For the discovery, AJ wrote: "News and Talent Scout upgrades."
+
+- Each week, an artist on the board breaks out with a chance of 10%.
+- The heat rises quietly for 6 weeks. Then the news breaks and the heat peaks at 60 to 100. Then the heat cools to 0 over 8 to 20 weeks.
+- After the wave, the artist keeps popularity: +8 to +20, or +40 to +60 for a new star (3 in 10 waves).
+- Two new hires: the Talent scout sees a rising artist 3 weeks before the news. The Scouting network sees the artist 6 weeks before the news, and tells if the fame will last.
+- After the news, other studios book the artist, so the queue grows with the heat. The fee stays the same (fame does not set the fee).
+
+### K12. Each hot card counts, and the heat counts in part from the commission and in part from now
+
+AJ chose "Each card counts" over "Chase card" and "Set average", and "Both, in part" over "At release" and "At commission".
+
+- A card's heat = half the heat while the art was made + half the artist's heat now. The heat while the art was made is the higher of the heat at the commission and the heat when the art is done.
+- The "Hot artist" factor: hot cards = the sum of the designed cards' heat / 100, plus 5% of a card for each filler card that a hot lead draws. The limit is 3.
+- Art collectors ×(1 + 0.3 × hot cards), chase collectors ×(1 + 0.25 × hot cards), investors and resellers ×(1 + 0.15 × hot cards), other audiences ×(1 + 0.05 × hot cards).
+
+
+### C24. Frame break and showcase feel less rare than full art
+
+AJ's words: "Frame Break and Showcase feel like they should be below full art in terms of feel."
+
+- Layout feel points: standard 0, extended art 2, showcase 3, frame break 3, full art 4, borderless 5.
+- Before, frame break had 5 points. Showcase already had 3.
+- The default ladder still climbs. Special Illustration Rare (frame break) has 18 points, and Illustration Rare (borderless) has 14.
+
+## 2026-11-15: singles
+
+AJ's words: "I want the scenario where a type of card might we worth higher even though it isn't as premium. An example is a prime Gengar vs a modern day SIR. The prime only battle has frame break and holo but is worth wayyyy more than a modern etched gold card." The design is in `docs/design/singles.md`.
+
+### M1. Singles have values with feedback
+
+AJ chose "Values with feedback" over "Values only" and "Full market".
+
+- Each single (one card in one version) has a price that moves each week.
+- A set whose pulls are worth a lot sells more packs to chase collectors and investors (the "Singles" factor).
+- Valuable old singles make news in the hobby, and collectors hear of the studio.
+
+### M2. The value comes from scarcity, the character now, age and nostalgia, and the look and artist
+
+AJ picked all four.
+
+- Price = $5 × (wanted / copies)^0.8. The look and the artist have a small weight, so a plain old card can beat a premium new card.
+
+### M3. Singles lists and a hall of fame
+
+AJ chose "Singles and hall of fame" over "On each card" and "News only".
+
+### M4. A reprint lowers the value, with a reaction
+
+AJ chose "Yes, with a reaction" over "Only the copies" and "No effect".
+
+### C25. The card face shows the evolution stage. Cards have no links
+
+AJ asked for card links: "a card is a better form of another card and the lesser card is required for the higher card." Then AJ asked: "Do you think lines is really a good idea? I'm not focusing on the playable side so it doesn't really matter right?" AJ chose the main thread's recommendation.
+
+- No card-to-card links. A "required" lower card is a play rule, and the game has no play. The roster's evolution lines (R7) already hold the link between characters.
+- The card face reads the character's line: "Basic" for the first stage of a line, then "Stage 1 · Evolves from <name>" and "Stage 2 · Evolves from <name>". A character with no line shows nothing. Flavor only.
+- Not built: the "complete lines" demand for set completionists (roster.md). It can come later.

@@ -52,6 +52,10 @@ public struct Character: Codable, Sendable, Equatable, Identifiable {
     /// popularity and adds its own appeal shift and buzz.
     public internal(set) var forms: [CharacterForm]
 
+    /// The character's race and faction (L1). Nil for none.
+    public internal(set) var raceID: RaceID? = nil
+    public internal(set) var factionID: FactionID? = nil
+
     /// Reader: the set designer and the generator (not built yet).
     public internal(set) var status: Status
     /// The week the character joined the roster.

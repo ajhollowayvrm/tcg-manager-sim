@@ -119,7 +119,9 @@ struct ReleaseSection: View {
             Label("Release", systemImage: "calendar.badge.clock").font(.title2.bold())
             switch set.status {
             case .draft:
-                Text("Plan a print run, a pack price, and a release week. Scheduling pays the print cost and locks the set.")
+                Text(set.leadArt == nil
+                     ? "Pick a lead artist first. Every print run needs an artist."
+                     : "Plan a print run, a pack price, and a release week. Scheduling pays the print cost and locks the set.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 Button {
@@ -129,6 +131,7 @@ struct ReleaseSection: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+                .disabled(set.leadArt == nil)
             case .scheduled:
                 if let release = set.release {
                     let weeks = release.releaseWeek - world.week
@@ -198,10 +201,12 @@ struct ReleasePlanView: View {
     @State private var price = Pricing.defaultPackPrice
     @State private var releaseWeek: Int?
     @State private var error: String?
+    @State private var campaign = Campaign()
 
     var body: some View {
         if let world = store.world, let set = world.catalog.set(setID) {
-            let week = releaseWeek ?? world.week + 4
+            let earliest = max(world.week + Pricing.previewWeeks, world.setArtReadyWeek(setID))
+            let week = max(earliest, releaseWeek ?? world.week + 4)
             let cost = world.printCost(setID, boxes: boxes)
             let packs = boxes * set.pack.boxSize
             Form {
@@ -211,6 +216,7 @@ struct ReleasePlanView: View {
                     }
                     LabeledContent("Packs", value: packs.formatted())
                     LabeledContent("Cost for each pack", value: String(format: "$%.3f", world.printCostPerPack(setID)))
+                    LabeledContent("Lead artist's pay", value: Money.text(world.leadArtCost(setID)))
                     LabeledContent("Print cost", value: Money.text(cost))
                     LabeledContent("Cash after") {
                         Text(Money.text(world.business.cash - cost)).foregroundStyle(world.business.cash - cost < 0 ? .red : .primary)
@@ -218,7 +224,7 @@ struct ReleasePlanView: View {
                 } header: {
                     Text("Print run")
                 } footer: {
-                    Text("Each card costs $0.025, each wrapper $0.05, plus the looks. The first run adds a $2,000 setup. A larger run reaches more people from the shelves, and risks unsold stock.")
+                    Text("Each card costs $0.025, each wrapper $0.05, plus the looks. The first run adds a $2,000 setup and the lead artist's pay. A larger run reaches more people from the shelves, and risks unsold stock.")
                 }
                 Section {
                     Stepper(value: $price, in: Pricing.packPriceRange, step: 0.25) {
@@ -232,25 +238,27 @@ struct ReleasePlanView: View {
                 }
                 Section {
                     Stepper(value: Binding(get: { week }, set: { releaseWeek = $0 }),
-                            in: (world.week + Pricing.previewWeeks)...(world.week + 104)) {
+                            in: earliest...(world.week + 104)) {
                         LabeledContent("Release", value: Market.calendar(week: week))
                     }
                     LabeledContent("Season then", value: Market.seasonPhrase(week: week))
+                    LabeledContent("Art done", value: Market.calendar(week: world.setArtReadyWeek(setID)))
                 } header: {
                     Text("Release week")
                 } footer: {
-                    Text("Previews run for 3 weeks before the release. The holidays lift kids and parents.")
+                    Text("Previews run for 3 weeks before the release. The set cannot release before its art is done. The holidays lift kids and parents.")
                 }
+                CampaignSection(world: world, campaign: $campaign)
                 Section {
                     if showHidden || world.market.insights.contains(.forecast) {
-                        let forecast = world.forecast(setID, boxes: boxes, packPrice: price, releaseWeek: week)
+                        let forecast = world.forecast(setID, boxes: boxes, packPrice: price, releaseWeek: week, campaign: campaign)
                         let sold = forecast.reduce(0) { $0 + $1.totalSold }
                         let missed = forecast.reduce(0) { $0 + $1.totalMissed }
                         let revenue = forecast.reduce(0) { $0 + $1.revenue }
                         LabeledContent("Packs sold", value: Money.packs(sold))
                         LabeledContent("Missed for lack of stock", value: Money.packs(missed))
                         LabeledContent("Revenue", value: Money.text(revenue))
-                        LabeledContent("Profit after print", value: Money.text(revenue - cost))
+                        LabeledContent("Profit after print and marketing", value: Money.text(revenue - cost - world.cost(of: campaign)))
                         if showHidden || world.market.insights.contains(.curve) {
                             SalesChart(weeks: forecast)
                         }
@@ -272,7 +280,7 @@ struct ReleasePlanView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel", action: onDone) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Schedule") {
-                        error = store.scheduleRelease(setID, boxes: boxes, packPrice: price, releaseWeek: week)
+                        error = store.scheduleRelease(setID, boxes: boxes, packPrice: price, releaseWeek: week, campaign: campaign)
                         if error == nil { onDone() }
                     }
                 }
@@ -305,6 +313,9 @@ struct SetSalesView: View {
                     LabeledContent("Stock in stores", value: Money.packs(release.stockPacks))
                     LabeledContent("Printed", value: release.printedPacks.formatted())
                     LabeledContent("Revenue to you", value: Money.text(weeks.reduce(0) { $0 + $1.revenue }))
+                    if let campaign = release.campaign {
+                        LabeledContent("Marketing", value: "\(Money.text(world.cost(of: campaign))) · \(Money.packs(release.campaignReached ?? 0)) people reached")
+                    }
                 }
                 if !weeks.isEmpty {
                     Section("Weekly sales") {
@@ -430,10 +441,14 @@ struct AudienceAlgorithmView: View {
                     LabeledContent("Hobby heat", value: "×\(String(format: "%.2f", market.hobby(audience)))")
                     LabeledContent("Release fatigue", value: "×\(String(format: "%.2f", market.fatigueMultiplier(audience)))")
                     LabeledContent("Goodwill", value: "×\(String(format: "%.2f", market.goodwillMultiplier(audience)))")
+                    if audience != .resellers {
+                        let cap = World.walletShare * d.reachedPeople * d.spend
+                        LabeledContent("Fan wallet left", value: "\(Money.text(world.walletLeft(audience))) of \(Money.text(cap))")
+                    }
                 } header: {
                     Text("This week's conditions")
                 } footer: {
-                    Text("Each week, the conditions multiply the demand, then about 15% of luck.")
+                    Text("Each week, the conditions multiply the demand, then about 15% of luck. Over any 52 weeks, your sets together can take at most half of a fan's yearly money. When the wallet runs low, every set gets less.")
                 }
                 Section {
                     let lifeWeek = world.week - release.releaseWeek
@@ -549,6 +564,89 @@ struct MoneySection: View {
             }
         } header: {
             Text("Money")
+        }
+    }
+}
+
+// MARK: - Marketing (costs.md, section 5)
+
+/// The release plan's marketing: previews, creators, store events, and ads (K5).
+struct CampaignSection: View {
+    let world: World
+    @Binding var campaign: Campaign
+
+    var body: some View {
+        Section {
+            Stepper(value: $campaign.previewBudget, in: 0...100_000, step: 1_000) {
+                LabeledContent("Previews", value: Money.text(campaign.previewBudget))
+            }
+            Stepper(value: $campaign.adBudget, in: 0...500_000, step: 1_000) {
+                LabeledContent("Ads", value: Money.text(campaign.adBudget))
+            }
+            Stepper(value: $campaign.storeKits, in: 0...50_000, step: 100) {
+                LabeledContent("Store event kits", value: campaign.storeKits.formatted())
+            }
+            ForEach(world.creators) { creator in
+                let picked = campaign.creators.contains(creator.id)
+                Button {
+                    if picked { campaign.creators.removeAll { $0 == creator.id } } else { campaign.creators.append(creator.id) }
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(creator.name).font(.subheadline.weight(.semibold))
+                            Text("\(MarketFormat.people(creator.subscribers)) subscribers · \(mixText(creator)) · \(Money.text(creator.price)) a video")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: picked ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(picked ? Theme.accent : .secondary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Creator \(creator.name)")
+            }
+            LabeledContent("Marketing cost", value: Money.text(world.cost(of: campaign)))
+            LabeledContent("New people", value: Money.packs(world.reach(of: campaign)))
+        } header: {
+            Text("Marketing")
+        } footer: {
+            Text("Previews reach collectors, teens, and players at $5 a person. Ads reach kids, parents, and teens at $8 for 1,000 views. Creators reach their own fans at $25 for 1,000 views. Each event kit costs $8 and reaches one player. You pay when you schedule.")
+        }
+    }
+
+    private func mixText(_ creator: Creator) -> String {
+        creator.mix.sorted { $0.value > $1.value }.prefix(2).map { $0.key.name.lowercased() }.joined(separator: ", ")
+    }
+}
+
+/// Business → Brand budget: ads and creators every week, release or not (K6).
+struct BrandBudgetSection: View {
+    @Environment(GameStore.self) private var store
+    let business: Business
+
+    var body: some View {
+        let budget = business.brandBudget ?? 0
+        let adShare = business.brandAdShare ?? 0.5
+        Section {
+            Stepper(value: Binding(get: { budget }, set: { store.setBrandBudget($0, adShare: adShare) }), in: 0...200_000, step: 500) {
+                LabeledContent("Each week", value: Money.text(budget))
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Slider(value: Binding(get: { adShare }, set: { store.setBrandBudget(budget, adShare: $0) }), in: 0...1)
+                    .accessibilityLabel("Share for ads")
+                HStack {
+                    Text("Creators \(Int(((1 - adShare) * 100).rounded()))%")
+                    Spacer()
+                    Text("Ads \(Int((adShare * 100).rounded()))%")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("Brand budget")
+        } footer: {
+            Text("A standing weekly amount that keeps new people learning about you. Ads reach kids and parents. Creators reach collectors and players.")
         }
     }
 }

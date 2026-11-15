@@ -23,6 +23,9 @@ struct CardFace {
     var nameBar: NameBarStyle = .classic
     /// On a solid frame, a gimmick card takes this color in place of the tier color (E4).
     var frameColor: PaletteColor? = nil
+    /// The stage in the character's evolution line, for example "Stage 2 · Evolves from Aryla".
+    /// "Basic" for the first stage of a line. Nil for a character with no line. Flavor only.
+    var stage: String? = nil
 
     /// The face of a saved card, in one of its versions (C16).
     /// - Parameter numbers: the set's card numbers. Pass them when you draw many cards of one set.
@@ -48,6 +51,14 @@ struct CardFace {
         featured = draft.featured.compactMap(world.character)
         let character = draft.characterID.flatMap(world.character)
         signer = character?.name ?? "Studio"
+        if let character {
+            let n = world.stage(of: character.id)
+            if n > 1, let parent = character.evolvesFrom.flatMap(world.character) {
+                stage = "Stage \(n - 1) · Evolves from \(parent.name)"
+            } else if n == 1, !world.nextStages(of: character.id).isEmpty {
+                stage = "Basic"
+            }
+        }
         if let character, let form = draft.formID.flatMap(character.form) {
             palette = form.palette
             body = form.body
@@ -116,7 +127,7 @@ struct CardView: View {
         }
         .aspectRatio(5.0 / 7.0, contentMode: .fit)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Card \(face.name), \(face.tier?.name ?? "no rarity")")
+        .accessibilityLabel("Card \(face.name), \(face.tier?.name ?? "no rarity")" + (face.stage.map { ", \($0)" } ?? ""))
     }
 
     // MARK: Layouts
@@ -169,17 +180,19 @@ struct CardView: View {
     private func frameBackground(_ w: CGFloat) -> some View {
         ZStack {
             FrameFill(style: frameStyle, color: tierColor)
-            switch look.foil {
-            case .reverseHolo:
-                FoilShimmer(animated: animated)
-            case .patternReverse:
-                SymbolPattern(symbol: face.tier?.symbol ?? .circle).opacity(0.35)
-                FoilShimmer(animated: animated)
-            case .etched:
-                EtchedLines().opacity(0.45)
-                FoilShimmer(animated: animated, colors: [.white.opacity(0.6), .gray.opacity(0.3), .white.opacity(0.6)])
-            default:
-                EmptyView()
+            ForEach(look.foils, id: \.self) { foil in
+                switch foil {
+                case .reverseHolo:
+                    FoilShimmer(animated: animated)
+                case .patternReverse:
+                    SymbolPattern(symbol: face.tier?.symbol ?? .circle).opacity(0.35)
+                    FoilShimmer(animated: animated)
+                case .etched:
+                    EtchedLines().opacity(0.45)
+                    FoilShimmer(animated: animated, colors: [.white.opacity(0.6), .gray.opacity(0.3), .white.opacity(0.6)])
+                default:
+                    EmptyView()
+                }
             }
         }
     }
@@ -215,10 +228,19 @@ struct CardView: View {
         let style = face.nameBar
         let plain = style.shape == .plain
         let dark = !plain && style.color.prefersDarkText
-        let text = nameText(w)
-            .font(.system(size: w * 0.07, weight: .bold, design: .rounded))
-            .lineLimit(1)
-            .minimumScaleFactor(0.5)
+        let text = VStack(alignment: .leading, spacing: 0) {
+            if let stage = face.stage {
+                Text(stage.uppercased())
+                    .font(.system(size: w * 0.032, weight: .heavy, design: .rounded))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+                    .opacity(0.85)
+            }
+            nameText(w)
+                .font(.system(size: w * 0.07, weight: .bold, design: .rounded))
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+        }
             .foregroundStyle(dark ? Color.black.opacity(0.85) : .white)
             .shadow(color: plain ? .black.opacity(0.7) : .clear, radius: plain ? w * 0.01 : 0)
             .padding(.horizontal, style.shape == .banner ? w * 0.07 : w * 0.04)
@@ -265,16 +287,18 @@ struct CardView: View {
         return ZStack {
             artBackground
             if !breaksFrame { drawing(w) }
-            switch look.foil {
-            case .holo: FoilShimmer(animated: animated)
-            case .cosmos: FoilShimmer(animated: animated); CosmosDots()
-            case .crackedIce: FoilShimmer(animated: animated); IceShards().opacity(0.5)
-            default: EmptyView()
+            ForEach(look.foils, id: \.self) { foil in
+                switch foil {
+                case .holo: FoilShimmer(animated: animated)
+                case .cosmos: FoilShimmer(animated: animated); CosmosDots()
+                case .crackedIce: FoilShimmer(animated: animated); IceShards().opacity(0.5)
+                default: EmptyView()
+                }
             }
-            if look.stamp == .eventStamp {
+            if look.has(.eventStamp) {
                 EventStamp(size: w * 0.16).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).padding(w * 0.025)
             }
-            if look.stamp == .signature {
+            if look.has(.signature) {
                 Text(face.signer)
                     .font(.custom("SnellRoundhand-Bold", size: w * 0.1))
                     .foregroundStyle(.white)
@@ -318,7 +342,14 @@ struct CardView: View {
 
     @ViewBuilder
     private var wholeCardFoil: some View {
-        switch look.foil {
+        ForEach(look.foils, id: \.self) { foil in
+            wholeCardLayer(foil)
+        }
+    }
+
+    @ViewBuilder
+    private func wholeCardLayer(_ foil: FoilPattern) -> some View {
+        switch foil {
         case .galaxy:
             GalaxyStars().allowsHitTesting(false)
             FoilShimmer(animated: animated, colors: [.purple.opacity(0.35), .blue.opacity(0.35), .pink.opacity(0.35)])
@@ -352,7 +383,7 @@ struct CardView: View {
 
     private func bottomRow(_ w: CGFloat) -> some View {
         HStack(spacing: w * 0.02) {
-            if look.stamp == .serialized {
+            if look.has(.serialized) {
                 Text("001/250")
                     .font(.system(size: w * 0.045, weight: .heavy, design: .monospaced))
                     .padding(.horizontal, w * 0.025)
@@ -367,7 +398,7 @@ struct CardView: View {
             }
             Spacer(minLength: 0)
             if let tier = face.tier {
-                RaritySymbolView(symbol: tier.symbol, size: w * 0.05)
+                RaritySymbolView(symbol: tier.symbol, count: tier.symbolCount, size: w * 0.05)
                 Text(tier.code)
                     .font(.system(size: w * 0.055, weight: .heavy, design: .rounded))
             }
@@ -437,11 +468,12 @@ struct FrameFill: View {
 /// The rarity symbol: one, two, or three shapes.
 struct RaritySymbolView: View {
     let symbol: RaritySymbol
+    var count = 1
     var size: CGFloat = 12
 
     var body: some View {
         HStack(spacing: size * 0.1) {
-            ForEach(0..<symbol.count, id: \.self) { _ in
+            ForEach(0..<max(1, count), id: \.self) { _ in
                 Image(systemName: symbol.systemImage)
                     .font(.system(size: size, weight: .bold))
             }
@@ -453,30 +485,39 @@ extension RaritySymbol {
     var systemImage: String {
         switch self {
         case .circle: "circle.fill"
+        case .square: "square.fill"
+        case .triangle: "triangle.fill"
         case .diamond: "diamond.fill"
-        case .star, .doubleStar, .tripleStar: "star.fill"
-        case .sparkle: "sparkle"
-        case .crown: "crown.fill"
-        case .heart: "heart.fill"
+        case .pentagon: "pentagon.fill"
         case .hexagon: "hexagon.fill"
+        case .octagon: "octagon.fill"
+        case .heart: "heart.fill"
+        case .club: "suit.club.fill"
+        case .spade: "suit.spade.fill"
+        case .leaf: "leaf.fill"
+        case .drop: "drop.fill"
+        case .star: "star.fill"
+        case .moon: "moon.fill"
+        case .sun: "sun.max.fill"
+        case .bolt: "bolt.fill"
+        case .snowflake: "snowflake"
         case .flame: "flame.fill"
+        case .shield: "shield.fill"
+        case .eye: "eye.fill"
+        case .sparkle: "sparkle"
+        case .infinity: "infinity"
+        case .trophy: "trophy.fill"
+        case .crown: "crown.fill"
         }
     }
 
-    var count: Int {
-        switch self {
-        case .doubleStar: 2
-        case .tripleStar: 3
-        default: 1
-        }
-    }
+    var name: String { rawValue.capitalized }
+}
 
-    var name: String {
-        switch self {
-        case .doubleStar: "Two stars"
-        case .tripleStar: "Three stars"
-        default: rawValue.capitalized
-        }
+extension RarityTier {
+    /// For example "2 stars".
+    var symbolName: String {
+        symbolCount > 1 ? "\(symbolCount) \(symbol.name.lowercased())s" : symbol.name
     }
 }
 
@@ -541,9 +582,9 @@ extension CardLook {
     var summary: String {
         var parts: [String] = []
         if layout != .standard { parts.append(layout.name) }
-        if foil != .none { parts.append(foil.name) }
+        parts += foils.map(\.name)
         if textured { parts.append("Textured") }
-        if stamp != .none { parts.append(stamp.name) }
+        parts += stamps.map(\.name)
         return parts.isEmpty ? "Plain" : parts.joined(separator: " · ")
     }
 }

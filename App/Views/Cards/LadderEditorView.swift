@@ -10,6 +10,8 @@ struct LadderEditorView: View {
     /// Returns an error message, or nil on success.
     let onSave: (RarityLadder) -> String?
     let onCancel: () -> Void
+    /// The saved ladder of a set. When set, the editor warns that a save makes the filler again (S17).
+    let saved: RarityLadder?
 
     @State private var ladder: RarityLadder
     @State private var error: String?
@@ -19,9 +21,11 @@ struct LadderEditorView: View {
         initial: RarityLadder,
         editsName: Bool,
         footer: String,
+        saved: RarityLadder? = nil,
         onSave: @escaping (RarityLadder) -> String?,
         onCancel: @escaping () -> Void
     ) {
+        self.saved = saved
         self.title = title
         self.editsName = editsName
         self.footer = footer
@@ -37,12 +41,15 @@ struct LadderEditorView: View {
                     TextField("Ladder name", text: $ladder.name)
                 }
             }
+            let inversions = RarityFeel.inversions(ladder)
             Section {
                 ForEach($ladder.tiers) { $tier in
+                    let index = ladder.tiers.firstIndex { $0.id == tier.id } ?? 0
+                    let lower = index > 0 ? ladder.tiers[index - 1] : nil
                     NavigationLink {
-                        TierEditor(tier: $tier)
+                        TierEditor(tier: $tier, lower: lower)
                     } label: {
-                        TierRow(tier: tier, rank: (ladder.rank(of: tier.id) ?? 0))
+                        TierRow(tier: tier, rank: index + 1, lower: lower, inversion: inversions.first { $0.tier.id == tier.id })
                     }
                 }
                 .onMove { ladder.tiers.move(fromOffsets: $0, toOffset: $1) }
@@ -63,6 +70,15 @@ struct LadderEditorView: View {
                     Text("Filler shares: \(shares)%" + (shares == 100 ? "." : ". They must add up to 100%."))
                         .foregroundStyle(shares == 100 ? Color.secondary : Color.red)
                     Text("\(footer) A ladder has \(RarityLadder.tierRange.lowerBound) to \(RarityLadder.tierRange.upperBound) tiers. Tap Edit to reorder or remove tiers. The pack sets the pull rates.")
+                }
+            }
+            FeelSummary(inversions: inversions)
+            if let saved, World.ladderResetsFiller(from: saved, to: ladder) {
+                Section {
+                    Label("Save makes all the filler cards again. A change to the tiers or to the filler shares resets the filler. Your designed cards stay.",
+                          systemImage: "arrow.triangle.2.circlepath")
+                        .font(.subheadline)
+                        .foregroundStyle(.orange)
                 }
             }
             if let error {
@@ -88,27 +104,113 @@ struct LadderEditorView: View {
 private struct TierRow: View {
     let tier: RarityTier
     let rank: Int
+    let lower: RarityTier?
+    let inversion: FeelInversion?
 
     var body: some View {
         HStack(spacing: 10) {
             Text("\(rank)").font(.caption.monospacedDigit()).foregroundStyle(.secondary).frame(width: 20)
             HStack(spacing: 4) {
-                RaritySymbolView(symbol: tier.symbol, size: 10)
+                RaritySymbolView(symbol: tier.symbol, count: tier.symbolCount, size: 10)
                 Text(tier.code).font(.caption.weight(.bold))
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .foregroundStyle(.white)
+            .foregroundStyle(tier.color.prefersDarkText ? .black : .white)
             .background(tier.color.color, in: Capsule())
             VStack(alignment: .leading, spacing: 2) {
-                Text(tier.name)
+                HStack {
+                    Text(tier.name)
+                    Spacer()
+                    FeelBadge(score: RarityFeel.score(tier), bad: inversion != nil)
+                }
                 Text(tier.look.summary + (tier.costPerCopy > 0 ? " · +\(tier.costPerCopy.dollars)" : "")
                      + (tier.versions.isEmpty ? "" : " · also " + tier.versions.map(\.name).joined(separator: ", "))
                      + (tier.fillerShare > 0 ? " · filler \(tier.fillerShare)%" : "")
                      + (tier.secret ? " · secret" : ""))
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if let inversion {
+                    Label("Feels less rare than \(inversion.below.name)", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                } else if let lower {
+                    UpgradeLine(lower: lower, tier: tier)
+                }
             }
+        }
+    }
+}
+
+/// The feel score of a tier in a small capsule. Red when the tier feels less rare than a more common tier.
+private struct FeelBadge: View {
+    let score: Int
+    let bad: Bool
+
+    var body: some View {
+        Label("\(score)", systemImage: "sparkles")
+            .font(.caption2.weight(.semibold).monospacedDigit())
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .foregroundStyle(bad ? Color.red : Theme.accent)
+            .background((bad ? Color.red : Theme.accent).opacity(0.12), in: Capsule())
+            .accessibilityLabel("Feel \(score)")
+    }
+}
+
+/// The upgrade of a tier over the tier below it, for example "+ Full art, + Silver frame".
+private struct UpgradeLine: View {
+    let lower: RarityTier
+    let tier: RarityTier
+
+    var body: some View {
+        let change = RarityFeel.change(from: lower, to: tier)
+        let up = change.up.map { "+ " + $0.kind.label(tier) }
+        let down = change.down.map { "− " + $0.kind.label(lower) }
+        if up.isEmpty && down.isEmpty {
+            Text("No upgrade over \(lower.name)").font(.caption).foregroundStyle(.orange)
+        } else {
+            Text((up + down).joined(separator: ", "))
+                .font(.caption)
+                .foregroundStyle(up.isEmpty ? .orange : .green)
+        }
+    }
+}
+
+/// The ladder's rarity feel: the warnings, and what they do to the market (C23).
+private struct FeelSummary: View {
+    let inversions: [FeelInversion]
+
+    var body: some View {
+        Section {
+            if inversions.isEmpty {
+                Label("Each tier feels rarer than the tiers below it.", systemImage: "checkmark.seal.fill")
+                    .foregroundStyle(.green)
+            } else {
+                ForEach(inversions, id: \.tier.id) { inversion in
+                    Label("\(inversion.tier.name) feels less rare than \(inversion.below.name).", systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                }
+            }
+        } header: {
+            Text("Rarity feel")
+        } footer: {
+            Text("The symbol, the layout, the foils, the texture, the stamps, the frame, and a secret number give feel points. Chase collectors buy \(Int(((1 - RarityFeel.demandFactor(inversions: 1)) * 100).rounded()))% less for each rarer tier with cards that feels less rare than a more common tier, down to \(Int(((1 - RarityFeel.demandFactor(inversions: 99)) * 100).rounded()))% less.")
+        }
+    }
+}
+
+extension FeelPart.Kind {
+    /// The part of `tier` that this kind names, for example "Full art".
+    func label(_ tier: RarityTier) -> String {
+        switch self {
+        case .symbol: tier.symbolName
+        case .layout: tier.look.layout.name
+        case .foil: tier.look.foils.map(\.name).joined(separator: " + ")
+        case .texture: "Textured"
+        case .stamp: tier.look.stamps.map(\.name).joined(separator: " + ")
+        case .frame: "\(tier.frameStyle.name) frame"
+        case .secret: "Secret number"
         }
     }
 }
@@ -116,6 +218,8 @@ private struct TierRow: View {
 /// One tier: name, code, symbol, and color. All flavor.
 private struct TierEditor: View {
     @Binding var tier: RarityTier
+    /// The more common tier just below this one, for the upgrade line.
+    let lower: RarityTier?
 
     var body: some View {
         Form {
@@ -127,6 +231,18 @@ private struct TierEditor: View {
             }
             Section("Name") {
                 TextField("Tier name", text: $tier.name)
+            }
+            Section {
+                LabeledContent("Feel") {
+                    FeelBadge(score: RarityFeel.score(tier), bad: lower.map { RarityFeel.score($0) > RarityFeel.score(tier) } ?? false)
+                }
+                if let lower {
+                    LabeledContent("Over \(lower.name)") { UpgradeLine(lower: lower, tier: tier) }
+                }
+            } header: {
+                Text("Rarity feel")
+            } footer: {
+                Text("How rare the cards look. A rarer tier must feel rarer than the tiers below it, or chase collectors buy less.")
             }
             Section {
                 Stepper(value: $tier.fillerShare, in: 0...100) {
@@ -158,34 +274,31 @@ private struct TierEditor: View {
             } footer: {
                 Text("1 to \(RarityLadder.codeLimit) characters, for example SIR. The code shows in the card corner.")
             }
-            Section("Symbol") {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 5), spacing: 12) {
+            Section {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 6), spacing: 10) {
                     ForEach(RaritySymbol.allCases) { symbol in
                         let selected = tier.symbol == symbol
                         Button {
-                            tier.symbol = symbol
+                            tier.tapSymbol(symbol)
                         } label: {
-                            RaritySymbolView(symbol: symbol, size: 14)
+                            RaritySymbolView(symbol: symbol, count: selected ? tier.symbolCount : 1, size: selected && tier.symbolCount > 2 ? 9 : 13)
                                 .frame(maxWidth: .infinity, minHeight: 44)
                                 .background(selected ? Theme.accent.opacity(0.18) : Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
                                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(selected ? Theme.accent : .clear, lineWidth: 2))
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(symbol.name)
+                        .accessibilityValue(selected ? "\(tier.symbolCount)" : "")
+                        .accessibilityAddTraits(selected ? .isSelected : [])
                     }
                 }
+            } header: {
+                Text("Symbol")
+            } footer: {
+                Text("Tap a symbol again to show it two or three times. A fourth tap goes back to one.")
             }
             Section {
-                Picker("Layout", selection: $tier.look.layout) {
-                    ForEach(CardLayout.allCases) { Text($0.name).tag($0) }
-                }
-                Picker("Foil", selection: $tier.look.foil) {
-                    ForEach(FoilPattern.allCases) { Text($0.name).tag($0) }
-                }
-                Toggle("Textured surface", isOn: $tier.look.textured)
-                Picker("Stamp", selection: $tier.look.stamp) {
-                    ForEach(CardStamp.allCases) { Text($0.name).tag($0) }
-                }
+                LookFields(look: $tier.look)
             } header: {
                 Text("Card look")
             } footer: {

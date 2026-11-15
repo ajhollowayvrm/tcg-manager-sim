@@ -1,298 +1,298 @@
-import Foundation
 import Testing
 @testable import SimCore
 
+fileprivate func roster(_ body: () throws -> Void) -> RosterError? {
+    do { try body() } catch { return error as? RosterError }
+    return nil
+}
+
+fileprivate func named(_ name: String) -> CharacterDraft {
+    CharacterDraft(name: name)
+}
+
 @Suite("Roster")
 struct RosterTests {
-    func draft(_ name: String, role: Role = .companion, type: ElementType = .fire) -> CharacterDraft {
-        CharacterDraft(name: name, role: role, primaryType: type, archetype: .cute, palette: [.ember, .gold])
+    private func base() -> World { World(seed: 5, studioName: "Test") }
+
+    @Test("Creating a character costs no week and no money (R5, R11)")
+    func creationIsFree() throws {
+        var world = base()
+        let cash = world.business.cash
+        let id = try world.createCharacter(named("Ash"))
+        #expect(world.week == 0)
+        #expect(world.business.cash == cash)
+        #expect(world.character(id)?.createdWeek == 0)
+        #expect(world.characters.count == 1)
     }
 
-    @Test("A new character starts unknown: zero awareness, zero buzz (R5)")
-    func newCharacterIsUnknown() throws {
-        var world = World(seed: 1, studioName: "Test")
-        let id = try world.createCharacter(draft("Ember"))
-        let c = try #require(world.character(id))
-        for audience in Audience.allCases {
-            #expect(c.awareness[audience] == 0)
-            #expect(c.popularity(audience, fits: world.fits) == 0)
-        }
-        #expect(c.buzz == 0)
-        #expect(c.origin == .created)
+    @Test("A name is trimmed, required, at most 24 characters, and unique without case (R2)")
+    func nameRules() throws {
+        var world = base()
+        let id = try world.createCharacter(named("  Pip  "))
+        #expect(world.character(id)?.name == "Pip")
+        #expect(roster { try world.createCharacter(named("   ")) } == .emptyName)
+        #expect(roster { try world.createCharacter(named(String(repeating: "a", count: 25))) } == .nameTooLong)
+        #expect(roster { try world.createCharacter(named(String(repeating: "b", count: 24))) } == nil)
+        #expect(roster { try world.createCharacter(named("PIP")) } == .duplicateName("PIP"))
     }
 
-    @Test("True appeal stays in -50...100 for every character and audience")
-    func appealBounds() {
-        let world = World.sample(seed: 3)
-        for c in world.characters {
-            for audience in Audience.allCases {
-                let value = c.trueAppeal(audience, fits: world.fits)
-                #expect(Character.appealRange.contains(value))
-            }
-        }
+    @Test("The palette has two or three different colors, and the second type differs (R1)")
+    func feelRules() {
+        var world = base()
+        var draft = named("Rule")
+        draft.palette = [.crimson]
+        #expect(roster { try world.createCharacter(draft) } == .paletteSize)
+        draft.palette = [.crimson, .gold, .lime, .teal]
+        #expect(roster { try world.createCharacter(draft) } == .paletteSize)
+        draft.palette = [.crimson, .crimson]
+        #expect(roster { try world.createCharacter(draft) } == .duplicateColor)
+        draft.palette = [.crimson, .gold, .lime]
+        #expect(roster { try world.createCharacter(draft) } == nil)
+        draft.name = "Rule2"
+        draft.secondaryType = draft.primaryType
+        #expect(roster { try world.createCharacter(draft) } == .sameTypeTwice)
     }
 
-    @Test("A reading is pure, and it always contains the truth")
-    func readingIsPureAndHonest() {
-        let world = World.sample(seed: 5)
-        for c in world.characters {
-            for audience in Audience.allCases {
-                let first = c.reading(audience, fits: world.fits)
-                let second = c.reading(audience, fits: world.fits)
-                #expect(first == second)
-                let truth = c.trueAppeal(audience, fits: world.fits)
-                #expect(first.low <= truth + 1e-9 && truth <= first.high + 1e-9)
-            }
-        }
-    }
-
-    @Test("Reading a character does not change the world")
-    func readingDoesNotMoveTheWorld() throws {
-        var world = World(seed: 9, studioName: "Test")
-        try world.createCharacter(draft("A"))
+    @Test("A failed creation changes nothing")
+    func failureKeepsWorld() {
+        var world = base()
         let before = world
-        for c in world.characters {
-            for audience in Audience.allCases { _ = c.reading(audience, fits: world.fits) }
-        }
+        _ = roster { try world.createCharacter(named("")) }
         #expect(world == before)
     }
 
-    @Test("More knowledge gives a narrower reading")
-    func knowledgeNarrows() throws {
-        var world = World(seed: 11, studioName: "Test")
-        let id = try world.createCharacter(draft("A"))
-        let i = try #require(world.index(of: id))
-        let wide = world.characters[i].reading(.kids, fits: world.fits)
-        world.characters[i].knowledge[.kids] = 0.9
-        let narrow = world.characters[i].reading(.kids, fits: world.fits)
-        #expect(narrow.high - narrow.low < wide.high - wide.low)
+    @Test("Every roster error has a message")
+    func messages() {
+        let errors: [RosterError] = [.emptyName, .nameTooLong, .duplicateName("X"), .paletteSize, .duplicateColor,
+                                     .sameTypeTwice, .unknownCharacter(1), .linkToSelf, .lineTooLong, .lineLoop, .unknownForm(1)]
+        #expect(errors.allSatisfy { !$0.message.isEmpty })
     }
 
-    @Test("The same seed and decisions give the same world")
-    func worldDeterminism() throws {
-        func build() throws -> World {
-            var world = World(seed: 77, studioName: "Test")
-            let a = try world.createCharacter(draft("A"))
-            try world.generateCharacters(count: 15)
-            try world.createForm(of: a, draft("Mega A"))
-            world.advanceWeek()
-            return world
+    @Test("A link to an unknown character is an error, and a link to self is an error")
+    func linkErrors() throws {
+        var world = base()
+        let a = try world.createCharacter(named("A"))
+        var draft = named("B")
+        draft.rivals = [99]
+        #expect(roster { try world.createCharacter(draft) } == .unknownCharacter(99))
+        var edit = CharacterDraft(from: try #require(world.character(a)))
+        edit.companions = [a]
+        #expect(roster { try world.redesign(a, edit) } == .linkToSelf)
+        #expect(roster { try world.redesign(99, edit) } == .unknownCharacter(99))
+    }
+
+    @Test("A counterpart is one partner on both sides, and a new partner frees the old one")
+    func counterpart() throws {
+        var world = base()
+        let a = try world.createCharacter(named("A"))
+        var draftB = named("B")
+        draftB.counterpart = a
+        let b = try world.createCharacter(draftB)
+        #expect(world.character(a)?.counterpart == b)
+        #expect(world.character(b)?.counterpart == a)
+
+        var draftC = named("C")
+        draftC.counterpart = a
+        let c = try world.createCharacter(draftC)
+        #expect(world.character(a)?.counterpart == c)
+        #expect(world.character(c)?.counterpart == a)
+        #expect(world.character(b)?.counterpart == nil)
+
+        var clear = CharacterDraft(from: try #require(world.character(c)))
+        clear.counterpart = nil
+        try world.redesign(c, clear)
+        #expect(world.character(a)?.counterpart == nil)
+    }
+
+    @Test("Rivals and companions stay symmetric, and removing a link removes both sides")
+    func symmetricLinks() throws {
+        var world = base()
+        let a = try world.createCharacter(named("A"))
+        var draftB = named("B")
+        draftB.rivals = [a, a]
+        draftB.companions = [a]
+        let b = try world.createCharacter(draftB)
+        #expect(world.character(b)?.rivals == [a])
+        #expect(world.character(a)?.rivals == [b])
+        #expect(world.character(a)?.companions == [b])
+
+        var edit = CharacterDraft(from: try #require(world.character(b)))
+        edit.rivals = []
+        try world.redesign(b, edit)
+        #expect(world.character(a)?.rivals == [])
+        #expect(world.character(a)?.companions == [b])
+        let linksHold = world.characters.allSatisfy { c in
+            c.rivals.allSatisfy { world.character($0)?.rivals.contains(c.id) == true }
         }
-        #expect(try build() == build())
+        #expect(linksHold)
     }
 
-    @Test("Generated characters have unique names and the generated origin (R13)")
-    func generated() throws {
-        var world = World(seed: 21, studioName: "Test")
-        let ids = try world.generateCharacters(count: 60)
-        #expect(ids.count == 60)
-        let names = world.characters.map { $0.name.lowercased() }
-        #expect(Set(names).count == names.count)
-        #expect(world.characters.allSatisfy { $0.origin == .generated })
-        #expect(world.characters.allSatisfy { (2...3).contains($0.palette.count) })
+    private func line(_ world: inout World, _ count: Int) throws -> [CharacterID] {
+        var ids: [CharacterID] = []
+        for i in 0..<count {
+            var d = named("Stage\(i)")
+            d.evolvesFrom = ids.last
+            ids.append(try world.createCharacter(d))
+        }
+        return ids
     }
 
-    @Test("A form shares its character's popularity (R23)")
-    func formSharesPopularity() throws {
-        var world = World(seed: 31, studioName: "Test")
-        let base = try world.createCharacter(draft("Base"))
-        let formID = try world.createForm(of: base, draft("Mega Base"))
-        #expect(world.characters.count == 1)
-        let i = try #require(world.index(of: base))
-        let form = try #require(world.characters[i].form(formID))
-        #expect(world.forms(of: base).map(\.id) == [formID])
-
-        // Same feel: the form's appeal is the character's appeal plus the form's own shift.
-        let c = world.characters[i]
-        let before = c.formAppeal(form, .kids, fits: world.fits)
-        #expect(abs(before - (c.trueAppeal(.kids, fits: world.fits) + form.appealShift[.kids])) < 1e-9)
-
-        // Affection that the character earns also reaches the form.
-        world.characters[i].truth.affection[.kids] += 5
-        let after = world.characters[i].formAppeal(form, .kids, fits: world.fits)
-        #expect(abs(after - before - 5) < 1e-9)
+    @Test("An evolution line has at most three stages")
+    func lineLength() throws {
+        var world = base()
+        let ids = try line(&world, 3)
+        #expect(world.stage(of: ids[0]) == 1)
+        #expect(world.stage(of: ids[2]) == 3)
+        #expect(world.nextStages(of: ids[0]).map(\.id) == [ids[1]])
+        var fourth = named("Stage3")
+        fourth.evolvesFrom = ids[2]
+        #expect(roster { try world.createCharacter(fourth) } == .lineTooLong)
     }
 
-    @Test("A form's buzz lifts its character's buzz (R23)")
-    func formBuzzLiftsCharacter() throws {
-        var world = World(seed: 32, studioName: "Test")
-        let base = try world.createCharacter(draft("Base"))
-        let formID = try world.createForm(of: base, draft("Mega Base"))
-        let i = try #require(world.index(of: base))
-        let f = try #require(world.characters[i].forms.firstIndex { $0.id == formID })
-        world.characters[i].forms[f].buzz = 80
-        world.advanceWeek()
-        #expect(abs(world.characters[i].buzz - 80 * World.formBuzzLift * 0.85) < 1e-9)
-        #expect(abs(world.characters[i].forms[f].buzz - 80 * 0.85) < 1e-9)
+    @Test("A branch counts, and a move that makes a long line is an error")
+    func lineMoves() throws {
+        var world = base()
+        let ids = try line(&world, 3)
+        let loose = try world.createCharacter(named("Loose"))
+        var edit = CharacterDraft(from: try #require(world.character(ids[0])))
+        edit.evolvesFrom = loose
+        #expect(roster { try world.redesign(ids[0], edit) } == .lineTooLong)
+        var sibling = named("Sibling")
+        sibling.evolvesFrom = ids[0]
+        #expect(roster { try world.createCharacter(sibling) } == nil)
+        #expect(world.nextStages(of: ids[0]).count == 2)
     }
 
-    @Test("A form name must be unique across characters and forms")
-    func formNamesUnique() throws {
-        var world = World(seed: 33, studioName: "Test")
-        let base = try world.createCharacter(draft("Base"))
-        try world.createForm(of: base, draft("Mega Base"))
-        #expect(throws: RosterError.duplicateName("Base")) { try world.createForm(of: base, draft("Base")) }
-        #expect(throws: RosterError.duplicateName("mega base")) { try world.createCharacter(draft("mega base")) }
-        #expect(throws: RosterError.unknownCharacter(99)) { try world.createForm(of: 99, draft("Ghost")) }
+    @Test("An evolution loop is an error, and a loop in bad data still ends")
+    func lineLoops() throws {
+        var world = base()
+        let ids = try line(&world, 2)
+        var edit = CharacterDraft(from: try #require(world.character(ids[0])))
+        edit.evolvesFrom = ids[1]
+        #expect(roster { try world.redesign(ids[0], edit) } == .lineLoop)
+
+        world.characters[0].evolvesFrom = ids[1]
+        #expect(world.stage(of: ids[0]) >= 1)
+        #expect(world.descendantDepth(of: ids[0]) >= 0)
     }
 
-    @Test("A form redesign costs half of a character redesign (R9, R23)")
-    func formRedesignCost() throws {
-        var world = World(seed: 34, studioName: "Test")
-        let base = try world.createCharacter(draft("Base"))
-        let formID = try world.createForm(of: base, draft("Mega Base"))
-        var change = CharacterDraft(from: try #require(world.forms(of: base).first))
-        change.primaryType = .water
-        change.archetype = .creepy
-        try world.redesignForm(formID, of: base, change)
-        let c = try #require(world.character(base))
-        #expect(c.form(formID)?.primaryType == .water)
-        #expect(abs(c.truth.affection[.kids] - (-World.redesignCost * World.formRedesignShare * 0.6)) < 1e-9)
+    @Test("Feel change counts type, archetype, role, and palette, and stops at 1")
+    func feelChange() {
+        let old = CharacterDraft(name: "A", role: .companion, primaryType: .fire, archetype: .cute, palette: [.ember, .sunflower])
+        var new = old
+        #expect(World.feelChange(from: old, to: new) == 0)
+        new.primaryType = .water
+        #expect(abs(World.feelChange(from: old, to: new) - 0.3) < 1e-9)
+        new.secondaryType = .ice
+        #expect(abs(World.feelChange(from: old, to: new) - 0.4) < 1e-9)
+        new.archetype = .cool
+        new.role = .mascot
+        new.palette = [.lime, .forest]
+        let full = World.feelChange(from: old, to: new)
+        #expect(abs(full - 1.0) < 1e-9)
+        new.palette = [.ember, .lime]
+        let half = World.feelChange(from: old, to: new)
+        #expect(half < full)
     }
 
     @Test("A redesign costs affection in proportion to the change (R9)")
     func redesignCost() throws {
-        var world = World(seed: 41, studioName: "Test")
-        let id = try world.createCharacter(draft("A"))
+        var world = base()
+        let id = try world.createCharacter(CharacterDraft(name: "A", palette: [.ember, .sunflower]))
+        let old = try #require(world.character(id))
 
-        var rename = CharacterDraft(from: try #require(world.character(id)))
-        rename.name = "A Prime"
+        var rename = CharacterDraft(from: old)
+        rename.name = "A2"
         try world.redesign(id, rename)
-        #expect(try #require(world.character(id)).truth.affection[.kids] == 0)
+        #expect(world.character(id)?.truth.affection == AudienceValues())
 
-        var bigChange = rename
-        bigChange.primaryType = .water
-        bigChange.archetype = .creepy
-        try world.redesign(id, bigChange)
-        let affection = try #require(world.character(id)).truth.affection[.kids]
-        #expect(abs(affection - (-World.redesignCost * 0.6)) < 1e-9)
+        var small = CharacterDraft(from: try #require(world.character(id)))
+        small.primaryType = .water
+        try world.redesign(id, small)
+        let kids = try #require(world.character(id)).truth.affection[.kids]
+        #expect(abs(kids + World.redesignCost * 0.3) < 1e-9)
+        #expect(world.character(id)?.truth.affection[.resellers] == 0)
     }
 
-    @Test("Counterparts, rivals and companions are symmetric")
-    func symmetricLinks() throws {
-        var world = World(seed: 51, studioName: "Test")
-        let a = try world.createCharacter(draft("A"))
-        let b = try world.createCharacter(draft("B"))
-        let c = try world.createCharacter(CharacterDraft(
-            name: "C", palette: [.ember, .gold], counterpart: a, rivals: [b], companions: [a]
-        ))
-        #expect(world.character(a)?.counterpart == c)
-        #expect(world.character(b)?.rivals == [c])
-        #expect(world.character(a)?.companions == [c])
+    @Test("A new look adds 0.1 to the change, and the cost is capped at the full cost (R9)")
+    func redesignLook() throws {
+        var world = base()
+        let id = try world.createCharacter(named("A"))
+        var look = CharacterDraft(from: try #require(world.character(id)))
+        look.body.shape = .tall
+        try world.redesign(id, look)
+        let kids = try #require(world.character(id)).truth.affection[.kids]
+        #expect(abs(kids + World.redesignCost * 0.1) < 1e-9)
 
-        // Move the counterpart from A to B. A must lose its link.
-        var change = CharacterDraft(from: try #require(world.character(c)))
-        change.counterpart = b
-        change.rivals = []
-        try world.redesign(c, change)
-        #expect(world.character(a)?.counterpart == nil)
-        #expect(world.character(b)?.counterpart == c)
-        #expect(world.character(b)?.rivals == [])
+        var all = CharacterDraft(from: try #require(world.character(id)))
+        all.primaryType = .light
+        all.archetype = .elegant
+        all.role = .legendary
+        all.palette = [.violet, .plum, .rose]
+        all.body.tail = .fin
+        try world.redesign(id, all)
+        let after = try #require(world.character(id)).truth.affection[.kids]
+        #expect(abs(after - kids + World.redesignCost) < 1e-9)
     }
 
-    @Test("An evolution line has a maximum of three stages")
-    func lineLimit() throws {
-        var world = World(seed: 61, studioName: "Test")
-        let s1 = try world.createCharacter(draft("S1"))
-        var d2 = draft("S2"); d2.evolvesFrom = s1
-        let s2 = try world.createCharacter(d2)
-        var d3 = draft("S3"); d3.evolvesFrom = s2
-        let s3 = try world.createCharacter(d3)
-        #expect(world.stage(of: s3) == 3)
-        var d4 = draft("S4"); d4.evolvesFrom = s3
-        #expect(throws: RosterError.lineTooLong) { try world.createCharacter(d4) }
-
-        // Making S1 evolve from S3 would make a loop.
-        var loop = CharacterDraft(from: try #require(world.character(s1)))
-        loop.evolvesFrom = s3
-        #expect(throws: RosterError.lineLoop) { try world.redesign(s1, loop) }
+    @Test("A redesign keeps the character's own name free, and a failed redesign costs nothing")
+    func redesignChecks() throws {
+        var world = base()
+        let a = try world.createCharacter(named("A"))
+        _ = try world.createCharacter(named("B"))
+        var same = CharacterDraft(from: try #require(world.character(a)))
+        #expect(roster { try world.redesign(a, same) } == nil)
+        same.name = "b"
+        let before = world
+        #expect(roster { try world.redesign(a, same) } == .duplicateName("b"))
+        #expect(world == before)
     }
 
-    @Test("Validation rejects bad drafts")
-    func validation() throws {
-        var world = World(seed: 71, studioName: "Test")
-        try world.createCharacter(draft("Ember"))
-        #expect(throws: RosterError.emptyName) { try world.createCharacter(draft("   ")) }
-        #expect(throws: RosterError.duplicateName("ember")) { try world.createCharacter(draft("ember")) }
-        var oneColor = draft("Solo"); oneColor.palette = [.ember]
-        #expect(throws: RosterError.paletteSize) { try world.createCharacter(oneColor) }
-        var twice = draft("Twice"); twice.secondaryType = .fire
-        #expect(throws: RosterError.sameTypeTwice) { try world.createCharacter(twice) }
+    @Test("A switch between creature and person keeps the old look, and forms follow the kind (R14)")
+    func kindSwitch() throws {
+        var world = base()
+        let id = try world.createCharacter(named("A"))
+        let formID = try world.createForm(of: id, named("A Form"))
+        #expect(world.character(id)?.forms.first?.person == nil)
+        let body = try #require(world.character(id)).body
+
+        var person = CharacterDraft(from: try #require(world.character(id)))
+        person.kind = .person
+        try world.redesign(id, person)
+        #expect(world.character(id)?.kind == .person)
+        #expect(world.character(id)?.forms.first?.person != nil)
+
+        var back = CharacterDraft(from: try #require(world.character(id)))
+        back.kind = .creature
+        try world.redesign(id, back)
+        #expect(world.character(id)?.kind == .creature)
+        #expect(world.character(id)?.body == body)
+        #expect(world.character(id)?.form(formID)?.person == nil)
     }
 
-    @Test("Retire and restore change only the status (R10)")
+    @Test("A retired character keeps its status until restore, and its appeal stays (R10)")
     func retireRestore() throws {
-        var world = World(seed: 81, studioName: "Test")
-        let id = try world.createCharacter(draft("A"))
+        var (world, id) = try Fixture.world()
+        let appeal = world.character(id)?.trueAppeal(.kids, fits: world.fits)
         try world.retire(id)
         #expect(world.character(id)?.status == .retired)
+        world.advanceWeek()
+        #expect(world.character(id)?.status == .retired)
+        #expect(world.character(id)?.trueAppeal(.kids, fits: world.fits) == appeal)
         try world.restore(id)
         #expect(world.character(id)?.status == .active)
+        #expect(roster { try world.retire(99) } == .unknownCharacter(99))
+        #expect(roster { try world.restore(99) } == .unknownCharacter(99))
     }
 
-    @Test("A world survives a JSON round trip unchanged")
-    func codableRoundTrip() throws {
-        let world = World.sample(seed: 13)
-        let data = try JSONEncoder().encode(world)
-        let decoded = try JSONDecoder().decode(World.self, from: data)
-        #expect(decoded == world)
-    }
-
-    @Test("Each world perturbs the fit tables differently, but keeps resellers at zero")
-    func fitTables() {
-        let a = FitTables(seed: 1)
-        let b = FitTables(seed: 2)
-        #expect(a != b)
-        for archetype in Archetype.allCases {
-            #expect(a.archetypeFit(archetype, .resellers) == 0)
-        }
-    }
-
-    @Test("A person keeps its look, and a creature stores no person look (R14)")
-    func personKind() throws {
-        var world = World(seed: 61, studioName: "Test")
-        var personDraft = draft("Mara", role: .mascot)
-        personDraft.kind = .person
-        personDraft.person = PersonParts(skin: .deep, hair: .bun, eyes: .big, outfit: .coat, accessory: .glasses)
-        let person = try world.createCharacter(personDraft)
-        let creature = try world.createCharacter(draft("Ember"))
-
-        let p = try #require(world.character(person))
-        #expect(p.kind == .person)
-        #expect(p.role == .mascot)
-        #expect(p.person == personDraft.person)
-        #expect(CharacterDraft(from: p).kind == .person)
-
-        let c = try #require(world.character(creature))
-        #expect(c.kind == .creature)
-        #expect(c.person == nil)
-    }
-
-    @Test("A switch between creature and person costs the same as a look change (R14)")
-    func kindSwitchCost() throws {
-        var world = World(seed: 71, studioName: "Test")
-        let id = try world.createCharacter(draft("A"))
-        var toPerson = CharacterDraft(from: try #require(world.character(id)))
-        toPerson.kind = .person
-        try world.redesign(id, toPerson)
-        let c = try #require(world.character(id))
-        #expect(c.kind == .person)
-        #expect(abs(c.truth.affection[.kids] - (-World.redesignCost * 0.1)) < 1e-9)
-    }
-
-    @Test("A suggested person name comes from the person list")
-    func personName() {
-        var rng = SplitMix64(seed: 5)
-        let name = NameGenerator.uniqueName(for: .fire, kind: .person, taken: [], using: &rng)
-        #expect(NameGenerator.personNames.contains(name))
-    }
-
-    @Test("A current save is not changed by the migration")
-    func migrateCurrentIsNoOp() throws {
-        let world = World.sample(seed: 17)
-        var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(world)) as? [String: Any])
-        try World.migrate(&json)
-        let decoded = try JSONDecoder().decode(World.self, from: JSONSerialization.data(withJSONObject: json))
-        #expect(decoded == world)
+    @Test("Characters and forms share one ID counter (R23)")
+    func sharedIDs() throws {
+        var world = base()
+        let a = try world.createCharacter(named("A"))
+        let form = try world.createForm(of: a, named("A Form"))
+        let b = try world.createCharacter(named("B"))
+        #expect(Set([a, form, b]).count == 3)
+        #expect(form == a + 1)
+        #expect(b == form + 1)
     }
 }

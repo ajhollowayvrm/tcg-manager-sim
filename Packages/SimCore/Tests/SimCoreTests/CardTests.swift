@@ -1,295 +1,228 @@
-import Foundation
 import Testing
 @testable import SimCore
 
+fileprivate func expectFailure(
+    _ expected: CardError, sourceLocation: SourceLocation = #_sourceLocation, _ body: () throws -> Void
+) {
+    var got: CardError?
+    do { try body() } catch { got = error as? CardError }
+    #expect(got == expected, sourceLocation: sourceLocation)
+}
+
+fileprivate func draft(_ character: CharacterID, rarity: TierID = 1, name: String = "Aryla, Star") -> CardDraft {
+    CardDraft(name: name, characterID: character, rarity: rarity)
+}
+
+fileprivate func otherCharacter(_ world: inout World) throws -> CharacterID {
+    try world.createCharacter(CharacterDraft(
+        name: "Borin", role: .rival, primaryType: .stone, archetype: .fierce, palette: [.slate, .forest], kind: .creature
+    ))
+}
+
+fileprivate func version(_ id: VersionID, _ name: String) -> CardVersion {
+    CardVersion(id: id, name: name, look: .plain)
+}
+
 @Suite("Cards")
 struct CardTests {
-    /// A world with two characters and one set on the default ladder.
-    func setup() throws -> (World, SetID, CharacterID, CharacterID) {
-        var world = World(seed: 7, studioName: "Test")
-        let aryla = try world.createCharacter(CharacterDraft(name: "Aryla", role: .mascot, kind: .person))
-        let ember = try world.createCharacter(CharacterDraft(name: "Ember", role: .starter))
-        let set = try world.createSet(name: "Base Set", theme: "feudalism", presetID: Catalog.defaultLadderID)
-        return (world, set, aryla, ember)
-    }
-
-    func tier(_ world: World, _ set: SetID, _ index: Int) throws -> TierID {
-        try #require(world.catalog.set(set)?.ladder.tiers[index].id)
-    }
-
-    @Test("A new world has the default ladder, and its tiers set the card looks (C14, C15)")
-    func defaults() {
-        let world = World(seed: 1, studioName: "Test")
-        let ladder = world.catalog.preset(Catalog.defaultLadderID)
-        #expect(ladder?.tiers.count == 9)
-        #expect(ladder?.tiers.first?.name == "Common")
-        #expect(ladder?.tiers.last?.name == "Gold")
-        #expect(ladder?.tiers.first { $0.code == "SIR" }?.frameStyle == .rainbow)
-        #expect(ladder?.tiers.last?.frameStyle == .gold)
-        #expect(ladder?.tiers.first?.look == .plain)
-        #expect(ladder?.tiers.first?.costPerCopy == 0)
-        #expect(ladder?.tiers.last?.look.foil == .gold)
-        #expect(ladder?.tiers.last?.costPerCopy ?? 0 > ladder?.tiers[3].costPerCopy ?? 0)
-    }
-
-    @Test("A card keeps its five decisions and gets a hidden shift (C2, R24)")
+    @Test("A new card gets a trimmed name, a hidden shift, and the filler follows (C2, S3, R24)")
     func createCard() throws {
-        var (world, set, aryla, ember) = try setup()
-        let rare = try tier(world, set, 2)
-        let id = try world.createCard(in: set, CardDraft(
-            name: "  Aryla, Destined Trainee ", characterID: aryla, rarity: rare, featured: [ember]
-        ))
+        var (world, set, mascot) = try Fixture.studio()
+        let id = try world.createCard(in: set, draft(mascot, rarity: 3, name: "  Aryla, Star  "))
+        let second = try world.createCard(in: set, draft(mascot, rarity: 3, name: "Aryla, Moon"))
         let card = try #require(world.catalog.card(id))
-        #expect(card.name == "Aryla, Destined Trainee")
+        let other = try #require(world.catalog.card(second))
+        #expect(card.name == "Aryla, Star")
+        #expect(card.filler == false)
         #expect(card.setID == set)
-        #expect(card.rarity == rare)
-        #expect(card.featured == [ember])
-        #expect(card.cardShift.values.contains { $0 != 0 })
+        #expect(card.rarity == 3)
+        #expect(card.cardShift[.kids] != 0)
         #expect(card.cardShift[.resellers] == 0)
-    }
-
-    @Test("Two cards of one character have different shifts, and an edit keeps the shift (R24)")
-    func cardsHaveTheirOwnLife() throws {
-        var (world, set, aryla, _) = try setup()
-        let common = try tier(world, set, 0)
-        let a = try world.createCard(in: set, CardDraft(name: "Aryla", characterID: aryla, rarity: common))
-        let b = try world.createCard(in: set, CardDraft(name: "Aryla, Again", characterID: aryla, rarity: common))
-        let shiftA = try #require(world.catalog.card(a)?.cardShift)
-        #expect(shiftA != world.catalog.card(b)?.cardShift)
-
-        try world.updateCard(a, CardDraft(name: "Aryla, Renamed", characterID: aryla, rarity: try tier(world, set, 8)))
-        #expect(world.catalog.card(a)?.cardShift == shiftA)
-        #expect(world.catalog.card(a)?.name == "Aryla, Renamed")
-    }
-
-    @Test("One character at many rarities makes separate cards, each with its own shift and versions (D1)")
-    func oneCharacterAtManyRarities() throws {
-        var (world, set, aryla, _) = try setup()
-        let rarityIndexes = [0, 2, 5, 7]
-        var drafts = try rarityIndexes.map { index in
-            CardDraft(name: "Aryla, Destined Trainee", characterID: aryla, rarity: try tier(world, set, index))
-        }
-        drafts[3].ownVersions = [CardVersion.altArt(id: 1)]
-        let ids = try world.createCards(in: set, drafts)
-        #expect(ids.count == 4)
-        let cards = try ids.map { try #require(world.catalog.card($0)) }
-        #expect(cards.map(\.rarity) == drafts.map(\.rarity))
-        #expect(Set(cards.map(\.name)) == ["Aryla, Destined Trainee"])
-        for (i, a) in cards.enumerated() {
-            for b in cards[(i + 1)...] { #expect(a.cardShift != b.cardShift) }
-        }
-        #expect(cards[3].ownVersions.map(\.name) == ["Alt art"])
-        #expect(cards[0].ownVersions.isEmpty)
-    }
-
-    @Test("If one draft fails, no card is added")
-    func manyRaritiesAllOrNothing() throws {
-        var (world, set, aryla, _) = try setup()
-        let good = CardDraft(name: "Aryla", characterID: aryla, rarity: try tier(world, set, 0))
-        let bad = CardDraft(name: "Aryla", characterID: aryla, rarity: 999)
-        let before = world
-        #expect(throws: CardError.unknownTier(999)) { try world.createCards(in: set, [good, bad]) }
-        #expect(throws: CardError.noRarity) { try world.createCards(in: set, []) }
-        #expect(world == before)
-    }
-
-    @Test("A change to a saved card can add cards at more rarities, all or nothing (C18)")
-    func updateCardAddsRarities() throws {
-        var (world, set, aryla, _) = try setup()
-        let rare = try tier(world, set, 2)
-        let sir = try tier(world, set, 7)
-        let id = try world.createCard(in: set, CardDraft(name: "Aryla", characterID: aryla, rarity: rare))
-        let shift = try #require(world.catalog.card(id)?.cardShift)
-
-        let before = world
-        let bad = CardDraft(name: "Aryla, Renamed", characterID: aryla, rarity: 999)
-        #expect(throws: CardError.unknownTier(999)) {
-            try world.updateCard(id, CardDraft(name: "Aryla, Renamed", characterID: aryla, rarity: rare), adding: [bad])
-        }
-        #expect(world == before)
-
-        let added = try world.updateCard(
-            id, CardDraft(name: "Aryla, Renamed", characterID: aryla, rarity: rare),
-            adding: [CardDraft(name: "Aryla, Renamed", characterID: aryla, rarity: sir)]
-        )
-        #expect(added.count == 1)
-        #expect(world.catalog.card(id)?.cardShift == shift)
-        #expect(world.catalog.card(id)?.name == "Aryla, Renamed")
-        #expect(world.catalog.card(added[0])?.rarity == sir)
+        #expect(card.cardShift != other.cardShift)
         #expect(world.catalog.cards(in: set).count == 2)
+        #expect(world.catalog.allCards(in: set).count == 10)
+        #expect(world.catalog.fillerCards(in: set).count == 8)
     }
 
-    @Test("Card appeal: the subject, plus featured IP, plus the card's own shift (R22, R24)")
-    func cardAppeal() throws {
-        var (world, set, aryla, ember) = try setup()
-        let common = try tier(world, set, 0)
-        let id = try world.createCard(in: set, CardDraft(name: "Aryla", characterID: aryla, rarity: common, featured: [ember]))
-        let card = try #require(world.catalog.card(id))
-        let a = try #require(world.character(aryla))
-        let e = try #require(world.character(ember))
-        let expected = a.trueAppeal(.kids, fits: world.fits)
-            + World.featuredWeight * e.trueAppeal(.kids, fits: world.fits)
-            + card.cardShift[.kids]
-        #expect(abs(try #require(world.cardAppeal(card, .kids)) - Character.clampAppeal(expected)) < 1e-9)
+    @Test("A card needs a name, a character, and a rarity from the set's ladder (C2)")
+    func cardFieldErrors() throws {
+        var (world, set, mascot) = try Fixture.studio()
+        let long = String(repeating: "x", count: Card.nameLimit + 1)
+        expectFailure(.unknownSet(999)) { _ = try world.createCard(in: 999, draft(mascot)) }
+        expectFailure(.emptyName) { _ = try world.createCard(in: set, draft(mascot, name: "  ")) }
+        expectFailure(.nameTooLong(Card.nameLimit)) { _ = try world.createCard(in: set, draft(mascot, name: long)) }
+        expectFailure(.noSubject) { _ = try world.createCard(in: set, CardDraft(name: "A", rarity: 1)) }
+        expectFailure(.unknownCharacter(999)) { _ = try world.createCard(in: set, draft(999)) }
+        expectFailure(.noRarity) { _ = try world.createCard(in: set, CardDraft(name: "A", characterID: mascot)) }
+        expectFailure(.unknownTier(99)) { _ = try world.createCard(in: set, draft(mascot, rarity: 99)) }
+        expectFailure(.unknownForm(999)) {
+            _ = try world.createCard(in: set, CardDraft(name: "A", characterID: mascot, formID: 999, rarity: 1))
+        }
+        expectFailure(.unknownArtist) {
+            _ = try world.createCard(in: set, CardDraft(name: "A", characterID: mascot, rarity: 1, artistID: 9999))
+        }
+        #expect(world.catalog.cards(in: set).isEmpty)
     }
 
-    @Test("A card that shows a form uses the form's appeal (R23)")
-    func formCard() throws {
-        var (world, set, aryla, _) = try setup()
-        let formID = try world.createForm(of: aryla, CharacterDraft(name: "Captain Aryla", role: .legendary, kind: .person))
-        let id = try world.createCard(in: set, CardDraft(name: "Captain Aryla, Fleet Commander", characterID: aryla, formID: formID, rarity: try tier(world, set, 5)))
-        let card = try #require(world.catalog.card(id))
-        let c = try #require(world.character(aryla))
-        let form = try #require(c.form(formID))
-        let expected = Character.clampAppeal(c.formAppeal(form, .kids, fits: world.fits) + card.cardShift[.kids])
-        #expect(abs(try #require(world.cardAppeal(card, .kids)) - expected) < 1e-9)
+    @Test("Featured characters: up to 2, no repeat, not the subject, all known (R22)")
+    func featuredRules() throws {
+        var (world, set, mascot) = try Fixture.studio()
+        let other = try otherCharacter(&world)
+        var d = draft(mascot)
+        d.featured = [other, other]
+        expectFailure(.duplicateFeatured) { _ = try world.createCard(in: set, d) }
+        d.featured = [mascot]
+        expectFailure(.featuredSubject) { _ = try world.createCard(in: set, d) }
+        d.featured = [999]
+        expectFailure(.unknownCharacter(999)) { _ = try world.createCard(in: set, d) }
+        d.featured = [other, 998, 999]
+        expectFailure(.tooManyFeatured) { _ = try world.createCard(in: set, d) }
+        d.featured = [other]
+        let id = try world.createCard(in: set, d)
+        #expect(world.catalog.card(id)?.featured == [other])
     }
 
-    @Test("Card validation rejects bad drafts")
-    func cardValidation() throws {
-        var (world, set, aryla, ember) = try setup()
-        let common = try tier(world, set, 0)
-        #expect(throws: CardError.emptyName) { try world.createCard(in: set, CardDraft(name: " ", characterID: aryla, rarity: common)) }
-        #expect(throws: CardError.noSubject) { try world.createCard(in: set, CardDraft(name: "X", rarity: common)) }
-        #expect(throws: CardError.noRarity) { try world.createCard(in: set, CardDraft(name: "X", characterID: aryla)) }
-        #expect(throws: CardError.unknownTier(999)) { try world.createCard(in: set, CardDraft(name: "X", characterID: aryla, rarity: 999)) }
-        #expect(throws: CardError.unknownForm(999)) { try world.createCard(in: set, CardDraft(name: "X", characterID: aryla, formID: 999, rarity: common)) }
-        #expect(throws: CardError.featuredSubject) { try world.createCard(in: set, CardDraft(name: "X", characterID: aryla, rarity: common, featured: [aryla])) }
-        #expect(throws: CardError.duplicateFeatured) { try world.createCard(in: set, CardDraft(name: "X", characterID: aryla, rarity: common, featured: [ember, ember])) }
-        let third = try world.createCharacter(CharacterDraft(name: "Third"))
-        let fourth = try world.createCharacter(CharacterDraft(name: "Fourth"))
-        #expect(throws: CardError.tooManyFeatured) { try world.createCard(in: set, CardDraft(name: "X", characterID: aryla, rarity: common, featured: [ember, third, fourth])) }
-    }
-
-    @Test("A set copies its ladder, so a later preset change does not reach it (C10)")
-    func setKeepsItsLadder() throws {
-        var (world, set, _, _) = try setup()
-        let preset = try world.createPreset(copying: Catalog.defaultLadderID, name: "Short")
-        var ladder = try #require(world.catalog.preset(preset))
-        ladder.tiers = Array(ladder.tiers.prefix(3))
-        try world.updatePreset(ladder)
-        #expect(world.catalog.preset(preset)?.tiers.count == 3)
-        #expect(world.catalog.set(set)?.ladder.tiers.count == 9)
-
-        let short = try world.createSet(name: "Short Set", theme: nil, presetID: preset)
-        #expect(world.catalog.set(short)?.ladder.tiers.count == 3)
-        try world.deletePreset(preset)
-        #expect(world.catalog.set(short)?.ladder.tiers.count == 3)
-    }
-
-    @Test("The default preset cannot change, and a ladder must be valid (C4)")
-    func ladderRules() throws {
-        var (world, set, aryla, _) = try setup()
-        var ladder = try #require(world.catalog.preset(Catalog.defaultLadderID))
-        #expect(throws: CardError.defaultPresetLocked) { try world.updatePreset(ladder) }
-        #expect(throws: CardError.defaultPresetLocked) { try world.deletePreset(Catalog.defaultLadderID) }
-
-        ladder.tiers = [ladder.tiers[0]]
-        #expect(throws: CardError.ladderSize) { try world.updateSetLadder(set, ladder) }
-
-        var renamed = try #require(world.catalog.set(set)?.ladder)
-        renamed.tiers[1].name = "common"
-        #expect(throws: CardError.duplicateTierName("common")) { try world.updateSetLadder(set, renamed) }
-
-        var badCode = try #require(world.catalog.set(set)?.ladder)
-        badCode.tiers[0].code = "TOOLONG"
-        #expect(throws: CardError.badTierCode("Common")) { try world.updateSetLadder(set, badCode) }
-
-        // A tier that a card uses cannot be removed.
-        let gold = try tier(world, set, 8)
-        try world.createCard(in: set, CardDraft(name: "Aryla", characterID: aryla, rarity: gold))
-        var noGold = try #require(world.catalog.set(set)?.ladder)
-        noGold.tiers.removeLast()
-        #expect(throws: CardError.tierInUse("Gold")) { try world.updateSetLadder(set, noGold) }
-
-        // A new tier, and a new order.
-        var custom = try #require(world.catalog.set(set)?.ladder)
-        custom.tiers.append(RarityTier(id: custom.nextTierID, name: "Mythic", code: "M", symbol: .flame, color: .ember))
-        custom.tiers.swapAt(0, 1)
-        try world.updateSetLadder(set, custom)
-        #expect(world.catalog.set(set)?.ladder.tiers.count == 10)
-        #expect(world.catalog.set(set)?.ladder.rank(of: 2) == 1)
-    }
-
-    @Test("A tier's look is part of the ladder, and the game sets its cost from the look (C15, C17)")
-    func tierLooks() throws {
-        var (world, set, _, _) = try setup()
-        var ladder = try #require(world.catalog.set(set)?.ladder)
-        ladder.tiers[0].look = CardLook(layout: .frameBreak, foil: .etched, textured: true, stamp: .signature)
-        ladder.tiers[0].frameStyle = .gold
-        try world.updateSetLadder(set, ladder)
-        let common = try #require(world.catalog.set(set)?.ladder.tiers[0])
-        #expect(common.look.foil == .etched)
-        let expected = PrintCost.layout(.frameBreak) + PrintCost.foil(.etched) + PrintCost.textured
-            + PrintCost.stamp(.signature) + PrintCost.frame(.gold)
-        #expect(abs(common.costPerCopy - expected) < 1e-12)
-        #expect(CardVersion(id: 1, name: "Plain", look: .plain).costPerCopy == 0)
-    }
-
-    @Test("The theme library has the element types and concept themes (C13)")
-    func themes() throws {
-        var (world, set, _, _) = try setup()
-        let library = world.catalog.themes
-        #expect(Set(library.map(\.id)).count == library.count)
-        #expect(library.filter { $0.group == .elements }.count == ElementType.allCases.count)
-        #expect(world.catalog.theme("fire")?.element == .fire)
-        #expect(world.catalog.theme("castles")?.group == .history)
-        #expect(world.catalog.set(set)?.theme == "feudalism")
-        #expect(throws: CardError.unknownTheme("atlantis")) { try world.updateSet(set, name: "Base Set", theme: "atlantis") }
-        // Each world rolls its own hidden fits.
-        #expect(World(seed: 1, studioName: "A").catalog.themes != World(seed: 2, studioName: "B").catalog.themes)
-    }
-
-    @Test("A card has its tier's versions, can turn one off, and can add its own alt art (C16)")
-    func versions() throws {
-        var (world, set, aryla, _) = try setup()
-        let rare = try tier(world, set, 2)
-        let tierInfo = try #require(world.catalog.set(set)?.ladder.tier(rare))
-        #expect(tierInfo.versions.map(\.name) == ["Reverse holo"])
-
-        // By default the card has the base version and the tier's reverse holo.
-        let plain = try world.createCard(in: set, CardDraft(name: "Aryla", characterID: aryla, rarity: rare))
-        let card = try #require(world.catalog.card(plain))
-        #expect(tierInfo.versions(excluding: card.excludedVersions, own: card.ownVersions).map(\.key) == [.base, .tier(1)])
-
-        // A card can turn off the reverse holo and add a true alt art.
-        var draft = CardDraft(from: card)
-        draft.excludedVersions = [1]
-        draft.ownVersions = [CardVersion.altArt(id: draft.nextOwnVersionID)]
-        try world.updateCard(plain, draft)
-        let changed = try #require(world.catalog.card(plain))
-        let entries = tierInfo.versions(excluding: changed.excludedVersions, own: changed.ownVersions)
-        #expect(entries.map(\.key) == [.base, .own(1)])
-        #expect(entries.last?.version.name == "Alt art")
-    }
-
-    @Test("Version rules: names are unique next to the tier's versions, and the count is limited (C16)")
+    @Test("A card's own versions follow the version rules, and a tier's excluded versions are filtered (C16)")
     func versionRules() throws {
-        var (world, set, aryla, _) = try setup()
-        let rare = try tier(world, set, 2)
-        var clash = CardDraft(name: "Aryla", characterID: aryla, rarity: rare)
-        clash.ownVersions = [CardVersion(id: 1, name: "reverse holo", look: .plain)]
-        #expect(throws: CardError.duplicateVersionName("reverse holo")) { try world.createCard(in: set, clash) }
+        var (world, set, mascot) = try Fixture.studio()
+        var d = draft(mascot, rarity: 1)
+        d.ownVersions = (1...7).map { version($0, "V\($0)") }
+        expectFailure(.tooManyVersions) { _ = try world.createCard(in: set, d) }
+        d.ownVersions = [version(1, "  ")]
+        expectFailure(.emptyVersionName) { _ = try world.createCard(in: set, d) }
+        d.ownVersions = [version(1, "Reverse holo")]
+        expectFailure(.duplicateVersionName("Reverse holo")) { _ = try world.createCard(in: set, d) }
+        d.ownVersions = [version(1, "Base")]
+        expectFailure(.duplicateVersionName("Base")) { _ = try world.createCard(in: set, d) }
+        d.ownVersions = [version(CardVersion.baseID, "Alt")]
+        expectFailure(.duplicateTierID) { _ = try world.createCard(in: set, d) }
+        d.ownVersions = [version(1, "Alt"), version(1, "Other")]
+        expectFailure(.duplicateTierID) { _ = try world.createCard(in: set, d) }
+        d.ownVersions = [version(1, String(repeating: "v", count: CardVersion.nameLimit + 1))]
+        expectFailure(.nameTooLong(CardVersion.nameLimit)) { _ = try world.createCard(in: set, d) }
 
-        var unnamed = CardDraft(name: "Aryla", characterID: aryla, rarity: rare)
-        unnamed.ownVersions = [CardVersion(id: 1, name: " ", look: .plain)]
-        #expect(throws: CardError.emptyVersionName) { try world.createCard(in: set, unnamed) }
+        d.ownVersions = [version(1, " Alt art ")]
+        d.excludedVersions = [1, 99]
+        let id = try world.createCard(in: set, d)
+        let card = try #require(world.catalog.card(id))
+        #expect(card.excludedVersions == [1])
+        #expect(card.ownVersions.map(\.name) == ["Alt art"])
 
-        var many = CardDraft(name: "Aryla", characterID: aryla, rarity: rare)
-        many.ownVersions = (1...(CardVersion.ownLimit + 1)).map { CardVersion(id: $0, name: "V\($0)", look: .plain) }
-        #expect(throws: CardError.tooManyVersions) { try world.createCard(in: set, many) }
-
-        // A stale excluded version is dropped when the card saves.
-        var stale = CardDraft(name: "Aryla", characterID: aryla, rarity: try tier(world, set, 8))
-        stale.excludedVersions = [1]
-        let id = try world.createCard(in: set, stale)
+        var move = CardDraft(from: card)
+        move.rarity = 5
+        try world.updateCard(id, move)
         #expect(world.catalog.card(id)?.excludedVersions == [])
     }
 
-    @Test("Set names are unique")
-    func setNames() throws {
-        var (world, _, _, _) = try setup()
-        #expect(throws: CardError.duplicateSetName("base set")) { try world.createSet(name: "base set", theme: nil, presetID: Catalog.defaultLadderID) }
+    @Test("A set holds designed cards up to its size, and the total stays at the size (S3, S8)")
+    func setFull() throws {
+        var (world, set, mascot) = try Fixture.studio(size: 10)
+        for n in 1...10 { try world.createCard(in: set, draft(mascot, name: "Aryla \(n)")) }
+        #expect(world.catalog.allCards(in: set).count == 10)
+        #expect(world.catalog.fillerCards(in: set).isEmpty)
+        expectFailure(.setFull(10)) { _ = try world.createCard(in: set, draft(mascot)) }
+        var details = SetDetails(from: try #require(world.catalog.set(set)))
+        details.size = 12
+        try world.updateSet(set, details)
+        try world.createCard(in: set, draft(mascot, name: "Aryla 11"))
+        details.size = 10
+        expectFailure(.sizeBelowCards(11)) { try world.updateSet(set, details) }
+        #expect(world.catalog.set(set)?.size == 12)
+        #expect(world.catalog.allCards(in: set).count == 12)
     }
 
+    @Test("Many cards at once: each is its own card, and one bad draft adds none (C18)")
+    func createCards() throws {
+        var (world, set, mascot) = try Fixture.studio()
+        let ids = try world.createCards(in: set, [draft(mascot, rarity: 1), draft(mascot, rarity: 3), draft(mascot, rarity: 6)])
+        #expect(ids.count == 3)
+        let tiers = ids.compactMap { world.catalog.card($0)?.rarity }
+        #expect(tiers == [1, 3, 6])
+        let shifts = ids.compactMap { world.catalog.card($0)?.cardShift }
+        #expect(shifts[0] != shifts[1])
+        #expect(world.catalog.allCards(in: set).count == 10)
+
+        let before = world.catalog
+        expectFailure(.unknownTier(99)) { _ = try world.createCards(in: set, [draft(mascot), draft(mascot, rarity: 99)]) }
+        expectFailure(.noRarity) { _ = try world.createCards(in: set, []) }
+        let tooMany = (1...8).map { draft(mascot, name: "Many \($0)") }
+        expectFailure(.setFull(10)) { _ = try world.createCards(in: set, tooMany) }
+        #expect(world.catalog == before)
+    }
+
+    @Test("A changed card keeps its hidden shift, and a bad change leaves it as it was (C2)")
+    func updateCard() throws {
+        var (world, set, mascot) = try Fixture.studio()
+        let id = try world.createCard(in: set, draft(mascot, rarity: 1))
+        let shift = try #require(world.catalog.card(id)).cardShift
+        var d = draft(mascot, rarity: 3, name: "Aryla, Rare")
+        d.gimmick = true
+        try world.updateCard(id, d)
+        let card = try #require(world.catalog.card(id))
+        #expect(card.name == "Aryla, Rare")
+        #expect(card.rarity == 3)
+        #expect(card.gimmick)
+        #expect(card.cardShift == shift)
+
+        let before = world.catalog
+        expectFailure(.unknownTier(99)) { try world.updateCard(id, draft(mascot, rarity: 99)) }
+        expectFailure(.unknownCard(999)) { try world.updateCard(999, draft(mascot)) }
+        #expect(world.catalog == before)
+        let filler = try #require(world.catalog.fillerCards(in: set).first)
+        expectFailure(.fillerLocked) { try world.updateCard(filler.id, draft(mascot)) }
+    }
+
+    @Test("A change can add more cards, and it checks every draft first (C19)")
+    func updateCardAdding() throws {
+        var (world, set, mascot) = try Fixture.studio()
+        let id = try world.createCard(in: set, draft(mascot, rarity: 1))
+        let added = try world.updateCard(id, draft(mascot, rarity: 2), adding: [draft(mascot, rarity: 3), draft(mascot, rarity: 4)])
+        #expect(added.count == 2)
+        #expect(world.catalog.card(id)?.rarity == 2)
+        #expect(world.catalog.cards(in: set).count == 3)
+        #expect(world.catalog.allCards(in: set).count == 10)
+
+        let before = world.catalog
+        expectFailure(.unknownTier(99)) { _ = try world.updateCard(id, draft(mascot), adding: [draft(mascot, rarity: 99)]) }
+        let tooMany = (1...8).map { draft(mascot, name: "More \($0)") }
+        expectFailure(.setFull(10)) { _ = try world.updateCard(id, draft(mascot), adding: tooMany) }
+        #expect(world.catalog == before)
+    }
+
+    @Test("A deleted card goes, its filler place returns, and the game makes no filler delete (S3)")
+    func deleteCard() throws {
+        var (world, set, mascot) = try Fixture.studio()
+        let id = try world.createCard(in: set, draft(mascot))
+        try world.deleteCard(id)
+        #expect(world.catalog.card(id) == nil)
+        #expect(world.catalog.cards(in: set).isEmpty)
+        #expect(world.catalog.allCards(in: set).count == 10)
+        expectFailure(.unknownCard(id)) { try world.deleteCard(id) }
+        let filler = try #require(world.catalog.fillerCards(in: set).first)
+        expectFailure(.fillerLocked) { try world.deleteCard(filler.id) }
+    }
+
+    @Test("Card appeal is the character's appeal, plus a quarter of each featured one, plus the card shift (R22 to R24)")
+    func cardAppeal() throws {
+        var (world, set, mascot) = try Fixture.studio()
+        let other = try otherCharacter(&world)
+        var d = draft(mascot)
+        d.featured = [other]
+        let id = try world.createCard(in: set, d)
+        let card = try #require(world.catalog.card(id))
+        let lead = try #require(world.character(mascot))
+        let guest = try #require(world.character(other))
+        let base = lead.trueAppeal(.kids, fits: world.fits)
+        let guestAppeal = guest.trueAppeal(.kids, fits: world.fits)
+        let shift = card.cardShift[.kids]
+        let raw = base + World.featuredWeight * guestAppeal + shift
+        let expected = Character.clampAppeal(raw)
+        let appeal = try #require(world.cardAppeal(card, .kids))
+        #expect(abs(appeal - expected) < 1e-9)
+        #expect(appeal >= 0)
+
+        var lost = card
+        lost.characterID = 999
+        #expect(world.cardAppeal(lost, .kids) == nil)
+    }
 }

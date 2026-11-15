@@ -23,16 +23,7 @@ struct VersionEditor: View {
                 TextField("Version name", text: $version.name)
             }
             Section {
-                Picker("Layout", selection: $version.look.layout) {
-                    ForEach(CardLayout.allCases) { Text($0.name).tag($0) }
-                }
-                Picker("Foil", selection: $version.look.foil) {
-                    ForEach(FoilPattern.allCases) { Text($0.name).tag($0) }
-                }
-                Toggle("Textured surface", isOn: $version.look.textured)
-                Picker("Stamp", selection: $version.look.stamp) {
-                    ForEach(CardStamp.allCases) { Text($0.name).tag($0) }
-                }
+                LookFields(look: $version.look)
                 Picker("Frame style", selection: $version.frameStyle) {
                     ForEach(FrameStyle.allCases) { Text($0.name).tag($0) }
                 }
@@ -101,13 +92,11 @@ struct PrintCostSection: View {
 
     var body: some View {
         Section {
-            let parts: [(String, Double)] = [
-                ("Layout: \(look.layout.name)", PrintCost.layout(look.layout)),
-                ("Foil: \(look.foil.name)", PrintCost.foil(look.foil)),
-                ("Texture", look.textured ? PrintCost.textured : 0),
-                ("Stamp: \(look.stamp.name)", PrintCost.stamp(look.stamp)),
-                ("Frame: \(frame.name)", PrintCost.frame(frame)),
-            ].filter { $0.1 > 0 }
+            let parts: [(String, Double)] = ([("Layout: \(look.layout.name)", PrintCost.layout(look.layout))]
+                + look.foils.map { ("Foil: \($0.name)", PrintCost.foil($0)) }
+                + [("Texture", look.textured ? PrintCost.textured : 0)]
+                + look.stamps.map { ("Stamp: \($0.name)", PrintCost.stamp($0)) }
+                + [("Frame: \(frame.name)", PrintCost.frame(frame))]).filter { $0.1 > 0 }
             ForEach(parts, id: \.0) { part in
                 LabeledContent(part.0, value: "+\(part.1.dollars)")
             }

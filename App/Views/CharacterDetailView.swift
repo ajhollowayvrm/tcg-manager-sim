@@ -37,6 +37,7 @@ struct CharacterDetailView: View {
                 appealSection(world, c)
                 attentionSection(c)
                 formsSection(c)
+                CharacterLoreSection(world: world, character: c)
                 cardsSection
                 relationsSection(world, c)
                 actionsSection(c)

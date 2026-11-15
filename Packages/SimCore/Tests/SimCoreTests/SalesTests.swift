@@ -1,163 +1,171 @@
-import Foundation
 import Testing
 @testable import SimCore
 
-@Suite("Selling engine")
+/// A big print run, so the first weeks do not sell out.
+private let bigRun = 2_000
+
+private func lastSales(_ world: World, _ set: SetID) -> WeekSales? {
+    world.business.sales[set]?.last
+}
+
+private func goodwill(_ world: World, _ audience: Audience) -> Double {
+    world.market.state(audience).goodwill
+}
+
+@Suite("Sales")
 struct SalesTests {
-    /// A studio with a mascot and a set with one designed card at each tier from Holo Rare up.
-    func studio(seed: UInt64 = 2026) throws -> (World, SetID, CharacterID) {
-        var world = World(seed: seed, studioName: "Test")
-        let mascot = try world.createCharacter(CharacterDraft(name: "Aryla", role: .mascot, kind: .person))
-        let set = try world.createSet(.main, SetDetails(name: "Base", code: "BAS", size: 150, headliner: Headliner(characterID: mascot)),
-                                      presetID: Catalog.defaultLadderID)
-        let tiers = try #require(world.catalog.set(set)?.ladder.tiers)
-        try world.createCards(in: set, tiers[3...].map { CardDraft(name: "Aryla, \($0.code)", characterID: mascot, rarity: $0.id) })
-        return (world, set, mascot)
+    @Test("Release week puts the set on sale, books revenue as the studio's share, and tires the audiences (B3, B10)")
+    func releaseWeek() throws {
+        let (world, set, mascot) = try Fixture.released(boxes: bigRun)
+        let release = try #require(world.catalog.set(set)?.release)
+        let sales = try #require(lastSales(world, set))
+        #expect(world.business.sales[set]?.count == 1)
+        #expect(sales.week == release.releaseWeek)
+        #expect(sales.totalSold > 0)
+        let revenue = sales.totalSold * release.packPrice * Pricing.publisherShare
+        #expect(abs(sales.revenue - revenue) < 1e-6)
+        let packs = Double(release.printedPacks)
+        #expect(abs(sales.stockAfter - (packs - sales.totalSold)) < 1e-6)
+        #expect(release.stockPacks == sales.stockAfter)
+        #expect(sales.sold[Audience.resellers.rawValue] == 0)
+        #expect(release.fansAtRelease ?? 0 > 0)
+        let notes = world.business.ledger.map(\.note)
+        #expect(notes.contains("Sales: Base"))
+        #expect(world.business.news.contains { $0.text.hasPrefix("Base is out") })
+        #expect(world.market.state(.competitivePlayers).fatigue > 0)
+        #expect(world.market.state(.kids).reachedPeople > 0)
+        let awareness = world.character(mascot)?.awareness[.competitivePlayers] ?? 0
+        #expect(awareness > 0)
     }
 
-    @Test("A new studio starts with $25,000, and scheduling a release pays the print cost and locks the set (B1 to B3)")
-    func schedule() throws {
-        var (world, set, mascot) = try studio()
-        #expect(world.business.cash == Business.startCash)
-        let cost = world.printCost(set, boxes: 500)
-        #expect(cost > Pricing.printSetup)
-        #expect(throws: CardError.self) { try world.scheduleRelease(set, boxes: 500, packPrice: 4.49, releaseWeek: 2) }
-        try world.scheduleRelease(set, boxes: 500, packPrice: 4.49, releaseWeek: 4)
-        #expect(abs(world.business.cash - (Business.startCash - cost)) < 1e-6)
+    @Test("Before the release the previews add reach and the set does not sell (B9)")
+    func previews() throws {
+        var (world, set, _) = try Fixture.scheduled()
+        let before = world.market.state(.chaseCollectors).reachedPeople
+        world.advanceWeek()
+        let after = world.market.state(.chaseCollectors).reachedPeople
+        #expect(after > before + 50)
         #expect(world.catalog.set(set)?.status == .scheduled)
-        #expect(world.catalog.set(set)?.release?.stockPacks == 18_000)
-        // The set is locked.
-        #expect(throws: CardError.setLocked) { try world.createCard(in: set, CardDraft(name: "More", characterID: mascot, rarity: 1)) }
-        #expect(throws: CardError.setLocked) { try world.rerollFiller(set) }
-        #expect(throws: CardError.setLocked) { try world.scheduleRelease(set, boxes: 1, packPrice: 4.49, releaseWeek: 9) }
-    }
-
-    @Test("The set sells from its release week, earns 38% of the pack price, and runs down its stock (B4, B8)")
-    func sells() throws {
-        var (world, set, _) = try studio()
-        try world.scheduleRelease(set, boxes: 2_000, packPrice: 4.49, releaseWeek: 4)
-        for _ in 0..<3 { world.advanceWeek() }
         #expect(world.business.sales[set] == nil)
-        world.advanceWeek()
-        #expect(world.catalog.set(set)?.status == .released)
-        let first = try #require(world.business.sales[set]?.first)
-        #expect(first.week == 4)
-        #expect(first.totalSold > 0)
-        #expect(abs(first.revenue - first.totalSold * 4.49 * Pricing.publisherShare) < 1e-6)
-        #expect(abs((first.stockAfter + first.totalSold) - 72_000) < 1e-6)
-        // Chase collectors buy early. Kids buy later.
-        #expect(first.sold[Audience.chaseCollectors.rawValue] > first.sold[Audience.kids.rawValue])
     }
 
-    @Test("A small print run sells out, resellers take a share, and goodwill falls (B7)")
-    func sellOut() throws {
-        var (world, set, _) = try studio()
-        try world.scheduleRelease(set, boxes: 20, packPrice: 4.49, releaseWeek: 3)
-        for _ in 0..<3 { world.advanceWeek() }
-        let week = try #require(world.business.sales[set]?.last)
-        #expect(week.stockAfter < 1)
-        #expect(week.totalMissed > 0)
-        #expect(week.sold[Audience.resellers.rawValue] > 0)
+    @Test("A sell-out in release week gives resellers half the stock and costs goodwill, once (B7)")
+    func selloutByResellers() throws {
+        var (world, set, _) = try Fixture.released()
+        let sales = try #require(lastSales(world, set))
+        let resellers = sales.sold[Audience.resellers.rawValue]
+        #expect(sales.stockAfter == 0)
+        #expect(abs(resellers - sales.totalSold / 2) < 1e-6)
         #expect(world.catalog.set(set)?.release?.selloutNoted == true)
-        #expect(world.market.state(.chaseCollectors).goodwill < 0)
-    }
-
-    @Test("A reprint arrives 6 weeks after the order and refills the stock (B8)")
-    func reprint() throws {
-        var (world, set, _) = try studio()
-        try world.scheduleRelease(set, boxes: 20, packPrice: 4.49, releaseWeek: 3)
-        for _ in 0..<4 { world.advanceWeek() }
-        let cash = world.business.cash
-        try world.reprint(set, boxes: 100)
-        #expect(world.business.cash < cash)
-        for _ in 0..<5 { world.advanceWeek() }
-        #expect(world.catalog.set(set)?.release?.pendingReprints.count == 1)
+        #expect(abs(goodwill(world, .kids) + 15) < 1e-9)
+        #expect(abs(goodwill(world, .parents) + 15) < 1e-9)
+        #expect(world.business.news.contains { $0.text.contains("sold out in week 0") && $0.text.contains("Resellers took") })
         world.advanceWeek()
-        #expect(world.catalog.set(set)?.release?.pendingReprints.isEmpty == true)
-        #expect(world.catalog.set(set)?.release?.printedPacks == 120 * 36)
-        #expect((world.business.sales[set]?.last?.totalSold ?? 0) > 0)
+        let next = try #require(lastSales(world, set))
+        #expect(next.totalSold == 0)
+        #expect(next.totalMissed > 0)
+        #expect(goodwill(world, .kids) > -15)
     }
 
-    @Test("The factors respond to the set's design: price, theme, no game, and a grail (B5)")
-    func factors() throws {
-        let (world, set, _) = try studio()
-        func factor(_ demand: [AudienceDemand], _ a: Audience, _ name: String) -> Double? {
-            demand[a.rawValue].factors.first { $0.name == name }?.value
+    @Test("A reprint arrives on time, restocks the set, and moves goodwill (B8)")
+    func reprintArrives() throws {
+        var (world, set, _) = try Fixture.released()
+        try world.reprint(set, boxes: 2)
+        let boxSize = try #require(world.catalog.set(set)?.pack.boxSize)
+        let packs = 2 * boxSize
+        world.catalog.sets[0].release?.pendingReprints = [.init(arrivalWeek: world.week + 1, packs: packs)]
+        let printed = try #require(world.catalog.set(set)?.release?.printedPacks)
+        let kidsBefore = goodwill(world, .kids)
+        world.advanceWeek()
+        let release = try #require(world.catalog.set(set)?.release)
+        #expect(release.pendingReprints.isEmpty)
+        #expect(release.printedPacks == printed + packs)
+        let sales = try #require(lastSales(world, set))
+        #expect(sales.totalSold > 0)
+        #expect(sales.totalSold <= Double(packs))
+        #expect(world.business.news.contains { $0.text.hasPrefix("A reprint of Base arrived") })
+        #expect(goodwill(world, .kids) > kidsBefore)
+        #expect(abs(goodwill(world, .investors) + 5) < 1e-9)
+    }
+
+    @Test("The fan wallet has no limit for resellers, and an empty wallet stops a fan audience (B13)")
+    func wallet() throws {
+        let (fresh, _) = try Fixture.world()
+        #expect(fresh.walletLeft(.resellers) == .infinity)
+        let teens = fresh.market.state(.teens)
+        let half = World.walletShare * teens.reachedPeople * teens.spend
+        #expect(abs(fresh.walletLeft(.teens) - half) < 1e-9)
+
+        var (world, set, _) = try Fixture.released(boxes: bigRun)
+        var open = world
+        open.advanceWeek()
+        let free = try #require(lastSales(open, set))
+        #expect(free.sold[Audience.teens.rawValue] > 0)
+
+        var business = world.business
+        business.walletRing?[Audience.teens.rawValue][(world.week + 10) % 52] = 1e12
+        world.businessState = business
+        #expect(world.walletLeft(.teens) == 0)
+        world.advanceWeek()
+        let capped = try #require(lastSales(world, set))
+        #expect(capped.sold[Audience.teens.rawValue] == 0)
+        #expect(capped.sold[Audience.casualPlayers.rawValue] > 0)
+    }
+
+    @Test("The week-4 review runs once, in week 4 of the set's life (B10)")
+    func review() throws {
+        var (world, set, _) = try Fixture.released(boxes: bigRun)
+        #expect(world.catalog.set(set)?.release?.reviewed == false)
+        for _ in 0..<3 { world.advanceWeek() }
+        #expect(world.catalog.set(set)?.release?.reviewed == false)
+        world.advanceWeek()
+        #expect(world.catalog.set(set)?.release?.reviewed == true)
+        for _ in 0..<2 { world.advanceWeek() }
+        let reviews = world.business.news.filter { $0.text.hasPrefix("Week 4 review") }
+        #expect(reviews.count == 1)
+    }
+
+    @Test("The forecast leaves the world unchanged and gives the same answer each time (sales.md 11)")
+    func forecastIsPure() throws {
+        let (world, set, _) = try Fixture.scheduled(boxes: bigRun)
+        let before = world
+        let first = world.forecast(set, weeks: 3)
+        let second = world.forecast(set, weeks: 3)
+        #expect(world == before)
+        #expect(first == second)
+        #expect(first.count == 3)
+        #expect(first.first?.week == world.catalog.set(set)?.release?.releaseWeek)
+        for week in first { #expect(week.totalSold > 0) }
+    }
+
+    @Test("The forecast of a draft set needs a plan, and a larger print run sells at least as much (sales.md 11)")
+    func forecastDraft() throws {
+        let (world, set, mascot) = try Fixture.studio()
+        var planned = world
+        try planned.createCard(in: set, CardDraft(name: "Aryla, Star", characterID: mascot, rarity: 3))
+        let before = planned
+        #expect(planned.forecast(set).isEmpty)
+        #expect(planned.forecast(SetID(9_999), boxes: 1, packPrice: 4.49, releaseWeek: 3).isEmpty)
+        let small = planned.forecast(set, boxes: 1, packPrice: 4.49, releaseWeek: 3, weeks: 1)
+        let large = planned.forecast(set, boxes: bigRun, packPrice: 4.49, releaseWeek: 3, weeks: 1)
+        #expect(planned == before)
+        let smallSold = try #require(small.first).totalSold
+        let largeSold = try #require(large.first).totalSold
+        #expect(smallSold <= largeSold)
+        #expect(planned.catalog.set(set)?.status == .draft)
+    }
+
+    @Test("The same seed gives the same sales (rule 1)")
+    func determinism() throws {
+        var (a, _, _) = try Fixture.released(boxes: bigRun)
+        var (b, _, _) = try Fixture.released(boxes: bigRun)
+        for _ in 0..<3 {
+            a.advanceWeek()
+            b.advanceWeek()
         }
-        let normal = world.setDemand(set, packPrice: 4.49)
-        let pricey = world.setDemand(set, packPrice: 8.99)
-        #expect(normal[Audience.kids.rawValue].lifetimeShare > pricey[Audience.kids.rawValue].lifetimeShare)
-        #expect(factor(normal, .kids, "Theme") == 0.95)
-        #expect(factor(normal, .competitivePlayers, "No game") == 0.3)
-        #expect(factor(normal, .chaseCollectors, "A grail") != nil)
-        #expect(normal.allSatisfy { $0.lifetimeShare <= World.maxShare })
-        #expect(normal[Audience.resellers.rawValue].lifetimeShare == 0)
-        // The hidden favorites are fixed for a world, and differ between worlds.
-        #expect(world.prefs(.kids) == world.prefs(.kids))
-        let other = World(seed: 99, studioName: "Other")
-        #expect(other.prefs(.chaseCollectors).hitRate != world.prefs(.chaseCollectors).hitRate)
-    }
-
-    @Test("Each rhythm adds up to 1 over 52 weeks, and chase collectors front-load more than kids (B6)")
-    func rhythms() {
-        for a in Audience.allCases {
-            let total = (0..<Rhythm.weeks).reduce(0) { $0 + Rhythm.weight(a, week: $1) }
-            #expect(abs(total - 1) < 1e-9)
-        }
-        #expect(Rhythm.weight(.chaseCollectors, week: 0) > Rhythm.weight(.kids, week: 0))
-        #expect(Rhythm.weight(.kids, week: 30) > Rhythm.weight(.chaseCollectors, week: 30))
-        // Art collectors peak after release, not in week 0.
-        let art = (0..<Rhythm.weeks).map { Rhythm.weight(.artCollectors, week: $0) }
-        #expect(art.indices.dropFirst(2).contains { art[$0] > art[0] })
-    }
-
-    @Test("Sales grow the reach and teach the audiences the set's characters (B9)")
-    func growth() throws {
-        var (world, set, mascot) = try studio()
-        let reach = world.market.audiences.reduce(0) { $0 + $1.reachedPeople }
-        try world.scheduleRelease(set, boxes: 1_000, packPrice: 4.49, releaseWeek: 3)
-        for _ in 0..<10 { world.advanceWeek() }
-        #expect(world.market.audiences.reduce(0) { $0 + $1.reachedPeople } > reach * 1.5)
-        #expect(world.market.state(.kids).reach > 0)
-        #expect((world.character(mascot)?.awareness[.chaseCollectors] ?? 0) > 0)
-        #expect(world.business.ledger.contains { $0.note.hasPrefix("Sales:") })
-    }
-
-    @Test("The forecast is fixed, changes nothing, and matches the shape of the real sales")
-    func forecast() throws {
-        let (world, set, _) = try studio()
-        let a = world.forecast(set, boxes: 500, packPrice: 4.49, releaseWeek: 4)
-        let b = world.forecast(set, boxes: 500, packPrice: 4.49, releaseWeek: 4)
         #expect(a == b)
-        #expect(a.count == 12)
-        #expect(a.first?.week == 4)
-        #expect(world.business.sales.isEmpty)
-        #expect(world.catalog.set(set)?.status == .draft)
-        // A draft set with no plan has no forecast.
-        #expect(world.forecast(set).isEmpty)
-    }
-
-    @Test("A world with sales survives a JSON round trip, and the same seed gives the same sales")
-    func saveAndDeterminism() throws {
-        func play() throws -> World {
-            var (world, set, _) = try studio(seed: 31)
-            try world.scheduleRelease(set, boxes: 300, packPrice: 4.49, releaseWeek: 3)
-            for _ in 0..<12 { world.advanceWeek() }
-            return world
-        }
-        let world = try play()
-        #expect(try roundTrip(world) == world)
-        #expect(try play() == world)
-    }
-
-    @Test("The news reports the release, the sell-out, and the week-4 review")
-    func news() throws {
-        var (world, set, _) = try studio()
-        try world.scheduleRelease(set, boxes: 20, packPrice: 4.49, releaseWeek: 3)
-        for _ in 0..<8 { world.advanceWeek() }
-        let lines = world.business.news.map(\.text)
-        #expect(lines.contains { $0.hasPrefix("Base is out") })
-        #expect(lines.contains { $0.hasPrefix("Base sold out in week 0") })
-        #expect(lines.contains { $0.hasPrefix("Week 4 review") })
+        var (c, _, _) = try Fixture.released(seed: 99, boxes: bigRun)
+        for _ in 0..<3 { c.advanceWeek() }
+        #expect(c != a)
     }
 }

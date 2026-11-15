@@ -9,7 +9,10 @@ import Foundation
 
 /// A part of the market view that a studio upgrade unlocks (A5, audiences.md section 10.1).
 public enum MarketInsight: String, CaseIterable, Codable, Sendable, Identifiable {
-    case sizes, reach, goodwill, fatigue, rhythms, forecast, curve, sharp
+    case sizes, reach, goodwill, fatigue, rhythms, forecast, curve, sharp, scout, scoutNetwork
+
+    /// True for a hire that watches the artists, not the market (K11).
+    public var isTalent: Bool { self == .scout || self == .scoutNetwork }
 
     public var id: String { rawValue }
 
@@ -24,6 +27,8 @@ public enum MarketInsight: String, CaseIterable, Codable, Sendable, Identifiable
         case .forecast: "Analytics team"
         case .curve: "Data department"
         case .sharp: "Data science"
+        case .scout: "Talent scout"
+        case .scoutNetwork: "Scouting network"
         }
     }
 
@@ -37,6 +42,8 @@ public enum MarketInsight: String, CaseIterable, Codable, Sendable, Identifiable
         case .forecast: "A first-month forecast for each set"
         case .curve: "The forecast week by week"
         case .sharp: "Every range is half as wide"
+        case .scout: "Rising artists, 3 weeks before the news"
+        case .scoutNetwork: "Rising artists, 6 weeks before the news, and if the fame will last"
         }
     }
 }

@@ -18,6 +18,14 @@ public struct SetRelease: Codable, Sendable, Equatable {
     public internal(set) var reviewed: Bool
     /// True after a sell-out to resellers cost goodwill (B7). It happens once.
     public internal(set) var selloutNoted: Bool
+    /// The release's campaigns (K5, K6). Nil for no campaign.
+    public internal(set) var campaign: Campaign? = nil
+    /// The new people that the campaigns reached so far.
+    public internal(set) var campaignReached: Double? = nil
+    /// The studio's fan base in the release week. Reader: legacy (K9).
+    public internal(set) var fansAtRelease: Double? = nil
+    /// The week when the last reprint arrived. Reader: singles survival (M2).
+    public internal(set) var lastPrintWeek: Int? = nil
 
     public struct Reprint: Codable, Sendable, Equatable {
         public let arrivalWeek: Int
@@ -64,6 +72,18 @@ public struct Business: Codable, Sendable, Equatable {
     var rng: Xoshiro256
     /// Notable events for the Market tab's news: releases, sell-outs, reprints, and reviews.
     public internal(set) var news: [NewsItem] = []
+    /// The fans' dollars spent on the studio's sets, for each audience, in a ring of
+    /// 52 weekly slots (B13). Nil in a save from before the fan wallet.
+    var walletRing: [[Double]]?
+    /// Where the studio works (K3). Nil in a save from before costs: the garage.
+    var spaceState: Space?
+    /// Weeks in a row with cash below zero (K4).
+    public internal(set) var weeksBelowZero: Int?
+    /// The week the studio closed (K4). Nil while it runs.
+    public internal(set) var closedWeek: Int?
+    /// The weekly brand budget, and the share of it for ads (K6). Nil means none.
+    public internal(set) var brandBudget: Double?
+    public internal(set) var brandAdShare: Double?
 
     /// B3: a new studio starts with $25,000.
     public static let startCash = 25_000.0
@@ -71,6 +91,22 @@ public struct Business: Codable, Sendable, Equatable {
     static func start(seed: UInt64) -> Business {
         Business(cash: startCash, ledger: [LedgerEntry(week: 0, amount: startCash, note: "Starting cash")], sales: [:],
                  rng: Xoshiro256(seed: seed), news: [])
+    }
+
+    /// Dollars that an audience spent on the studio's sets in the last 52 weeks (B13).
+    public func walletSpent(_ audience: Audience) -> Double {
+        walletRing?[audience.rawValue].reduce(0, +) ?? 0
+    }
+
+    /// Empties this week's slot of the ring, which holds the spend of 52 weeks ago.
+    mutating func startWalletWeek(_ week: Int) {
+        if walletRing == nil { walletRing = Array(repeating: Array(repeating: 0, count: 52), count: Audience.allCases.count) }
+        for a in walletRing!.indices { walletRing![a][week % 52] = 0 }
+    }
+
+    mutating func addWalletSpend(_ audience: Audience, week: Int, dollars: Double) {
+        if walletRing == nil { startWalletWeek(week) }
+        walletRing![audience.rawValue][week % 52] += dollars
     }
 
     mutating func report(_ week: Int, _ text: String) {
@@ -128,14 +164,16 @@ extension World {
         return Double(set.pack.cardCount) * Pricing.cardCost + Pricing.wrapperCost + extra
     }
 
-    /// The cost of a first print run: the setup plus the packs.
+    /// The cost of a first print run: the setup, the lead artist's pay (K7), and the packs.
     public func printCost(_ setID: SetID, boxes: Int) -> Double {
         guard let set = catalog.set(setID) else { return 0 }
-        return Pricing.printSetup + Double(boxes * set.pack.boxSize) * printCostPerPack(setID)
+        return Pricing.printSetup + leadArtCost(setID)
+            + Double(boxes * set.pack.boxSize) * printCostPerPack(setID)
     }
 
     /// Plans the release, pays the print cost, and locks the set (B1, B2).
-    public mutating func scheduleRelease(_ setID: SetID, boxes: Int, packPrice: Double, releaseWeek: Int) throws(CardError) {
+    public mutating func scheduleRelease(_ setID: SetID, boxes: Int, packPrice: Double, releaseWeek: Int,
+                                         campaign: Campaign = .none) throws(CardError) {
         guard let i = catalog.sets.firstIndex(where: { $0.id == setID }) else { throw .unknownSet(setID) }
         let set = catalog.sets[i]
         guard set.status == .draft else { throw .setLocked }
@@ -145,14 +183,33 @@ extension World {
             throw .badRelease("The release must be at least \(Pricing.previewWeeks) weeks away, for the previews.")
         }
         guard !catalog.cards(in: setID).isEmpty else { throw .badRelease("Design at least one card first.") }
+        guard let lead = set.leadArt, let leadArtist = talent.artist(lead.artistID) else {
+            throw .badRelease("Pick a lead artist first. Every print run needs an artist.")
+        }
+        let art = setArtReadyWeek(setID)
+        guard releaseWeek >= art else {
+            throw .badRelease("The art is done in \(Market.calendar(week: art)). Release in that week or later.")
+        }
         if packWarnings(setID).contains(where: \.blocksPrint) { throw .badRelease("Fix the pack warnings first.") }
         let cost = printCost(setID, boxes: boxes)
         let packs = boxes * set.pack.boxSize
+        guard campaign.creators.allSatisfy({ creator($0) != nil }) else { throw .badRelease("Pick creators from the list.") }
+        guard campaign.previewBudget >= 0, campaign.adBudget >= 0, campaign.storeKits >= 0 else {
+            throw .badRelease("A marketing amount cannot be below zero.")
+        }
         catalog.sets[i].release = SetRelease(releaseWeek: releaseWeek, packPrice: packPrice, printedPacks: packs,
-                                             stockPacks: Double(packs), pendingReprints: [], reviewed: false, selloutNoted: false)
+                                             stockPacks: Double(packs), pendingReprints: [], reviewed: false, selloutNoted: false,
+                                             campaign: campaign == .none ? nil : campaign)
         catalog.sets[i].status = .scheduled
         var b = business
-        b.record(week, -cost, "Print run: \(set.name), \(boxes.formatted()) boxes")
+        let leadPay = leadArtCost(setID)
+        b.record(week, -(cost - leadPay), "Print run: \(set.name), \(boxes.formatted()) boxes")
+        if leadPay > 0 { b.record(week, -leadPay, "Lead art: \(set.name) by \(leadArtist.name)") }
+        for legend in returningLegends(setID) {
+            b.report(week, "\(legend.name) returns to draw \(set.name). Fans of \(setsDrawn(by: legend.id).first?.name ?? "the first set") take notice.")
+        }
+        let marketing = self.cost(of: campaign)
+        if marketing > 0 { b.record(week, -marketing, "Marketing: \(set.name)") }
         businessState = b
     }
 

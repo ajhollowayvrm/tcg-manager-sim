@@ -16,6 +16,8 @@ AJ plays it alone, sideloaded with Xcode.
 - `docs/design/eras.md`: the era designer design.
 - `docs/design/audiences.md`: the audience demand design (the market).
 - `docs/design/sales.md`: the selling engine: releases, money, demand, and sales.
+- `docs/design/costs.md`: running costs: staff and space, artists, and marketing.
+- `docs/design/lore.md`: lore: races, factions, relations, and story beats.
 
 ## Layout
 
@@ -23,7 +25,6 @@ AJ plays it alone, sideloaded with Xcode.
 |---|---|
 | `Packages/SimCore/` | The simulation. Pure Swift, no UI imports. |
 | `App/` | The SwiftUI app. |
-| `UITests/` | A UI test that drives the roster flow and keeps a screenshot of each step. |
 | `project.yml` | The XcodeGen spec. The Xcode project is generated from it and is not committed. |
 
 ## Build and run
@@ -49,29 +50,13 @@ The free Apple ID makes the app stop after 7 days.
 
 ## Tests
 
-Run the simulation tests after each change. They take about 3 seconds:
+Run the simulation tests after each change. The 269 tests run in about 0.12 s. A clean build takes about 8.5 s:
 
 ```sh
 cd Packages/SimCore && swift test
 ```
 
-Run the UI flow on the simulator only when a screen changes, or before you sideload a build to the phone. It takes about 100 seconds:
-
-```sh
-xcodebuild test -project TCGManager.xcodeproj -scheme TCGManager \
-  -destination "platform=iOS Simulator,name=iPhone 17 Pro" \
-  -derivedDataPath build -resultBundlePath build/ui.xcresult
-```
-
-The UI flow takes no screenshots and turns off the app's animations, because both make the run slower. To get screenshots, set `TEST_RUNNER_UI_SHOTS` and export them:
-
-```sh
-# Every screenshot. Or give name prefixes, for example TEST_RUNNER_UI_SHOTS=20,21
-TEST_RUNNER_UI_SHOTS=all xcodebuild test -project TCGManager.xcodeproj -scheme TCGManager \
-  -destination "platform=iOS Simulator,name=iPhone 17 Pro" \
-  -derivedDataPath build -resultBundlePath build/ui.xcresult
-xcrun xcresulttool export attachments --path build/ui.xcresult --output-path shots/ui
-```
+Keep each test under 20 ms. Set up the state directly, and do not simulate long runs of weeks. The shared test worlds are in `Packages/SimCore/Tests/SimCoreTests/Fixtures.swift`.
 
 ## Rules for the simulation
 

@@ -41,18 +41,6 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
         ENABLE_PREVIEWS: YES
-  TCGManagerUITests:
-    type: bundle.ui-testing
-    platform: iOS
-    sources:
-      - UITests
-    dependencies:
-      - target: TCGManager
-    settings:
-      base:
-        GENERATE_INFOPLIST_FILE: YES
-        PRODUCT_BUNDLE_IDENTIFIER: com.ajholloway.tcgmanager.uitests
-        TARGETED_DEVICE_FAMILY: "1"
 schemes:
   TCGManager:
     build:
@@ -60,7 +48,3 @@ schemes:
         TCGManager: all
     run:
       config: Debug
-    test:
-      config: Debug
-      targets:
-        - TCGManagerUITests

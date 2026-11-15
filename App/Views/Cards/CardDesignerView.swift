@@ -56,10 +56,13 @@ struct CardDesignerView: View {
         _draft = State(initialValue: initial)
         _rarities = State(initialValue: initial.rarity.map { [$0] } ?? [])
         savedRarity = cardID == nil ? nil : initial.rarity
+        savedArtistID = cardID == nil ? nil : initial.artistID
     }
 
     /// When the designer changes a saved card: the card's rarity before the change.
     private let savedRarity: TierID?
+    /// When the designer changes a saved card: the card's artist before the change.
+    private let savedArtistID: ArtistID?
 
     private var step: Step { Step.allCases[stepIndex] }
     private var isLastStep: Bool { stepIndex == Step.allCases.count - 1 }
@@ -443,7 +446,7 @@ struct CardDesignerView: View {
                 } content: {
                     Text("\(index + 1)").font(.caption.monospacedDigit()).foregroundStyle(.secondary).frame(width: 20)
                     HStack(spacing: 4) {
-                        RaritySymbolView(symbol: tier.symbol, size: 11)
+                        RaritySymbolView(symbol: tier.symbol, count: tier.symbolCount, size: 11)
                         Text(tier.code).font(.caption.weight(.bold))
                     }
                     .padding(.horizontal, 8)
@@ -511,7 +514,7 @@ struct CardDesignerView: View {
                                 show(tier.id)
                             } label: {
                                 HStack(spacing: 4) {
-                                    RaritySymbolView(symbol: tier.symbol, size: 11)
+                                    RaritySymbolView(symbol: tier.symbol, count: tier.symbolCount, size: 11)
                                     Text(tier.code).font(.subheadline.weight(.bold))
                                 }
                                 .padding(.horizontal, 12)
@@ -648,7 +651,11 @@ struct CardDesignerView: View {
     private func artStep(_ world: World) -> some View {
         let others = world.characters.filter { $0.id != draft.characterID }
         return VStack(alignment: .leading, spacing: 10) {
-            Text("The art can show up to \(Card.featuredLimit) other characters. Each one adds its own appeal. An audience that dislikes a featured character buys less. Artists arrive later.")
+            ArtistPicker(world: world, setID: setID, artistID: $draft.artistID, savedArtistID: savedArtistID,
+                         cards: max(1, rarities.count - (cardID == nil ? 0 : 1)))
+            Divider().padding(.vertical, 6)
+            Text("Other characters in the art").font(.headline)
+            Text("The art can show up to \(Card.featuredLimit) other characters. Each one adds its own appeal. An audience that dislikes a featured character buys less.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             Text("\(draft.featured.count) of \(Card.featuredLimit) selected")
