@@ -86,7 +86,7 @@ public enum MarketInsight: String, CaseIterable, Codable, Sendable, Identifiable
         case .characterDesigner: "Each new character that you create starts with 5 more appeal"
         case .storyWriter: "Story beats move relations and group fame 50% more"
         case .loreResearcher: "The fans of each group in each audience"
-        case .artDirector: "Art takes 1 week less for each card, and a lead draws 15 filler cards a week"
+        case .artDirector: "Art takes 1 week less for each card, and a lead draws 35 filler cards a week"
         case .staffIllustrator: "Founder art counts as popularity 45, not amateur"
         case .printBuyer: "Packs cost 15% less to print, and reprints arrive in 4 weeks"
         case .printPlant: "Your own plant: packs cost 35% less, no setup cost, and reprints arrive in 2 weeks"

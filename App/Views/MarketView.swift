@@ -73,7 +73,6 @@ struct MarketView: View {
             }
         }
         .navigationTitle("Market")
-        .toolbar { ToolbarItem(placement: .primaryAction) { NextWeekButton() } }
     }
 
 }

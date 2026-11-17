@@ -132,6 +132,10 @@ struct ArtistTests {
         #expect(world.business.cash == cash - artist.fee)
         #expect(world.business.ledger.last?.note.hasPrefix("Art: One by") == true)
         #expect(world.cardsInProgress(artist.id) == 1)
+        // An artist draws 3 cards at the same time (W1): the 2nd and 3rd card do not wait.
+        #expect(world.artReadyWeek(for: artist) == ready)
+        try world.createCard(in: set, CardDraft(name: "Two", characterID: mascot, rarity: 3, artistID: artist.id))
+        try world.createCard(in: set, CardDraft(name: "Three", characterID: mascot, rarity: 3, artistID: artist.id))
         #expect(world.artReadyWeek(for: artist) == ready + 1)
         #expect(world.setArtReadyWeek(set) == ready)
     }

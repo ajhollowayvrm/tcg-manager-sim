@@ -38,13 +38,13 @@ struct StudioView: View {
                             }
                         }
                         .buttonStyle(.plain)
+                        StudioActionsSection(world: world)
                     }
                     .padding(16)
                 }
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle(store.world?.studioName ?? "Studio")
-            .toolbar { ToolbarItem(placement: .primaryAction) { NextWeekButton() } }
             .navigationDestination(for: StudioRoute.self) { route in
                 switch route {
                 case .product: ProductView()

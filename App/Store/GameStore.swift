@@ -367,6 +367,16 @@ final class GameStore {
     }
 
     @discardableResult
+    func revealCard(_ id: CardID) -> String? {
+        applyCard { world throws(CardError) in try world.revealCard(id) }.message
+    }
+
+    @discardableResult
+    func runAction(_ action: StudioAction) -> String? {
+        applyCard { world throws(CardError) in try world.runAction(action) }.message
+    }
+
+    @discardableResult
     func setStory(_ setID: SetID, _ story: SetStory?) -> String? {
         applyCard { world throws(CardError) in try world.setStory(setID, story) }.message
     }
@@ -381,17 +391,43 @@ final class GameStore {
 
     /// Moves time by several weeks at once (B11).
     func advanceWeeks(_ count: Int) {
-        guard var current = world else { return }
-        for _ in 0..<count { current.advanceWeek() }
-        world = current
-        persist()
+        advance { world in for _ in 0..<count { world.advanceWeek() } }
     }
 
     func advanceWeek() {
+        advance { $0.advanceWeek() }
+    }
+
+    /// Passes weeks until something happens, 26 weeks at most (T3).
+    func advanceToNextEvent() {
+        advance { $0.advanceToNextEvent() }
+    }
+
+    /// The report of the last weeks that passed (T2). A quiet report shows as a toast.
+    var report: WeekReport?
+    var toast: WeekReport?
+    /// Counts each time passing, for the haptic tick. `bigTicks` counts the big events.
+    private(set) var ticks = 0
+    private(set) var bigTicks = 0
+
+    private func advance(_ change: (inout World) -> Void) {
         guard var current = world else { return }
-        current.advanceWeek()
+        let weekBefore = current.week
+        let cashBefore = current.business.cash
+        let newsBefore = current.business.news.count
+        change(&current)
         world = current
         persist()
+        guard current.week > weekBefore else { return }
+        let sold = current.business.sales.values.joined()
+            .filter { $0.week > weekBefore && $0.week <= current.week }
+            .reduce(0) { $0 + $1.totalSold }
+        let news = current.business.news.dropFirst(newsBefore).map(\.text)
+        let result = WeekReport(fromWeek: weekBefore + 1, toWeek: current.week, cashChange: current.business.cash - cashBefore,
+                                cash: current.business.cash, packsSold: sold, news: Array(news))
+        ticks += 1
+        if result.isBig { bigTicks += 1 }
+        if result.isQuiet { toast = result } else { report = result }
     }
 
     // MARK: - Internals
@@ -474,4 +510,25 @@ extension Result where Failure == StoreError {
         if case .failure(let error) = self { return error.message }
         return nil
     }
+}
+
+/// What happened in the weeks that just passed (T2).
+struct WeekReport: Identifiable, Equatable {
+    let id = UUID()
+    let fromWeek: Int
+    let toWeek: Int
+    let cashChange: Double
+    let cash: Double
+    let packsSold: Double
+    let news: [String]
+
+    /// A week with no news and no sales. It shows as a short toast.
+    var isQuiet: Bool { news.isEmpty && packsSold < 1 }
+    /// A week with a release, a sell-out, a legend, or a viral artist. It gets a stronger haptic.
+    var isBig: Bool {
+        news.contains { text in
+            ["is out", "sold out", "legend", "viral", "closed", "called the loan"].contains { text.contains($0) }
+        }
+    }
+    var weeks: Int { toWeek - fromWeek + 1 }
 }

@@ -221,7 +221,7 @@ extension World {
     /// Weeks for each card of an artist. The art director takes 1 week off, to 1 at least (U9).
     public func artWeeks(_ artist: Artist) -> Int { hired(.artDirector) ? max(1, artist.weeks - 1) : artist.weeks }
     /// Filler cards that a lead draws in one week (U9).
-    public var fillerPerWeek: Int { hired(.artDirector) ? 15 : LeadArt.fillerPerWeek }
+    public var fillerPerWeek: Int { hired(.artDirector) ? 35 : LeadArt.fillerPerWeek }
     /// The fame that the "Artists" factor reads. A staff illustrator lifts founder art (U10).
     public func fame(of artist: Artist) -> Double {
         artist.isFounder && hired(.staffIllustrator) ? max(artist.fame, 45) : artist.fame

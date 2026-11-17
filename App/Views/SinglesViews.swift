@@ -106,6 +106,5 @@ struct HallOfFameView: View {
             }
         }
         .navigationTitle("Hall of fame")
-        .toolbar { ToolbarItem(placement: .primaryAction) { NextWeekButton() } }
     }
 }

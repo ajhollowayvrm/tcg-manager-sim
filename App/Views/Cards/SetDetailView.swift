@@ -69,6 +69,16 @@ struct SetDetailView: View {
                                 } label: {
                                     VStack(spacing: 4) {
                                         CardView(face: face)
+                                            .overlay(alignment: .topTrailing) {
+                                                if card.revealedWeek != nil {
+                                                    Image(systemName: "eye.fill")
+                                                        .font(.caption2.weight(.bold))
+                                                        .padding(5)
+                                                        .background(.thinMaterial, in: Circle())
+                                                        .padding(4)
+                                                        .accessibilityLabel("Revealed")
+                                                }
+                                            }
                                         let count = versionCount(card, set)
                                         if count > 1 {
                                             Text("\(count) versions").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
@@ -107,6 +117,9 @@ struct SetDetailView: View {
                     .disabled(set.status != .draft)
                 }
                 LeadArtistSection(world: world, set: set) { sheet = .lead }
+                if set.status != .released, !cards.isEmpty {
+                    SpoilerSection(world: world, set: set)
+                }
                 StorySection(world: world, set: set)
                 if set.status == .draft {
                     ReleaseSection(world: world, set: set)
@@ -123,7 +136,6 @@ struct SetDetailView: View {
         .navigationTitle(set.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .primaryAction) { NextWeekButton() }
             ToolbarItem(placement: .primaryAction) {
                 Menu {
                     Button("Edit the set details", systemImage: "pencil") { sheet = .details }

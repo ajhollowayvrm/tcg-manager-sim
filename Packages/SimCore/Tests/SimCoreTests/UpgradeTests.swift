@@ -44,7 +44,7 @@ struct UpgradeTests {
         #expect(abs(pb - pa - 5) < 1e-9)
     }
 
-    @Test("An art director takes 1 week off each card, to 1 week at least, and a lead draws 15 filler cards a week (U9)")
+    @Test("An art director takes 1 week off each card, to 1 week at least, and a lead draws 35 filler cards a week (U9, W1)")
     func artDirector() throws {
         var (world, _, _) = try Fixture.studio()
         let artist = try #require(world.talent.artists.first)
@@ -52,7 +52,7 @@ struct UpgradeTests {
         hire(&world, .artDirector)
         let after = world.artReadyWeek(for: artist)
         #expect(after == before - (artist.weeks > 1 ? 1 : 0))
-        #expect(world.fillerPerWeek == 15)
+        #expect(world.fillerPerWeek == 35)
     }
 
     @Test("A staff illustrator makes founder art count as popularity 45 (U10)")

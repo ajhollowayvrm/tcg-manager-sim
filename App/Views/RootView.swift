@@ -30,21 +30,25 @@ struct RootView: View {
 }
 
 struct MainTabView: View {
+    @Environment(GameStore.self) private var store
+
     var body: some View {
+        @Bindable var store = store
         TabView {
             Tab("Studio", systemImage: "building.2.fill") {
-                StudioView()
+                StudioView().timeBar()
             }
             Tab("Market", systemImage: "chart.line.uptrend.xyaxis") {
-                NavigationStack { MarketView() }
+                NavigationStack { MarketView() }.timeBar()
             }
             Tab("Business", systemImage: "briefcase.fill") {
-                BusinessView()
+                BusinessView().timeBar()
             }
             Tab("Settings", systemImage: "gearshape.fill") {
-                SettingsView()
+                SettingsView().timeBar()
             }
         }
+        .sheet(item: $store.report) { WeekReportView(report: $0) }
     }
 }
 

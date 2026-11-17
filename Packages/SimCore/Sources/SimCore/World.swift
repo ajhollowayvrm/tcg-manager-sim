@@ -64,6 +64,8 @@ public struct World: Codable, Sendable, Equatable {
     var channelState: ChannelBook?
     /// Loans, financing, crowdfunds, and investors (F1 to F4). Nil in a save from before funding.
     var financeState: Finance?
+    /// The week each studio action was last used (W3). Nil in a save from before actions.
+    var actionState: [String: Int]?
 
     public init(seed: UInt64, studioName: String) {
         version = Self.currentVersion

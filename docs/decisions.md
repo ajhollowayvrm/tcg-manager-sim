@@ -1221,3 +1221,53 @@ AJ picked all four funding tools, and chose "Late fees, then default" over "Coun
 ### F3. Crowdfunds for a draft set (D5)
 
 ### F4. Investors take a share of the weekly profit, forever
+
+## 2026-11-15: the passing of time
+
+AJ's words: "The passing of time feels kinda lame or like it's not happening. The time should be displayed somewhere where it's always seen or you can only pass time from the main screen." For the feedback, AJ picked all three options and added: "We need to balance this with the fact that your first set takes a while to get released."
+
+### T1. A time bar on every tab
+
+AJ chose "Bar on every tab" over "Main screen only" and "Date bar, button on main".
+
+- A bar above the tab bar on every tab: the date and week, the cash, the next event with a countdown, and the Next week button.
+- The Next week button left the toolbars of the Studio, Market, set, sales, and hall of fame screens.
+- The date and the cash animate when they change.
+
+### T2. A week report, a toast for a quiet week, and haptics
+
+- A week with news or sales: a report card slides up with the cash and its change, the packs sold, and the newest 3 news lines.
+- A quiet week (no news and no sales): only a short toast that closes by itself. So the long wait before the first release does not show a card each week.
+- A light haptic tap each time weeks pass. A stronger haptic for a big event: a release, a sell-out, a legend, a viral artist, a called loan, or the close.
+
+### T3. Skip to the next event
+
+- The Next week menu has "Skip 4 weeks" and "Skip to the next event".
+- "Skip to the next event" passes weeks until a news item comes, or until the week of the next event (art done, a release, a reprint, or a crowdfund end). It stops after 26 weeks at most. One report covers all the weeks.
+
+## 2026-11-15: the wait for the first set
+
+AJ's words: "The tough part is it takes a while for your first set to be ready so that's kinda boring." A probe showed 14 to 38 weeks until the art of a first set is done with hired artists. AJ picked "Faster art", "Spoiler season", and "Things to do while you wait". AJ did not pick "A head start".
+
+### W1. Faster art
+
+- An artist draws 3 cards at the same time. Each 3 cards in progress add 1 week to a new commission, not each card.
+- A lead draws 25 filler cards a week, not 10 (the art director: 35, not 15). A lead draws its designed cards 3 at a time.
+- The probe after the change: 23 → 14 weeks (60 cards, one artist), 14 → 10 weeks (60 cards, own artists), 38 → 20 weeks (150 cards, one artist).
+
+### W2. Spoiler season
+
+- A designed card of a draft or scheduled set can be revealed when its art is done. One reveal for each set each week. A card is revealed once.
+- A reveal adds hype (buzz) to the card's character: 10 + the tier's rarity feel, 40 at most. Buzz fades each week, so the timing matters.
+- A reveal reaches 30 × (1 + feel / 8) people: 40% chase collectors, 20% completionists, 20% teens, and 20% art collectors. The marketing lead adds 30%.
+- The set screen has a "Spoiler season" section. A revealed card has an eye badge.
+
+### W3. Studio actions
+
+| Action | Cost | Again after | Effect |
+|---|---|---|---|
+| Convention booth | $3,000 | 8 weeks | About 500 new people: chase collectors, art collectors, completionists, competitive players, and teens |
+| Demo day at hobby stores | $1,500 | 4 weeks | Hobby trust + 0.1. About 220 new players |
+| Playtest | $1,000 | 4 weeks | The appeal readings of the characters in sets that are not out yet narrow by 10% |
+
+- The actions are on the Studio screen, under "Things to do".

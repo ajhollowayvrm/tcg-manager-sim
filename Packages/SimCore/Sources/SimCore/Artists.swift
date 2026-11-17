@@ -197,7 +197,9 @@ public struct LeadArt: Codable, Sendable, Equatable {
     /// The lead draws filler at this share of the card fee (K7).
     public static let fillerShare = 0.1
     /// The lead draws this many filler cards in one week (K7).
-    public static let fillerPerWeek = 10
+    public static let fillerPerWeek = 25
+    /// An artist draws this many cards at the same time (W1).
+    public static let parallelCards = 3
 
     public var fillerFee: Double { cardFee * Self.fillerShare }
 }
@@ -237,7 +239,8 @@ extension World {
         if lead.artistID == Artist.founderID { return lead.startWeek }
         let filler = plannedFiller(setID)
         let fillerWeeks = (filler + fillerPerWeek - 1) / fillerPerWeek
-        return lead.startWeek + lead.delay + fillerWeeks + leadDesigned(setID)
+        let designedWeeks = (leadDesigned(setID) + LeadArt.parallelCards - 1) / LeadArt.parallelCards
+        return lead.startWeek + lead.delay + fillerWeeks + designedWeeks
     }
 
     /// The lead artist's pay, due with the first print run (K7).
@@ -258,7 +261,7 @@ extension World {
 
     /// The week when a new commission from this artist is done (K2). The founder is done at once.
     public func artReadyWeek(for artist: Artist) -> Int {
-        artist.isFounder ? week : week + artWeeks(artist) + artist.outsideQueue + cardsInProgress(artist.id)
+        artist.isFounder ? week : week + artWeeks(artist) + artist.outsideQueue + cardsInProgress(artist.id) / LeadArt.parallelCards
     }
 
     /// The first week when all the cards of a set have their art (K2, K7).
@@ -391,7 +394,7 @@ extension World {
         if catalog.sets[i].leadArt?.artistID == id { return }
         guard let artist = talent.artist(id) else { throw .unknownArtist }
         catalog.sets[i].leadArt = nil
-        let delay = artist.isFounder ? 0 : artWeeks(artist) + artist.outsideQueue + cardsInProgress(id)
+        let delay = artist.isFounder ? 0 : artWeeks(artist) + artist.outsideQueue + cardsInProgress(id) / LeadArt.parallelCards
         catalog.sets[i].leadArt = LeadArt(artistID: id, startWeek: week, delay: delay, cardFee: artist.fee,
                                           heat: workHeat(artist, ready: week + delay))
     }

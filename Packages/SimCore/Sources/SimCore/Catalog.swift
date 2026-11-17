@@ -549,6 +549,8 @@ public struct Card: Codable, Sendable, Equatable, Identifiable {
     public internal(set) var artReadyWeek: Int? = nil
     /// The own artist's heat while the art was made (K12). Reader: the "Hot artist" factor.
     public internal(set) var heatAtCommission: Double? = nil
+    /// The week the studio revealed the card in spoiler season (W2). Nil before a reveal.
+    public internal(set) var revealedWeek: Int? = nil
 
     public static let nameLimit = 40
     public static let featuredLimit = 2

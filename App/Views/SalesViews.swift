@@ -60,8 +60,14 @@ struct NextWeekButton: View {
     var body: some View {
         Menu {
             Button("Skip 4 weeks", systemImage: "forward.fill") { store.advanceWeeks(4) }
+            Button("Skip to the next event", systemImage: "forward.end.fill") { store.advanceToNextEvent() }
         } label: {
             Label("Next week", systemImage: "forward.frame.fill")
+                .font(.subheadline.weight(.semibold))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(Theme.accent, in: Capsule())
+                .foregroundStyle(.white)
         } primaryAction: {
             store.advanceWeek()
         }
@@ -411,7 +417,6 @@ struct SetSalesView: View {
                 }
             }
             .navigationTitle(set.name)
-            .toolbar { ToolbarItem(placement: .primaryAction) { NextWeekButton() } }
         } else {
             ContentUnavailableView("No release yet", systemImage: "calendar")
         }
